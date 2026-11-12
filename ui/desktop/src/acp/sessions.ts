@@ -6,7 +6,7 @@ import {
   type NewSessionRequest,
   type SessionInfo,
 } from '@agentclientprotocol/sdk';
-import type { GooseExtension, SessionExportFormat, SessionImportSource } from '@aaif/goose-acp-client';
+import type { GooseExtension, SessionExportFormat } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
@@ -322,12 +322,7 @@ export async function acpExportSession(
   return response.data;
 }
 
-export async function acpImportSession(input: string, source: SessionImportSource): Promise<void> {
+export async function acpImportSession(input: string): Promise<void> {
   const client = await getAcpClient();
-  await client.goose.sessionImport_unstable({ input, source });
-}
-
-export async function acpShareSessionNostr(sessionId: string, relays: string[]) {
-  const client = await getAcpClient();
-  return await client.goose.sessionShareNostr_unstable({ sessionId, relays });
+  await client.goose.sessionImport_unstable({ input });
 }

@@ -3,6 +3,8 @@ pub mod server;
 #[cfg(test)]
 mod tests;
 
+use crate::config::Config;
+use crate::providers::tetrate::{TETRATE_DEFAULT_MODEL, TETRATE_PROVIDER_NAME};
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::{distr::Alphanumeric, RngExt};
@@ -13,8 +15,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
-/// Default models for Tetrate Agent Router Service configuration
-pub const TETRATE_DEFAULT_MODEL: &str = "claude-haiku-4-5";
+pub use self::PkceAuthFlow as TetrateAuth;
 
 // Auth endpoints are on the main web domain
 const TETRATE_AUTH_URL: &str = "https://router.tetrate.ai/auth";
@@ -156,16 +157,8 @@ impl PkceAuthFlow {
     }
 }
 
-pub use self::PkceAuthFlow as TetrateAuth;
-
-use crate::config::Config;
-
 pub fn configure_tetrate(config: &Config, api_key: String) -> Result<()> {
     config.set_secret("TETRATE_API_KEY", &api_key)?;
-    crate::config::set_active_provider(
-        config,
-        crate::providers::tetrate::TETRATE_PROVIDER_NAME,
-        TETRATE_DEFAULT_MODEL,
-    )?;
+    crate::config::set_active_provider(config, TETRATE_PROVIDER_NAME, TETRATE_DEFAULT_MODEL)?;
     Ok(())
 }

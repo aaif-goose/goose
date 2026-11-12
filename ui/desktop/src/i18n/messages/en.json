@@ -20,15 +20,6 @@
   "acpReadinessPanel.connectionNotChecked": {
     "defaultMessage": "Check your account connection before continuing."
   },
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Auto compact at"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compact now"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Failed to save threshold: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Got it!"
   },
@@ -197,9 +188,6 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
   },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Context window"
-  },
   "chatInput.dictationError": {
     "defaultMessage": "Dictation Error"
   },
@@ -340,6 +328,63 @@
   },
   "confirmationModal.processing": {
     "defaultMessage": "Processing..."
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} of {limit} tokens used. Show what is in the context window"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Past the auto-compaction threshold: the conversation is compacted before the next request is sent."
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructions & hints"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Compaction summary"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Extension instructions"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversation"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "System prompt"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Tool definitions"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Turn context"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compact now"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Free"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Could not load the context report."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} token context window"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} keeps its own conversation history and only receives the latest prompt from goose, so there is no request to break down."
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Refresh"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Retry"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Context window"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Token counts are estimated with the o200k tokenizer."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "of {limit} tokens · {percent} of the context window"
   },
   "conversationLimitsDropdown.conversationLimits": {
     "defaultMessage": "Conversation Limits"
@@ -1100,6 +1145,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Are you sure you want to install the {name} extension? Command: {command}"
   },
@@ -1267,6 +1318,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Structured result wasn't collected"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Structured result was rejected"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Returned structured result"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Returning structured result…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Failed to switch to {branch}"
@@ -1983,13 +2046,16 @@
     "defaultMessage": "Invalid URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Move Picture-in-Picture window (use arrow keys)"
+    "defaultMessage": "Move Picture-in-Picture window"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Playing in Picture-in-Picture"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Resize Picture-in-Picture window"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item found} other{# items found}}"
@@ -2011,6 +2077,18 @@
   },
   "messageCopyLink.copy": {
     "defaultMessage": "Copy"
+  },
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count,plural,one{# message hidden} other{# messages hidden}}"
+  },
+  "messageList.modelChanged": {
+    "defaultMessage": "Model changed: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (requested)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Show all"
   },
   "messageQueue.cancel": {
     "defaultMessage": "Cancel"
@@ -2405,6 +2483,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Loading chats…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Created"
   },
@@ -2651,15 +2732,6 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "What we collect:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Loading messages... ({renderedCount}/{totalCount})"
-  },
-  "progressiveMessageList.modelChanged": {
-    "defaultMessage": "Model changed: {previousModel} → {currentModel}"
-  },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Press Cmd/Ctrl+F to load all messages immediately for search"
-  },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "All prompts reset to defaults"
   },
@@ -2741,9 +2813,6 @@
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Deprecated — use {replacement} instead."
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard error: No metadata provided"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Unknown Provider"
   },
@@ -2752,9 +2821,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API Format"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Cancel"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Choose Provider"
@@ -3756,7 +3822,7 @@
     "defaultMessage": "Use ML models to detect potential prompt injection in your chat"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)"
+    "defaultMessage": "Lower values are more strict (0.01 = maximum strict, 1.0 = very lenient)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Command injection detection works best when connected to WARP (required to reach the classification service)."
@@ -3872,9 +3938,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Open in new window"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Share encrypted Nostr link"
-  },
   "sessions.cancel": {
     "defaultMessage": "Cancel"
   },
@@ -3914,21 +3977,6 @@
   "sessions.import": {
     "defaultMessage": "Import Session"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Import Link"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Paste a Goose Nostr share link to fetch, decrypt, and import the session."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Import Nostr Session"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Importing..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Include ACP sessions"
   },
@@ -3955,12 +4003,6 @@
   },
   "sessions.searchPlaceholder": {
     "defaultMessage": "Search history..."
-  },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Anyone with this link can fetch and decrypt the session. Treat it like a secret."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Encrypted Nostr Share Link"
   },
   "sessions.toast.copied": {
     "defaultMessage": "Copied to clipboard"
@@ -3989,23 +4031,35 @@
   "sessions.toast.imported": {
     "defaultMessage": "Session imported successfully"
   },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Encrypted Nostr share link created"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Failed to create Nostr share link: {error}"
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Failed to update session description: {error}"
   },
   "sessions.toast.updated": {
     "defaultMessage": "Session description updated successfully"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Auto"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configured"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Enter API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Remove key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Save key"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Uses Jev to choose the thinking effort for each request. Request text is sent to TypeSafe AI; skill and recipe slash commands include their expanded local instructions."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatic thinking effort"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Block limit"
@@ -4057,6 +4111,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Threshold %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Token limit"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Summarizes older tool requests and responses to save context. The cutoff is automatic when blank."
@@ -4280,6 +4337,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Save"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Always"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Collapsed"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Show the model's thinking in chat. \"Collapsed\" keeps it closed until you open it."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Never"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Show Thinking"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Add Skill"
   },
@@ -4423,6 +4495,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configure a subrecipe that can be called as a tool during recipe execution"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Load latest progress"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Subagent progress isn't shown live here."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Back to model list"

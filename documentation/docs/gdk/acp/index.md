@@ -1,104 +1,178 @@
 ---
-sidebar_position: 1
-title: Use goose as an ACP agent
-sidebar_label: Overview
-description: Build clients that connect to goose over stdio, HTTP, or WebSocket.
+title: Build an app with goose
+sidebar_label: Build an app with goose
+description: Launch goose from your application, send prompts, and stream responses over ACP.
+displayed_sidebar: gdkSidebar
 ---
 
-# Use goose as an ACP agent
+# Build an app with goose
 
-Use the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to build
-clients that connect to goose's agent runtime, tools, extensions, and configured
-models. These clients can be code editors, desktop, web, or mobile apps,
-automated services, or other custom integrations.
+If your application needs an agent, you do not have to assemble one from GDK
+components. You can launch the pre-built goose binary and talk to it over the
+[Agent Client Protocol (ACP)](https://agentclientprotocol.com/).
 
-For methods provided by goose in addition to the standard ACP methods, see the
-[goose ACP Reference](/docs/gdk/acp/reference).
+Your application owns the interface and workflow. goose supplies the agent,
+model connections, tools, and saved conversations. ACP connects them: your app
+sends prompts and receives streamed responses, tool activity, and permission
+requests. This is also how goose Desktop talks to its backend.
 
-## Install
-
-Choose one installation method based on how your ACP client runs goose.
-
-### Install the goose CLI
-
-Install the [goose CLI](/docs/getting-started/installation) to configure a client
-to launch `goose acp` or to run `goose serve` yourself.
-
-### Install from the ACP Registry
-
-Supported ACP clients can install and manage goose for you through the
-[goose entry in the ACP Registry](https://agentclientprotocol.com/get-started/registry#goose).
-This does not require a separate goose CLI installation.
-
-## Run the agent
-
-### Connect over stdio
-
-Configure your ACP client to launch goose as a subprocess with this command:
+The example below uses Node.js 22 or later and the
+[ACP TypeScript SDK](https://github.com/agentclientprotocol/typescript-sdk),
+with JavaScript so it can run without a build step. Install the
+[goose CLI](/docs/getting-started/installation) and configure a
+[model provider](/docs/getting-started/providers) first. Use a working directory
+and configured tools appropriate for the access you want the agent to have.
 
 ```bash
-goose acp
+npm install @agentclientprotocol/sdk@1.5.0
 ```
 
-The client communicates with goose through stdin and stdout and manages the
-process for the lifetime of the connection.
+Put the following three JavaScript blocks, in order, in a file named `app.mjs`.
 
-### Connect over HTTP or WebSocket
+## Connect over stdio
 
-Run `goose serve` when your ACP client connects over HTTP or WebSocket:
+Launch `goose acp` as a subprocess. Its stdin and stdout carry ACP messages;
+stderr is for logs. The SDK turns those pipes into a bidirectional connection.
+
+```javascript
+import { spawn } from "node:child_process";
+import { Readable, Writable } from "node:stream";
+import * as acp from "@agentclientprotocol/sdk";
+
+const goose = spawn("goose", ["acp"], {
+  stdio: ["pipe", "pipe", "inherit"],
+});
+
+const stream = acp.ndJsonStream(
+  Writable.toWeb(goose.stdin),
+  Readable.toWeb(goose.stdout),
+);
+```
+
+Your application manages the process lifetime. Keep it running while the user
+works with the agent, and close the connection and process when finished.
+
+## Stream updates into your interface
+
+Register handlers before sending a prompt. While a turn is running, goose sends
+`session/update` notifications with the session ID and an update payload.
+Append text chunks as they arrive, and use tool call IDs to update the matching
+tool activity in your interface.
+
+```javascript
+const app = acp
+  .client({ name: "my-app" })
+  .onNotification(acp.methods.client.session.update, ({ params }) => {
+    const update = params.update;
+    if (
+      update.sessionUpdate === "agent_message_chunk" &&
+      update.content.type === "text"
+    ) {
+      process.stdout.write(update.content.text);
+    } else if (update.sessionUpdate === "tool_call") {
+      console.error(`Tool: ${update.title} (${update.toolCallId})`);
+    } else if (update.sessionUpdate === "tool_call_update") {
+      console.error(`Tool ${update.toolCallId}: ${update.status}`);
+    }
+  })
+  .onRequest(acp.methods.client.session.requestPermission, () => ({
+    outcome: { outcome: "cancelled" },
+  }));
+```
+
+This example cancels permission requests rather than automatically approving
+them. In your app, show the supplied choices to the user and return their
+selection. Permission callbacks are not a sandbox: goose's configured mode
+determines when approval is requested, and its tools run with the backend's
+access to the machine.
+
+## Create a session and send a prompt
+
+Initialize the connection to negotiate the protocol version and capabilities.
+Then create a session with an absolute working directory on the machine running
+goose. The returned session ID identifies the conversation for subsequent
+prompts and notifications.
+
+```javascript
+try {
+  const result = await app.connectWith(stream, async (agent) => {
+    const initialized = await agent.request(acp.methods.agent.initialize, {
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: {},
+    });
+    if (initialized.protocolVersion !== acp.PROTOCOL_VERSION) {
+      throw new Error("Unsupported ACP protocol version");
+    }
+
+    const session = await agent.request(acp.methods.agent.session.new, {
+      cwd: process.cwd(),
+      mcpServers: [],
+    });
+
+    return agent.request(acp.methods.agent.session.prompt, {
+      sessionId: session.sessionId,
+      prompt: [{ type: "text", text: "Say hello in one sentence." }],
+    });
+  });
+
+  console.log(`\nTurn finished: ${result.stopReason}`);
+} finally {
+  goose.kill();
+}
+```
+
+Run it from the directory you want the session to work in:
 
 ```bash
-GOOSE_SERVER__SECRET_KEY='a-long-random-secret' goose serve
+node app.mjs
 ```
 
-`GOOSE_SERVER__SECRET_KEY` sets the secret your clients use to authenticate.
-When you run `goose serve` directly, it listens on `127.0.0.1:3284` and exposes
-the ACP endpoint at `/acp`. To use a different address, pass `--host` and
-`--port`.
+The prompt response reports why the turn stopped; the assistant's text arrives
+through notifications while that request is pending. Do not wait for the prompt
+response before displaying output. One turn may include several model calls
+and tool calls before it completes.
 
-#### Authentication
+`connectWith` closes the connection when its callback finishes. This example
+ends after one prompt; an interactive app keeps that callback running, or uses
+the SDK's `connect` API to manage a longer-lived connection.
 
-HTTP clients authenticate with the `X-Secret-Key` header. WebSocket clients can
-use the same header, but browser-based WebSocket clients must pass the secret in
-the `?token=` query parameter. Requests without the correct secret receive a
-`401 Unauthorized` response.
+## Keep the conversation going
 
-:::warning Local development only
-Passing `--dangerously-unauthenticated` starts `goose serve` without
-authentication. Use it only when the server is isolated from untrusted traffic.
-:::
+Send follow-up prompts with the same session ID to retain context. Create a new
+session for a separate conversation. Route updates by session ID if your
+application supports more than one conversation.
 
-#### Browser origins
+To resume after reconnecting, save the session ID and working directory. Check
+the `loadSession` capability returned by initialization, then use `session/load`.
+History is replayed through the same notification handler. A stop button sends
+`session/cancel` for the active turn rather than killing the backend.
 
-Most clients do not need to configure origins. Browser-based clients served from
-a non-loopback origin must allow that origin when starting goose. To allow both
-a local development client and a deployed web client, specify both origins:
+## Use a server instead
+
+If a subprocess is not the right fit, `goose serve` exposes ACP over HTTP and
+WebSocket. Your app uses the same session and prompt concepts through a
+different transport.
 
 ```bash
-GOOSE_SERVER__SECRET_KEY='a-long-random-secret' goose serve \
-  --allowed-origin 'http://localhost:5173' \
-  --allowed-origin 'https://app.example'
+GOOSE_SERVER__SECRET_KEY='replace-with-a-long-random-secret' goose serve
 ```
 
-Specifying any `--allowed-origin` values replaces the default loopback origins,
-so include every origin your clients need, including localhost origins used for
-development. Origins must match exactly, including the scheme and port.
+By default, the endpoint is `http://127.0.0.1:3284/acp` (or `ws://` for
+WebSocket). Authenticate with `X-Secret-Key`, or the `token` query parameter
+when a browser WebSocket cannot set that header. Keep the backend secret out of
+public frontend code. Browser origins may also need to be allowed explicitly.
 
-For remote deployment, TLS, and certificate setup, see
-[Running a Remote goose Server](/docs/guides/remote-goose-server).
-Run `goose serve --help` for the complete list of options.
+See the [server command options](/docs/guides/goose-cli-commands#serve-options)
+for authentication and origin flags, and the
+[remote server guide](/docs/guides/remote-goose-server) for deployment and TLS.
 
-## ACP client examples
+## Examples and reference
 
-### Clients over stdio
-
-Browse the [official ACP clients directory](https://agentclientprotocol.com/get-started/clients)
-for clients that can run local ACP agents. For a worked example of installing
-and configuring goose as a stdio agent, see the
-[Zed setup example](/docs/gdk/acp/zed).
-
-### goose Desktop over WebSocket
-
-[goose Desktop](https://github.com/aaif-goose/goose/tree/main/ui/desktop) is an
-ACP client that uses WebSocket. It starts `goose serve` locally on an available
-loopback port and connects to its `/acp` endpoint over WebSocket.
+- [Top Goose](/docs/gdk/demos/top-goose) maps GitHub issues and pull requests to
+  persistent conversations with a `goose acp` subprocess.
+- [Berd](/docs/gdk/demos/berd) builds a custom desktop interface around a bundled
+  `goose serve` backend over WebSocket.
+- The [ACP protocol reference](https://agentclientprotocol.com/protocol/v1/overview)
+  defines initialization, sessions, prompts, updates, permissions, and cancellation.
+- The [goose ACP reference](/docs/gdk/acp/reference) documents goose-specific
+  methods and types.

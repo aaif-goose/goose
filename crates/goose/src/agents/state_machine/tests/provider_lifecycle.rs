@@ -8,10 +8,11 @@ use crate::agents::AgentEvent;
 use crate::conversation::fix_conversation;
 use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
 use crate::conversation::Conversation;
+use rmcp::model::{Annotations, Role, TextContent};
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {
-    let (mut pipeline, api) = test_pipeline_with(ProviderFeatures {
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         reports_usage: false,
         preserves_thinking: true,
         resolved_model: Some("resolved-test-model"),
@@ -19,8 +20,9 @@ async fn provider_lifecycle() -> Result<()> {
     })
     .await?;
     pipeline
-        .set_system_prompt_override("CUSTOM_SYSTEM_PROMPT")
+        .set_system_prompt_override(Some("CUSTOM_SYSTEM_PROMPT"))
         .await;
+    let mut pipeline = pipeline.reconstruct().await?;
 
     api.on("inspect this image and add one")
         .reasoning("I should inspect the image before calculating.")
@@ -72,7 +74,7 @@ async fn provider_lifecycle() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .filter(|message| message.role == Role::Assistant)
         .all(|message| {
             message
                 .metadata
@@ -197,6 +199,76 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-2, ToolResponse, "result: 6");
     result.assert_message(-1, Agent, "The total is 6.");
 
+    api.on("add one and two at once")
+        .reasoning("Both additions are independent.")
+        .reply("Adding both.")
+        .call(ADD, value(1))
+        .call(ADD, value(2));
+    api.on("Adding both.").reply("Both added.");
+    let result = pipeline.run(["add one and two at once"]).await?;
+    result.assert_message(-1, Agent, "Both added.");
+    let tool_turns: Vec<&Message> = result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| {
+            message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+        })
+        .collect();
+    let tool_turn = *tool_turns.last().unwrap();
+    assert!(
+        matches!(
+            tool_turn.content.as_slice(),
+            [
+                MessageContent::Thinking(_),
+                MessageContent::Text(_),
+                MessageContent::ToolRequest(_),
+                MessageContent::ToolRequest(_)
+            ]
+        ),
+        "parallel tool calls must share the reasoning's message: {:#?}",
+        tool_turn.content
+    );
+    let emitted_tool_turn = result
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::Message(message)
+                if message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::ToolRequest(_))) =>
+            {
+                Some(message)
+            }
+            _ => None,
+        })
+        .expect("emitted parallel tool calls");
+    assert_eq!(emitted_tool_turn.id, tool_turn.id);
+    assert!(result.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::MessageUsage { message_id, .. } if message_id == &tool_turn.id
+    )));
+
+    let follow_up = api.calls().pop().unwrap();
+    let assistant_tool_calls: Vec<&serde_json::Value> = follow_up
+        .messages()
+        .iter()
+        .filter(|message| {
+            message["tool_calls"]
+                .as_array()
+                .is_some_and(|c| c.len() == 2)
+        })
+        .collect();
+    assert_eq!(assistant_tool_calls.len(), 1, "{:#?}", follow_up.messages());
+    assert_eq!(
+        assistant_tool_calls[0]["reasoning_content"],
+        "Both additions are independent."
+    );
+
     assert!(result.session.usage.total_tokens.is_none());
     assert!(result
         .session
@@ -217,8 +289,29 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-1, Agent, "recovered from no choices");
 
     api.on("return an empty reply").reply("");
+    let calls_before = api.call_count();
     let result = pipeline.run(["return an empty reply"]).await?;
+    assert_eq!(api.call_count() - calls_before, 4);
     result.assert_message(-1, Agent, "model returned an empty response");
+
+    api.on("empty twice").reply("recovered after empty replies");
+    api.on("empty twice").reply("").times(2);
+    let calls_before = api.call_count();
+    let result = pipeline.run(["empty twice"]).await?;
+    assert_eq!(api.call_count() - calls_before, 3);
+    result.assert_message(-1, Agent, "recovered after empty replies");
+
+    let calls_before = api.call_count();
+    let user_only = Message::user().with_content(MessageContent::Text(
+        TextContent::new("only for the user")
+            .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+    ));
+    let result = pipeline.run_message(user_only).await?;
+    assert_eq!(api.call_count(), calls_before);
+    assert_eq!(
+        result.conversation().last().unwrap().as_concat_text(),
+        "only for the user"
+    );
 
     api.on("after empty reply")
         .reply("recovered from empty reply");
@@ -248,7 +341,7 @@ async fn provider_lifecycle() -> Result<()> {
         .iter()
         .all(|call| call.system_contains("CUSTOM_SYSTEM_PROMPT")));
 
-    pipeline.clear_system_prompt_override().await;
+    pipeline.set_system_prompt_override(None).await;
     pipeline = pipeline.with_model("gpt-4.1").await;
     api.on("use the standard prompt")
         .reply("The standard prompt is active.");
@@ -285,7 +378,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .expect("assistant response");
     assert_eq!(
         assistant
@@ -345,7 +438,7 @@ async fn requested_model_is_recorded_without_resolved_model() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .and_then(|message| message.metadata.inference.as_ref())
         .expect("assistant inference metadata");
 

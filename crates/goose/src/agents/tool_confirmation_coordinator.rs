@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::permission::Permission;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub(super) struct SessionToolConfirmationState {
     pub(super) confirmation_submission_lock: Mutex<()>,
     // Tracks requests from the current confirmation pause; None means still unanswered.
     confirmations: StdMutex<HashMap<String, Option<ConfirmationAnswer>>>,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     // Wakes wait_for_all_confirmation_answers; confirmations remains the source of truth.
     confirmation_answered: Notify,
 }
@@ -30,6 +32,7 @@ impl SessionToolConfirmationState {
             turn_lock: Arc::new(Mutex::new(())),
             confirmation_submission_lock: Mutex::new(()),
             confirmations: StdMutex::new(HashMap::new()),
+            extension_lease: Arc::new(StdMutex::new(None)),
             confirmation_answered: Notify::new(),
         }
     }
@@ -87,7 +90,7 @@ impl SessionToolConfirmationState {
     pub(super) async fn wait_for_all_confirmation_answers(
         &self,
         cancel: &CancellationToken,
-    ) -> Result<bool> {
+    ) -> bool {
         loop {
             let answer_received = self.confirmation_answered.notified();
             tokio::pin!(answer_received);
@@ -107,12 +110,12 @@ impl SessionToolConfirmationState {
                 )
             };
             if let Some(has_state_machine_answer) = completed {
-                return Ok(has_state_machine_answer);
+                return has_state_machine_answer;
             }
 
             tokio::select! {
                 _ = answer_received => {}
-                _ = cancel.cancelled() => return Err(anyhow!("state-machine turn cancelled")),
+                _ = cancel.cancelled() => return true,
             }
         }
     }
@@ -122,6 +125,30 @@ impl SessionToolConfirmationState {
             .lock()
             .expect("tool confirmation state unavailable")
             .clear();
+    }
+
+    pub(super) fn extension_lease(&self) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
+        Arc::clone(&self.extension_lease)
+    }
+
+    pub(super) fn start_new_turn(&self) {
+        self.clear_confirmations();
+        self.clear_extension_lease();
+    }
+
+    fn has_confirmations(&self) -> bool {
+        !self
+            .confirmations
+            .lock()
+            .expect("tool confirmation state unavailable")
+            .is_empty()
+    }
+
+    pub(super) fn clear_extension_lease(&self) {
+        *self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable") = None;
     }
 }
 
@@ -138,7 +165,9 @@ impl ActiveTurnGuard {
 
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
-        self.state.clear_confirmations();
+        if !self.state.has_confirmations() {
+            self.state.clear_extension_lease();
+        }
     }
 }
 
@@ -160,6 +189,29 @@ impl ToolConfirmationCoordinator {
             .entry(session_id.to_string())
             .or_insert_with(|| Arc::new(SessionToolConfirmationState::new()))
             .clone()
+    }
+
+    pub(super) fn has_active_turn(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .get(session_id)
+            .is_some_and(|state| state.turn_lock.try_lock().is_err())
+    }
+
+    #[cfg(test)]
+    pub(super) fn tracks(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .contains_key(session_id)
+    }
+
+    pub(super) fn release(&self, session_id: &str) {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .remove(session_id);
     }
 }
 
@@ -198,14 +250,13 @@ mod tests {
 
         let has_state_machine_answer = session
             .wait_for_all_confirmation_answers(&CancellationToken::new())
-            .await
-            .unwrap();
+            .await;
 
         assert!(has_state_machine_answer);
     }
 
     #[test]
-    fn active_turn_drop_clears_pending_requests() {
+    fn interrupted_turn_keeps_pending_requests_until_the_next_turn() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
         let guard = session.try_start_turn().unwrap();
@@ -214,8 +265,12 @@ mod tests {
 
         drop(guard);
 
+        assert!(session.contains_request("request"));
+        let next_turn = session.try_start_turn().unwrap();
+        session.start_new_turn();
         assert!(!session.contains_request("request"));
         assert!(session.answer("request").is_none());
+        drop(next_turn);
     }
 
     #[test]

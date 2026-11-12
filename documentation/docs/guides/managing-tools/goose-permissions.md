@@ -6,7 +6,7 @@ sidebar_label: goose Permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { PanelLeft, Tornado } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 
 goose’s permissions determine how much autonomy it has when modifying files, using extensions, and performing automated actions. By selecting a permission mode, you have full control over how goose interacts with your development environment.
 
@@ -42,20 +42,12 @@ Here's how to configure:
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
 
-    You can change modes before or during a session and it will take effect immediately.
+    Each session has its own permission mode. Use Settings to choose the default mode for new sessions. Existing sessions keep their current mode when you change this default.
 
-     <Tabs groupId="method">
-      <TabItem value="session" label="In Session" default>
-
-      Click the <Tornado className="inline" size={16} /> mode button from the bottom menu. 
-      </TabItem>
-      <TabItem value="settings" label="From Settings">
-        1. Click the <PanelLeft className="inline" size={16} /> button on the top-left to open the sidebar.
-        2. Click the `Settings` button on the sidebar.
-        3. Click `Chat`.
-        4. Under `Mode`, choose the mode you'd like.
-      </TabItem>
-    </Tabs>   
+    1. Click the <PanelLeft className="inline" size={16} /> button on the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click `Chat`.
+    4. Under `Default Mode`, choose the mode you'd like.
   </TabItem>
   <TabItem value="cli" label="goose CLI">
 

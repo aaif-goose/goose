@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "自动压缩阈值"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "立即压缩"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "保存阈值失败：{error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "知道了！"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose 完成任务了。"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "上下文窗口"
   },
   "chatInput.dictationError": {
     "defaultMessage": "语音输入错误"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "更新工作目录失败"
   },
@@ -947,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近的目录"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "未收集到结构化结果"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "结构化结果被拒绝"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "已返回结构化结果"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "正在返回结构化结果…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "无法切换到 {branch}"
@@ -1094,6 +1090,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "确定"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "确定要安装 {name} 扩展吗？命令：{command}"
@@ -1966,13 +1968,16 @@
     "defaultMessage": "URL 无效"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "移动画中画窗口（使用方向键）"
+    "defaultMessage": "移动画中画窗口"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "画中画"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "正在以画中画播放"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "调整画中画窗口大小"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{找到 # 项} other{找到 # 项}}"
@@ -2385,6 +2390,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "聊天"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "正在加载聊天…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "创建时间"
   },
@@ -2631,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "我们采集的内容："
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "正在加载消息…（{renderedCount}/{totalCount}）"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "已隐藏 {count, plural, other {# 条消息}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "模型已更改：{previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "按 Cmd/Ctrl+F 立即加载全部消息以便搜索"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model}（已请求）"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "全部显示"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "所有提示词已重置为默认"
@@ -2718,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "你有未保存的更改"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard 错误：未提供元数据"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "未知提供商"
   },
@@ -2729,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API 格式"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "取消"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "选择提供商"
@@ -3712,7 +3717,7 @@
     "defaultMessage": "使用机器学习模型检测聊天中潜在的提示注入"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "值越高越严格（0.01 = 非常宽松，1.0 = 最严格）"
+    "defaultMessage": "值越低越严格（0.01 = 最严格，1.0 = 非常宽松）"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "连接到 WARP 时，命令注入检测效果最佳（访问分类服务需要 WARP）。"
@@ -3828,9 +3833,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新窗口中打开"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "分享加密的 Nostr 链接"
-  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3870,21 +3872,6 @@
   "sessions.import": {
     "defaultMessage": "导入会话"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "导入链接"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "粘贴 Goose Nostr 分享链接以获取、解密并导入会话。"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "导入 Nostr 会话"
-  },
-  "sessions.importing": {
-    "defaultMessage": "正在导入..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "包含 ACP 会话"
   },
@@ -3912,12 +3899,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜索历史…"
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "任何拥有此链接的人都可以获取并解密该会话。请像对待密钥一样保护它。"
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "加密的 Nostr 分享链接"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "已复制到剪贴板"
   },
@@ -3944,12 +3925,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "会话导入成功"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "已创建加密的 Nostr 分享链接"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "创建 Nostr 分享链接失败：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "更新会话描述失败：{error}"
@@ -4167,6 +4142,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "保存"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "始终展开"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "折叠"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "在聊天中显示模型的思考过程。选择“折叠”时，它会保持收起，直到你展开。"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "不显示"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "显示思考过程"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "添加技能"
   },
@@ -4310,6 +4300,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "配置一个可在配方执行过程中作为工具调用的子配方"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "加载最新进度"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "子代理的进度不会在此实时显示。"
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "返回模型列表"
@@ -4704,11 +4700,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "访问"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "使用基于操作的代理循环。关闭后将使用旧版循环。"
+  "contextWindowIndicator.open": {
+    "defaultMessage": "已使用 {used} / {limit} 个 token。查看上下文窗口内容"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "立即压缩"
+  },
+  "contextXray.free": {
+    "defaultMessage": "空闲"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "无法加载上下文报告。"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} token 上下文窗口"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "刷新"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "重试"
+  },
+  "contextXray.title": {
+    "defaultMessage": "上下文窗口"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "token 数量由 o200k 分词器估算。"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} 个 token · 占上下文窗口的 {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "指令与提示"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "压缩摘要"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "扩展指令"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "对话"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "系统提示词"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "工具定义"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "回合上下文"
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自动"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "已配置"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "输入 API 密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "移除密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "保存密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "使用 Jev 为每个请求选择思考级别。请求文本会发送给 TypeSafe AI；技能和配方斜杠命令会包含展开后的本地指令。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "自动思考级别"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "阻止上限"
@@ -4761,6 +4826,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "阈值 %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "词元上限"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "汇总较早的工具请求和响应以节省上下文。留空时自动设置截断值。"
   },
@@ -4772,5 +4840,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "代理循环"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} 自行保存对话历史，只从 goose 接收最新的提示，因此没有可拆解的请求。"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "已超过自动压缩阈值：在发送下一个请求之前会先压缩对话。"
   }
 }

@@ -17,7 +17,8 @@ import { PanelLeft } from 'lucide-react';
 
 # goose in 5 minutes
 
-goose is an extensible open source AI agent that enhances your software development by automating coding tasks. 
+goose is an extensible open source AI agent that enhances your software development by automating coding tasks.
+To build agents into your own application, explore the [goose Development Kit (GDK)](/docs/gdk/).
 
 This quick tutorial will guide you through:
 
@@ -84,8 +85,8 @@ Let's begin 🚀
       <TabItem value="ui" label="goose Desktop" default>
         <WindowsDesktopInstallButtons/>
         <div style={{ marginTop: '1rem' }}>
-          1. Unzip the downloaded zip file.
-          2. Run the executable file to launch the goose Desktop application.
+          1. Run the downloaded installer and follow the setup wizard, or unzip the portable ZIP.
+          2. Launch goose Desktop from the Start Menu, or run `Goose.exe` from the unzipped folder.
         </div>
       </TabItem>
       <TabItem value="cli" label="goose CLI">

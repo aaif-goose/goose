@@ -673,19 +673,18 @@ prompt: |
   3. Synthesize findings from both subagents into a unified report.
 ```
 
-#### Parallel Subagent Execution
+#### Multiple Subagents
 
-Use `async: true` to run delegates in parallel, then collect each result with `load(source: "<task_id>")`:
+Issue several `delegate` calls in one response; each returns its subagent's result when it finishes:
 
 ```yaml
 prompt: |
-  Run these analyses in parallel:
+  Run these analyses:
   
-  delegate(instructions: "Count lines of code by language", async: true)
-  delegate(instructions: "Find all TODO comments", async: true)
-  delegate(instructions: "List external dependencies", async: true)
+  delegate(instructions: "Count lines of code by language")
+  delegate(instructions: "Find all TODO comments")
+  delegate(instructions: "List external dependencies")
   
-  Use load(source: "<task_id>") for each returned task id.
   Then combine the results into a codebase health report.
 ```
 
@@ -801,8 +800,7 @@ prompt: |
 2. **Parallelize independent tasks** - Multiple subagent calls in one message run concurrently
 3. **Use `sequential_when_repeated: true`** - For tasks that shouldn't run in parallel (e.g., database migrations)
 4. **Scope extensions appropriately** - Give subagents only the tools they need
-5. **Use background delegation for independent work** - Pass `async: true` to `delegate`, then collect results with `load(source: "<task_id>")`
-6. **Handle failures gracefully** - Design workflows to continue even if one subagent fails
+5. **Handle failures gracefully** - Design workflows to continue even if one subagent fails
 
 ### Technical Details
 

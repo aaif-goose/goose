@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compactage automatique à"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compacter maintenant"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Échec de l'enregistrement du seuil : {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Compris !"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose a terminé la tâche."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Fenêtre de contexte"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Erreur de dictée"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Échec de la mise à jour du répertoire de travail"
   },
@@ -947,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Répertoires récents"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Le résultat structuré n'a pas été collecté"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Le résultat structuré a été rejeté"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Résultat structuré renvoyé"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Renvoi du résultat structuré…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Impossible de basculer vers {branch}"
@@ -1094,6 +1090,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Voulez-vous vraiment installer l'extension {name} ? Commande : {command}"
@@ -1966,13 +1968,16 @@
     "defaultMessage": "URL non valide"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Déplacer la fenêtre Picture-in-Picture (utilisez les touches fléchées)"
+    "defaultMessage": "Déplacer la fenêtre Picture-in-Picture"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Lecture en Picture-in-Picture"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Redimensionner la fenêtre Picture-in-Picture"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# élément trouvé} other{# éléments trouvés}}"
@@ -2385,6 +2390,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Discussions"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chargement des discussions…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Créé"
   },
@@ -2631,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Ce que nous collectons :"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Chargement des messages... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# message masqué} other {# messages masqués}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Modèle modifié : {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Appuyez sur Cmd/Ctrl+F pour charger immédiatement tous les messages et effectuer une recherche"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (demandé)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Tout afficher"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Toutes les invites ont été réinitialisées aux valeurs par défaut"
@@ -2718,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Vous avez des modifications non enregistrées"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "Erreur ProviderCard : aucune métadonnée fournie"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Fournisseur inconnu"
   },
@@ -2729,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "Format d'API"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Annuler"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Choisir un fournisseur"
@@ -3712,7 +3717,7 @@
     "defaultMessage": "Utiliser des modèles ML pour détecter une injection de prompt potentielle dans votre conversation"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Des valeurs plus élevées sont plus strictes (0,01 = très indulgent, 1,0 = strict maximum)"
+    "defaultMessage": "Des valeurs plus basses sont plus strictes (0,01 = strict maximum, 1,0 = très indulgent)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "La détection d'injection de commandes fonctionne mieux lorsqu'elle est connectée à WARP (requis pour atteindre le service de classification)."
@@ -3828,9 +3833,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Ouvrir dans une nouvelle fenêtre"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Partager un lien Nostr chiffré"
-  },
   "sessions.cancel": {
     "defaultMessage": "Annuler"
   },
@@ -3870,21 +3872,6 @@
   "sessions.import": {
     "defaultMessage": "Importer une session"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importer un lien"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Collez un lien de partage Goose Nostr pour récupérer, déchiffrer et importer la session."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importer une session Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Importation..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Inclure les sessions ACP"
   },
@@ -3912,12 +3899,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Rechercher dans l'historique..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Toute personne disposant de ce lien peut récupérer et déchiffrer la session. Traitez-le comme un secret."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Lien de partage Nostr chiffré"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copié dans le presse-papiers"
   },
@@ -3944,12 +3925,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Session importée avec succès"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Lien de partage Nostr chiffré créé"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Échec de la création du lien de partage Nostr : {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Échec de la mise à jour de la description de la session : {error}"
@@ -4167,6 +4142,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Enregistrer"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Toujours"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Réduite"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Afficher la réflexion du modèle dans la discussion. Avec « Réduite », elle reste fermée jusqu'à ce que vous l'ouvriez."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Jamais"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Afficher la réflexion"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Ajouter une compétence"
   },
@@ -4310,6 +4300,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configurez une sous-recette qui peut être appelée en tant qu'outil lors de l'exécution de la recette"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Charger la progression la plus récente"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "La progression du sous-agent n'est pas affichée en direct ici."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Retour à la liste des modèles"
@@ -4704,11 +4700,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visitez"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Utilise la boucle d’agent basée sur les opérations. Désactivez-la pour utiliser la boucle héritée."
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} sur {limit} jetons utilisés. Afficher le contenu de la fenêtre de contexte"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compacter maintenant"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Libre"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Impossible de charger le rapport de contexte."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · fenêtre de contexte de {limit} jetons"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Actualiser"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Réessayer"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Fenêtre de contexte"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Le nombre de jetons est estimé avec le tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "sur {limit} jetons · {percent} de la fenêtre de contexte"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructions et indices"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Résumé de compactage"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instructions des extensions"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversation"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt système"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Définitions d'outils"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contexte du tour"
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatique"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configurée"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Clé API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Saisissez la clé API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Supprimer la clé"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Enregistrer la clé"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Utilise Jev pour choisir l’effort de raisonnement de chaque requête. Le texte est envoyé à TypeSafe AI ; les commandes de compétences et de recettes incluent leurs instructions locales développées."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Effort de raisonnement automatique"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Limite de blocage"
@@ -4761,6 +4826,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Seuil %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite de tokens"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Résume les anciennes requêtes et réponses d’outils pour économiser le contexte. Le seuil est automatique si le champ est vide."
   },
@@ -4772,5 +4840,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Boucle d’agent"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} conserve son propre historique de conversation et ne reçoit de goose que le dernier message ; il n'y a donc aucune requête à détailler."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Seuil de compactage automatique dépassé : la conversation est compactée avant l'envoi de la prochaine requête."
   }
 }

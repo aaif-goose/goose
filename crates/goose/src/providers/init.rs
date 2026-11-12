@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
@@ -42,6 +41,7 @@ use crate::providers::base::ProviderType;
 use crate::providers::databricks_def::{self, DatabricksProviderDef};
 use crate::providers::databricks_v2_def::{self, DatabricksV2ProviderDef};
 use crate::providers::google_def::GoogleProviderDef;
+use crate::providers::muse_code_def::{MuseCodeProvider, MuseCodeProviderDef};
 use crate::providers::ollama_def::OllamaProviderDef;
 use crate::providers::openai_def::OpenAiProviderDef;
 use crate::providers::openrouter_def::OpenRouterProviderDef;
@@ -149,6 +149,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         );
         registry
             .register_with_inventory::<NanoGptProvider>(true, Some(registrations::refresh_only()));
+        registry.register_with_inventory::<MuseCodeProviderDef>(
+            true,
+            Some(registrations::muse_code_inventory()),
+        );
         registry.register_with_inventory::<OllamaProviderDef>(
             true,
             Some(registrations::ollama_inventory()),
@@ -197,6 +201,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "kimi_code",
         Arc::new(|| Box::pin(KimiCodeProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "muse_code",
+        Arc::new(|| Box::pin(MuseCodeProvider::cleanup())),
     );
     registry.set_cleanup(
         "chatgpt_codex",
@@ -268,15 +276,6 @@ pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<
     entry.create(extensions).await
 }
 
-pub async fn create_with_working_dir(
-    name: &str,
-    extensions: Vec<ExtensionConfig>,
-    working_dir: PathBuf,
-) -> Result<Arc<dyn Provider>> {
-    let entry = get_from_registry(name).await?;
-    entry.create_with_working_dir(extensions, working_dir).await
-}
-
 pub async fn create_with_default_model(
     name: impl AsRef<str>,
     extensions: Vec<ExtensionConfig>,
@@ -299,13 +298,6 @@ pub async fn cleanup_provider(name: &str) -> Result<()> {
         return cleanup().await;
     }
     Ok(())
-}
-
-pub async fn create_with_named_model(
-    provider_name: &str,
-    extensions: Vec<ExtensionConfig>,
-) -> Result<Arc<dyn Provider>> {
-    create(provider_name, extensions).await
 }
 
 #[cfg(test)]
@@ -359,6 +351,27 @@ mod tests {
             .config_keys
             .iter()
             .any(|key| key.name == "GONDOLA_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
+    async fn test_lemonade_provider_registry_wiring() {
+        let lemonade = get_from_registry("lemonade")
+            .await
+            .expect("lemonade provider should be registered");
+        let meta = lemonade.metadata();
+
+        assert_eq!(meta.name, "lemonade");
+        assert_eq!(meta.display_name, "Lemonade");
+        assert!(meta.default_model.is_empty());
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "LEMONADE_API_KEY" && key.secret));
+        assert!(meta.config_keys.iter().any(|key| {
+            key.name == "LEMONADE_HOST"
+                && !key.required
+                && key.default.as_deref() == Some("http://localhost:13305")
+        }));
     }
 
     #[tokio::test]
@@ -566,6 +579,7 @@ mod tests {
             "gcp_vertex_ai",
             "github_copilot",
             "kimi_code",
+            "muse_code",
             "nano-gpt",
             "tetrate",
             "xai",

@@ -45,7 +45,7 @@ jobs:
 
       - name: Create or update release PR
         id: release-plz
-        uses: release-plz/action@503fe65046e8810d4844f6b3aa12ab599a3549d7 # v0.5.134
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release-pr
           config: release-plz.toml

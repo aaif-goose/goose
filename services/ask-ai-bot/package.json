@@ -1,7 +1,7 @@
 {
   "name": "goose-ask-ai-bot",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Bot created with discraft",
   "module": "index.ts",
   "type": "module",
@@ -15,15 +15,14 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.10",
+    "@ai-sdk/anthropic": "^4.0.72",
     "@octokit/rest": "^22.0.1",
-    "ai": "^7.0.18",
+    "ai": "^7.0.128",
     "consola": "^3.4.2",
-    "dedent": "^1.7.2",
-    "discord.js": "^14.26.4",
-    "dotenv": "^17.4.2",
-    "marked": "^18.0.5",
+    "discord.js": "^14.27.0",
+    "dotenv": "^18.0.5",
+    "marked": "^18.1.0",
     "minisearch": "^7.2.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   }
 }

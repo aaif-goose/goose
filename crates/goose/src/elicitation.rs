@@ -42,29 +42,35 @@ pub(crate) async fn complete_elicitation_with_message(
     response: ElicitationOutcome,
     response_message: &Message,
 ) -> Result<()> {
+    let (session_id, elicitation_id) = session_manager
+        .action_required()
+        .answered_request(session_id, elicitation_id)?;
     let claim = session_manager
         .action_required()
-        .claim_response(session_id, elicitation_id)
+        .claim_response(&session_id, &elicitation_id)
         .await?;
 
     session_manager
-        .add_message(session_id, response_message)
+        .add_message(&session_id, response_message)
         .await?;
 
     claim.submit(response)
 }
 
-pub(crate) async fn complete_elicitation_with_generated_message(
+pub async fn complete_elicitation_with_generated_message(
     session_manager: &SessionManager,
     session_id: &str,
     elicitation_id: &str,
     response: ElicitationOutcome,
 ) -> Result<()> {
-    let response_message = generated_elicitation_response_message(elicitation_id, &response);
+    let (session_id, elicitation_id) = session_manager
+        .action_required()
+        .answered_request(session_id, elicitation_id)?;
+    let response_message = generated_elicitation_response_message(&elicitation_id, &response);
     complete_elicitation_with_message(
         session_manager,
-        session_id,
-        elicitation_id,
+        &session_id,
+        &elicitation_id,
         response,
         &response_message,
     )

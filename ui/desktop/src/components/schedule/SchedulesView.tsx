@@ -79,10 +79,6 @@ const i18n = defineMessages({
   inspectError: { id: 'schedulesView.inspectError', defaultMessage: 'Inspect Job Error' },
 });
 
-interface SchedulesViewProps {
-  onClose?: () => void;
-}
-
 const ScheduleCard: React.FC<{
   job: ScheduledJobDto;
   onNavigateToDetail: (id: string) => void;
@@ -238,7 +234,7 @@ const ScheduleCard: React.FC<{
   );
 };
 
-const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
+const SchedulesView = () => {
   const intl = useIntl();
   const location = useLocation();
   const [schedules, setSchedules] = useState<ScheduledJobDto[]>([]);

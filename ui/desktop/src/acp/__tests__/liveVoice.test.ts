@@ -7,7 +7,6 @@ vi.mock('../acpConnection', () => ({ getAcpClient: vi.fn() }));
 describe('ACP Live voice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(window.electron.getSetting).mockResolvedValue(false);
   });
 
   it('uses the generated availability client for the displayed session', async () => {
@@ -27,7 +26,6 @@ describe('ACP Live voice', () => {
     });
     expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
       sessionId: 'main-session',
-      _meta: { goose: { unrolledAgentLoop: true } },
     });
   });
 
@@ -46,29 +44,7 @@ describe('ACP Live voice', () => {
       status: 'unavailable',
       message: 'Live voice is disabled',
     });
-    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
-      _meta: { goose: { unrolledAgentLoop: true } },
-    });
-  });
-
-  it('passes the legacy loop selection to availability', async () => {
-    vi.mocked(window.electron.getSetting).mockResolvedValue(true);
-    const sessionLiveVoiceAvailability = vi.fn().mockResolvedValue({
-      status: 'unavailable',
-      message: 'Live voice is unavailable while Use Legacy Agent Loop is enabled',
-    });
-    vi.mocked(getAcpClient).mockResolvedValue({
-      goose: {
-        sessionLiveVoiceAvailability_unstable: sessionLiveVoiceAvailability,
-      },
-    } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
-
-    await acpGetLiveVoiceAvailability('main-session');
-
-    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
-      sessionId: 'main-session',
-      _meta: { goose: { unrolledAgentLoop: false } },
-    });
+    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({});
   });
 
   it('uses generated start and stop clients with the interaction ID', async () => {
@@ -92,7 +68,6 @@ describe('ACP Live voice', () => {
     expect(start).toHaveBeenCalledWith({
       sessionId: 'main-session',
       offerSdp: 'offer',
-      _meta: { goose: { unrolledAgentLoop: true } },
     });
     expect(stop).toHaveBeenCalledWith({
       sessionId: 'main-session',

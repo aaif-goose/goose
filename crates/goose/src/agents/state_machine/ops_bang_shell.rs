@@ -68,7 +68,7 @@ impl Operation<Session, GooseEffect> for BangShellOperation {
         );
         let request = Message::assistant()
             .with_tool_request(format!("bang_shell_{}", uuid::Uuid::now_v7()), Ok(call));
-        let request = emit.message(request).await;
+        let request = emit.message(request);
 
         applied([request.into()])
     }

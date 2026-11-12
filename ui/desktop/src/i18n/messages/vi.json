@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Tự động nén tại"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Nén ngay"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Không thể lưu ngưỡng: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Đã hiểu!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose đã hoàn thành tác vụ."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Cửa sổ ngữ cảnh"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Lỗi đọc chính tả"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -947,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Chưa thu thập được kết quả có cấu trúc"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Kết quả có cấu trúc đã bị từ chối"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Đã trả về kết quả có cấu trúc"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Đang trả về kết quả có cấu trúc…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Không thể chuyển sang {branch}"
@@ -1094,6 +1090,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Bạn có chắc chắn muốn cài đặt tiện ích mở rộng {name} không? Lệnh: {command}"
@@ -1966,13 +1968,16 @@
     "defaultMessage": "URL không hợp lệ"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình (dùng phím mũi tên)"
+    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Hình-trong-hình"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Đang phát ở chế độ Hình-trong-hình"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Thay đổi kích cỡ cửa sổ Hình-trong-hình"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# mục được tìm thấy} other{# mục được tìm thấy}}"
@@ -2385,6 +2390,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Cuộc trò chuyện"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Đang tải cuộc trò chuyện…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Đã tạo"
   },
@@ -2631,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Những gì chúng tôi thu thập:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Đang tải tin nhắn... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# tin nhắn đã bị ẩn}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Mô hình đã thay đổi: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Nhấn Cmd/Ctrl+F để tải ngay tất cả tin nhắn nhằm tìm kiếm"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (đã yêu cầu)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Hiển thị tất cả"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Tất cả lời nhắc đã được đặt lại về mặc định"
@@ -2718,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Bạn có các thay đổi chưa lưu"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "Lỗi ProviderCard: Không có metadata được cung cấp"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Nhà cung cấp không xác định"
   },
@@ -2729,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "Định dạng API"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Hủy"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Chọn nhà cung cấp"
@@ -3712,7 +3717,7 @@
     "defaultMessage": "Sử dụng các mô hình ML để phát hiện việc chèn lời nhắc tiềm ẩn trong cuộc trò chuyện của bạn"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Giá trị cao hơn thì nghiêm ngặt hơn (0.01 = rất khoan dung, 1.0 = nghiêm ngặt tối đa)"
+    "defaultMessage": "Giá trị thấp hơn thì nghiêm ngặt hơn (0.01 = nghiêm ngặt tối đa, 1.0 = rất khoan dung)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Phát hiện chèn lệnh hoạt động tốt nhất khi được kết nối với WARP (bắt buộc để truy cập dịch vụ phân loại)."
@@ -3828,9 +3833,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Chia sẻ liên kết Nostr được mã hóa"
-  },
   "sessions.cancel": {
     "defaultMessage": "Hủy"
   },
@@ -3870,21 +3872,6 @@
   "sessions.import": {
     "defaultMessage": "Nhập phiên"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Nhập liên kết"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Dán một liên kết chia sẻ Nostr của Goose để tìm nạp, giải mã và nhập phiên."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nhập phiên Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Đang nhập..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Bao gồm phiên ACP"
   },
@@ -3912,12 +3899,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Tìm kiếm lịch sử..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Bất kỳ ai có liên kết này đều có thể tải về và giải mã phiên làm việc. Hãy coi nó như một bí mật."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Liên kết chia sẻ Nostr được mã hóa"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Đã sao chép vào bộ nhớ tạm"
   },
@@ -3944,12 +3925,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Đã nhập phiên làm việc thành công"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Đã tạo liên kết chia sẻ Nostr được mã hóa"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Không thể tạo liên kết chia sẻ Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Không thể cập nhật mô tả phiên làm việc: {error}"
@@ -4167,6 +4142,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Lưu"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Luôn luôn"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Thu gọn"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Hiển thị suy nghĩ của mô hình trong cuộc trò chuyện. Với \"Thu gọn\", phần này sẽ đóng cho đến khi bạn mở ra."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Không bao giờ"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Hiển thị suy nghĩ"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Thêm kỹ năng"
   },
@@ -4310,6 +4300,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Định cấu hình một công thức con có thể được gọi như công cụ trong quá trình thực thi công thức"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Tải tiến trình mới nhất"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Tiến trình của tác tử con không được hiển thị trực tiếp tại đây."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Quay lại danh sách mô hình"
@@ -4704,11 +4700,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Truy cập"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Sử dụng vòng lặp tác nhân dựa trên thao tác. Tắt tùy chọn này để dùng vòng lặp cũ."
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Đã dùng {used} trong {limit} token. Xem nội dung cửa sổ ngữ cảnh"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Nén ngay"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Còn trống"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Không thể tải báo cáo ngữ cảnh."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · cửa sổ ngữ cảnh {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Làm mới"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Thử lại"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Cửa sổ ngữ cảnh"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Số token được ước tính bằng tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "trong {limit} token · {percent} cửa sổ ngữ cảnh"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Hướng dẫn & gợi ý"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Tóm tắt nén"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Hướng dẫn của tiện ích mở rộng"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Cuộc trò chuyện"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt hệ thống"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Định nghĩa công cụ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Ngữ cảnh lượt"
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Tự động"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Đã cấu hình"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Khóa API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Nhập khóa API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Xóa khóa"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Lưu khóa"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Sử dụng Jev để chọn mức suy luận cho từng yêu cầu. Nội dung được gửi đến TypeSafe AI; lệnh gạch chéo kỹ năng và công thức bao gồm hướng dẫn cục bộ đã mở rộng."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Mức suy luận tự động"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Giới hạn chặn"
@@ -4761,6 +4826,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Ngưỡng %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Giới hạn token"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Tóm tắt các yêu cầu và phản hồi công cụ cũ để tiết kiệm ngữ cảnh. Ngưỡng cắt được đặt tự động khi để trống."
   },
@@ -4772,5 +4840,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Vòng lặp tác nhân"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} giữ lịch sử hội thoại riêng và chỉ nhận lời nhắc mới nhất từ goose, nên không có yêu cầu nào để phân tích."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Đã vượt ngưỡng nén tự động: hội thoại sẽ được nén trước khi gửi yêu cầu tiếp theo."
   }
 }

@@ -22,14 +22,14 @@ interface ChatProviderProps {
   children: ReactNode;
   chat: ChatType;
   setChat: (chat: ChatType) => void;
-  contextKey?: string; // Optional context key, defaults to 'hub'
+  contextKey: string;
 }
 
 export const ChatProvider: React.FC<ChatProviderProps> = ({
   children,
   chat,
   setChat,
-  contextKey = 'hub',
+  contextKey,
 }) => {
   const resetChat = () => {
     setChat({

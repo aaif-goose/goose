@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Otomatik sıkıştırma eşiği"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Şimdi sıkıştır"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Eşik kaydedilemedi: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Anladım!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose görevi tamamladı."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Bağlam penceresi"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Dikte Hatası"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -947,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Son dizinler"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Yapılandırılmış sonuç toplanmadı"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Yapılandırılmış sonuç reddedildi"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürüldü"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürülüyor…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} dalına geçilemedi"
@@ -1094,6 +1090,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "tamam"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name} uzantısını yüklemek istediğinizden emin misiniz? Komut: {command}"
@@ -1966,13 +1968,16 @@
     "defaultMessage": "Geçersiz URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Resim İçinde Resim penceresini taşıyın (ok tuşlarını kullanın)"
+    "defaultMessage": "Resim İçinde Resim penceresini taşıyın"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Resim İçinde Resim"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Resim İçinde Resim'de Oynatma"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Resim İçinde Resim penceresini yeniden boyutlandırın"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# öğe bulundu} other{# öğe bulundu}}"
@@ -2385,6 +2390,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Sohbetler"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Sohbetler yükleniyor…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Oluşturuldu"
   },
@@ -2631,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Ne topluyoruz:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Mesajlar yükleniyor... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# mesaj gizlendi}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Model değişti: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Arama amacıyla tüm mesajları anında yüklemek için Cmd/Ctrl+F tuşlarına basın"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (istenen)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Tümünü göster"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Tüm istemler varsayılanlara sıfırlandı"
@@ -2718,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Kaydedilmemiş değişiklikleriniz var"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard hatası: Meta veri sağlanmadı"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Bilinmeyen Sağlayıcı"
   },
@@ -2729,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API Biçimi"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "İptal"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Sağlayıcıyı Seçin"
@@ -3712,7 +3717,7 @@
     "defaultMessage": "Sohbetinize olası istem eklemeyi tespit etmek için makine öğrenimi modellerini kullanın"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Daha yüksek değerler daha katıdır (0,01 = çok yumuşak, 1,0 = maksimum katı)"
+    "defaultMessage": "Daha düşük değerler daha katıdır (0,01 = maksimum katı, 1,0 = çok yumuşak)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Komut enjeksiyonu algılama, WARP bağlantısı olduğunda en iyi şekilde çalışır (sınıflandırma hizmetine erişmek için gereklidir)."
@@ -3828,9 +3833,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Yeni pencerede aç"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Şifrelenmiş Nostr bağlantısını paylaşın"
-  },
   "sessions.cancel": {
     "defaultMessage": "İptal"
   },
@@ -3870,21 +3872,6 @@
   "sessions.import": {
     "defaultMessage": "Oturumu İçe Aktar"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Bağlantıyı İçe Aktar"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Oturumu almak, şifresini çözmek ve içe aktarmak için bir Goose Nostr paylaşım bağlantısını yapıştırın."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nostr Oturumunu İçe Aktar"
-  },
-  "sessions.importing": {
-    "defaultMessage": "İçe aktarılıyor..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP oturumlarını dahil et"
   },
@@ -3912,12 +3899,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Arama geçmişi..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Bu bağlantıya sahip olan herkes oturumu alıp şifresini çözebilir. Buna bir sırmış gibi davran."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Şifreli Nostr Paylaşım Bağlantısı"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Panoya kopyalandı"
   },
@@ -3944,12 +3925,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Oturum başarıyla içe aktarıldı"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Şifrelenmiş Nostr paylaşım bağlantısı oluşturuldu"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr paylaşım bağlantısı oluşturulamadı: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Oturum açıklaması güncellenemedi: {error}"
@@ -4167,6 +4142,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Kaydet"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Her zaman"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Daraltılmış"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Modelin düşünmesini sohbette gösterin. \"Daraltılmış\" seçeneğinde, siz açana kadar kapalı kalır."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Asla"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Düşünmeyi Göster"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Beceri Ekle"
   },
@@ -4310,6 +4300,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Tarif yürütme sırasında araç olarak çağrılabilecek bir alt tarif yapılandırın"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "En son ilerlemeyi yükle"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Alt ajan ilerlemesi burada canlı olarak gösterilmez."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Model listesine geri dön"
@@ -4704,11 +4700,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Ziyaret edin"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "İşlem tabanlı ajan döngüsünü kullanır. Eski döngüyü kullanmak için kapatın."
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} jetonun {used} kadarı kullanıldı. Bağlam penceresindekileri göster"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Şimdi sıkıştır"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Boş"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Bağlam raporu yüklenemedi."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} jetonluk bağlam penceresi"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Yenile"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Yeniden dene"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Bağlam penceresi"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jeton sayıları o200k belirteçleyicisiyle tahmin edilir."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} jeton · bağlam penceresinin {percent} kadarı"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Talimatlar ve ipuçları"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Sıkıştırma özeti"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Uzantı talimatları"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Sohbet"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Sistem istemi"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Araç tanımları"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Tur bağlamı"
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatik"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Yapılandırıldı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API anahtarı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API anahtarını girin"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Anahtarı kaldır"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Anahtarı kaydet"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Her istek için düşünme düzeyini seçmek üzere Jev’i kullanır. İstek metni TypeSafe AI’a gönderilir; beceri ve tarif eğik çizgi komutları genişletilmiş yerel talimatlarını içerir."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Otomatik düşünme düzeyi"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Engelleme sınırı"
@@ -4761,6 +4826,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Eşik %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Jeton sınırı"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Bağlamdan tasarruf etmek için eski araç isteklerini ve yanıtlarını özetler. Boş bırakıldığında kesme noktası otomatik belirlenir."
   },
@@ -4772,5 +4840,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Ajan döngüsü"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} kendi konuşma geçmişini tutar ve goose'dan yalnızca en son istemi alır; bu nedenle ayrıştırılacak bir istek yok."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Otomatik sıkıştırma eşiği aşıldı: bir sonraki istek gönderilmeden önce konuşma sıkıştırılır."
   }
 }

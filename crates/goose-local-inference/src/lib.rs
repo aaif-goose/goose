@@ -604,11 +604,11 @@ fn strip_image_parts_from_messages(messages: &mut [Value]) {
 /// the model:
 ///
 /// - `ToolRequest` with a `"command"` argument → `$ command`
-/// - `ToolRequest` with a `"code"` argument → `` ```execute_typescript\n…\n``` ``
+/// - `ToolRequest` with a `"code"` argument → `` ```execute_javascript\n…\n``` ``
+/// - Code-mode discovery requests → their named fences with JSON arguments
 /// - `ToolResponse` → `Command output:\n…`
 ///
-/// Only `developer__shell` and `code_execution__execute_typescript` style tool calls are
-/// recognized (by argument shape, not tool name). Tool calls from other extensions
+/// Shell, JavaScript, and code-mode discovery calls are recognized. Tool calls from other extensions
 /// (e.g. custom MCP tools made by a native-tool-calling model earlier in the
 /// conversation) are silently dropped, since the emulator path has no syntax to
 /// represent them.
@@ -625,7 +625,13 @@ fn extract_text_content(msg: &Message) -> String {
             }
             MessageContent::ToolRequest(req) => {
                 if let Ok(call) = &req.tool_call {
-                    if let Some(cmd) = call
+                    if matches!(
+                        call.name.as_ref(),
+                        "list_functions" | "get_function_details"
+                    ) {
+                        let arguments = call.arguments.clone().unwrap_or_default();
+                        parts.push(format!("```{}\n{}\n```", call.name, json!(arguments)));
+                    } else if let Some(cmd) = call
                         .arguments
                         .as_ref()
                         .and_then(|a| a.get("command"))
@@ -638,7 +644,7 @@ fn extract_text_content(msg: &Message) -> String {
                         .and_then(|a| a.get("code"))
                         .and_then(|v| v.as_str())
                     {
-                        parts.push(format!("```execute_typescript\n{}\n```", code));
+                        parts.push(format!("```execute_javascript\n{}\n```", code));
                     }
                 }
             }
@@ -1105,5 +1111,24 @@ mod tests {
         let message = Message::user().with_text("ordinary user content");
 
         assert_eq!(extract_text_content(&message), "ordinary user content");
+    }
+
+    #[test]
+    fn preserves_discovery_requests_in_emulated_history() {
+        for (name, arguments) in [
+            ("list_functions", json!({})),
+            (
+                "get_function_details",
+                json!({"functions": ["example__search"]}),
+            ),
+        ] {
+            let request = rmcp::model::CallToolRequestParams::new(name)
+                .with_arguments(arguments.as_object().unwrap().clone());
+            let message = Message::assistant().with_tool_request("discovery", Ok(request));
+            assert_eq!(
+                extract_text_content(&message),
+                format!("```{name}\n{arguments}\n```")
+            );
+        }
     }
 }
