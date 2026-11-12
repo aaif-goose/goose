@@ -8,6 +8,7 @@ use goose::conversation::message::Message;
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
 use goose::session::SessionType;
+use goose::token_counter::create_token_counter;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
@@ -149,6 +150,14 @@ async fn verify_reply(
         .usage(Usage::new(Some(tokens), Some(0), Some(tokens)))
         .apply()
         .await?;
+    let token_counter = create_token_counter().await.map_err(anyhow::Error::msg)?;
+    let report = services
+        .build_context_report(session_id, &token_counter)
+        .await?;
+    assert_eq!(
+        report.auto_compaction_pending, expected_compaction,
+        "context report: context={context}, tokens={tokens}"
+    );
     let stream = services
         .reply(
             Message::user().with_text("continue"),

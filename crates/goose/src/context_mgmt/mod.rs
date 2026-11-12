@@ -280,12 +280,6 @@ pub async fn check_if_compaction_needed(
     }
 
     let messages = conversation.messages();
-    let config = Config::global();
-    let threshold = threshold_override.unwrap_or_else(|| {
-        config
-            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
-    });
 
     let model_config = session
         .model_config
@@ -293,6 +287,7 @@ pub async fn check_if_compaction_needed(
         .unwrap_or_else(|| ModelConfig::new("unknown"));
     let context_limit =
         crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
+    let threshold = threshold_override.unwrap_or_else(|| auto_compact_threshold(context_limit));
 
     let (current_tokens, _token_source) = match session.usage.total_tokens {
         Some(tokens) => (tokens as usize, "session metadata"),
