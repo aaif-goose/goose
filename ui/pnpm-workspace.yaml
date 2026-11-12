@@ -24,7 +24,7 @@ overrides:
   # it. See #11762. 1.1.19 also fixes a delete/restore ordering bug still
   # present in 1.1.11.
   # Enforced by desktop/src/test/radixSingleVersion.test.ts.
-  '@radix-ui/react-dismissable-layer': 1.1.19
+  '@radix-ui/react-dismissable-layer': 1.2.1
 allowBuilds:
   '@modelcontextprotocol/ext-apps': true
   electron: true

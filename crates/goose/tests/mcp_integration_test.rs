@@ -604,7 +604,7 @@ async fn extension_protocol_traffic_through_a_lease() {
     let discovery_2025 = stdio_fixture(
         "fixture_discovery_2025",
         Some(ProtocolVersion::V_2025_11_25.as_str()),
-        &["inspect_context"],
+        &["inspect_context", "elicit"],
     );
     let manager_ext = platform("extensionmanager");
     let http = http_fixture("fixture_http", &http_server.url);
@@ -685,7 +685,8 @@ async fn extension_protocol_traffic_through_a_lease() {
         modern.instance_id
     );
 
-    // Elicitation: the server asks, the host answers on the originating call.
+    // Server-to-client elicitation requires the legacy protocol: the server
+    // asks, the host answers on the originating call.
     // Without an echoed _meta the client correlates by the one active call;
     // with two active calls that is ambiguous unless the server echoes.
     let elicit = |id: &str, echo_meta: bool| {
@@ -694,7 +695,10 @@ async fn extension_protocol_traffic_through_a_lease() {
         async move {
             lease
                 .call(
-                    request("fixture__elicit", Some(object!({ "echo_meta": echo_meta }))),
+                    request(
+                        "fixture_discovery_2025__elicit",
+                        Some(object!({ "echo_meta": echo_meta })),
+                    ),
                     CallRequest::new(id),
                     CancellationToken::default(),
                 )

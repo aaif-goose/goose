@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Download, Github } from 'lucide-react';
+import { AlertTriangle, Bug, Download } from 'lucide-react';
 import { Button } from './button';
 import { toastError } from '../../toasts';
 import { defineMessages, useIntl } from '../../i18n';
@@ -251,7 +251,7 @@ Add any other context about the problem here.
             disabled={isDownloading || isFilingBug}
             className="bg-slate-600 text-white hover:bg-slate-700"
           >
-            <Github size={16} className="mr-1" />
+            <Bug size={16} className="mr-1" />
             {isFilingBug ? intl.formatMessage(i18n.opening) : intl.formatMessage(i18n.fileBug)}
           </Button>
         </div>

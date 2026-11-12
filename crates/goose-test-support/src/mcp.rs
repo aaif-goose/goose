@@ -126,11 +126,7 @@ impl McpFixtureServer {
         &self,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        let protocol_version = context
-            .peer
-            .peer_info()
-            .map(|info| info.protocol_version.clone())
-            .unwrap_or_default();
+        let protocol_version = context.protocol_version().unwrap_or_default();
         let roots = if protocol_version < ProtocolVersion::V_2026_07_28 {
             context
                 .peer

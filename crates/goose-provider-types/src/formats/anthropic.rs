@@ -661,12 +661,7 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 }
 
 fn usage_from_anthropic_fields(usage: &Value) -> Usage {
-    let field = |key: &str| {
-        usage
-            .get(key)
-            .and_then(|v| v.as_u64())
-            .map(|v| v.min(i32::MAX as u64) as i32)
-    };
+    let field = |key: &str| usage.get(key).and_then(|v| v.as_i64());
 
     Usage::from_cache_exclusive_input(
         Some(field("input_tokens").unwrap_or(0)),
@@ -2482,6 +2477,21 @@ mod tests {
             thinking_type(&cfg_with_effort("claude-fable-5", "high")),
             ThinkingType::Adaptive
         );
+    }
+
+    #[test]
+    fn test_thinking_type_fable_5_2_is_always_on_adaptive() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        for model in ["claude-fable-5-2", "system.ai.claude-fable-5-2"] {
+            for effort in ["off", "low", "high"] {
+                assert_eq!(
+                    thinking_type(&cfg_with_effort(model, effort)),
+                    ThinkingType::Adaptive,
+                    "{model} {effort}"
+                );
+            }
+        }
     }
 
     #[test]
