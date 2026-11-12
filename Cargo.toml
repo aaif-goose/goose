@@ -18,7 +18,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "3.4.1", default-features = false, features = ["schemars"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["schemars"] }
 agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 agent-client-protocol-http = { version = "2.2.0", default-features = false }
@@ -107,6 +107,13 @@ llama-cpp-2 = { version = "=0.1.146", default-features = false, features = ["sam
 llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
 
 [patch.crates-io]
+# SQLx 0.9.0 excludes the libsqlite3-sys release fixing RUSTSEC-2026-0459.
+# Remove these patches when a SQLx release supports libsqlite3-sys 0.39.
+sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+sqlx-core = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+sqlx-macros = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+sqlx-macros-core = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+sqlx-sqlite = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
 cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 
 # Dependencies don't need debug info. You rarely step-debug into third-party
