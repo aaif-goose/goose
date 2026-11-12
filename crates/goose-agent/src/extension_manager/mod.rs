@@ -37,8 +37,8 @@ mod streamable_http;
 
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
 pub use operation::{
-    instructions_prompt, ExtensionOperation, LeaseResolver, PendingCall, ToolCallBatch, TurnLease,
-    EXPIRED_TOOL_REQUEST,
+    instructions_prompt, ExtensionOperation, ExtensionOperationHost, LeaseResolver, PendingCall,
+    ToolCallBatch, TurnLease, EXPIRED_TOOL_REQUEST,
 };
 pub use registration::StdioCommand;
 pub use registration::{ConnectRequest, Connector, DynPartialEq, Registration};

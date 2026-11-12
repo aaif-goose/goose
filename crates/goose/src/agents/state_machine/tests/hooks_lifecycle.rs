@@ -617,7 +617,7 @@ async fn pre_tool_use_result_reports_unevaluated_when_the_only_hook_exits_withou
 
 /// Builds a recipe whose structured response forces the model through
 /// `recipe__final_output`, which `FinalOutputOperation` executes itself rather than
-/// handing to `ToolExecutionOperation`.
+/// handing to `ExtensionOperation`.
 fn final_output_recipe() -> crate::recipe::Recipe {
     crate::recipe::Recipe::builder()
         .title("Hook parity recipe")
@@ -748,7 +748,7 @@ async fn rejected_final_output_after_a_stop_hook_block_does_not_reshow_the_block
 
 /// Writes a skill `SkillOperation` can load, and returns the tool arguments that
 /// load it. `load_skill` is executed by `SkillOperation`, which is registered
-/// ahead of `ToolExecutionOperation`, so it never reaches the hook wrapper.
+/// ahead of `ExtensionOperation`, so it never reaches the hook wrapper.
 fn install_skill(working_dir: &std::path::Path) -> serde_json::Value {
     let skill_dir = working_dir.join(".agents/skills/review");
     std::fs::create_dir_all(&skill_dir).expect("skill dir");

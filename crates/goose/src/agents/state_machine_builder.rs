@@ -16,13 +16,13 @@ use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
-    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource,
-    GooseToolApproval, InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation,
-    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    CompactionOperation, ContextRelevanceOperation, DoctorOperation, ExtensionPromptOperation,
+    FinalOutputOperation, GooseEffect, GooseExtensionOperationHost, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseSkillSource, GooseToolApproval, InferenceRunner, Operation,
+    PlatformExtensionOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
+    StopHookOperation, SubagentOperation, SubdirectoryHintsOperation, ToolApprovalOperation,
+    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -128,6 +128,12 @@ pub(crate) fn build_state_machine(
     let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
         SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
     );
+    let extension_host = Arc::new(GooseExtensionOperationHost::new(
+        Arc::clone(&services),
+        defer_tools,
+        always_load_tools,
+        Arc::clone(&tool_snapshot),
+    ));
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
@@ -140,12 +146,12 @@ pub(crate) fn build_state_machine(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
         )),
-        Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&services),
-            Arc::clone(&tool_snapshot),
-            defer_tools,
-            always_load_tools,
-        )),
+        Arc::new(SubdirectoryHintsOperation),
+        Arc::new(ExtensionPromptOperation {
+            manager: Arc::clone(&services),
+            tools: Arc::clone(&tool_snapshot),
+        }),
+        Arc::new(goose_agent::extension_manager::ExtensionOperation::with_host(extension_host)),
         Arc::new(RemainingToolCallsOperation),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
