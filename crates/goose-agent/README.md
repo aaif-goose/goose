@@ -193,6 +193,18 @@ paths, built-in skills, and tool registration remain host responsibilities;
 these helpers do not automatically change the agent pipeline. Filesystem
 discovery is not a secure file-open API.
 
+## Extension configuration and shared MCP types
+
+On native targets, `extension` provides stdio/HTTP transport configuration,
+environment filtering, and secret resolution through `ExtensionConfigResolver`.
+Goose composes these transport configs with its own builtin/platform variants,
+keeping the persisted application schema unchanged.
+
+`action_required_manager`, `subprocess`, and `tool_visibility` provide shared MCP
+support without application persistence, builtin factories, or container policy.
+The extension manager itself still lives in Goose; the next extraction moves it
+behind an application adapter without adding Goose-only config variants to GDK.
+
 ## WebAssembly
 
 The crate builds for `wasm32-unknown-unknown` and runs without a tokio runtime,

@@ -741,7 +741,7 @@ fn fixture_config(
 }
 
 fn missing_stdio(name: &str, temp_dir: &Path) -> ExtensionConfig {
-    ExtensionConfig::Stdio {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: String::new(),
         cmd: temp_dir.join("missing-binary").display().to_string(),
@@ -752,7 +752,7 @@ fn missing_stdio(name: &str, temp_dir: &Path) -> ExtensionConfig {
         cwd: None,
         bundled: None,
         available_tools: vec![],
-    }
+    })
 }
 
 async fn session_selecting(

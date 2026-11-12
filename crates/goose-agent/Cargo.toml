@@ -39,4 +39,16 @@ wasm-bindgen-futures = "0.4.78"
 wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+once_cell.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }
 serde_yaml.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "rt-multi-thread"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+serial_test.workspace = true
+tempfile.workspace = true
+test-case.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.189"

@@ -511,7 +511,7 @@ fn apply_claude_desktop_candidate(
 
         let entry = crate::config::extensions::ExtensionEntry {
             enabled: enable_imported_extensions,
-            config: ExtensionConfig::Stdio {
+            config: ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
                 name,
                 description: "Imported from Claude Desktop".to_string(),
                 cmd: command,
@@ -522,7 +522,7 @@ fn apply_claude_desktop_candidate(
                 cwd: None,
                 bundled: None,
                 available_tools: Vec::new(),
-            },
+            }),
         };
         target_extensions.insert(key, serde_yaml::to_value(entry)?);
         result.imported.extensions += 1;
