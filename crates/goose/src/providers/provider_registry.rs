@@ -86,8 +86,9 @@ impl ProviderEntry {
         {
             model.supports_vision = Some(supports_vision);
         }
-        if let Some(catalog_provider_id) = &self.catalog_provider_id {
-            model = model.with_canonical_vision_support(catalog_provider_id);
+        if let Some(catalog_provider_id) = self.catalog_provider_id.as_deref() {
+            model =
+                model.with_provider_vision_support(&self.metadata.name, Some(catalog_provider_id));
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -500,6 +501,43 @@ mod tests {
                 .unwrap();
             assert_eq!(overridden.supports_vision, Some(!canonical_vision));
         }
+    }
+
+    #[test]
+    fn renamed_provider_keeps_catalog_vision_support() {
+        const KIMI: &str = "accounts/fireworks/models/kimi-k3";
+        let mut registry = ProviderRegistry::new(None);
+        for (name, catalog_provider_id) in [
+            ("custom_fireworks_live", Some("fireworks-ai")),
+            ("custom_fireworks_plain", None),
+        ] {
+            let mut config = test_config();
+            config.name = name.to_string();
+            config.catalog_provider_id = catalog_provider_id.map(str::to_string);
+            config.models = vec![ModelInfo::new(KIMI)];
+            registry.register_with_name::<OpenAiProviderDef, _, _>(
+                &config,
+                ProviderType::Custom,
+                false,
+                |_| unreachable!("constructor is not used by this test"),
+                move || Ok(InventoryIdentityInput::new(name, name)),
+            );
+        }
+
+        let with_catalog = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(with_catalog.supports_vision, Some(true));
+
+        let explicit = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI).with_vision_support(false))
+            .unwrap();
+        assert_eq!(explicit.supports_vision, Some(false));
+
+        let without_catalog = registry.entries["custom_fireworks_plain"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(without_catalog.supports_vision, None);
     }
 
     #[test]

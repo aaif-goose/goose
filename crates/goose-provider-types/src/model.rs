@@ -145,6 +145,24 @@ impl ModelConfig {
         self
     }
 
+    /// Resolves vision support the same way for every provider path (the goose
+    /// provider registry and the SDK). An explicit `supports_vision` is kept.
+    /// Otherwise the catalog identity is tried first, so a custom provider with
+    /// a non-canonical name that mirrors a catalogued service (e.g.
+    /// `fireworks-live` → `fireworks-ai`) keeps the catalog model's vision
+    /// support, and the provider's own name is the fallback.
+    pub fn with_provider_vision_support(
+        self,
+        provider_name: &str,
+        catalog_provider_id: Option<&str>,
+    ) -> Self {
+        let config = match catalog_provider_id {
+            Some(catalog_provider_id) => self.with_canonical_vision_support(catalog_provider_id),
+            None => self,
+        };
+        config.with_canonical_vision_support(provider_name)
+    }
+
     pub fn with_canonical_limits(mut self, provider_name: &str) -> Self {
         let canonical = self.canonical_model(provider_name);
 
@@ -960,6 +978,46 @@ mod tests {
             let config = ModelConfig::new("gpt-4o")
                 .with_vision_support(false)
                 .with_canonical_limits("openai");
+            assert_eq!(config.supports_vision, Some(false));
+        }
+    }
+
+    mod provider_vision_support {
+        use super::*;
+
+        const KIMI: &str = "accounts/fireworks/models/kimi-k3";
+
+        #[test]
+        fn uses_catalog_provider_id_for_renamed_provider() {
+            let config = ModelConfig::new(KIMI)
+                .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));
+            assert_eq!(config.supports_vision, Some(true));
+        }
+
+        #[test]
+        fn renamed_provider_without_catalog_provider_id_is_unresolved() {
+            let config =
+                ModelConfig::new(KIMI).with_provider_vision_support("fireworks-live", None);
+            assert_eq!(config.supports_vision, None);
+        }
+
+        #[test]
+        fn falls_back_to_provider_name() {
+            let without_catalog =
+                ModelConfig::new("gpt-4o").with_provider_vision_support("openai", None);
+            assert_eq!(without_catalog.supports_vision, Some(true));
+
+            // The catalog has no fireworks-ai/gpt-4o, so the name lookup decides.
+            let catalog_miss = ModelConfig::new("gpt-4o")
+                .with_provider_vision_support("openai", Some("fireworks-ai"));
+            assert_eq!(catalog_miss.supports_vision, Some(true));
+        }
+
+        #[test]
+        fn preserves_explicit_vision_setting() {
+            let config = ModelConfig::new(KIMI)
+                .with_vision_support(false)
+                .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));
             assert_eq!(config.supports_vision, Some(false));
         }
     }

@@ -522,12 +522,8 @@ impl ProviderModelConfig {
         provider_name: &str,
         catalog_provider_id: Option<&str>,
     ) -> Result<ModelConfig, GooseError> {
-        let mut config = ModelConfig::new(&self.model_name);
-        if let Some(id) = catalog_provider_id {
-            config = config.with_canonical_vision_support(id);
-        }
-        let mut config = config
-            .with_canonical_vision_support(provider_name)
+        let mut config = ModelConfig::new(&self.model_name)
+            .with_provider_vision_support(provider_name, catalog_provider_id)
             .with_temperature(self.temperature)
             .with_max_tokens(self.max_tokens)
             .with_toolshim(self.toolshim)
@@ -1283,9 +1279,8 @@ pub fn default_compaction_templates() -> CompactionTemplates {
 #[uniffi::export]
 pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, GooseError> {
     let provider = goose_providers::declarative::from_json(&json, None, EnvKeyResolver {})?;
-    let catalog_provider_id = serde_json::from_str::<Value>(&json)
-        .ok()
-        .and_then(|v| v.get("catalog_provider_id")?.as_str().map(str::to_owned));
+    let catalog_provider_id =
+        goose_providers::declarative::deserialize_provider_config(&json)?.catalog_provider_id;
     Ok(Provider::with_catalog_id(provider, catalog_provider_id))
 }
 
@@ -1803,6 +1798,36 @@ mod tests {
             .unwrap();
 
         assert_eq!(model.supports_vision, None);
+    }
+
+    #[test]
+    fn declarative_provider_carries_catalog_provider_id() {
+        let json = |catalog: Option<&str>| {
+            serde_json::json!({
+                "name": "fireworks-live",
+                "engine": "openai",
+                "display_name": "Fireworks Live",
+                "description": null,
+                "api_key_env": "",
+                "base_url": "https://api.fireworks.ai/inference/v1",
+                "models": [],
+                "headers": null,
+                "timeout_seconds": null,
+                "supports_streaming": true,
+                "requires_auth": false,
+                "catalog_provider_id": catalog,
+            })
+            .to_string()
+        };
+
+        let provider = declarative_provider_from_json(json(Some("fireworks-ai"))).unwrap();
+        assert_eq!(
+            provider.handle.catalog_provider_id.as_deref(),
+            Some("fireworks-ai")
+        );
+
+        let provider = declarative_provider_from_json(json(None)).unwrap();
+        assert_eq!(provider.handle.catalog_provider_id, None);
     }
 
     #[test]
