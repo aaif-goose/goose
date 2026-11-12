@@ -340,6 +340,54 @@ describe('numbers stored as strings', () => {
   });
 });
 
+describe('values goose rejects for an integer field', () => {
+  it.each([
+    ['Retry timeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', '1.5', 300],
+    ['Retry timeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', 1.5, 300],
+    ['Turns', 'GOOSE_MAX_TURNS', '-1', 1000],
+    ['Turns', 'GOOSE_MAX_TURNS', -1, 1000],
+    ['Turns', 'GOOSE_MAX_TURNS', '20.0', 1000],
+    ['Block limit', 'GOOSE_STOP_HOOK_BLOCK_CAP', 2 ** 32, 8],
+    ['Cutoff', 'GOOSE_TOOL_CALL_CUTOFF', '-1', null],
+    ['Cutoff', 'GOOSE_TOOL_CALL_CUTOFF', 1.5, null],
+  ] as const)(
+    '%s (%s) set to %j shows the default goose uses (%s) and writes nothing when left unchanged',
+    async (label, key, stored, shown) => {
+      userConfig[key] = stored;
+      const user = userEvent.setup();
+      await renderLoaded();
+      await waitFor(() => expect(input(label)).toHaveValue(shown));
+
+      await user.click(input(label));
+      await user.tab();
+
+      expect(upsert).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['Retry timeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', '1.5', 900],
+    ['Turns', 'GOOSE_MAX_TURNS', '-1', 200],
+  ] as const)(
+    'clearing %s (%s) set to %j still removes it and shows %s',
+    async (label, key, stored, effective) => {
+      userConfig[key] = stored;
+      lowerConfig[key] = effective;
+      const user = userEvent.setup();
+      await renderLoaded();
+
+      await user.clear(input(label));
+      await user.tab();
+
+      await waitFor(() => expect(input(label)).toHaveValue(effective));
+      expect(remove).toHaveBeenCalledWith(key, false);
+      expect(userConfig).not.toHaveProperty(key);
+      expect(upsert).not.toHaveBeenCalled();
+    }
+  );
+});
+
 describe('rapid edits', () => {
   const key = 'GOOSE_AUTO_COMPACT_TOKEN_LIMIT';
 

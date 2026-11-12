@@ -152,21 +152,30 @@ type NumberField = {
   display: (configValue: unknown) => string;
 };
 
-const numericString = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+const U32_MAX = 2 ** 32 - 1;
+const U64_MAX = 2 ** 64 - 1;
 
 // Quoted YAML numbers such as "20" are read back as strings; goose parses them as numbers.
-function parseConfigNumber(value: unknown) {
+function parseFloatSetting(value: unknown) {
   const number =
-    typeof value === 'string' && numericString.test(value.trim()) ? Number(value) : value;
+    typeof value === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(value.trim())
+      ? Number(value)
+      : value;
   return typeof number === 'number' && Number.isFinite(number) ? number : undefined;
 }
 
-function readNumber(value: unknown, fallback: number) {
-  return parseConfigNumber(value) ?? fallback;
+// goose reads every field except the threshold as an unsigned integer, so a fraction, a negative
+// number or a quoted "20.0" is rejected there and the default applies.
+function parseUnsignedSetting(value: unknown, limit: number) {
+  const number = typeof value === 'string' && /^\+?\d+$/.test(value.trim()) ? Number(value) : value;
+  return typeof number === 'number' && Number.isInteger(number) && number >= 0 && number <= limit
+    ? number
+    : undefined;
 }
 
 const asIs = (value: number) => value;
-const displayNumber = (fallback: number) => (value: unknown) => String(readNumber(value, fallback));
+const displayUnsigned = (fallback: number, limit: number) => (value: unknown) =>
+  String(parseUnsignedSetting(value, limit) ?? fallback);
 
 const numberFields: Record<NumberSetting, NumberField> = {
   maxTurns: {
@@ -175,7 +184,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 10000,
     integer: true,
     toConfig: asIs,
-    display: displayNumber(1000),
+    display: displayUnsigned(1000, U32_MAX),
   },
   compactionThreshold: {
     configKey: 'GOOSE_AUTO_COMPACT_THRESHOLD',
@@ -184,7 +193,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     step: 0.1,
     integer: false,
     toConfig: (percent) => percent / 100,
-    display: (value) => String(Number((readNumber(value, 0.8) * 100).toFixed(2))),
+    display: (value) => String(Number(((parseFloatSetting(value) ?? 0.8) * 100).toFixed(2))),
   },
   compactionTokenLimit: {
     configKey: 'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
@@ -193,7 +202,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     step: 1000,
     integer: true,
     toConfig: asIs,
-    display: displayNumber(225000),
+    display: displayUnsigned(225000, U64_MAX),
   },
   toolCallCutoff: {
     configKey: 'GOOSE_TOOL_CALL_CUTOFF',
@@ -201,7 +210,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 100000,
     integer: true,
     toConfig: asIs,
-    display: (value) => String(parseConfigNumber(value) ?? ''),
+    display: (value) => String(parseUnsignedSetting(value, U64_MAX) ?? ''),
   },
   retryTimeout: {
     configKey: 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS',
@@ -209,7 +218,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 3600,
     integer: true,
     toConfig: asIs,
-    display: displayNumber(300),
+    display: displayUnsigned(300, U64_MAX),
   },
   failureTimeout: {
     configKey: 'GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS',
@@ -217,7 +226,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 3600,
     integer: true,
     toConfig: asIs,
-    display: displayNumber(600),
+    display: displayUnsigned(600, U64_MAX),
   },
   stopHookBlockCap: {
     configKey: 'GOOSE_STOP_HOOK_BLOCK_CAP',
@@ -225,7 +234,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 100,
     integer: true,
     toConfig: asIs,
-    display: displayNumber(8),
+    display: displayUnsigned(8, U32_MAX),
   },
 };
 
