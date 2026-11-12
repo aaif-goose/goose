@@ -5,7 +5,6 @@
 //! collects one response message. [`ExtensionOperation`] composes them into an
 //! [`Operation`] using the shared tool-approval state.
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -15,12 +14,13 @@ use goose_provider_types::conversation::message::{Message, ProviderMetadata};
 use goose_provider_types::conversation::Conversation;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, Tool};
 
-use super::{CallRequest, ExtensionLease};
+use super::{get_tool_owner, recover_mangled_tool_name, CallRequest, ExtensionLease};
 use crate::events::AgentEvent;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
 use crate::tool_execution::ToolCallResult;
+use crate::tool_visibility::is_tool_visible_to_model;
 
 /// The answer to a tool request whose lease is gone, so its tool may now belong to
 /// different extensions.
@@ -228,7 +228,10 @@ where
             .lease
             .set(self.resolver.resolve(session).await?)
             .tools()
-            .await)
+            .await
+            .into_iter()
+            .filter(is_tool_visible_to_model)
+            .collect())
     }
 
     async fn prompt_parts(
@@ -279,19 +282,22 @@ where
             // would claim, rather than run them against extensions they did not see.
             None => (Arc::new(self.resolver.resolve(session).await?), true),
         };
-        let names: HashSet<String> = lease
-            .tools()
-            .await
-            .into_iter()
-            .map(|tool| tool.name.to_string())
-            .collect();
+        let tools = lease.tools().await;
+        let tool_owners: Vec<_> = tools.iter().map(get_tool_owner).collect();
         let mine: Vec<_> = pending
             .into_iter()
             .filter(|request| {
-                request
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|call| names.contains(call.name.as_ref()))
+                request.tool_call.as_ref().map_or(true, |call| {
+                    tools.iter().any(|tool| tool.name == call.name)
+                        || recover_mangled_tool_name(
+                            &call.name,
+                            tools
+                                .iter()
+                                .zip(&tool_owners)
+                                .map(|(tool, owner)| (tool.name.as_ref(), owner.as_deref())),
+                        )
+                        .is_some()
+                })
             })
             .collect();
         if mine.is_empty() {
@@ -301,15 +307,18 @@ where
         let mut calls = Vec::new();
         for request in mine {
             let request = request.clone();
-            let call = request.tool_call.clone().expect("filtered to parsed calls");
-            let call = if expired {
+            let call = if let Err(error) = &request.tool_call {
+                ToolCallResult::from(Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                    "The tool call could not be parsed: {error}. Correct the arguments and try again."
+                ))])))
+            } else if expired {
                 ToolCallResult::from(Ok(CallToolResult::error(vec![ContentBlock::text(
                     EXPIRED_TOOL_REQUEST,
                 )])))
             } else {
                 lease
                     .call(
-                        call,
+                        request.tool_call.clone().expect("parsed call"),
                         CallRequest::new(request.id.clone()),
                         emit.cancel_token().child_token(),
                     )
