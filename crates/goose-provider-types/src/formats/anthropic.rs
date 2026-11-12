@@ -2480,6 +2480,21 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_type_fable_5_2_is_always_on_adaptive() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        for model in ["claude-fable-5-2", "system.ai.claude-fable-5-2"] {
+            for effort in ["off", "low", "high"] {
+                assert_eq!(
+                    thinking_type(&cfg_with_effort(model, effort)),
+                    ThinkingType::Adaptive,
+                    "{model} {effort}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_thinking_type_opus_5_5_cannot_disable_thinking() {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
 
