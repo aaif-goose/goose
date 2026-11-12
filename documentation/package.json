@@ -13,6 +13,7 @@
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "test": "node --test scripts/*.test.js",
+    "test-structured-data": "node --test scripts/test-structured-data.js",
     "typecheck": "tsc",
     "serve-static": "node scripts/serve-static.js"
   },
@@ -21,6 +22,7 @@
     "@docusaurus/plugin-client-redirects": "^3.9.2",
     "@docusaurus/preset-classic": "^3.9.2",
     "@mdx-js/react": "^3.0.0",
+    "@stackql/docusaurus-plugin-structured-data": "1.8.0",
     "autoprefixer": "^10.4.17",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
