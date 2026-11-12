@@ -481,6 +481,8 @@ where
             return not_applicable();
         }
 
+        let session_snapshot = Arc::new(session.clone());
+        let conversation_snapshot = Arc::new(conversation.clone());
         let mut calls = Vec::new();
         for request in mine {
             let request = request.clone();
@@ -531,8 +533,8 @@ where
                 .await;
                 let host = Arc::clone(&self.host);
                 let batch = self.batch.clone();
-                let session = session.clone();
-                let conversation = conversation.clone();
+                let session = Arc::clone(&session_snapshot);
+                let conversation = Arc::clone(&conversation_snapshot);
                 let lease = Arc::clone(&lease);
                 let request = request.clone();
                 let result = call.result;
