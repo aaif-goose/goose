@@ -4225,6 +4225,7 @@ dependencies = [
  "futures",
  "gethostname",
  "goose-acp-macros",
+ "goose-acp-types",
  "goose-mcp",
  "goose-test-support",
  "http 1.5.0",
@@ -4247,7 +4248,6 @@ dependencies = [
  "oi-kit-context-management",
  "oi-kit-download-manager",
  "oi-kit-providers",
- "oi-kit-sdk-types",
  "once_cell",
  "openssl",
  "opentelemetry",
@@ -4326,6 +4326,17 @@ version = "1.59.0"
 dependencies = [
  "quote",
  "syn 3.0.5",
+]
+
+[[package]]
+name = "goose-acp-types"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "agent-client-protocol",
+ "agent-client-protocol-schema",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6859,9 +6870,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "goose-acp-types",
  "js-sys",
  "oi-kit-provider-types",
- "oi-kit-sdk-types",
  "regex",
  "rmcp",
  "schemars 1.2.2",
@@ -6875,6 +6886,26 @@ dependencies = [
  "uuid",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+]
+
+[[package]]
+name = "oi-kit-bindings"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "agent-client-protocol",
+ "agent-client-protocol-schema",
+ "anyhow",
+ "base64 0.23.1",
+ "futures",
+ "goose-acp-types",
+ "oi-kit-context-management",
+ "oi-kit-providers",
+ "rmcp",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "uniffi",
 ]
 
 [[package]]
@@ -6918,6 +6949,7 @@ dependencies = [
  "env-lock",
  "etcetera",
  "futures",
+ "goose-acp-types",
  "hf-hub",
  "include_dir",
  "llama-cpp-2",
@@ -6925,7 +6957,6 @@ dependencies = [
  "minijinja",
  "oi-kit-download-manager",
  "oi-kit-provider-types",
- "oi-kit-sdk-types",
  "pulldown-cmark",
  "regex",
  "rmcp",
@@ -7008,37 +7039,6 @@ dependencies = [
  "urlencoding",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "oi-kit-sdk"
-version = "0.1.0-alpha.14"
-dependencies = [
- "agent-client-protocol",
- "agent-client-protocol-schema",
- "anyhow",
- "base64 0.23.1",
- "futures",
- "oi-kit-context-management",
- "oi-kit-providers",
- "oi-kit-sdk-types",
- "rmcp",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "uniffi",
-]
-
-[[package]]
-name = "oi-kit-sdk-types"
-version = "0.1.0-alpha.14"
-dependencies = [
- "agent-client-protocol",
- "agent-client-protocol-schema",
- "schemars 1.2.2",
- "serde",
- "serde_json",
 ]
 
 [[package]]

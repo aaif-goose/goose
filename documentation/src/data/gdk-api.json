@@ -3,7 +3,7 @@
     {
       "version": "0.1.0-alpha.14",
       "docVersion": "0.1",
-      "source": "crates/oi-kit-sdk/src/bindings.rs",
+      "source": "crates/oi-kit-bindings/src/bindings.rs",
       "functions": [
         {
           "name": "anthropic_default_model",

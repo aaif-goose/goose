@@ -4,7 +4,7 @@ use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use crate::config::Config;
 use async_trait::async_trait;
-use oi_kit_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, ServerNotification, Tool,

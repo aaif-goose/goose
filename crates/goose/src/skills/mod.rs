@@ -20,8 +20,8 @@ use crate::plugins::{
 use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
 use oi_kit_agent::skills::SkillRoot;
-use oi_kit_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};

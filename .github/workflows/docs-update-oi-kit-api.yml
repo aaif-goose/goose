@@ -1,4 +1,4 @@
-# Regenerates oi-kit API reference data from the oi-kit-sdk UniFFI surface and
+# Regenerates oi-kit API reference data from the oi-kit-bindings UniFFI surface and
 # opens a PR when it drifts from what is committed.
 #
 # The generator is deterministic and needs no build or API key, so this stays a
@@ -38,7 +38,7 @@ jobs:
           title: "docs: update oi-kit API reference"
           body: |
             Regenerated `documentation/src/data/gdk-api.json` from
-            `crates/oi-kit-sdk/src/bindings.rs`.
+            `crates/oi-kit-bindings/src/bindings.rs`.
 
             - **Triggered by**: ${{ github.event_name }}
             - **Release**: ${{ github.event.release.tag_name || 'n/a' }}

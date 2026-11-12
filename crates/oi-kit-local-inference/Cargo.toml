@@ -19,7 +19,7 @@ mlx = ["dep:safemlx", "dep:safemlx-lm", "dep:safemlx-lm-utils"]
 hf-hub = [
     "dep:futures",
     "dep:oi-kit-download-manager",
-    "dep:oi-kit-sdk-types",
+    "dep:goose-acp-types",
     "dep:hf-hub",
 ]
 
@@ -34,7 +34,7 @@ encoding_rs = { version = "0.8.35", default-features = false }
 futures = { workspace = true, optional = true }
 oi-kit-download-manager = { version = "0.1.0-alpha.14", path = "../oi-kit-download-manager", optional = true }
 oi-kit-provider-types = { version = "0.1.0-alpha.14", path = "../oi-kit-provider-types", default-features = false }
-oi-kit-sdk-types = { version = "0.1.0-alpha.14", path = "../oi-kit-sdk-types", default-features = false, optional = true }
+goose-acp-types = { version = "0.1.0-alpha.14", path = "../goose-acp-types", default-features = false, optional = true }
 hf-hub = { version = "1.0.0", default-features = false, optional = true }
 include_dir = { workspace = true }
 llama-cpp-2 = { workspace = true }

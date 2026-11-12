@@ -1,6 +1,6 @@
 use super::*;
 use crate::session::Session;
-use oi_kit_sdk_types::custom_requests::{AgentMention, SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{AgentMention, SourceEntry, SourceType};
 use std::collections::HashSet;
 use std::path::PathBuf;
 

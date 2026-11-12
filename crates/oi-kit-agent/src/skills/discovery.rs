@@ -1,6 +1,6 @@
 //! Native filesystem skill discovery under caller-supplied roots.
 
-use oi_kit_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};

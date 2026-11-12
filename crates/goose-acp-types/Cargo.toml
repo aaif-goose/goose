@@ -1,0 +1,20 @@
+[package]
+name = "goose-acp-types"
+version = "0.1.0-alpha.14"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Custom `_goose/*` ACP request and notification types for goose"
+
+[dependencies]
+agent-client-protocol = { workspace = true }
+agent-client-protocol-schema = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+schemars = { workspace = true, features = ["derive"] }
+
+[package.metadata.cargo-machete]
+# Used to provide extras imports for agent-client-protocol
+ignored = ["agent-client-protocol-schema"]

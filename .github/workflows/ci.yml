@@ -161,8 +161,8 @@ jobs:
           CARGO_INCREMENTAL: "0"
           RUSTFLAGS: "-D warnings"
 
-  oi-kit-sdk-uniffi:
-    name: Check oi-kit-sdk UniFFI
+  oi-kit-bindings-uniffi:
+    name: Check oi-kit-bindings UniFFI
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -180,8 +180,8 @@ jobs:
       - name: Check UniFFI feature
         run: |
           export CARGO_INCREMENTAL=0
-          cargo check -p oi-kit-sdk --features uniffi --locked
-          cargo test -p oi-kit-sdk --features uniffi --locked
+          cargo check -p oi-kit-bindings --features uniffi --locked
+          cargo test -p oi-kit-bindings --features uniffi --locked
         env:
           RUST_MIN_STACK: 8388608
           GOOSE_DISABLE_KEYRING: 1
@@ -383,7 +383,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Check oi-kit crate membership and publication order
-        run: python3 crates/oi-kit-sdk/scripts/oi-kit-release.py check-config
+        run: python3 crates/oi-kit-bindings/scripts/oi-kit-release.py check-config
 
   oi-kit-api-docs-check:
     name: Check oi-kit API Reference is Up-to-Date

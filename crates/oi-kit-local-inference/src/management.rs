@@ -9,7 +9,7 @@ use super::{
 };
 use crate::download_manager::{get_download_manager, DownloadProgress, DownloadStatus};
 use anyhow::{anyhow, Result};
-use oi_kit_sdk_types::custom_requests::{
+use goose_acp_types::custom_requests::{
     LocalInferenceBuiltinChatTemplatesListResponse, LocalInferenceChatTemplate,
     LocalInferenceDownloadProgressDto, LocalInferenceDownloadState, LocalInferenceHfGgufFileDto,
     LocalInferenceHfModelInfoDto, LocalInferenceHfModelVariantDto,

@@ -162,7 +162,7 @@ fs-err = { version = "3.1", default-features = false }
 oi-kit-context-management = { path = "../oi-kit-context-management" }
 oi-kit-providers = { path = "../oi-kit-providers", default-features = false }
 oi-kit-download-manager = { path = "../oi-kit-download-manager" }
-oi-kit-sdk-types = { path = "../oi-kit-sdk-types" }
+goose-acp-types = { path = "../goose-acp-types" }
 oi-kit-agent = { path = "../oi-kit-agent" }
 rand = { workspace = true }
 tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }

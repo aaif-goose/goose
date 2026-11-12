@@ -25,7 +25,7 @@ tracing = { workspace = true }
 tracing-futures = { workspace = true }
 serde.workspace = true
 regex = { workspace = true, features = ["unicode-perl"] }
-oi-kit-sdk-types = { version = "0.1.0-alpha.14", path = "../oi-kit-sdk-types", default-features = false }
+goose-acp-types = { version = "0.1.0-alpha.14", path = "../goose-acp-types", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rmcp = { workspace = true, features = ["local"] }

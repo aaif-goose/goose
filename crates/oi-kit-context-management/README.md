@@ -52,6 +52,6 @@ wrapper type.
 
 ## Cross-language access
 
-Python and Kotlin reach compaction through [`oi-kit-sdk`](../oi-kit-sdk), which
+Python and Kotlin reach compaction through [`oi-kit-bindings`](../oi-kit-bindings), which
 wraps this crate in its UniFFI bindings. The trait-based `compact` API is Rust
 only.

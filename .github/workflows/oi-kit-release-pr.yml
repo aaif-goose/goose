@@ -8,13 +8,13 @@ on:
     paths:
       # BEGIN oi-kit CRATE PATHS
       - "crates/oi-kit-provider-types/**"
-      - "crates/oi-kit-sdk-types/**"
+      - "crates/goose-acp-types/**"
       - "crates/oi-kit-download-manager/**"
       - "crates/oi-kit-local-inference/**"
       - "crates/oi-kit-providers/**"
       - "crates/oi-kit-agent/**"
       - "crates/oi-kit-context-management/**"
-      - "crates/oi-kit-sdk/**"
+      - "crates/oi-kit-bindings/**"
       # END oi-kit CRATE PATHS
       - "release-plz.toml"
       - "Cargo.lock"
@@ -61,12 +61,12 @@ jobs:
           branch=$(jq -r '.head_branch' <<< "$RELEASE_PR")
           git fetch origin "$branch"
           git switch "$branch"
-          just --justfile crates/oi-kit-sdk/justfile sync-release-artifacts
+          just --justfile crates/oi-kit-bindings/justfile sync-release-artifacts
           if git diff --quiet; then
             exit 0
           fi
           git add \
-            crates/oi-kit-sdk/python/pyproject.toml \
+            crates/oi-kit-bindings/python/pyproject.toml \
             documentation/src/data/gdk-api.json
           git commit -m "chore: synchronize oi-kit release artifacts"
           git push origin HEAD:"$branch"
@@ -75,5 +75,5 @@ jobs:
         if: steps.release-plz.outputs.prs_created == 'true'
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r \
-            '.packages[] | select(.name == "oi-kit-sdk") | .version')
-          just --justfile crates/oi-kit-sdk/justfile check-version "$version"
+            '.packages[] | select(.name == "oi-kit-bindings") | .version')
+          just --justfile crates/oi-kit-bindings/justfile check-version "$version"

@@ -16,7 +16,7 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
-use oi_kit_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     MetaObject, ServerCapabilities, Tool,

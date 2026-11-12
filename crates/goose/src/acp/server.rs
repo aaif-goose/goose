@@ -1722,7 +1722,7 @@ fn status_message_from_system_notification(
     }
 }
 
-/// Conversion to the sdk-types wire mirror carried by `message_usage`.
+/// Conversion to the acp-types wire mirror carried by `message_usage`.
 fn message_usage_update(
     message_id: Option<String>,
     usage: &crate::conversation::message::MessageUsage,

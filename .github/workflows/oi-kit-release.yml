@@ -32,7 +32,7 @@ jobs:
       - name: Validate package versions
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
-        run: just --justfile crates/oi-kit-sdk/justfile check-version "$RELEASE_VERSION"
+        run: just --justfile crates/oi-kit-bindings/justfile check-version "$RELEASE_VERSION"
 
   crates-io:
     name: Publish Rust crates
@@ -61,7 +61,7 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
-        run: just --justfile crates/oi-kit-sdk/justfile crates-publish false
+        run: just --justfile crates/oi-kit-bindings/justfile crates-publish false
 
   maven-central:
     name: Publish Maven package
@@ -93,7 +93,7 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: oi-kit-sdk-wheel-*
+          pattern: oi-kit-wheel-*
           path: dist
           merge-multiple: true
 

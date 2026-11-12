@@ -8,7 +8,7 @@
 //!   [`CompactionOutput`]) letting a caller read from and write back to its own
 //!   conversation representation. Rust only.
 //!
-//! Cross-language (Python/Kotlin) access is exposed by `oi-kit-sdk`, which
+//! Cross-language (Python/Kotlin) access is exposed by `oi-kit-bindings`, which
 //! wraps this crate in its uniffi bindings.
 
 pub mod format;

@@ -11,7 +11,7 @@ release = true
 version_group = "oi-kit"
 
 [[package]]
-name = "oi-kit-sdk-types"
+name = "goose-acp-types"
 release = true
 version_group = "oi-kit"
 
@@ -47,6 +47,6 @@ release = true
 version_group = "oi-kit"
 
 [[package]]
-name = "oi-kit-sdk"
+name = "oi-kit-bindings"
 release = true
 version_group = "oi-kit"

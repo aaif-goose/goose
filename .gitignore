@@ -87,15 +87,15 @@ result
 gooseselftest/
 .tasks/
 
-# Generated oi-kit-sdk Maven bindings and native libraries
-/crates/oi-kit-sdk/maven/src/main/
-/crates/oi-kit-sdk/maven/.gradle/
-/crates/oi-kit-sdk/maven/.kotlin/
-/crates/oi-kit-sdk/maven/build/
+# Generated oi-kit-bindings Maven bindings and native libraries
+/crates/oi-kit-bindings/maven/src/main/
+/crates/oi-kit-bindings/maven/.gradle/
+/crates/oi-kit-bindings/maven/.kotlin/
+/crates/oi-kit-bindings/maven/build/
 
-# Generated oi-kit-sdk Kotlin example build artifacts
-/crates/oi-kit-sdk/examples/uniffi/kotlin/.gradle/
-/crates/oi-kit-sdk/examples/uniffi/kotlin/.kotlin/
-/crates/oi-kit-sdk/examples/uniffi/kotlin/build/
+# Generated oi-kit-bindings Kotlin example build artifacts
+/crates/oi-kit-bindings/examples/uniffi/kotlin/.gradle/
+/crates/oi-kit-bindings/examples/uniffi/kotlin/.kotlin/
+/crates/oi-kit-bindings/examples/uniffi/kotlin/build/
 
 live-in-desktop-design
