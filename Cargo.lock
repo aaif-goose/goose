@@ -4170,6 +4170,8 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -6692,19 +6694,15 @@ dependencies = [
 name = "oi-kit-bindings"
 version = "0.1.0-alpha.15"
 dependencies = [
- "agent-client-protocol",
- "agent-client-protocol-schema",
  "anyhow",
  "base64 0.23.1",
  "futures",
- "goose-acp-types",
  "oi-kit-context-management",
  "oi-kit-providers",
  "rmcp",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
- "tokio-util",
  "uniffi",
 ]
 
