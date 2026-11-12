@@ -996,6 +996,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 total_tokens: row.try_get("total_tokens")?,
                 cache_read_input_tokens: row.try_get("cache_read_tokens").ok().flatten(),
                 cache_write_input_tokens: row.try_get("cache_write_tokens").ok().flatten(),
+                cache_write_1h_input_tokens: None,
             },
             accumulated_usage: Usage {
                 input_tokens: row.try_get("accumulated_input_tokens")?,
@@ -1009,6 +1010,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                     .try_get("accumulated_cache_write_tokens")
                     .ok()
                     .flatten(),
+                cache_write_1h_input_tokens: None,
             },
             accumulated_cost: row.try_get("accumulated_cost").ok().flatten(),
             schedule_id: row.try_get("schedule_id")?,
