@@ -27,7 +27,7 @@ jobs:
     
     steps:
       - name: 'Download previous metrics'
-        uses: dawidd6/action-download-artifact@d63b86af1b34672e53c440b1b83979861906bad7  # v24
+        uses: dawidd6/action-download-artifact@a92c7ae74cf1df8810783758581e485ac3aaa309  # v28
         with:
           name: health-metrics
           path: .
