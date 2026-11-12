@@ -1175,10 +1175,13 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
 fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
     use rmcp::ServiceExt;
     tokio::spawn(async move {
-        let running = goose_test_support::mcp::McpFixtureServer::new()
-            .serve((read, write))
-            .await
-            .unwrap();
+        // Server-to-client elicitation is only supported by the legacy protocol.
+        let running = goose_test_support::mcp::McpFixtureServer::with_max_protocol_version(
+            rmcp::model::ProtocolVersion::V_2025_11_25,
+        )
+        .serve((read, write))
+        .await
+        .unwrap();
         let _ = running.waiting().await;
     });
 }
