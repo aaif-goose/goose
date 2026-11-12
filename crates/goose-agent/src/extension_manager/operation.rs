@@ -10,9 +10,12 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
-use goose_provider_types::conversation::message::{Message, ProviderMetadata};
+use goose_provider_types::conversation::message::{
+    Message, ProviderMetadata, ToolRequest, ToolResponse,
+};
 use goose_provider_types::conversation::Conversation;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, Tool};
+use tracing_futures::Instrument;
 
 use super::{get_tool_owner, recover_mangled_tool_name, CallRequest, ExtensionLease};
 use crate::events::AgentEvent;
@@ -171,24 +174,182 @@ pub trait LeaseResolver<S>: Send + Sync {
     async fn resolve(&self, session: &S) -> Result<ExtensionLease>;
 }
 
-/// Advertises a session's extension tools and runs the calls the model makes to them,
-/// after approval. Put `ToolApprovalOperation` before this operation, including for
-/// an always-allow policy. Each inference resolves a fresh lease and calls run against
-/// the one that advertised them; requests from a turn whose lease is gone are expired.
-/// Build one per turn.
-pub struct ExtensionOperation<S> {
-    resolver: Arc<dyn LeaseResolver<S>>,
-    lease: TurnLease,
-    batch: ToolCallBatch,
+/// Application policy around the shared extension execution lifecycle.
+///
+/// The operation owns dispatch, response recording and cancellation. Hosts can
+/// customize advertisement and decorate calls without implementing another executor.
+#[async_trait]
+pub trait ExtensionOperationHost<S: Sync>: LeaseResolver<S> {
+    fn name(&self) -> &'static str {
+        "extensions"
+    }
+
+    async fn tools(&self, _session: &S, lease: &ExtensionLease) -> Result<Vec<Tool>> {
+        Ok(lease
+            .tools()
+            .await
+            .into_iter()
+            .filter(is_tool_visible_to_model)
+            .collect())
+    }
+
+    /// Tools routed to this operation, which may be broader than the advertised
+    /// subset when a host defers schemas. Hosts must still validate advertisement.
+    async fn execution_tools(&self, _session: &S, lease: &ExtensionLease) -> Result<Vec<Tool>> {
+        Ok(lease.tools().await)
+    }
+
+    /// Claim expired requests without starting replacement extensions.
+    fn claims_expired_request(&self, _messages: &[Message], _request: &ToolRequest) -> bool {
+        false
+    }
+
+    fn call_span(&self, _session: &S, _request: &ToolRequest) -> tracing::Span {
+        tracing::Span::none()
+    }
+
+    fn dispatch_error(&self, _request: &ToolRequest, _error: &ErrorData) {}
+
+    async fn prompt_parts(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        lease: &ExtensionLease,
+    ) -> Result<Vec<(String, String)>> {
+        let prompt = instructions_prompt(&lease.instructions().await);
+        Ok(if prompt.is_empty() {
+            Vec::new()
+        } else {
+            vec![("extensions".to_string(), prompt)]
+        })
+    }
+
+    /// Reject requests before dispatch, hooks or fresh lease resolution.
+    fn accepts_request(&self, _messages: &[Message], _request: &ToolRequest) -> bool {
+        true
+    }
+
+    /// Explicitly allow generated requests to acquire a lease without inference.
+    /// This must never authorize model requests whose advertised lease has expired.
+    fn can_resolve_for_requests(&self, _messages: &[Message], _requests: &[&ToolRequest]) -> bool {
+        false
+    }
+
+    fn expired_result(&self) -> CallToolResult {
+        CallToolResult::error(vec![ContentBlock::text(EXPIRED_TOOL_REQUEST)])
+    }
+
+    fn skipped_result(&self, _session: &S) -> Option<CallToolResult> {
+        None
+    }
+
+    /// Return a denial to answer the request without dispatch or post-call hooks.
+    async fn before_call(
+        &self,
+        _session: &S,
+        _lease: &ExtensionLease,
+        _request: &ToolRequest,
+    ) -> Option<CallToolResult> {
+        None
+    }
+
+    /// Return a result for a host-provided tool, or dispatch through the lease.
+    async fn call_override(
+        &self,
+        _session: &S,
+        _lease: &ExtensionLease,
+        _request: &ToolRequest,
+    ) -> Option<ToolCallResult> {
+        None
+    }
+
+    /// Transform the result before it is recorded or passed to post-call hooks.
+    fn decorate_call(
+        &self,
+        _session: &S,
+        _lease: &ExtensionLease,
+        _request: &ToolRequest,
+        call: ToolCallResult,
+    ) -> ToolCallResult {
+        call
+    }
+
+    /// Runs after the transformed response is recorded for cancellation recovery.
+    async fn after_call(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        _lease: &ExtensionLease,
+        _request: &ToolRequest,
+        _response: &ToolResponse,
+    ) {
+    }
+
+    fn on_result(
+        &self,
+        _request_id: &str,
+        _result: &Result<CallToolResult, ErrorData>,
+        _emit: &Emitter,
+    ) {
+    }
+
+    fn emit_response(&self, response: Message, emit: &Emitter) -> Message {
+        emit.message(response)
+    }
 }
 
-impl<S> ExtensionOperation<S> {
+struct DefaultHost<S>(Arc<dyn LeaseResolver<S>>);
+
+#[async_trait]
+impl<S: Send + Sync> LeaseResolver<S> for DefaultHost<S> {
+    async fn resolve(&self, session: &S) -> Result<ExtensionLease> {
+        self.0.resolve(session).await
+    }
+}
+
+#[async_trait]
+impl<S: Send + Sync> ExtensionOperationHost<S> for DefaultHost<S> {}
+
+/// Advertises extension capabilities and executes approved requests against the
+/// lease that advertised them. Build one per turn, after `ToolApprovalOperation`.
+pub struct ExtensionOperation<S> {
+    host: Arc<dyn ExtensionOperationHost<S>>,
+    lease: TurnLease,
+    batch: ToolCallBatch,
+    shared_snapshot: bool,
+}
+
+impl<S: Send + Sync + 'static> ExtensionOperation<S> {
     pub fn new(resolver: Arc<dyn LeaseResolver<S>>) -> Self {
+        Self::with_host(Arc::new(DefaultHost(resolver)))
+    }
+
+    pub fn with_host(host: Arc<dyn ExtensionOperationHost<S>>) -> Self {
         Self {
-            resolver,
+            host,
             lease: TurnLease::default(),
             batch: ToolCallBatch::default(),
+            shared_snapshot: false,
         }
+    }
+
+    /// Use the lease prepared together with the host's inference session snapshot.
+    /// The host must replace this lease before collecting each inference's input.
+    pub fn with_inference_lease(mut self, lease: TurnLease) -> Self {
+        self.lease = lease;
+        self.shared_snapshot = true;
+        self
+    }
+
+    fn finish<E: From<Message>>(&self, emit: &Emitter) -> Result<OperationResult<E>> {
+        let (actions, response) = self.batch.take();
+        let response = response.expect("each call records a response");
+        applied(
+            actions
+                .into_iter()
+                .chain([self.host.emit_response(response, emit)])
+                .map(E::from),
+        )
     }
 
     pub fn lease(&self) -> &TurnLease {
@@ -198,7 +359,7 @@ impl<S> ExtensionOperation<S> {
     async fn current(&self, session: &S) -> Result<Arc<ExtensionLease>> {
         match self.lease.get() {
             Some(lease) => Ok(lease),
-            None => Ok(self.lease.set(self.resolver.resolve(session).await?)),
+            None => Ok(self.lease.set(self.host.resolve(session).await?)),
         }
     }
 }
@@ -216,35 +377,29 @@ pub fn instructions_prompt(lease_instructions: &[crate::extension::ExtensionInfo
 #[async_trait]
 impl<S, E> Operation<S, E> for ExtensionOperation<S>
 where
-    S: Send + Sync + 'static,
+    S: Clone + Send + Sync + 'static,
     E: From<Message> + Send + 'static,
 {
     fn name(&self) -> &'static str {
-        "extensions"
+        self.host.name()
     }
 
     async fn inference_tools(&self, session: &S) -> Result<Vec<Tool>> {
-        Ok(self
-            .lease
-            .set(self.resolver.resolve(session).await?)
-            .tools()
-            .await
-            .into_iter()
-            .filter(is_tool_visible_to_model)
-            .collect())
+        let lease = if self.shared_snapshot {
+            self.current(session).await?
+        } else {
+            self.lease.set(self.host.resolve(session).await?)
+        };
+        self.host.tools(session, &lease).await
     }
 
     async fn prompt_parts(
         &self,
         session: &S,
-        _conversation: &Conversation,
+        conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        let prompt = instructions_prompt(&self.current(session).await?.instructions().await);
-        Ok(if prompt.is_empty() {
-            Vec::new()
-        } else {
-            vec![("extensions".to_string(), prompt)]
-        })
+        let lease = self.current(session).await?;
+        self.host.prompt_parts(session, conversation, &lease).await
     }
 
     async fn moim_parts(&self, session: &S, _conversation: &Conversation) -> Result<Vec<String>> {
@@ -260,7 +415,7 @@ where
         let (actions, response) = self.batch.take();
         actions
             .into_iter()
-            .chain(response.map(|response| emit.message(response)))
+            .chain(response.map(|response| self.host.emit_response(response, emit)))
             .map(E::from)
             .collect()
     }
@@ -271,18 +426,40 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let pending =
-            crate::tool_call_state::pending_tool_requests(messages_since_kickoff(conversation)?);
+        let messages = messages_since_kickoff(conversation)?;
+        let pending: Vec<_> = crate::tool_call_state::pending_tool_requests(messages)
+            .into_iter()
+            .filter(|request| self.host.accepts_request(messages, request))
+            .collect();
         if pending.is_empty() {
             return not_applicable();
         }
+        if self.lease.get().is_none()
+            && !self.host.can_resolve_for_requests(messages, &pending)
+            && pending
+                .iter()
+                .all(|request| self.host.claims_expired_request(messages, request))
+        {
+            for request in pending {
+                let result = match &request.tool_call {
+                    Ok(_) => self.host.expired_result(),
+                    Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
+                        "The tool call could not be parsed: {error}. Correct the arguments and try again."
+                    ))]),
+                };
+                self.batch
+                    .record(&request.id, Ok(result), request.metadata.as_ref());
+            }
+            return self.finish(emit);
+        }
         let (lease, expired) = match self.lease.get() {
             Some(lease) => (lease, false),
-            // No inference advertised these this turn: answer the ones a fresh lease
-            // would claim, rather than run them against extensions they did not see.
-            None => (Arc::new(self.resolver.resolve(session).await?), true),
+            None if self.host.can_resolve_for_requests(messages, &pending) => {
+                (self.lease.set(self.host.resolve(session).await?), false)
+            }
+            None => (Arc::new(self.host.resolve(session).await?), true),
         };
-        let tools = lease.tools().await;
+        let tools = self.host.execution_tools(session, &lease).await?;
         let tool_owners: Vec<_> = tools.iter().map(get_tool_owner).collect();
         let mine: Vec<_> = pending
             .into_iter()
@@ -312,18 +489,73 @@ where
                     "The tool call could not be parsed: {error}. Correct the arguments and try again."
                 ))])))
             } else if expired {
-                ToolCallResult::from(Ok(CallToolResult::error(vec![ContentBlock::text(
-                    EXPIRED_TOOL_REQUEST,
-                )])))
+                ToolCallResult::from(Ok(self.host.expired_result()))
+            } else if let Some(result) = self.host.skipped_result(session) {
+                ToolCallResult::from(Ok(result))
             } else {
-                lease
-                    .call(
-                        request.tool_call.clone().expect("parsed call"),
-                        CallRequest::new(request.id.clone()),
-                        emit.cancel_token().child_token(),
-                    )
-                    .await
-                    .unwrap_or_else(|error| ToolCallResult::from(Err(error)))
+                let span = self.host.call_span(session, &request);
+                let denied = self
+                    .host
+                    .before_call(session, &lease, &request)
+                    .instrument(span.clone())
+                    .await;
+                if let Some(denied) = denied {
+                    self.batch
+                        .record(&request.id, Ok(denied), request.metadata.as_ref());
+                    continue;
+                }
+                let call = async {
+                    let call = if let Some(call) =
+                        self.host.call_override(session, &lease, &request).await
+                    {
+                        call
+                    } else {
+                        match lease
+                            .call(
+                                request.tool_call.clone().expect("filtered to parsed calls"),
+                                CallRequest::new(request.id.clone()),
+                                emit.cancel_token().child_token(),
+                            )
+                            .await
+                        {
+                            Ok(call) => call,
+                            Err(error) => {
+                                self.host.dispatch_error(&request, &error);
+                                ToolCallResult::from(Err(error))
+                            }
+                        }
+                    };
+                    self.host.decorate_call(session, &lease, &request, call)
+                }
+                .instrument(span.clone())
+                .await;
+                let host = Arc::clone(&self.host);
+                let batch = self.batch.clone();
+                let session = session.clone();
+                let conversation = conversation.clone();
+                let lease = Arc::clone(&lease);
+                let request = request.clone();
+                let result = call.result;
+                ToolCallResult {
+                    result: Box::new(
+                        async move {
+                            let result = result.await;
+                            batch.record(&request.id, result.clone(), request.metadata.as_ref());
+                            let response = ToolResponse {
+                                id: request.id.clone(),
+                                tool_result: result.clone(),
+                                metadata: request.metadata.clone(),
+                            };
+                            host.after_call(&session, &conversation, &lease, &request, &response)
+                                .await;
+                            result
+                        }
+                        .instrument(span)
+                        .boxed(),
+                    ),
+                    notification_stream: call.notification_stream,
+                    action_required_stream: call.action_required_stream,
+                }
             };
             calls.push(PendingCall {
                 request_id: request.id,
@@ -331,15 +563,11 @@ where
                 call,
             });
         }
-        self.batch.run(calls, emit, &|_, _| {}).await;
-
-        let (actions, response) = self.batch.take();
-        let response = response.expect("each call records a response");
-        applied(
-            actions
-                .into_iter()
-                .chain([emit.message(response)])
-                .map(E::from),
-        )
+        self.batch
+            .run(calls, emit, &|id, result| {
+                self.host.on_result(id, result, emit)
+            })
+            .await;
+        self.finish(emit)
     }
 }

@@ -24,6 +24,10 @@ pub mod host;
 mod lease;
 mod operation;
 mod registration;
+mod request;
+pub use request::{
+    pending_tool_requests, request_was_advertised, requests_can_resolve_a_lease, ToolDisposition,
+};
 #[cfg(feature = "mcp-stdio")]
 mod stdio;
 #[cfg(feature = "mcp-stdio")]
@@ -33,8 +37,8 @@ mod streamable_http;
 
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
 pub use operation::{
-    instructions_prompt, ExtensionOperation, LeaseResolver, PendingCall, ToolCallBatch, TurnLease,
-    EXPIRED_TOOL_REQUEST,
+    instructions_prompt, ExtensionOperation, ExtensionOperationHost, LeaseResolver, PendingCall,
+    ToolCallBatch, TurnLease, EXPIRED_TOOL_REQUEST,
 };
 pub use registration::StdioCommand;
 pub use registration::{ConnectRequest, Connector, Registration};

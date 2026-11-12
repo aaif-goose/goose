@@ -1013,3 +1013,414 @@ async fn resource_visibility_does_not_depend_on_tool_discovery() {
         );
     }
 }
+
+struct OperationHost {
+    manager: Arc<ExtensionManager>,
+    resolutions: AtomicUsize,
+    before_calls: AtomicUsize,
+    completed_hooks: AtomicUsize,
+    block_after_call: bool,
+    hook_started: Semaphore,
+    resolve_generated: bool,
+    skip: bool,
+}
+
+impl OperationHost {
+    fn new(manager: Arc<ExtensionManager>) -> Self {
+        Self {
+            manager,
+            resolutions: AtomicUsize::new(0),
+            before_calls: AtomicUsize::new(0),
+            completed_hooks: AtomicUsize::new(0),
+            block_after_call: false,
+            hook_started: Semaphore::new(0),
+            resolve_generated: false,
+            skip: false,
+        }
+    }
+}
+
+#[async_trait]
+impl LeaseResolver<()> for OperationHost {
+    async fn resolve(&self, _: &()) -> Result<ExtensionLease> {
+        self.resolutions.fetch_add(1, Ordering::SeqCst);
+        Ok(self.manager.scope_lease("session").await)
+    }
+}
+
+#[async_trait]
+impl ExtensionOperationHost<()> for OperationHost {
+    fn skipped_result(&self, _: &()) -> Option<CallToolResult> {
+        self.skip
+            .then(|| CallToolResult::success(vec![rmcp::model::ContentBlock::text("skipped")]))
+    }
+
+    fn accepts_request(
+        &self,
+        messages: &[Msg],
+        request: &goose_provider_types::conversation::message::ToolRequest,
+    ) -> bool {
+        request_was_advertised(messages, request, "inference", "tools")
+    }
+
+    fn claims_expired_request(
+        &self,
+        _: &[Msg],
+        _: &goose_provider_types::conversation::message::ToolRequest,
+    ) -> bool {
+        true
+    }
+
+    fn can_resolve_for_requests(
+        &self,
+        messages: &[Msg],
+        requests: &[&goose_provider_types::conversation::message::ToolRequest],
+    ) -> bool {
+        self.resolve_generated && requests_can_resolve_a_lease(messages, requests.iter().copied())
+    }
+
+    async fn before_call(
+        &self,
+        _: &(),
+        _: &ExtensionLease,
+        _: &goose_provider_types::conversation::message::ToolRequest,
+    ) -> Option<CallToolResult> {
+        self.before_calls.fetch_add(1, Ordering::SeqCst);
+        None
+    }
+
+    fn decorate_call(
+        &self,
+        _: &(),
+        _: &ExtensionLease,
+        _: &goose_provider_types::conversation::message::ToolRequest,
+        call: crate::tool_execution::ToolCallResult,
+    ) -> crate::tool_execution::ToolCallResult {
+        let result = call.result;
+        crate::tool_execution::ToolCallResult {
+            result: Box::new(
+                async move {
+                    result.await?;
+                    Ok(CallToolResult::success(vec![
+                        rmcp::model::ContentBlock::text("transformed"),
+                    ]))
+                }
+                .boxed(),
+            ),
+            notification_stream: call.notification_stream,
+            action_required_stream: call.action_required_stream,
+        }
+    }
+
+    async fn after_call(
+        &self,
+        _: &(),
+        _: &goose_provider_types::conversation::Conversation,
+        _: &ExtensionLease,
+        _: &goose_provider_types::conversation::message::ToolRequest,
+        response: &goose_provider_types::conversation::message::ToolResponse,
+    ) {
+        assert_eq!(
+            response.tool_result.as_ref().unwrap().content[0]
+                .as_text()
+                .unwrap()
+                .text,
+            "transformed"
+        );
+        self.hook_started.add_permits(1);
+        if self.block_after_call {
+            futures::future::pending::<()>().await;
+        }
+        self.completed_hooks.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn extension_operation_uses_prepared_snapshot_without_resolving_again() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let snapshot = manager.scope_lease("session").await;
+    let shared = TurnLease::default();
+    shared.set(snapshot);
+    let host = Arc::new(OperationHost::new(Arc::clone(&manager)));
+    let operation = Op::with_host(host.clone()).with_inference_lease(shared.clone());
+    assert_eq!(
+        tool_names(
+            Operation::<(), Msg>::inference_tools(&operation, &())
+                .await
+                .unwrap()
+        ),
+        ["first__a"]
+    );
+    add_static(&manager, "second", Some(vec!["b"])).await;
+    assert_eq!(
+        tool_names(
+            Operation::<(), Msg>::inference_tools(&operation, &())
+                .await
+                .unwrap()
+        ),
+        ["first__a"]
+    );
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        responses,
+        [("call-first__a".to_string(), "transformed".to_string())]
+    );
+    assert_eq!(host.resolutions.load(Ordering::SeqCst), 0);
+    assert_eq!(host.completed_hooks.load(Ordering::SeqCst), 1);
+
+    shared.set(manager.scope_lease("session").await);
+    assert_eq!(
+        tool_names(
+            Operation::<(), Msg>::inference_tools(&operation, &())
+                .await
+                .unwrap()
+        ),
+        ["first__a", "second__b"]
+    );
+}
+
+#[tokio::test]
+async fn extension_operation_cancellation_keeps_transformed_result_before_post_hook() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let mut host = OperationHost::new(manager);
+    host.block_after_call = true;
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
+    Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    let (emit, _) = emitter();
+    let conversation = turn_requesting(&["first__a"]);
+    let mut execution = Box::pin(Operation::<(), Msg>::run(
+        &operation,
+        &(),
+        &conversation,
+        &emit,
+    ));
+    tokio::select! {
+        result = &mut execution => panic!("post hook should block: {}", result.is_ok()),
+        permit = host.hook_started.acquire() => { permit.unwrap().forget(); }
+        _ = tokio::time::sleep(Duration::from_secs(5)) => panic!("post hook was never reached"),
+    }
+    drop(execution);
+    let effects =
+        Operation::<(), Msg>::finalize_cancellation(&operation, &(), &conversation, &emit).await;
+    let responses: Vec<_> = effects
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(|content| content.as_tool_response())
+        .collect();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].tool_result.as_ref().unwrap().content[0]
+            .as_text()
+            .unwrap()
+            .text,
+        "transformed"
+    );
+    assert_eq!(host.completed_hooks.load(Ordering::SeqCst), 0);
+    assert!(
+        Operation::<(), Msg>::finalize_cancellation(&operation, &(), &conversation, &emit)
+            .await
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn extension_operation_expires_host_claimed_requests_without_replacement_lease() {
+    let host = Arc::new(OperationHost::new(manager()));
+    let operation = Op::with_host(host.clone());
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        responses,
+        [(
+            "call-first__a".to_string(),
+            EXPIRED_TOOL_REQUEST.to_string()
+        )]
+    );
+    assert_eq!(host.resolutions.load(Ordering::SeqCst), 0);
+    assert_eq!(host.before_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn extension_operation_can_resolve_for_explicitly_allowed_generated_requests() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let mut host = OperationHost::new(manager);
+    host.resolve_generated = true;
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(responses[0].1, "transformed");
+    assert_eq!(host.resolutions.load(Ordering::SeqCst), 1);
+    assert_eq!(host.before_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn extension_operation_rejects_unadvertised_requests_before_hooks() {
+    use goose_provider_types::conversation::message::{InferenceMetadata, MessageContent};
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let host = Arc::new(OperationHost::new(manager));
+    let operation = Op::with_host(host.clone());
+    Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    let mut conversation = turn_requesting(&["first__a"]);
+    for message in conversation.messages_mut() {
+        if message
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+        {
+            message.metadata.inference = Some(InferenceMetadata {
+                provider: "test".into(),
+                requested_model: "test".into(),
+                resolved_model: None,
+                provider_session_id: None,
+            });
+            message
+                .metadata
+                .set_operation_note("inference", "tools", serde_json::json!([]));
+        }
+    }
+    let (emit, _) = emitter();
+    assert!(matches!(
+        Operation::<(), Msg>::run(&operation, &(), &conversation, &emit)
+            .await
+            .unwrap(),
+        crate::operation::OperationResult::NotApplicable
+    ));
+    assert_eq!(host.before_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn generated_request_with_approval_history_cannot_acquire_a_replacement_lease() {
+    let mut host = OperationHost::new(manager());
+    host.resolve_generated = true;
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
+    let mut messages = turn_requesting(&["first__a"]).messages().to_vec();
+    messages.push(Msg::assistant().with_action_required(
+        "call-first__a",
+        "first__a".into(),
+        Default::default(),
+        None,
+    ));
+    let conversation = goose_provider_types::conversation::Conversation::new_unvalidated(messages);
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &conversation, &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(responses[0].1, EXPIRED_TOOL_REQUEST);
+    assert_eq!(host.resolutions.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn extension_operation_skips_without_dispatch_or_hooks() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let mut host = OperationHost::new(manager);
+    host.skip = true;
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
+    Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(responses[0].1, "skipped");
+    assert_eq!(host.before_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(host.completed_hooks.load(Ordering::SeqCst), 0);
+}
+
+struct OverrideHost(Arc<ExtensionManager>);
+
+#[async_trait]
+impl LeaseResolver<()> for OverrideHost {
+    async fn resolve(&self, _: &()) -> Result<ExtensionLease> {
+        Ok(self.0.scope_lease("session").await)
+    }
+}
+
+#[async_trait]
+impl ExtensionOperationHost<()> for OverrideHost {
+    async fn tools(&self, _: &(), _: &ExtensionLease) -> Result<Vec<Tool>> {
+        Ok(vec![Tool::new(
+            "enable_tools",
+            "",
+            Arc::new(JsonObject::new()),
+        )])
+    }
+
+    async fn execution_tools(&self, _: &(), lease: &ExtensionLease) -> Result<Vec<Tool>> {
+        let mut tools = lease.tools().await?;
+        tools.push(Tool::new("enable_tools", "", Arc::new(JsonObject::new())));
+        Ok(tools)
+    }
+
+    async fn call_override(
+        &self,
+        _: &(),
+        _: &ExtensionLease,
+        request: &goose_provider_types::conversation::message::ToolRequest,
+    ) -> Option<crate::tool_execution::ToolCallResult> {
+        (request.tool_call.as_ref().unwrap().name == "enable_tools").then(|| {
+            crate::tool_execution::ToolCallResult::from(Ok(CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text("enabled"),
+            ])))
+        })
+    }
+}
+
+#[tokio::test]
+async fn extension_operation_routes_host_tools_and_preserves_broader_execution_catalog() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let operation = Op::with_host(Arc::new(OverrideHost(manager)));
+    assert_eq!(
+        tool_names(
+            Operation::<(), Msg>::inference_tools(&operation, &())
+                .await
+                .unwrap()
+        ),
+        ["enable_tools"]
+    );
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(
+            &operation,
+            &(),
+            &turn_requesting(&["enable_tools", "first__a"]),
+            &emit,
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0], ("call-enable_tools".into(), "enabled".into()));
+    assert_eq!(responses[1].0, "call-first__a");
+}
