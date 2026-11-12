@@ -76,6 +76,21 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
         .collect()
 }
 
+/// Unanswered, locally executed requests permitted to run. Parsed calls require
+/// approval; unchecked malformed calls are returned so executors can report parse
+/// errors. Denied calls and calls awaiting confirmation are never returned.
+pub fn pending_tool_requests(messages: &[Message]) -> Vec<&ToolRequest> {
+    tool_calls(messages)
+        .into_iter()
+        .filter(|(request, state)| {
+            !request.was_executed_externally()
+                && (*state == ToolCallState::Executable
+                    || (*state == ToolCallState::Unchecked && request.tool_call.is_err()))
+        })
+        .map(|(request, _)| request)
+        .collect()
+}
+
 pub fn request_executable(request: &ToolRequest) -> Option<bool> {
     request
         .tool_meta
@@ -97,4 +112,78 @@ pub(crate) fn add_error_response(tool_responses: &mut Message, request: &ToolReq
         Ok(CallToolResult::error(vec![ContentBlock::text(text)])),
         request.metadata.as_ref(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use goose_provider_types::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
+    use rmcp::model::{CallToolRequestParams, ErrorData};
+    use serde_json::json;
+
+    #[test]
+    fn pending_execution_respects_approval_responses_and_external_dispatch() {
+        let mut calls = Message::assistant();
+        for (id, executable) in [
+            ("allowed", Some(true)),
+            ("unchecked", None),
+            ("blocked", Some(false)),
+            ("waiting", Some(false)),
+            ("user-answered", Some(false)),
+            ("responded", Some(true)),
+            ("external", Some(true)),
+            ("malformed", None),
+            ("blocked-malformed", Some(false)),
+        ] {
+            let call = if id.contains("malformed") {
+                Err(ErrorData::invalid_params("bad arguments", None))
+            } else {
+                Ok(CallToolRequestParams::new("tool"))
+            };
+            let mut meta = json!({});
+            if let Some(executable) = executable {
+                meta[EXECUTABLE_KEY] = json!(executable);
+            }
+            if id == "external" {
+                meta[TOOL_META_EXTERNAL_DISPATCH_KEY] = json!(true);
+            }
+            calls = calls.with_tool_request_with_metadata(id, call, None, Some(meta));
+        }
+        let messages = [
+            calls,
+            Message::assistant().with_action_required(
+                "waiting",
+                "tool".into(),
+                Default::default(),
+                None,
+            ),
+            Message::assistant().with_action_required(
+                "user-answered",
+                "tool".into(),
+                Default::default(),
+                None,
+            ),
+            crate::tool_approval::confirmation_response_message(
+                "user-answered",
+                Permission::AllowOnce,
+            ),
+            Message::user().with_tool_response("responded", Ok(CallToolResult::success(vec![]))),
+        ];
+        let pending = pending_tool_requests(&messages);
+        assert_eq!(
+            pending.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["allowed", "malformed"]
+        );
+    }
+
+    #[test]
+    fn duplicate_request_ids_execute_once() {
+        let request = Message::assistant().with_tool_request_with_metadata(
+            "call",
+            Ok(CallToolRequestParams::new("tool")),
+            None,
+            Some(json!({EXECUTABLE_KEY: true})),
+        );
+        assert_eq!(pending_tool_requests(&[request.clone(), request]).len(), 1);
+    }
 }

@@ -1,5 +1,5 @@
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use goose_agent::{
@@ -13,7 +13,7 @@ use goose_providers::model::ModelConfig;
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
@@ -31,6 +31,7 @@ use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
+use goose_agent::extension_manager::TurnLease;
 
 pub(crate) struct StateMachineConfig<'a> {
     pub(crate) provider: Arc<dyn Provider>,
@@ -43,7 +44,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    pub(crate) extension_lease: TurnLease,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) hook_manager: HookManager,
     pub(crate) steer_queue: SteerQueue,
@@ -130,20 +131,20 @@ pub(crate) fn build_state_machine(
                 .with_declined_message(DECLINED_RESPONSE),
         ),
         Arc::new(SkillOperation::new(
-            Arc::clone(&extension_lease),
+            extension_lease.clone(),
             hook_manager.clone(),
         )),
         Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
             hook_manager.clone(),
-            Arc::clone(&extension_lease),
+            extension_lease.clone(),
             defer_tools,
             always_load_tools,
         )),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
-            Arc::clone(&extension_lease),
+            extension_lease.clone(),
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(

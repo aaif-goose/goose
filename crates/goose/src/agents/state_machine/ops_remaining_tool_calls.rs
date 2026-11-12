@@ -1,13 +1,10 @@
 //! Answers tool requests that no other operation handled.
 
-use std::sync::{Arc, Mutex};
-
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
     leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
@@ -23,18 +20,17 @@ use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
 
+use goose_agent::extension_manager::TurnLease;
+
 pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
-    extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    extension_lease: TurnLease,
 }
 
 impl RemainingToolCallsOperation {
-    pub fn new(
-        hook_manager: HookManager,
-        extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
-    ) -> Self {
+    pub fn new(hook_manager: HookManager, extension_lease: TurnLease) -> Self {
         Self {
             hook_manager,
             extension_lease,
@@ -170,7 +166,7 @@ mod tests {
     ) -> Result<OperationResult<GooseEffect>> {
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
-        RemainingToolCallsOperation::new(hook_manager, Arc::default())
+        RemainingToolCallsOperation::new(hook_manager, TurnLease::default())
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
     }

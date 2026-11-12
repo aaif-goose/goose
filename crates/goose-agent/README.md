@@ -216,6 +216,19 @@ or list tools. `start` and `ready` report startup outcomes. When two extensions
 expose the same tool name, the extension selected first keeps it. The catalog is
 pinned to its lease; resolve a new lease to retry discovery.
 
+Tool requests run against the lease that advertised them. `TurnLease` holds the
+lease the turn's latest inference advertised; once it is cleared (a new turn, or
+a new process), requests made under it are answered as expired rather than run
+against extensions they did not see. `ToolCallBatch` runs calls concurrently,
+forwards their MCP notifications (including those delivered just after the
+result), and collects one response message that survives cancellation.
+`ExtensionOperation` composes these into an `Operation`: build one per turn with a
+`LeaseResolver`, after `ToolApprovalOperation` (use an always-allow policy if no
+confirmation is needed). It shares `tool_call_state::pending_tool_requests` with
+`ToolOperation` and goose execution, so unanswered calls still require approval
+and provider-executed calls are never redispatched. `goose`'s own tool execution
+adds hooks and chat mode on the same `TurnLease` and `ToolCallBatch`.
+
 The native transports and their additional dependencies are target-gated; the
 existing WebAssembly agent loop does not acquire native process/network runtime
 requirements. Runtime-private cache/placement tests move with the implementation;

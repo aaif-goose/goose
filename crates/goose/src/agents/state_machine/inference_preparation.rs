@@ -1,21 +1,22 @@
 //! Goose-specific inference request preparation.
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::PromptManager;
 use crate::config::GooseMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension_manager::TurnLease;
 use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
 use goose_agent::operation::{messages_since_kickoff, InferenceInput};
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::Conversation;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 pub struct GooseInferenceRequestPreparer<'a> {
     pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    pub(crate) extension_lease: TurnLease,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) context_limit: usize,
 }
@@ -27,10 +28,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
             .extension_manager
             .current_session_snapshot(session)
             .await?;
-        *self
-            .extension_lease
-            .lock()
-            .expect("extension lease unavailable") = Some(Arc::new(lease));
+        self.extension_lease.set(lease);
         Ok(Some(session))
     }
 
@@ -41,14 +39,9 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest> {
         #[cfg(feature = "code-mode")]
-        let code_execution_mode = self
-            .extension_lease
-            .lock()
-            .expect("extension lease unavailable")
-            .as_ref()
-            .is_some_and(|lease| {
-                lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
-            });
+        let code_execution_mode = self.extension_lease.get().is_some_and(|lease| {
+            lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
+        });
         #[cfg(not(feature = "code-mode"))]
         let code_execution_mode = false;
 
