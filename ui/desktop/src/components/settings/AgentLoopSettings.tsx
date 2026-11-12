@@ -105,10 +105,6 @@ const i18n = defineMessages({
     id: 'settings.agentLoop.operations.threshold.label',
     defaultMessage: 'Threshold %',
   },
-  tokenLimitLabel: {
-    id: 'settings.agentLoop.operations.tokenLimit.label',
-    defaultMessage: 'Token limit',
-  },
   cutoffLabel: {
     id: 'settings.agentLoop.operations.cutoff.label',
     defaultMessage: 'Cutoff',
@@ -134,7 +130,6 @@ const i18n = defineMessages({
 type NumberSetting =
   | 'maxTurns'
   | 'compactionThreshold'
-  | 'compactionTokenLimit'
   | 'toolCallCutoff'
   | 'retryTimeout'
   | 'failureTimeout'
@@ -145,7 +140,6 @@ type NumberSettings = Record<NumberSetting, string>;
 const defaultNumberSettings: NumberSettings = {
   maxTurns: '1000',
   compactionThreshold: '',
-  compactionTokenLimit: '225000',
   toolCallCutoff: '',
   retryTimeout: '300',
   failureTimeout: '600',
@@ -249,7 +243,6 @@ export default function AgentLoopSettings() {
     Promise.all([
       read('GOOSE_MAX_TURNS', false),
       read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
-      read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
       read('GOOSE_SLASH_COMMANDS_ENABLED', false),
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
       read('GOOSE_TOOL_CALL_CUTOFF', false),
@@ -262,7 +255,6 @@ export default function AgentLoopSettings() {
       ([
         maxTurns,
         compactionThreshold,
-        compactionTokenLimit,
         slashCommands,
         toolPairCompaction,
         toolCallCutoff,
@@ -286,7 +278,6 @@ export default function AgentLoopSettings() {
             typeof compactionThreshold === 'number' && Number.isFinite(compactionThreshold)
               ? String(Number((compactionThreshold * 100).toFixed(2)))
               : '',
-          compactionTokenLimit: String(readNumber(compactionTokenLimit, 225000)),
           toolCallCutoff:
             typeof toolCallCutoff === 'number' && Number.isFinite(toolCallCutoff)
               ? String(toolCallCutoff)
@@ -465,22 +456,6 @@ export default function AgentLoopSettings() {
                 placeholder={intl.formatMessage(i18n.autoPlaceholder)}
                 onChange={(value) => setNumber('compactionThreshold', value)}
                 onBlur={saveCompactionThreshold}
-              />
-              <NumberInput
-                label={intl.formatMessage(i18n.tokenLimitLabel)}
-                value={numbers.compactionTokenLimit}
-                min={1000}
-                max={10000000}
-                step={1000}
-                onChange={(value) => setNumber('compactionTokenLimit', value)}
-                onBlur={() =>
-                  saveNumber(
-                    'compactionTokenLimit',
-                    'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
-                    1000,
-                    10000000
-                  )
-                }
               />
             </div>
           </OperationRow>

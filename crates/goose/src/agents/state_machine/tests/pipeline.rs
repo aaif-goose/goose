@@ -926,7 +926,6 @@ async fn build_test_pipeline(
             defer_tools: false,
             always_load_tools: Vec::new(),
             compaction_threshold: Some(COMPACTION_THRESHOLD),
-            compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,
             auto_effort: None,
             context_relevance: None,

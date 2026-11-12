@@ -20,35 +20,28 @@ use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
-/// Starts compaction with headroom below OpenAI's long-context price tier
-/// (above 272k input tokens). This is not a maximum request size.
-pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
+/// Without a configured threshold, compaction starts by this many tokens, leaving
+/// headroom below OpenAI's long-context price tier (above 272k input tokens).
+const DEFAULT_AUTO_COMPACT_TOKENS: usize = 225_000;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
-pub fn auto_compact_threshold(context_limit: usize) -> f64 {
-    let config = Config::global();
-    effective_compaction_threshold(
-        config.get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD").ok(),
-        config
-            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+fn auto_compact_threshold(context_limit: usize) -> f64 {
+    compaction_threshold(
+        Config::global()
+            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+            .ok(),
         context_limit,
     )
 }
 
-/// An explicitly configured threshold wins. Otherwise compaction starts at
-/// `token_limit` tokens, or at the default fraction on smaller contexts.
-pub fn effective_compaction_threshold(
-    configured: Option<f64>,
-    token_limit: usize,
-    context_limit: usize,
-) -> f64 {
+/// A configured threshold wins; otherwise min(80% of the context, 225k tokens).
+pub fn compaction_threshold(configured: Option<f64>, context_limit: usize) -> f64 {
     configured.unwrap_or_else(|| {
         if context_limit == 0 {
             return DEFAULT_COMPACTION_THRESHOLD;
         }
-        DEFAULT_COMPACTION_THRESHOLD.min(token_limit as f64 / context_limit as f64)
+        DEFAULT_COMPACTION_THRESHOLD.min(DEFAULT_AUTO_COMPACT_TOKENS as f64 / context_limit as f64)
     })
 }
 
@@ -537,6 +530,13 @@ mod tests {
     use async_trait::async_trait;
     use goose_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
+
+    #[test]
+    fn configured_threshold_wins_over_the_default_token_target() {
+        assert_eq!(compaction_threshold(None, 1_000_000), 0.225);
+        assert_eq!(compaction_threshold(None, 200_000), 0.8);
+        assert_eq!(compaction_threshold(Some(0.9), 1_000_000), 0.9);
+    }
 
     #[test]
     fn summaries_written_before_the_flag_are_still_recognized() {
