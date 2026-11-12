@@ -20,7 +20,7 @@ use super::pipeline::calculator_extension;
 use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
+use crate::agents::state_machine::extension_operation_host::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{
     AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
 };

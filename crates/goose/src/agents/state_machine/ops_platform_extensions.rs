@@ -2,12 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::extension_manager::{requests_can_resolve_a_lease, ToolDisposition};
 use rmcp::model::Tool;
 
-use super::ops_toolcalling::{
-    extension_prompt_parts, pending_advertised_tool_requests, ToolExecution,
-};
+use super::extension_operation_host::pending_advertised_tool_requests;
+use super::platform_tool_execution::{extension_prompt_parts, ToolExecution};
 use super::{
     messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation, OperationResult,
 };
@@ -15,6 +13,7 @@ use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::StateMachineServices;
 use crate::conversation::Conversation;
 use crate::session::Session;
+use goose_agent::extension_manager::{requests_can_resolve_a_lease, ToolDisposition};
 
 pub(crate) struct PlatformExtensionOperation {
     services: Arc<StateMachineServices>,

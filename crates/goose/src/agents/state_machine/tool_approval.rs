@@ -4,8 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::tool_approval::{ApprovalDecision, ToolApproval};
 
+use crate::agents::state_machine::extension_operation_host::request_was_advertised;
 use crate::agents::state_machine::messages_since_kickoff;
-use crate::agents::state_machine::ops_toolcalling::request_was_advertised;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::ToolRequest;

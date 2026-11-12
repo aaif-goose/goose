@@ -2,17 +2,17 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::ops_toolcalling::tool_span;
+use crate::agents::state_machine::tool_hook_context::tool_span;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
+use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
 
 pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 

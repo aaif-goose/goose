@@ -1,28 +1,18 @@
 //! Exposes extension capabilities and executes requests that belong to them.
 
-use std::path::{Path, PathBuf};
-
 use anyhow::{anyhow, Result};
 use futures::FutureExt;
 use goose_agent::extension_manager::{PendingCall, ToolCallBatch};
-use goose_agent::tool_call_state::pending_tool_requests as executable_tool_requests;
-use rmcp::model::{CallToolResult, ContentBlock, Role};
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::agents::extension::ExtensionInfo;
-use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::{
-    applied, messages_since_kickoff, Emitter, GooseEffect, OperationResult,
-};
+use crate::agents::state_machine::{applied, Emitter, GooseEffect, OperationResult};
 use crate::agents::tool_execution::ToolCallResult;
-use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
-use crate::conversation::Conversation;
+use crate::conversation::message::{Message, ToolRequest};
 use crate::session::Session;
 
-pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
-    "Tool approval expired because the advertised tools are no longer available. Request the tool again.";
-use std::sync::{Arc, Mutex as StdMutex};
+use super::tool_hook_context::tool_span;
 use tracing_futures::Instrument;
 
 fn platform_notification(result: &CallToolResult) -> Option<rmcp::model::ServerNotification> {
@@ -34,21 +24,6 @@ fn platform_notification(result: &CallToolResult) -> Option<rmcp::model::ServerN
             notification.get("params").cloned(),
         ),
     ))
-}
-
-pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -> tracing::Span {
-    tracing::info_span!(
-        target: "goose::state_machine",
-        "execute_tool",
-        "gen_ai.operation.name" = "execute_tool",
-        "gen_ai.tool.name" = %tool_name,
-        "gen_ai.tool.call.id" = %tool_call_id,
-        "gen_ai.conversation.id" = %session_id,
-        "gen_ai.tool.call.arguments" = tracing::field::Empty,
-        "gen_ai.tool.call.result" = tracing::field::Empty,
-        "error.type" = tracing::field::Empty,
-        session.id = %session_id,
-    )
 }
 
 fn with_recording(
@@ -84,124 +59,6 @@ fn with_recording(
     }
 }
 
-pub(super) fn advertised_working_dir(
-    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
-    session: &Session,
-) -> PathBuf {
-    tool_snapshot
-        .lock()
-        .expect("tool snapshot unavailable")
-        .as_ref()
-        .filter(|tools| tools.scope_id() == session.id)
-        .and_then(|tools| tools.working_dir())
-        .map_or_else(|| session.working_dir.clone(), Path::to_path_buf)
-}
-
-fn advertised_session(tools: &ToolSnapshot, session: &Session) -> Session {
-    let mut session = session.clone();
-    if let Some(working_dir) = tools.working_dir() {
-        session.working_dir = working_dir.to_path_buf();
-    }
-    session
-}
-
-pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    executable_tool_requests(messages)
-        .into_iter()
-        .map(|request| {
-            let disposition = match &request.tool_call {
-                Ok(_) => ToolDisposition::Execute,
-                Err(error) => ToolDisposition::ParseError(error.to_string()),
-            };
-            (request.clone(), disposition)
-        })
-        .collect()
-}
-
-pub(super) fn pending_advertised_tool_requests(
-    messages: &[Message],
-) -> Vec<(ToolRequest, ToolDisposition)> {
-    pending_tool_requests(messages)
-        .into_iter()
-        .filter(|(request, _)| request_was_advertised(messages, request))
-        .collect()
-}
-
-pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
-    let Some(tool_call) = request.tool_call.as_ref().ok() else {
-        return true;
-    };
-    let Some(message) = messages.iter().find(|message| {
-        message.role == Role::Assistant
-            && message.content.iter().any(|content| {
-                content
-                    .as_tool_request()
-                    .is_some_and(|item| item.id == request.id)
-            })
-    }) else {
-        return false;
-    };
-    if message.metadata.inference.is_none() {
-        return true;
-    }
-    message
-        .metadata
-        .operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE)
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|tools| {
-            tools
-                .iter()
-                .any(|tool| tool.as_str() == Some(tool_call.name.as_ref()))
-        })
-}
-
-pub(super) fn requests_can_resolve_tools<'a>(
-    messages: &[Message],
-    requests: impl IntoIterator<Item = &'a ToolRequest>,
-) -> bool {
-    let mut requests = requests.into_iter().peekable();
-    requests.peek().is_some()
-        && requests.all(|request| {
-            request_was_generated_by_operation(messages, request)
-                && !request_has_approval_history(messages, request)
-        })
-}
-
-fn request_was_generated_by_operation(messages: &[Message], request: &ToolRequest) -> bool {
-    messages.iter().any(|message| {
-        message.role == Role::Assistant
-            && message.metadata.inference.is_none()
-            && message.content.iter().any(|content| {
-                content
-                    .as_tool_request()
-                    .is_some_and(|item| item.id == request.id)
-            })
-    })
-}
-
-fn request_has_approval_history(messages: &[Message], request: &ToolRequest) -> bool {
-    messages.iter().any(|message| {
-        message.content.iter().any(|content| match content {
-            MessageContent::ActionRequired(action) => matches!(
-                &action.data,
-                ActionRequiredData::ToolConfirmation { id, .. }
-                    | ActionRequiredData::ToolConfirmationResponse { id, .. }
-                    if id == &request.id
-            ),
-            _ => false,
-        })
-    })
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub(super) enum ToolDisposition {
-    Execute,
-    ParseError(String),
-}
-
-/// The extension block, as a header part plus one part per extension. Prompt
-/// extras are joined with a blank line, so this renders the same text as one
-/// combined part while keeping each extension's tokens attributable.
 pub(super) fn extension_prompt_parts(
     extensions: &[ExtensionInfo],
     defer_tools: bool,
