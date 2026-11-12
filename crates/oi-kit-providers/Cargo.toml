@@ -1,0 +1,80 @@
+[package]
+name = "oi-kit-providers"
+version = "0.1.0-alpha.14"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+local-inference = ["dep:oi-kit-local-inference"]
+local-inference-hf-hub = ["local-inference", "oi-kit-local-inference/hf-hub"]
+cuda = ["local-inference", "oi-kit-local-inference/cuda"]
+vulkan = ["local-inference", "oi-kit-local-inference/vulkan"]
+mlx = ["local-inference", "oi-kit-local-inference/mlx"]
+rustls-tls = [
+    "reqwest/rustls",
+    "rmcp/reqwest",
+]
+live-websocket = ["dep:reqwest-websocket"]
+native-tls = [
+    "dep:pem",
+    "dep:pkcs8",
+    "dep:sec1",
+    "reqwest/native-tls",
+    "rmcp/reqwest-native-tls",
+]
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.14", path = "../oi-kit-provider-types", default-features = false }
+oi-kit-local-inference = { version = "0.1.0-alpha.14", path = "../oi-kit-local-inference", default-features = false, optional = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
+rmcp = { workspace = true, features = ["server", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true, features = ["io-util"] }
+tokio-util = { workspace = true, features = ["compat", "io", "codec"] }
+url = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+base64 = { workspace = true }
+pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
+pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
+sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }
+include_dir = { workspace = true }
+reqwest-websocket = { version = "0.6", default-features = false, optional = true }
+
+[dev-dependencies]
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+http = { workspace = true }
+test-case = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util", "time"] }
+tokio-stream = { workspace = true }
+env-lock = { workspace = true }
+wiremock.workspace = true
+flate2 = "1.1.9"
+reqwest = { workspace = true, features = ["gzip"] }
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+
+[[example]]
+name = "streaming"
+required-features = ["rustls-tls"]
+
+[[example]]
+name = "openai_live"
+required-features = ["live-websocket", "rustls-tls"]

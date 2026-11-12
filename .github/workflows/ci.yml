@@ -132,7 +132,7 @@ jobs:
           just check-lean-size
 
   rust-check-wasm:
-    name: Check and Test GDK Agent Crates on wasm32
+    name: Check and Test oi-kit Agent Crates on wasm32
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -150,19 +150,19 @@ jobs:
           cargo install wasm-bindgen-cli --version "$version" --locked
 
       - name: Check wasm32 build
-        run: cargo check --locked --target wasm32-unknown-unknown -p goose-agent -p goose-provider-types
+        run: cargo check --locked --target wasm32-unknown-unknown -p oi-kit-agent -p oi-kit-provider-types
         env:
           CARGO_INCREMENTAL: "0"
           RUSTFLAGS: "-D warnings"
 
       - name: Run agent loop on wasm32
-        run: cargo test --locked --target wasm32-unknown-unknown -p goose-agent --test wasm
+        run: cargo test --locked --target wasm32-unknown-unknown -p oi-kit-agent --test wasm
         env:
           CARGO_INCREMENTAL: "0"
           RUSTFLAGS: "-D warnings"
 
   goose-sdk-uniffi:
-    name: Check goose-sdk UniFFI
+    name: Check oi-kit-sdk UniFFI
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -180,14 +180,14 @@ jobs:
       - name: Check UniFFI feature
         run: |
           export CARGO_INCREMENTAL=0
-          cargo check -p goose-sdk --features uniffi --locked
-          cargo test -p goose-sdk --features uniffi --locked
+          cargo check -p oi-kit-sdk --features uniffi --locked
+          cargo test -p oi-kit-sdk --features uniffi --locked
         env:
           RUST_MIN_STACK: 8388608
           GOOSE_DISABLE_KEYRING: 1
 
-  kotlin-gdk-smoke-test:
-    name: Test Kotlin GDK package
+  kotlin-oi-kit-smoke-test:
+    name: Test Kotlin oi-kit package
     needs: changes
     if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
     permissions:
@@ -228,7 +228,7 @@ jobs:
         run: |
           export CARGO_INCREMENTAL=0
           cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
-          cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
+          cargo test -p oi-kit-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
           cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
         env:
           RUST_MIN_STACK: 8388608
@@ -375,24 +375,24 @@ jobs:
           cd ui/goose-acp-client
           pnpm run lint
 
-  gdk-release-config-check:
-    name: Check GDK Release Configuration
+  oi-kit-release-config-check:
+    name: Check oi-kit Release Configuration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Check GDK crate membership and publication order
-        run: python3 crates/goose-sdk/scripts/gdk-release.py check-config
+      - name: Check oi-kit crate membership and publication order
+        run: python3 crates/oi-kit-sdk/scripts/oi-kit-release.py check-config
 
-  gdk-api-docs-check:
-    name: Check GDK API Reference is Up-to-Date
+  oi-kit-api-docs-check:
+    name: Check oi-kit API Reference is Up-to-Date
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Check generated GDK API reference data
+      - name: Check generated oi-kit API reference data
         run: python3 documentation/automation/gdk-api/generate.py --check
 
   desktop-lint:

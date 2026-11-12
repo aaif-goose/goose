@@ -7,7 +7,7 @@
 //! params/response types (deriving `JsonSchema`) next to the feature that sends
 //! it, then add one line to [`agent_request_schemas`].
 
-use goose_sdk_types::custom_requests::{
+use oi_kit_sdk_types::custom_requests::{
     RecipeParamsResponse, RequestRecipeParams, REQUEST_RECIPE_PARAMS_METHOD,
 };
 use schemars::{JsonSchema, SchemaGenerator};

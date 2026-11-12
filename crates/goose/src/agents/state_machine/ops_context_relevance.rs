@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::{
+use oi_kit_providers::{
     decision::{
         DecisionAnswer, DecisionProvider, DecisionQuestion, DecisionRequest, DecisionResponse,
         NoulCriteria,

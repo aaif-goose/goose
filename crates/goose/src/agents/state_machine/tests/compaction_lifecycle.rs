@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
@@ -154,7 +154,7 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
     .await?;
     let pipeline = pipeline
         .with_model_config(
-            goose_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
+            oi_kit_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
         )
         .await;
     let large_context = (0..500)

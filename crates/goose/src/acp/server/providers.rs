@@ -2,7 +2,7 @@ use super::*;
 use crate::config::declarative_providers;
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
-use goose_providers::base::ModelInfo;
+use oi_kit_providers::base::ModelInfo;
 use std::str::FromStr;
 
 const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -509,10 +509,10 @@ impl AcpConnection {
             .internal_err_ctx("Failed to initialize provider")?;
         let models = match provider.fetch_supported_models().await {
             Ok(models) => models,
-            Err(goose_providers::errors::ProviderError::Authentication(error)) => {
+            Err(oi_kit_providers::errors::ProviderError::Authentication(error)) => {
                 return Err(agent_client_protocol::Error::auth_required().data(error));
             }
-            Err(goose_providers::errors::ProviderError::NotConfigured) => {
+            Err(oi_kit_providers::errors::ProviderError::NotConfigured) => {
                 return Err(agent_client_protocol::Error::invalid_params()
                     .data(format!("Provider is not configured: {}", req.provider_id)));
             }
@@ -1196,7 +1196,7 @@ impl AcpConnection {
         &self,
         req: CanonicalModelInfoRequest,
     ) -> Result<CanonicalModelInfoResponse, agent_client_protocol::Error> {
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::model::ModelConfig;
 
         let config_info =
             crate::providers::canonical_cost::configured_model_info(&req.provider, &req.model);

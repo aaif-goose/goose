@@ -1,6 +1,6 @@
 use anyhow::Result;
 use futures::future::BoxFuture;
-use goose_providers::base::ProviderDescriptor;
+use oi_kit_providers::base::ProviderDescriptor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,8 +12,8 @@ use crate::providers::custom_provider_config::ConfigKeyResolver;
 use crate::session_context::{
     session_id_request_builder, session_id_request_builder_with_header_override,
 };
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::openai::{
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::openai::{
     parse_custom_headers, parse_openai_base_url, OpenAiProvider, OpenAiProviderBuilder,
     OpenAiSessionIdProvider, OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_VERSIONLESS_BASE_PATH,
 };
@@ -21,7 +21,7 @@ use goose_providers::openai::{
 pub struct OpenAiProviderDef;
 
 impl ProviderDescriptor for OpenAiProviderDef {
-    fn metadata() -> goose_providers::base::ProviderMetadata {
+    fn metadata() -> oi_kit_providers::base::ProviderMetadata {
         OpenAiProvider::metadata().with_setup(
             crate::providers::catalog::ProviderSetupMetadata::new(
                 crate::providers::catalog::ProviderSetupCategory::Model,
@@ -51,7 +51,7 @@ impl ProviderDef for OpenAiProviderDef {
 }
 
 pub async fn from_env(
-    tls_config: Option<goose_providers::api_client::TlsConfig>,
+    tls_config: Option<oi_kit_providers::api_client::TlsConfig>,
 ) -> Result<OpenAiProvider> {
     let config = crate::config::Config::global();
 
@@ -208,13 +208,13 @@ pub fn resolve_api_key(
 
 pub fn from_custom_config(
     config: DeclarativeProviderConfig,
-    tls_config: Option<goose_providers::api_client::TlsConfig>,
+    tls_config: Option<oi_kit_providers::api_client::TlsConfig>,
 ) -> Result<OpenAiProvider> {
     let auth_override = config.auth.clone();
     let request_builder = session_id_request_builder_with_header_override(
         config.session_id_header_override.as_deref(),
     )?;
-    goose_providers::openai::from_declarative_config(
+    oi_kit_providers::openai::from_declarative_config(
         config,
         tls_config,
         ConfigKeyResolver::new(Config::global()),

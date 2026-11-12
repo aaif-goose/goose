@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::MessageKind::{Agent, Error, ToolCall, ToolResponse};
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
@@ -41,7 +41,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
     use crate::config::GooseMode;
     use crate::recipe::{Recipe, Response};
-    use goose_providers::model::ModelConfig;
+    use oi_kit_providers::model::ModelConfig;
 
     let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         cache_read_tokens: Some(11),

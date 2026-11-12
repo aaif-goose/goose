@@ -36,13 +36,13 @@ pub fn current_session_id() -> Option<String> {
     SESSION_ID.try_with(|id| id.clone()).ok().flatten()
 }
 
-pub fn session_id_request_builder() -> goose_providers::api_client::RequestBuilderDecorator {
+pub fn session_id_request_builder() -> oi_kit_providers::api_client::RequestBuilderDecorator {
     session_id_request_builder_with_header_name(HeaderName::from_static(SESSION_ID_HEADER))
 }
 
 pub(crate) fn session_id_request_builder_with_header_override(
     header_name_override: Option<&str>,
-) -> Result<goose_providers::api_client::RequestBuilderDecorator, reqwest::header::InvalidHeaderName>
+) -> Result<oi_kit_providers::api_client::RequestBuilderDecorator, reqwest::header::InvalidHeaderName>
 {
     let header_name = match header_name_override {
         Some(header_name) => HeaderName::from_bytes(header_name.as_bytes())?,
@@ -54,7 +54,7 @@ pub(crate) fn session_id_request_builder_with_header_override(
 
 fn session_id_request_builder_with_header_name(
     header_name: HeaderName,
-) -> goose_providers::api_client::RequestBuilderDecorator {
+) -> oi_kit_providers::api_client::RequestBuilderDecorator {
     std::sync::Arc::new(move |request| {
         let (client, request) = request.build_split();
         let mut request = request?;

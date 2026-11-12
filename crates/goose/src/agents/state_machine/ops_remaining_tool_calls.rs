@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
+use oi_kit_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
     use crate::conversation::message::ToolRequest;
-    use goose_agent::tool_call_state::EXECUTABLE_KEY;
+    use oi_kit_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
     use std::sync::Mutex;
     use tokio::sync::mpsc;

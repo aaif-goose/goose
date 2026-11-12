@@ -1,0 +1,42 @@
+[package]
+name = "oi-kit-agent"
+version = "0.1.0-alpha.14"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "oi-kit's Agent Loop"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
+tokio-util = { workspace = true, features = ["compat"] }
+async-trait = { workspace = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.14", path = "../oi-kit-provider-types", default-features = false }
+rmcp = { workspace = true, features = ["server"] }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+serde.workspace = true
+regex = { workspace = true, features = ["unicode-perl"] }
+oi-kit-sdk-types = { version = "0.1.0-alpha.14", path = "../oi-kit-sdk-types", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rmcp = { workspace = true, features = ["local"] }
+
+[dev-dependencies]
+schemars.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+js-sys = "0.3.105"
+wasm-bindgen-futures = "0.4.78"
+wasm-bindgen-test = "0.3.78"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+serde_yaml.workspace = true

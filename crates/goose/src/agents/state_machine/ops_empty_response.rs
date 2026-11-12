@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::inference::is_empty_response_marker;
+use oi_kit_agent::inference::is_empty_response_marker;
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::{

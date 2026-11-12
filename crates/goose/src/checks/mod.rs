@@ -7,7 +7,7 @@
 
 use crate::sources::parse_frontmatter;
 use anyhow::{anyhow, bail, Context, Result};
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use oi_kit_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

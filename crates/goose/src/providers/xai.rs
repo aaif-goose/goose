@@ -12,11 +12,11 @@ pub const XAI_DOC_URL: &str = "https://docs.x.ai/docs/overview";
 
 pub struct XaiProvider;
 
-pub fn xai_known_model_info() -> Vec<goose_providers::base::ModelInfo> {
-    goose_providers::base::known_models_from_registry(XAI_PROVIDER_NAME)
+pub fn xai_known_model_info() -> Vec<oi_kit_providers::base::ModelInfo> {
+    oi_kit_providers::base::known_models_from_registry(XAI_PROVIDER_NAME)
 }
 
-impl goose_providers::base::ProviderDescriptor for XaiProvider {
+impl oi_kit_providers::base::ProviderDescriptor for XaiProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::with_models(
             XAI_PROVIDER_NAME,
@@ -66,7 +66,7 @@ impl ProviderDef for XaiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_providers::base::ProviderDescriptor;
+    use oi_kit_providers::base::ProviderDescriptor;
 
     #[test]
     fn current_xai_models_use_canonical_metadata() {

@@ -1,0 +1,57 @@
+[package]
+name = "oi-kit-sdk"
+version = "0.1.0-alpha.14"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Open Intelligence Kit (oi-kit) for Rust, with optional uniffi bindings for Python/Kotlin"
+
+[lib]
+name = "oi_kit_sdk"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "goose-uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi"]
+
+[features]
+default = []
+uniffi = [
+    "dep:uniffi",
+    "dep:oi-kit-context-management",
+    "dep:thiserror",
+    "dep:anyhow",
+    "dep:oi-kit-providers",
+    "dep:futures",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:rmcp",
+    "dep:base64",
+]
+
+[dependencies]
+oi-kit-sdk-types = { version = "0.1.0-alpha.14", path = "../oi-kit-sdk-types" }
+agent-client-protocol = { workspace = true }
+agent-client-protocol-schema = { workspace = true }
+
+uniffi = { version = "0.32", features = ["cli"], optional = true }
+thiserror = { version = "2", optional = true }
+oi-kit-providers = { version = "0.1.0-alpha.14", path = "../oi-kit-providers", features = ["rustls-tls"], optional = true }
+oi-kit-context-management = { version = "0.1.0-alpha.14", path = "../oi-kit-context-management", optional = true }
+futures = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"], optional = true }
+anyhow = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-std", "io-util"] }
+tokio-util = { workspace = true, features = ["compat", "rt"] }
+
+[package.metadata.cargo-machete]
+# Used to provide extras imports for agent-client-protocol
+ignored = ["agent-client-protocol-schema"]

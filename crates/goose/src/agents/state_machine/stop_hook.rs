@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::stop_hook::{StopHook, StopHookDecision};
+use oi_kit_agent::stop_hook::{StopHook, StopHookDecision};
 use rmcp::model::Role;
 
 use crate::conversation::message::{Message, SystemNotificationType};

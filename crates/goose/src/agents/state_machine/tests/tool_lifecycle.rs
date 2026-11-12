@@ -18,7 +18,7 @@ use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
 async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
@@ -278,7 +278,7 @@ async fn provider_turn_canonicalizes_only_advertised_mangled_tool_names() -> Res
 async fn toolshim_provider_turn_executes_advertised_tools() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let model_config =
-        goose_providers::model::ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+        oi_kit_providers::model::ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
             .with_canonical_limits("openai")
             .with_toolshim(true);
     let pipeline = pipeline.with_model_config(model_config).await;
@@ -345,7 +345,7 @@ async fn recover_from_missing_tool() -> Result<()> {
 
     let (pipeline, api) = test_pipeline().await?;
     let model_config =
-        goose_providers::model::ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+        oi_kit_providers::model::ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
             .with_canonical_limits("openai")
             .with_toolshim(true);
     let pipeline = pipeline.with_model_config(model_config).await;

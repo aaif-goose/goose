@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_sdk_types::custom_requests::{
+use oi_kit_sdk_types::custom_requests::{
     RecipeAuthorDto, RecipeDto, RecipeExtensionDto, RecipeParameterDto,
     RecipeParameterInputTypeDto, RecipeParameterRequirementDto, RecipeResponseDto,
     RecipeRetryConfigDto, RecipeSettingsDto, RecipeSuccessCheckDto, SubRecipeDto,
@@ -472,8 +472,8 @@ pub fn recipe_manifest_to_list_entry_dto(
     last_modified: String,
     schedule_cron: Option<String>,
     slash_command: Option<String>,
-) -> Result<goose_sdk_types::custom_requests::RecipeListEntryDto> {
-    Ok(goose_sdk_types::custom_requests::RecipeListEntryDto {
+) -> Result<oi_kit_sdk_types::custom_requests::RecipeListEntryDto> {
+    Ok(oi_kit_sdk_types::custom_requests::RecipeListEntryDto {
         id,
         recipe: RecipeDto::try_from(recipe)?,
         file_path: file_path.to_string(),

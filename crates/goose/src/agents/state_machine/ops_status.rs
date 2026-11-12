@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_providers::base::Provider;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::base::Provider;
+use oi_kit_providers::model::ModelConfig;
 
 use crate::agents::state_machine::{
     messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter, GooseEffect,

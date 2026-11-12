@@ -157,7 +157,7 @@ impl McpClientTrait for SummarizeClient {
 
 async fn execute_summarize(
     provider: Arc<dyn Provider>,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
     session_id: &str,
     params: SummarizeParams,
     working_dir: &Path,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate GDK API reference data from the UniFFI surface in goose-sdk.
+"""Generate GDK API reference data from the UniFFI surface in oi-kit-sdk.
 
-`crates/goose-sdk/src/bindings.rs` is the single source of truth for the Rust,
+`crates/oi-kit-sdk/src/bindings.rs` is the single source of truth for the Rust,
 Python, and Kotlin GDK APIs, so the docs are derived from it instead of being
 written by hand. Output is `documentation/src/data/gdk-api.json`, holding one
 entry per GDK release series, consumed by the GdkApiReference component.
@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BINDINGS = REPO_ROOT / "crates/goose-sdk/src/bindings.rs"
-CARGO_TOML = REPO_ROOT / "crates/goose-sdk/Cargo.toml"
+BINDINGS = REPO_ROOT / "crates/oi-kit-sdk/src/bindings.rs"
+CARGO_TOML = REPO_ROOT / "crates/oi-kit-sdk/Cargo.toml"
 OUT_FILE = REPO_ROOT / "documentation/src/data/gdk-api.json"
 
 
@@ -349,7 +349,7 @@ def build(version: str) -> dict:
     return {
         "version": version,
         "docVersion": doc_version(version),
-        "source": "crates/goose-sdk/src/bindings.rs",
+        "source": "crates/oi-kit-sdk/src/bindings.rs",
         "functions": [serialize_func(func) for func in sorted(functions, key=lambda f: f.name)],
         "items": [serialize_item(item) for item in items],
     }
@@ -386,7 +386,7 @@ def main() -> int:
 
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUT_FILE.write_text(payload)
-    print(f"wrote {relative} for goose-sdk {version}")
+    print(f"wrote {relative} for oi-kit-sdk {version}")
     return 0
 
 

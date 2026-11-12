@@ -5,7 +5,7 @@ use anyhow::Result;
 use rmcp::model::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
-pub use goose_sdk_types::custom_requests::{
+pub use oi_kit_sdk_types::custom_requests::{
     ContextCategory, ContextPart, ContextReportModel, ContextReportResponse, ContextSegment,
 };
 

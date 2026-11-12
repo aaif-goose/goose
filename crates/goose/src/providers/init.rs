@@ -488,7 +488,7 @@ mod tests {
             .expect("custom_zero provider should be created");
         assert_eq!(
             zero_provider.get_context_limit("zero-model", None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
 
         std::env::remove_var("GOOSE_PATH_ROOT");

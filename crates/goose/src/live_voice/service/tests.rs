@@ -3,7 +3,7 @@ mod fake_live_voice_provider;
 use super::super::interaction::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
 use super::*;
 use fake_live_voice_provider::{provider_channel, FakeConnectionDriver};
-use goose_providers::{live_voice_provider::ProviderConnectionEvent, model::ModelConfig};
+use oi_kit_providers::{live_voice_provider::ProviderConnectionEvent, model::ModelConfig};
 use rmcp::model::Role;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -1198,7 +1198,7 @@ fn stale_cleanup_cannot_remove_a_later_call() {
 mod settings {
     use super::super::{live_voice_provider, live_voice_settings, LIVE_SESSION_INSTRUCTIONS};
     use crate::config::Config;
-    use goose_providers::live_voice_provider::{LiveVoiceProvider, WebRtcOffer};
+    use oi_kit_providers::live_voice_provider::{LiveVoiceProvider, WebRtcOffer};
     use tempfile::TempDir;
     use wiremock::{
         matchers::{header, method, path},

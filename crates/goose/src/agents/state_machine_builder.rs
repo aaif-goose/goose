@@ -2,12 +2,12 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::max_turns::MaxTurnsOperation;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::decision::DecisionProvider;
-use goose_providers::model::ModelConfig;
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
+use oi_kit_agent::max_turns::MaxTurnsOperation;
+use oi_kit_agent::post_tool_call_hook::PostToolCallHook;
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::decision::DecisionProvider;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};

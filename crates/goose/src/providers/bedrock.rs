@@ -20,12 +20,12 @@ use aws_sdk_bedrockruntime::types::error::ConverseStreamOutputError;
 use aws_sdk_bedrockruntime::{types as bedrock, Client};
 use base64::Engine;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai::extract_reasoning_effort;
-use goose_providers::formats::openai_responses::create_responses_request;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::formats::openai::extract_reasoning_effort;
+use oi_kit_providers::formats::openai_responses::create_responses_request;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
 use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Tool};
 use serde_json::Value;
@@ -420,7 +420,7 @@ impl BedrockProvider {
             }
         }
 
-        let response = goose_providers::http_status::send_bounded(
+        let response = oi_kit_providers::http_status::send_bounded(
             req,
             std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )
@@ -865,7 +865,7 @@ fn process_stream_event(
                             }),
                         Err(_) => Err(ErrorData::new(
                             ErrorCode::INVALID_PARAMS,
-                            goose_providers::json::truncation_error_message(&input_json)
+                            oi_kit_providers::json::truncation_error_message(&input_json)
                                 .unwrap_or_else(|| {
                                     format!("Could not parse tool arguments: {}", input_json)
                                 }),
@@ -955,7 +955,7 @@ fn output_token_limit_marker(
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for BedrockProvider {
+impl oi_kit_providers::base::ProviderDescriptor for BedrockProvider {
     fn metadata() -> ProviderMetadata {
         let models = BEDROCK_MODEL_TABLE
             .iter()
@@ -1025,7 +1025,7 @@ impl Provider for BedrockProvider {
                 .context_limit
                 .map(|limit| (entry.name.to_string(), limit as usize))
         });
-        goose_providers::context_limit::ContextLimitResolver::new(&self.name)
+        oi_kit_providers::context_limit::ContextLimitResolver::new(&self.name)
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async { Ok(None) })
             .await
@@ -1256,7 +1256,7 @@ fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_providers::base::ProviderDescriptor as _;
+    use oi_kit_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
 
     fn create_mock_provider_and_model(model_name: &str) -> (BedrockProvider, ModelConfig) {

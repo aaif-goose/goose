@@ -25,7 +25,7 @@ use goose::providers::base::ConfigKey;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::thinking::ThinkingEffort;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
@@ -984,7 +984,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     {
         let supports_thinking = match temp_provider.fetch_model_info(&model).await {
             Ok(model_info) => model_info.reasoning,
-            Err(_) => goose_providers::model::ModelConfig::new(&model).is_reasoning_model(),
+            Err(_) => oi_kit_providers::model::ModelConfig::new(&model).is_reasoning_model(),
         };
 
         if supports_thinking {
@@ -2302,11 +2302,11 @@ fn add_provider() -> anyhow::Result<()> {
         })
         .interact()?;
 
-    let models: Vec<goose_providers::base::ModelInfo> = models_input
+    let models: Vec<oi_kit_providers::base::ModelInfo> = models_input
         .split(',')
         .map(str::trim)
         .filter(|name| !name.is_empty())
-        .map(goose_providers::base::ModelInfo::new)
+        .map(oi_kit_providers::base::ModelInfo::new)
         .collect();
 
     let supports_streaming = cliclack::confirm("Does this provider support streaming responses?")

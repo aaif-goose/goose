@@ -38,8 +38,8 @@ pub use container::Container;
 pub use execute_commands::{context_management_unsupported_message, COMPACT_TRIGGERS};
 pub use extension::{ExtensionConfig, ExtensionError};
 pub use extension_manager::{ExtensionLoadResult, ExtensionManager};
-pub use goose_agent::events::AgentEvent;
 pub(crate) use large_response_handler::max_tool_response_size;
+pub use oi_kit_agent::events::AgentEvent;
 pub use prompt_manager::PromptManager;
 #[cfg(feature = "scheduler")]
 pub use schedule_tool::ScheduleTool;

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
+use oi_kit_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::messages_since_kickoff;

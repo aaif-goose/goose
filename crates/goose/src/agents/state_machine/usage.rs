@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
 
 use crate::agents::state_machine::{ConversationEffect, GooseEffect};
 use crate::conversation::message::MessageUsage;

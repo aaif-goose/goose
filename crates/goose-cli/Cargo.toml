@@ -28,7 +28,7 @@ clap_mangen = { version = "0.3", default-features = false }
 goose = { path = "../goose", default-features = false }
 agent-client-protocol = { workspace = true, features = ["unstable"], optional = true }
 goose-mcp = { path = "../goose-mcp", default-features = false, optional = true }
-goose-providers = { path = "../goose-providers", default-features = false }
+oi-kit-providers = { path = "../oi-kit-providers", default-features = false }
 goose-roaming = { path = "../goose-roaming", optional = true }
 rmcp = { workspace = true }
 clap = { workspace = true }
@@ -150,7 +150,7 @@ rustls-tls = [
     "sigstore-verify?/rustls",
     "goose/rustls-tls",
     "goose-mcp?/rustls-tls",
-    "goose-providers/rustls-tls",
+    "oi-kit-providers/rustls-tls",
 ]
 native-tls = [
     "dep:axum-server",
@@ -159,7 +159,7 @@ native-tls = [
     "sigstore-verify?/native-tls",
     "goose/native-tls",
     "goose-mcp?/native-tls",
-    "goose-providers/native-tls",
+    "oi-kit-providers/native-tls",
 ]
 [dev-dependencies]
 env-lock.workspace = true

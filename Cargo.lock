@@ -4225,12 +4225,7 @@ dependencies = [
  "futures",
  "gethostname",
  "goose-acp-macros",
- "goose-agent",
- "goose-context-management",
- "goose-download-manager",
  "goose-mcp",
- "goose-providers",
- "goose-sdk-types",
  "goose-test-support",
  "http 1.5.0",
  "ignore",
@@ -4248,6 +4243,11 @@ dependencies = [
  "nanoid",
  "ntapi",
  "oauth2",
+ "oi-kit-agent",
+ "oi-kit-context-management",
+ "oi-kit-download-manager",
+ "oi-kit-providers",
+ "oi-kit-sdk-types",
  "once_cell",
  "openssl",
  "opentelemetry",
@@ -4329,31 +4329,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goose-agent"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "goose-provider-types",
- "goose-sdk-types",
- "js-sys",
- "regex",
- "rmcp",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-futures",
- "uuid",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
-]
-
-[[package]]
 name = "goose-cli"
 version = "1.59.0"
 dependencies = [
@@ -4380,11 +4355,11 @@ dependencies = [
  "futures",
  "goose",
  "goose-mcp",
- "goose-providers",
  "goose-roaming",
  "indicatif",
  "libc",
  "ntapi",
+ "oi-kit-providers",
  "open",
  "qrcode",
  "rand 0.10.2",
@@ -4417,68 +4392,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goose-context-management"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "async-trait",
- "goose-provider-types",
- "include_dir",
- "minijinja",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "goose-download-manager"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "once_cell",
- "reqwest",
- "serde",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "goose-local-inference"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64 0.23.1",
- "chrono",
- "encoding_rs",
- "env-lock",
- "etcetera",
- "futures",
- "goose-download-manager",
- "goose-provider-types",
- "goose-sdk-types",
- "hf-hub",
- "include_dir",
- "llama-cpp-2",
- "llama-cpp-sys-2",
- "minijinja",
- "pulldown-cmark",
- "regex",
- "rmcp",
- "safemlx",
- "safemlx-lm",
- "safemlx-lm-utils",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "goose-mcp"
 version = "1.59.0"
 dependencies = [
@@ -4507,77 +4420,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goose-provider-types"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64 0.23.1",
- "chrono",
- "env-lock",
- "futures",
- "getrandom 0.4.3",
- "gloo-timers",
- "once_cell",
- "rand 0.10.2",
- "regex",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "strum 0.28.0",
- "tempfile",
- "test-case",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tracing",
- "unicode-normalization",
- "uuid",
- "zstd",
-]
-
-[[package]]
-name = "goose-providers"
-version = "0.1.0-alpha.13"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64 0.23.1",
- "chrono",
- "env-lock",
- "flate2",
- "futures",
- "goose-local-inference",
- "goose-provider-types",
- "http 1.5.0",
- "include_dir",
- "pem 4.0.0",
- "pkcs8",
- "rcgen",
- "reqwest",
- "reqwest-websocket",
- "rmcp",
- "sec1",
- "serde",
- "serde_json",
- "tempfile",
- "test-case",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tokio-tungstenite 0.28.0",
- "tokio-util",
- "tracing",
- "url",
- "urlencoding",
- "uuid",
- "wiremock",
-]
-
-[[package]]
 name = "goose-roaming"
 version = "1.59.0"
 dependencies = [
@@ -4595,37 +4437,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "goose-sdk"
-version = "0.1.0-alpha.13"
-dependencies = [
- "agent-client-protocol",
- "agent-client-protocol-schema",
- "anyhow",
- "base64 0.23.1",
- "futures",
- "goose-context-management",
- "goose-providers",
- "goose-sdk-types",
- "rmcp",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "uniffi",
-]
-
-[[package]]
-name = "goose-sdk-types"
-version = "0.1.0-alpha.13"
-dependencies = [
- "agent-client-protocol",
- "agent-client-protocol-schema",
- "schemars 1.2.2",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -7039,6 +6850,195 @@ dependencies = [
  "objc2",
  "objc2-core-foundation",
  "objc2-security",
+]
+
+[[package]]
+name = "oi-kit-agent"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "js-sys",
+ "oi-kit-provider-types",
+ "oi-kit-sdk-types",
+ "regex",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-futures",
+ "uuid",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "oi-kit-context-management"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "include_dir",
+ "minijinja",
+ "oi-kit-provider-types",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oi-kit-download-manager"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oi-kit-local-inference"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.23.1",
+ "chrono",
+ "encoding_rs",
+ "env-lock",
+ "etcetera",
+ "futures",
+ "hf-hub",
+ "include_dir",
+ "llama-cpp-2",
+ "llama-cpp-sys-2",
+ "minijinja",
+ "oi-kit-download-manager",
+ "oi-kit-provider-types",
+ "oi-kit-sdk-types",
+ "pulldown-cmark",
+ "regex",
+ "rmcp",
+ "safemlx",
+ "safemlx-lm",
+ "safemlx-lm-utils",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oi-kit-provider-types"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.23.1",
+ "chrono",
+ "env-lock",
+ "futures",
+ "getrandom 0.4.3",
+ "gloo-timers",
+ "once_cell",
+ "rand 0.10.2",
+ "regex",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tempfile",
+ "test-case",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
+name = "oi-kit-providers"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.23.1",
+ "chrono",
+ "env-lock",
+ "flate2",
+ "futures",
+ "http 1.5.0",
+ "include_dir",
+ "oi-kit-local-inference",
+ "oi-kit-provider-types",
+ "pem 4.0.0",
+ "pkcs8",
+ "rcgen",
+ "reqwest",
+ "reqwest-websocket",
+ "rmcp",
+ "sec1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite 0.28.0",
+ "tokio-util",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "oi-kit-sdk"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "agent-client-protocol",
+ "agent-client-protocol-schema",
+ "anyhow",
+ "base64 0.23.1",
+ "futures",
+ "oi-kit-context-management",
+ "oi-kit-providers",
+ "oi-kit-sdk-types",
+ "rmcp",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "uniffi",
+]
+
+[[package]]
+name = "oi-kit-sdk-types"
+version = "0.1.0-alpha.14"
+dependencies = [
+ "agent-client-protocol",
+ "agent-client-protocol-schema",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

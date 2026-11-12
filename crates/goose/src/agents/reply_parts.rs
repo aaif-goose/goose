@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use regex::Regex;
 use std::sync::Arc;
 
@@ -19,8 +19,8 @@ use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
     modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
-use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::{ProviderStats, ProviderUsage};
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use tracing::warn;
 
@@ -333,7 +333,7 @@ pub(crate) async fn stream_response_from_provider(
                         break;
                     }
                     Some(Err(error))
-                        if goose_providers::retry::should_retry(&error, &retry_config)
+                        if oi_kit_providers::retry::should_retry(&error, &retry_config)
                             && attempts < retry_config.max_retries =>
                     {
                         attempts += 1;
@@ -539,8 +539,8 @@ mod tests {
     use crate::conversation::message::{Message, SystemNotificationType};
     use crate::providers::base::Provider;
     use async_trait::async_trait;
-    use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
-    use goose_providers::model::ModelConfig;
+    use oi_kit_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
+    use oi_kit_providers::model::ModelConfig;
     use rmcp::model::{Annotations, Role, TextContent};
     use rmcp::object;
     use std::sync::Mutex;
@@ -1272,8 +1272,8 @@ mod tests {
             "sequenced"
         }
 
-        fn retry_config(&self) -> goose_providers::retry::RetryConfig {
-            goose_providers::retry::RetryConfig::new(2, 0, 1.0, 0)
+        fn retry_config(&self) -> oi_kit_providers::retry::RetryConfig {
+            oi_kit_providers::retry::RetryConfig::new(2, 0, 1.0, 0)
         }
 
         fn manages_own_context(&self) -> bool {
