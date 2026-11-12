@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { macUpdateRequirements } = require('./mac-update-requirements');
 
 function usage() {
   console.error(
@@ -74,6 +75,24 @@ function writeManifest({ directory, version }) {
     },
   ];
 
+  const requirements = files.map(({ sourceName }) => {
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(directory, `${sourceName}.macos.json`), 'utf8')
+    );
+    return macUpdateRequirements(metadata.minimumMacOSVersion, metadata.minimumMacOSVersion);
+  });
+  const minimum = requirements.reduce((highest, current) =>
+    Number(current.minimumSystemVersion.split('.')[0]) >
+    Number(highest.minimumSystemVersion.split('.')[0])
+      ? current
+      : highest
+  );
+
+  fs.writeFileSync(
+    path.join(directory, 'mac-update-requirements.json'),
+    `${JSON.stringify({ version, ...minimum })}\n`
+  );
+
   const entries = files.map(({ sourceName, updateName }) => {
     const sourcePath = path.join(directory, sourceName);
     const updatePath = path.join(directory, updateName);
@@ -89,6 +108,7 @@ function writeManifest({ directory, version }) {
 
   const manifest = [
     `version: ${yamlString(version)}`,
+    `minimumSystemVersion: ${yamlString(minimum.minimumSystemVersion)}`,
     'files:',
     ...entries.flatMap((entry) => [
       `  - url: ${yamlString(entry.url)}`,

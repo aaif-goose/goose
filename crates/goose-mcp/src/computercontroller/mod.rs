@@ -8,7 +8,7 @@ use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
         CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
-        ServerCapabilities, ServerInfo,
+        ServerCapabilities, ServerConfig,
     },
     schemars::JsonSchema,
     tool, tool_handler, tool_router, ServerHandler,
@@ -355,7 +355,7 @@ impl ComputerControllerServer {
             Try to do your best to find ways to complete a task without too many questions or offering options unless it is really unclear, find a way if you can.
             You can also guide them steps if they can help out as you go along.
 
-            There is already a screenshot tool available you can use if needed to see what is on screen.
+            There is no separate screenshot tool. To see what is on screen, save a screen capture to an image file from a script, then read that file with the read_image tool.
 
             {os_instructions}
             "#,
@@ -877,7 +877,7 @@ impl ComputerControllerServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ComputerControllerServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
                 "goose-computercontroller",

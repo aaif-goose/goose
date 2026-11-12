@@ -2,9 +2,10 @@ use super::*;
 use goose_acp_macros::custom_methods;
 
 #[custom_methods]
-impl GooseAcpAgent {
+impl AcpConnection {
     pub async fn dispatch_custom_request(
-        &self,
+        self: &Arc<Self>,
+        cx: &ConnectionTo<Client>,
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, agent_client_protocol::Error> {
@@ -18,7 +19,7 @@ impl GooseAcpAgent {
                 });
             }
 
-            self.handle_custom_request(method, params).await
+            self.handle_custom_request(cx, method, params).await
         }
         .await;
 
@@ -133,12 +134,45 @@ impl GooseAcpAgent {
         self.on_steer_session(req).await
     }
 
+    #[custom_method(LiveVoiceAvailabilityRequest)]
+    async fn dispatch_live_voice_availability(
+        &self,
+        req: LiveVoiceAvailabilityRequest,
+    ) -> Result<LiveVoiceAvailabilityResponse, agent_client_protocol::Error> {
+        self.on_live_voice_availability(req).await
+    }
+
+    #[custom_method(LiveVoiceStartRequest)]
+    async fn dispatch_live_voice_start(
+        self: &Arc<Self>,
+        cx: &ConnectionTo<Client>,
+        req: LiveVoiceStartRequest,
+    ) -> Result<LiveVoiceStartResponse, agent_client_protocol::Error> {
+        self.on_live_voice_start(cx, req).await
+    }
+
+    #[custom_method(LiveVoiceStopRequest)]
+    async fn dispatch_live_voice_stop(
+        &self,
+        req: LiveVoiceStopRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_live_voice_stop(req).await
+    }
+
     #[custom_method(DiagnosticsGetRequest)]
     async fn dispatch_get_diagnostics(
         &self,
         req: DiagnosticsGetRequest,
     ) -> Result<DiagnosticsGetResponse, agent_client_protocol::Error> {
         self.on_get_diagnostics(req).await
+    }
+
+    #[custom_method(ContextReportRequest)]
+    async fn dispatch_get_context_report(
+        &self,
+        req: ContextReportRequest,
+    ) -> Result<ContextReportResponse, agent_client_protocol::Error> {
+        self.on_get_context_report(req).await
     }
 
     #[custom_method(ListPromptsRequest)]
@@ -466,14 +500,6 @@ impl GooseAcpAgent {
         req: ImportSessionRequest,
     ) -> Result<ImportSessionResponse, agent_client_protocol::Error> {
         self.on_import_session(req).await
-    }
-
-    #[custom_method(ShareSessionNostrRequest)]
-    async fn dispatch_share_session_nostr(
-        &self,
-        req: ShareSessionNostrRequest,
-    ) -> Result<ShareSessionNostrResponse, agent_client_protocol::Error> {
-        self.on_share_session_nostr(req).await
     }
 
     #[custom_method(EncodeRecipeRequest)]

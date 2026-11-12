@@ -1,6 +1,7 @@
 name: Create Patch Release
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -25,7 +26,7 @@ jobs:
         fetch-depth: 0
 
     - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
-    - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
 
     - name: install dependencies
       run: |
@@ -85,6 +86,18 @@ jobs:
         echo "pr_url=$PR_URL" >> $GITHUB_ENV
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # Pushes using GITHUB_TOKEN do not trigger push workflows.
+    - name: Build initial release candidate
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RELEASE_BRANCH: ${{ env.branch_name }}
+        BUILD_SHA: ${{ env.head_ref }}
+      run: |
+        gh workflow run release-branches.yml \
+          --ref main \
+          -f release_branch="$RELEASE_BRANCH" \
+          -f build_sha="$BUILD_SHA"
 
     - name: Post release checklist comment
       run: |

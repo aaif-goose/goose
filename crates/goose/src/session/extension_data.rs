@@ -4,7 +4,7 @@
 use crate::config::base::Config;
 use crate::config::extensions::is_extension_available;
 use crate::config::ExtensionConfig;
-use crate::session::SessionManager;
+use crate::session::{Session, SessionManager};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -98,6 +98,23 @@ impl TodoState {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GoalState {
+    pub goal: Option<String>,
+    pub grind: Option<String>,
+}
+
+impl ExtensionState for GoalState {
+    const EXTENSION_NAME: &'static str = "goal";
+    const VERSION: &'static str = "v0";
+}
+
+impl GoalState {
+    pub fn of(session: &Session) -> Self {
+        Self::from_extension_data(&session.extension_data).unwrap_or_default()
+    }
+}
+
 /// Enabled extensions state implementation for storing which extensions are active
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledExtensionsState {
@@ -112,6 +129,17 @@ impl ExtensionState for EnabledExtensionsState {
 impl EnabledExtensionsState {
     pub fn new(extensions: Vec<ExtensionConfig>) -> Self {
         Self { extensions }
+    }
+
+    pub fn check_unique_keys(extensions: &[ExtensionConfig]) -> Result<()> {
+        let mut keys = std::collections::HashSet::new();
+        match extensions.iter().find(|config| !keys.insert(config.key())) {
+            Some(config) => Err(anyhow::anyhow!(
+                "extension '{}' appears twice in the selection",
+                config.name()
+            )),
+            None => Ok(()),
+        }
     }
 
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {

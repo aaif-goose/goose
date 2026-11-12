@@ -334,32 +334,7 @@ Then, you can try asking questions that require using the extension you added.
 
 ---
 
-## Advanced Features for MCP Extensions
-
-goose supports advanced MCP features that can enhance your extensions.
-
-### MCP Sampling: AI-Powered Tools
-
-**[MCP Sampling](/docs/guides/mcp-sampling)** allows your MCP servers to request AI completions from goose's LLM, transforming simple tools into intelligent agents.
-
-**Key Benefits:**
-
-- Your MCP server doesn't need its own OpenAI/Anthropic API key
-- Tools can analyze data, provide explanations, and make intelligent decisions
-- Enhanced user experience with smarter, more contextual responses
-- Secure by design: requests are isolated and attributed automatically
-
-**Getting Started:**
-
-- Use the `sampling/createMessage` method in your MCP server to request AI assistance
-- [goose's implementation](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/mcp_client.rs) currently supports text and image content types
-- goose automatically advertises sampling capability to all MCP servers
-
-**Use Cases:** Document summarization, smart search filtering, code analysis, data insights
-
-**Learn More:** See the [MCP Specification](https://modelcontextprotocol.io/specification/draft/client/sampling) for technical details.
-
-### MCP Apps: Interactive Extensions
+## MCP Apps: Interactive Extensions
 
 **[MCP Apps](/docs/tutorials/building-mcp-apps)** enable rich, interactive user interfaces instead of text-only responses.
 

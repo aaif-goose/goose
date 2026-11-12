@@ -1,5 +1,7 @@
 //! Runs session diagnostics and feeds repair context back into the turn.
 
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use rmcp::model::Role;
@@ -10,9 +12,17 @@ use crate::agents::state_machine::{
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
-use crate::session::Session;
+use crate::session::{Session, SessionManager};
 
-pub struct DoctorOperation;
+pub struct DoctorOperation {
+    session_manager: Arc<SessionManager>,
+}
+
+impl DoctorOperation {
+    pub fn new(session_manager: Arc<SessionManager>) -> Self {
+        Self { session_manager }
+    }
+}
 
 #[async_trait]
 impl Operation<Session, GooseEffect> for DoctorOperation {
@@ -39,12 +49,7 @@ impl Operation<Session, GooseEffect> for DoctorOperation {
             .id
             .clone()
             .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        // Doctor still needs the legacy Agent, so keep that lookup contained at this boundary.
-        let agent = crate::execution::manager::AgentManager::instance()
-            .await?
-            .get_or_create_agent(session.id.clone())
-            .await?;
-        let result = match crate::doctor::run(&agent, &session.id).await {
+        let result = match crate::doctor::run(&self.session_manager, session).await {
             Ok(message) => message,
             Err(error) => Message::assistant().with_text(error.to_string()),
         };
@@ -52,8 +57,8 @@ impl Operation<Session, GooseEffect> for DoctorOperation {
         if result.role == Role::Assistant {
             let command_message = command_message.with_visibility(true, false);
             let result = result.with_visibility(true, false);
-            emit.message(command_message).await;
-            let result = emit.message(result).await;
+            emit.message(command_message);
+            let result = emit.message(result);
             return yielded_with([
                 ConversationEffect::SetMessageVisibility {
                     message_id,

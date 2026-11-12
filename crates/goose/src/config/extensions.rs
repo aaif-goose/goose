@@ -325,6 +325,13 @@ mod tests {
     use tracing::{Event, Level, Subscriber};
     use tracing_subscriber::layer::SubscriberExt;
 
+    #[test]
+    fn extension_names_have_stable_keys() {
+        assert_eq!(name_to_key("Test Client"), "testclient");
+        assert_eq!(name_to_key("__cli__ent__"), "__cli__ent__");
+        assert_eq!(name_to_key("client 🚀"), "client_");
+    }
+
     fn test_config(content: &str) -> (Config, NamedTempFile, NamedTempFile) {
         let config_file = NamedTempFile::new().unwrap();
         let secrets_file = NamedTempFile::new().unwrap();
@@ -806,6 +813,7 @@ extensions:
         assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
     }
 
+    #[cfg(feature = "chat-recall")]
     #[test]
     fn test_default_off_extension_disabled_when_config_empty() {
         let (config, _config_file, _secrets_file) = test_config("");

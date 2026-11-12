@@ -23,11 +23,13 @@ export interface UseChatSessionResult {
   ) => Promise<boolean>;
   stopStreaming: () => void;
   retrySessionLoad: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   sessionLoadError?: string;
   tokenState: TokenState;
   notifications: Map<string, NotificationEvent[]>;
   pauseQueueOnStop: boolean;
   queueProcessingBlocked: boolean;
+  hasActiveRun: boolean;
   onMessageUpdate: (
     messageId: string,
     newContent: string,

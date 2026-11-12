@@ -348,6 +348,7 @@ fn malformed_arguments_contain_unresolved_execute_alias(
     false
 }
 
+#[cfg(feature = "tree-sitter")]
 fn decode_quoted_string(literal: &str) -> Option<String> {
     let quote = literal.chars().next()?;
     if !matches!(quote, '"' | '\'') || !literal.ends_with(quote) {
@@ -375,10 +376,12 @@ fn decode_quoted_string(literal: &str) -> Option<String> {
     (!escaped).then_some(decoded)
 }
 
+#[cfg(feature = "tree-sitter")]
 fn node_text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> Option<&'a str> {
     source.get(node.byte_range())
 }
 
+#[cfg(feature = "tree-sitter")]
 fn is_developer_shell_call(node: tree_sitter::Node<'_>, source: &str) -> bool {
     let Some(function) = node.child_by_field_name("function") else {
         return false;
@@ -400,6 +403,7 @@ fn is_developer_shell_call(node: tree_sitter::Node<'_>, source: &str) -> bool {
         && node_text(property, source) == Some("shell")
 }
 
+#[cfg(feature = "tree-sitter")]
 fn shell_command_from_call(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     let arguments = node.child_by_field_name("arguments")?;
     if arguments.named_child_count() != 1 {
@@ -436,6 +440,7 @@ fn shell_command_from_call(node: tree_sitter::Node<'_>, source: &str) -> Option<
     node_text(value, source).and_then(decode_quoted_string)
 }
 
+#[cfg(feature = "tree-sitter")]
 fn extract_shell_command_from_execute_code(code: &str) -> Option<String> {
     let mut parser = tree_sitter::Parser::new();
     parser
@@ -462,6 +467,11 @@ fn extract_shell_command_from_execute_code(code: &str) -> Option<String> {
     }
 
     command
+}
+
+#[cfg(not(feature = "tree-sitter"))]
+fn extract_shell_command_from_execute_code(_code: &str) -> Option<String> {
+    None
 }
 
 fn maybe_convert_execute_to_shell_tool_call(
@@ -1270,11 +1280,19 @@ pub fn convert_tool_messages_to_text(messages: &[Message]) -> Conversation {
 
 /// Modifies the system prompt to include tool usage instructions when tool interpretation is enabled
 pub fn modify_system_prompt_for_tool_json(system_prompt: &str, tools: &[Tool]) -> String {
+    format!(
+        "{}\n\n{}",
+        system_prompt,
+        toolshim_system_prompt_appendix(tools)
+    )
+}
+
+pub fn toolshim_system_prompt_appendix(tools: &[Tool]) -> String {
     let tool_info = format_tool_info(tools);
 
     format!(
-        "{}\n\n{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
-        system_prompt, tool_info
+        "{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
+        tool_info
     )
 }
 
@@ -1467,6 +1485,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn parses_execute_marker_and_converts_to_shell_call() {
         let tools = vec![Tool::new(
@@ -1490,6 +1509,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn execute_marker_ignores_command_data_before_shell_call() {
         let tools = vec![Tool::new(
@@ -1514,6 +1534,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn execute_code_only_extracts_real_developer_shell_call() {
         let code = r#"
@@ -1532,6 +1553,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn execute_code_rejects_ambiguous_or_unsupported_shell_calls() {
         let cases = [
@@ -1677,6 +1699,7 @@ mod tests {
         assert!(augmented.content.is_empty());
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[tokio::test]
     async fn augment_validates_execute_alias_with_call_punctuation() {
         let tools = vec![Tool::new(
@@ -1765,6 +1788,7 @@ mod tests {
         assert!(augmented.content.is_empty());
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[tokio::test]
     async fn augment_validates_structured_execute_name_without_interpreter() {
         let tools = vec![Tool::new(

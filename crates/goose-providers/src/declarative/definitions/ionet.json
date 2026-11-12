@@ -1,0 +1,49 @@
+{
+  "name": "ionet",
+  "engine": "openai",
+  "display_name": "IO Intelligence",
+  "description": "Inference for open-weight models (DeepSeek, Qwen, Llama, GLM, Kimi, gpt-oss and more) through io.net's OpenAI-compatible API",
+  "api_key_env": "IONET_API_KEY",
+  "base_url": "https://api.intelligence.io.solutions/api/v1/chat/completions",
+  "dynamic_models": false,
+  "models": [
+    {
+      "name": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "context_limit": 1048320
+    },
+    {
+      "name": "zai-org/GLM-5.3",
+      "context_limit": 262144
+    },
+    {
+      "name": "moonshotai/Kimi-K3",
+      "context_limit": 1048576
+    },
+    {
+      "name": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+      "context_limit": 262144
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.2",
+      "context_limit": 163840
+    },
+    {
+      "name": "zai-org/GLM-4.6",
+      "context_limit": 131072
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "context_limit": 131072
+    },
+    {
+      "name": "meta-llama/Llama-3.3-70B-Instruct",
+      "context_limit": 128000
+    },
+    {
+      "name": "moonshotai/Kimi-K2-Instruct-0905",
+      "context_limit": 262144
+    }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://io.net/docs/reference/ai-models/create-chat-completion"
+}

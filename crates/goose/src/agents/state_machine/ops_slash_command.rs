@@ -53,14 +53,18 @@ impl Operation<Session, GooseEffect> for SlashCommandOperation<'_> {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
+        if !crate::agents::execute_commands::slash_commands_enabled() {
+            return not_applicable();
+        }
+
         let messages = messages_since_kickoff(conversation)?;
         let Some(user_message) = messages.first() else {
             return not_applicable();
         };
-        let message_text = user_message.as_concat_text();
         if messages.len() != 1 {
             return not_applicable();
         }
+        let message_text = user_message.agent_visible_content().as_concat_text();
         let Some(command) = parse_slash_command(&message_text) else {
             return not_applicable();
         };

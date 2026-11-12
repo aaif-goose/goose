@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "todo";
+pub const TODO_WRITE_TOOL_NAME: &str = "todo_write";
+pub const TODO_WRITE_TOOL_NAME_COMPLETE: &str = "todo__todo_write";
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct TodoWriteParams {
@@ -37,17 +39,11 @@ impl TodoClient {
                 indoc! {r#"
                 Your todo content is automatically available in your context.
 
-                Workflow:
-                - Start: write initial checklist
-                - During: update progress
-                - End: verify all complete
-
-                Template:
-                - [x] Requirement 1
-                - [ ] Task
-                  - [ ] Sub-task
-                - [ ] Requirement 2
-                - [ ] Another task
+                Use it as brief planning notes for yourself:
+                - When given a multi-step task, you may jot a short plan
+                - Update it only if your plan changes
+                - Items never need to be checked off, closed out, or verified
+                - Never redo or re-verify completed work because of these notes
             "#}
                 .to_string(),
             );
@@ -81,32 +77,17 @@ impl TodoClient {
             ));
         }
 
-        let manager = &self.context.session_manager;
-        match manager.get_session(session_id, false).await {
-            Ok(mut session) => {
-                let todo_state = extension_data::TodoState::new(content);
-                if todo_state
-                    .to_extension_data(&mut session.extension_data)
-                    .is_ok()
-                {
-                    match manager
-                        .update(session_id)
-                        .extension_data(session.extension_data)
-                        .apply()
-                        .await
-                    {
-                        Ok(_) => Ok(vec![ContentBlock::text(format!(
-                            "Updated ({} chars)",
-                            char_count
-                        ))]),
-                        Err(_) => Err("Failed to update session metadata".to_string()),
-                    }
-                } else {
-                    Err("Failed to serialize TODO state".to_string())
-                }
-            }
-            Err(_) => Err("Failed to read session metadata".to_string()),
-        }
+        self.context
+            .session_manager
+            .set_extension_state(session_id, &extension_data::TodoState::new(content))
+            .await
+            .map(|()| {
+                vec![ContentBlock::text(format!(
+                    "Updated ({} chars)",
+                    char_count
+                ))]
+            })
+            .map_err(|_| "Failed to update session metadata".to_string())
     }
 
     fn get_tools() -> Vec<Tool> {
@@ -115,13 +96,13 @@ impl TodoClient {
             serde_json::to_value(schema).expect("Failed to serialize TodoWriteParams schema");
 
         vec![Tool::new(
-            "todo_write".to_string(),
+            TODO_WRITE_TOOL_NAME.to_string(),
             indoc! {r#"
                     Overwrite the entire TODO content.
 
                     The content persists across conversation turns and compaction. Use this for:
-                    - Task tracking and progress updates
-                    - Important notes and reminders
+                    - A short plan for a multi-step task, rewritten only when the plan changes
+                    - Durable notes and reminders you want to keep in view
 
                     WARNING: This operation completely replaces the existing content. Always include
                     all content you want to keep, not just the changes.
@@ -164,7 +145,7 @@ impl McpClientTrait for TodoClient {
     ) -> Result<CallToolResult, Error> {
         let session_id = &ctx.session_id;
         let content = match name {
-            "todo_write" => self.handle_write_todo(session_id, arguments).await,
+            TODO_WRITE_TOOL_NAME => self.handle_write_todo(session_id, arguments).await,
             _ => Err(format!("Unknown tool: {}", name)),
         };
 
@@ -181,7 +162,7 @@ impl McpClientTrait for TodoClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
+    async fn get_moim(&self, session_id: &str, _tools: &[Tool]) -> Option<String> {
         let metadata = self
             .context
             .session_manager
@@ -190,13 +171,11 @@ impl McpClientTrait for TodoClient {
             .ok()?;
 
         match extension_data::TodoState::from_extension_data(&metadata.extension_data) {
-            Some(state) if !state.content.trim().is_empty() => {
-                Some(format!("Current tasks and notes:\n{}\n", state.content))
-            }
-            _ => Some(
-                "Current tasks and notes:\nOnce given a task, immediately update your todo with all explicit and implicit requirements\n"
-                    .to_string(),
-            ),
+            Some(state) if !state.content.trim().is_empty() => Some(format!(
+                "Planning notes (for your reference; items need not be closed out):\n{}\n",
+                state.content
+            )),
+            _ => Some("Current tasks and notes:\n(none)\n".to_string()),
         }
     }
 }

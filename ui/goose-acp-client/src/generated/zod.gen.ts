@@ -423,11 +423,43 @@ export const zSteerSessionResponse_unstable = z.object({
     messageId: z.string()
 });
 
-export const zDiagnosticsReportLevel = z.enum(['summary', 'full']);
+/**
+ * Ask whether a new or existing chat can enter direct Live voice.
+ */
+export const zLiveVoiceAvailabilityRequest_unstable = z.object({
+    sessionId: z.string().nullish(),
+    _meta: z.record(z.string(), z.unknown()).nullish()
+});
+
+export const zLiveVoiceStatus = z.enum(['ready', 'unavailable']);
+
+export const zLiveVoiceAvailabilityResponse_unstable = z.object({
+    status: zLiveVoiceStatus,
+    message: z.string()
+});
 
 /**
- * Get a diagnostic report for a session.
+ * Start a live voice interaction for a session.
  */
+export const zLiveVoiceStartRequest_unstable = z.object({
+    sessionId: z.string(),
+    offerSdp: z.string(),
+    instructions: z.string().nullish(),
+    _meta: z.record(z.string(), z.unknown()).nullish()
+});
+
+export const zLiveVoiceStartResponse_unstable = z.object({
+    interactionId: z.string(),
+    answerSdp: z.string()
+});
+
+export const zLiveVoiceStopRequest_unstable = z.object({
+    sessionId: z.string(),
+    interactionId: z.string()
+});
+
+export const zDiagnosticsReportLevel = z.enum(['summary', 'full']);
+
 export const zDiagnosticsGetRequest_unstable = z.object({
     sessionId: z.string(),
     level: zDiagnosticsReportLevel.optional().default('summary')
@@ -435,6 +467,59 @@ export const zDiagnosticsGetRequest_unstable = z.object({
 
 export const zDiagnosticsGetResponse_unstable = z.object({
     report: z.unknown()
+});
+
+/**
+ * Break down what fills the model's context window if the session were
+ * prompted right now. Makes no model call.
+ */
+export const zContextReportRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+export const zContextReportModel = z.object({
+    provider: z.string().nullish(),
+    modelName: z.string(),
+    contextLimit: z.int().gte(0)
+});
+
+export const zContextCategory = z.union([
+    z.literal('extension_instructions'),
+    z.literal('turn_context'),
+    z.literal('tool_definitions'),
+    z.literal('compaction_summary'),
+    z.literal('messages'),
+    z.literal('system_prompt'),
+    z.literal('additional_instructions')
+]);
+
+/**
+ * Parts add up to their segment's `tokenCount`, except where a segment is
+ * split into prose sections; there the headings and framing are carried by
+ * the segment alone.
+ */
+export const zContextPart = z.object({
+    label: z.string(),
+    source: z.string().nullish(),
+    tokenCount: z.int().gte(0),
+    contentPreview: z.string().nullish()
+});
+
+export const zContextSegment = z.object({
+    category: zContextCategory,
+    label: z.string(),
+    source: z.string().nullish(),
+    tokenCount: z.int().gte(0),
+    contentPreview: z.string().nullish(),
+    parts: z.array(zContextPart).optional()
+});
+
+export const zContextReportResponse_unstable = z.object({
+    model: zContextReportModel,
+    totalTokens: z.int().gte(0),
+    segments: z.array(zContextSegment),
+    providerManagesContext: z.boolean(),
+    autoCompactionPending: z.boolean()
 });
 
 /**
@@ -1154,18 +1239,11 @@ export const zExportSessionResponse_unstable = z.object({
     data: z.string()
 });
 
-export const zSessionImportSource = z.enum([
-    'auto',
-    'json',
-    'nostr'
-]);
-
 /**
- * Import a session from a JSON string or share link.
+ * Import a session from a serialized session JSON string.
  */
 export const zImportSessionRequest_unstable = z.object({
-    input: z.string(),
-    source: zSessionImportSource
+    input: z.string()
 });
 
 /**
@@ -1176,21 +1254,6 @@ export const zImportSessionResponse_unstable = z.object({
     title: z.string().nullish(),
     updatedAt: z.string().nullish(),
     messageCount: z.int().gte(0)
-});
-
-/**
- * Share a session through Nostr and return its share links.
- */
-export const zShareSessionNostrRequest_unstable = z.object({
-    sessionId: z.string(),
-    relays: z.array(z.string())
-});
-
-export const zShareSessionNostrResponse_unstable = z.object({
-    deeplink: z.string(),
-    nevent: z.string(),
-    eventId: z.string(),
-    relays: z.array(z.string())
 });
 
 export const zRecipeExtensionDto = z.union([
@@ -2234,6 +2297,13 @@ export const zMessageUsageUpdate = z.object({
     usage: zMessageUsageData
 });
 
+export const zLiveVoiceInteractionOutcome = z.enum(['stopped', 'failed']);
+
+export const zLiveVoiceInteractionEndedUpdate = z.object({
+    interactionId: z.string(),
+    outcome: zLiveVoiceInteractionOutcome
+});
+
 /**
  * Discriminated union of goose-specific session update payloads.
  * Variant tag matches ACP's convention (`sessionUpdate: "<snake_case>"`).
@@ -2245,7 +2315,8 @@ export const zMessageUsageUpdate = z.object({
 export const zGooseSessionUpdate = z.discriminatedUnion('sessionUpdate', [
     zSessionUsageUpdate.extend({ sessionUpdate: z.literal('usage_update') }),
     zStatusMessageUpdate.extend({ sessionUpdate: z.literal('status_message') }),
-    zMessageUsageUpdate.extend({ sessionUpdate: z.literal('message_usage') })
+    zMessageUsageUpdate.extend({ sessionUpdate: z.literal('message_usage') }),
+    zLiveVoiceInteractionEndedUpdate.extend({ sessionUpdate: z.literal('live_voice_interaction_ended') })
 ]);
 
 /**
@@ -2303,7 +2374,11 @@ export const zExtRequest = z.object({
             zUpdateWorkingDirRequest_unstable,
             zSetSessionSystemPromptRequest_unstable,
             zSteerSessionRequest_unstable,
+            zLiveVoiceAvailabilityRequest_unstable,
+            zLiveVoiceStartRequest_unstable,
+            zLiveVoiceStopRequest_unstable,
             zDiagnosticsGetRequest_unstable,
+            zContextReportRequest_unstable,
             zListPromptsRequest_unstable,
             zGetPromptRequest_unstable,
             zSavePromptRequest_unstable,
@@ -2345,7 +2420,6 @@ export const zExtRequest = z.object({
             zOnboardingImportApplyRequest_unstable,
             zExportSessionRequest_unstable,
             zImportSessionRequest_unstable,
-            zShareSessionNostrRequest_unstable,
             zEncodeRecipeRequest_unstable,
             zDecodeRecipeRequest_unstable,
             zScanRecipeRequest_unstable,
@@ -2418,7 +2492,10 @@ export const zExtResponse = z.union([
                 zAppsImportResponse_unstable,
                 zAppsDeleteResponse_unstable,
                 zSteerSessionResponse_unstable,
+                zLiveVoiceAvailabilityResponse_unstable,
+                zLiveVoiceStartResponse_unstable,
                 zDiagnosticsGetResponse_unstable,
+                zContextReportResponse_unstable,
                 zListPromptsResponse_unstable,
                 zGetPromptResponse_unstable,
                 zPromptOperationResponse_unstable,
@@ -2448,7 +2525,6 @@ export const zExtResponse = z.union([
                 zOnboardingImportApplyResponse_unstable,
                 zExportSessionResponse_unstable,
                 zImportSessionResponse_unstable,
-                zShareSessionNostrResponse_unstable,
                 zEncodeRecipeResponse_unstable,
                 zDecodeRecipeResponse_unstable,
                 zScanRecipeResponse_unstable,

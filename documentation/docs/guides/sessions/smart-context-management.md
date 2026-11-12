@@ -26,10 +26,13 @@ This layered approach lets goose handle token and context limits gracefully.
 
 ## Automatic Compaction
 goose automatically compacts older parts of your conversation into a summary when approaching token limits, allowing you to maintain long-running sessions without manual intervention.
-Auto-compaction is triggered by default when you reach 80% of the token limit in goose Desktop and the goose CLI.
+Auto-compaction is triggered by default when you reach 80% of the token limit or 225,000 tokens, whichever comes first, in goose Desktop and the goose CLI.
+The effective trigger is `min(GOOSE_AUTO_COMPACT_THRESHOLD × model context window, GOOSE_AUTO_COMPACT_TOKEN_LIMIT)`. It is recalculated for the current model's context window. Change the token cap with `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`.
+
+The default cap leaves headroom below OpenAI's long-context price tier (above 272,000 input tokens). It controls when compaction starts, not a guaranteed maximum request size: new messages, tool output, and the compaction request itself can exceed the trigger between checks.
 
 Control the auto-compaction behavior with the `GOOSE_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
-Disable this feature by setting the value to `0.0`.
+Disable this feature by setting the value to `0.0`; the token cap does not re-enable disabled auto-compaction.
 
 ```
 # Automatically compact sessions when 60% of available tokens are used
@@ -379,7 +382,7 @@ The session cost is shown at the bottom of the goose window and updates dynamica
 
 Pricing data is regularly fetched from the OpenRouter API and cached locally. The `Advanced settings` tab shows when the data was last updated and allows you to refresh. 
 
-These costs are estimates only, and not connected to your actual provider bill. The cost shown is an approximation based on token counts and public pricing data.
+These costs are public-price estimates only, not invoices or a view of your actual provider bill. The displayed amount approximates usage from token counts and public catalog rates; provider-reported costs take precedence when available.
 </TabItem>
     <TabItem value="cli" label="goose CLI">
     Show estimated cost in the goose CLI by setting the `GOOSE_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md).

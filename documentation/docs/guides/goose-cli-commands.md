@@ -324,6 +324,24 @@ Session removal is permanent and cannot be undone. goose will show which session
 
 ---
 
+#### session rename [options]
+Rename a saved session. If no session ID is provided, goose will prompt you to select a session interactively.
+
+**Options:**
+- **`--session-id <session_id>`**: Rename a specific session by its session ID (e.g., `20251108_3`)
+- **`-n, --new-name <name>`**: The new name for the session (required)
+
+**Usage:**
+```bash
+# Rename a specific session by ID
+goose session rename --session-id 20251108_3 --new-name my-project
+
+# Interactive selection (prompts you to choose a session)
+goose session rename --new-name my-project
+```
+
+---
+
 #### session export [options]
 Export sessions in different formats for backup, sharing, migration, or documentation purposes.
 
@@ -695,7 +713,17 @@ goose acp
 ```
 
 :::info
-This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/gdk/acp) for details.
+This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Set up goose in Zed](/docs/guides/zed) for an editor setup example, or [Build an app with goose](/docs/gdk/acp) to create your own client.
+:::
+
+:::warning Unattended environments
+goose uses the system keyring by default. On macOS, reading a credential may display a Keychain authorization prompt. If your ACP client runs goose without a user available to respond, keyring access can block indefinitely.
+
+Disable keyring access for that process and provide provider credentials through environment variables:
+
+```bash
+GOOSE_DISABLE_KEYRING=1 OPENAI_API_KEY='...' goose acp
+```
 :::
 
 ---
@@ -790,24 +818,22 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/?` or `/help`** - Display the help menu
 - **`/builtin <names>`** - Add builtin extensions by name (comma-separated)
 - **`/clear`** - Clear the current chat history
-- **`/endplan`** - Exit plan mode and return to 'normal' goose mode
 - **`/exit` or `/quit`** - Exit the session
 - **`/extension <command>`** - Add a stdio extension (format: ENV1=val1 command args...)
 - **`/mode <name>`** - Set the goose mode to use ('auto', 'approve', 'chat', 'smart_approve')
-- **`/plan <message_text>`** - Enter 'plan' mode with optional message. Create a plan based on the current messages and ask user if they want to act on it
+- **`/model [name]`** - Show the current model, or switch models for this session while keeping the same provider
+- **`/model --provider <name> [model]`** - Switch to a different provider, optionally specifying a model
 - **`/prompt <n> [--info] [key=value...]`** - Get prompt info or execute a prompt
 - **`/prompts [--extension <name>]`** - List all available prompts, optionally filtered by extension
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills [<name>...]`** - List available skills, or load one or more skills by name
+- **`/status`** - Show the current session ID, model, provider, mode, and token usage. Use the ID to resume the same session in another client, or with `goose session --resume --session-id <session_id>` in the CLI.
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)
 
 **Examples:**
 ```bash
-# Create a plan for triaging test failures
-/plan let's create a plan for triaging test failures
-
 # List all prompts from the developer extension
 /prompts --extension developer
 

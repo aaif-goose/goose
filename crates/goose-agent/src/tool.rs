@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,6 +19,9 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
 };
+use crate::post_tool_call_hook::PostToolCallHook;
+use crate::tool_call_state::{tool_calls, ToolCallState};
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 fn empty_input_schema() -> Arc<JsonObject> {
     Arc::new(
@@ -64,12 +70,6 @@ fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> V
         .collect()
 }
 
-fn interrupted_result() -> Result<CallToolResult, ErrorData> {
-    Ok(CallToolResult::error(vec![
-        rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
-    ]))
-}
-
 fn parameters<T: ToolBase>(arguments: Option<JsonObject>) -> Result<T::Parameter, ErrorData> {
     if T::input_schema().is_none() {
         return Ok(T::Parameter::default());
@@ -88,12 +88,43 @@ fn result<T: ToolBase>(output: Result<T::Output, T::Error>) -> Result<CallToolRe
     Ok(CallToolResult::structured(value))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+async fn invoke_sync<S, T>(
+    session: S,
+    parameters: T::Parameter,
+) -> Result<CallToolResult, ErrorData>
+where
+    S: Send + Sync + 'static,
+    T: SyncTool<S> + 'static,
+{
+    tokio::task::spawn_blocking(move || result::<T>(T::invoke(&session, parameters)))
+        .await
+        .map_err(|error| {
+            ErrorData::internal_error(format!("synchronous tool task failed: {error}"), None)
+        })?
+}
+
+// wasm32 has no threads to move blocking work onto, so the tool runs inline
+// and cancellation cannot interrupt it.
+#[cfg(target_arch = "wasm32")]
+async fn invoke_sync<S, T>(
+    session: S,
+    parameters: T::Parameter,
+) -> Result<CallToolResult, ErrorData>
+where
+    S: MaybeSend + MaybeSync + 'static,
+    T: SyncTool<S>,
+{
+    result::<T>(T::invoke(&session, parameters))
+}
+
 /// Supplies tools whose definitions and implementations may vary by session.
 ///
 /// A provider's tool names and their handlers must remain stable from an inference
 /// advertisement until every tool call produced by that inference has been handled.
-#[async_trait]
-pub trait ToolProvider<S>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     async fn tools(&self, session: &S) -> Result<Vec<Tool>>;
 
     async fn call(
@@ -105,9 +136,16 @@ pub trait ToolProvider<S>: Send + Sync {
     ) -> Result<CallToolResult, ErrorData>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 type ToolHandler<S> = dyn for<'a> Fn(&'a S, Option<JsonObject>) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>
     + Send
     + Sync;
+
+#[cfg(target_arch = "wasm32")]
+type ToolHandler<S> = dyn for<'a> Fn(
+    &'a S,
+    Option<JsonObject>,
+) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>;
 
 struct RegisteredTool<S> {
     definition: Tool,
@@ -118,10 +156,11 @@ struct RegisteredToolProvider<S> {
     tools: Vec<RegisteredTool<S>>,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S> ToolProvider<S> for RegisteredToolProvider<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     async fn tools(&self, _session: &S) -> Result<Vec<Tool>> {
         Ok(self
@@ -156,16 +195,20 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
+    post_tool_call_hook: Option<Arc<dyn PostToolCallHook<S>>>,
+    tool_responses: Mutex<Option<Message>>,
 }
 
 impl<S> ToolOperation<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     pub fn new() -> Self {
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
+            post_tool_call_hook: None,
+            tool_responses: Mutex::new(None),
         }
     }
 
@@ -187,10 +230,15 @@ where
         self
     }
 
+    pub fn with_post_tool_call_hook(mut self, hook: Arc<dyn PostToolCallHook<S>>) -> Self {
+        self.post_tool_call_hook = Some(hook);
+        self
+    }
+
     pub fn with_sync_tool<T>(mut self) -> Self
     where
         S: Clone,
-        T: SyncTool<S> + Send + Sync + 'static,
+        T: SyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
             definition: definition::<T>(),
@@ -198,16 +246,7 @@ where
                 let session = session.clone();
                 Box::pin(async move {
                     let parameters = parameters::<T>(arguments)?;
-                    tokio::task::spawn_blocking(move || {
-                        result::<T>(T::invoke(&session, parameters))
-                    })
-                    .await
-                    .map_err(|error| {
-                        ErrorData::internal_error(
-                            format!("synchronous tool task failed: {error}"),
-                            None,
-                        )
-                    })?
+                    invoke_sync::<S, T>(session, parameters).await
                 })
             }),
         });
@@ -216,7 +255,7 @@ where
 
     pub fn with_async_tool<T>(mut self) -> Self
     where
-        T: AsyncTool<S> + Send + Sync + 'static,
+        T: AsyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
             definition: definition::<T>(),
@@ -255,21 +294,35 @@ where
 
 impl<S> Default for ToolOperation<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S, E> Operation<S, E> for ToolOperation<S>
 where
-    S: Send + Sync + 'static,
-    E: From<Message> + Send + 'static,
+    S: MaybeSend + MaybeSync + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         "tools"
+    }
+
+    async fn finalize_cancellation(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<E> {
+        let tool_responses = self.tool_responses.lock().unwrap().take();
+        match tool_responses {
+            Some(tool_responses) => vec![E::from(emit.message(tool_responses))],
+            None => Vec::new(),
+        }
     }
 
     async fn inference_tools(&self, session: &S) -> Result<Vec<Tool>> {
@@ -288,39 +341,20 @@ where
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let turn = messages_since_kickoff(conversation)?;
-        let answered: HashSet<&str> = turn
-            .iter()
-            .flat_map(Message::get_tool_response_ids)
-            .collect();
-        let pending = turn
-            .iter()
-            .flat_map(|message| message.content.iter())
-            .filter_map(MessageContent::as_tool_request)
-            .filter(|request| {
-                !request.was_executed_externally() && !answered.contains(request.id.as_str())
+        let pending = tool_calls(turn)
+            .into_iter()
+            .filter(|(request, state)| {
+                !request.was_executed_externally()
+                    && (*state == ToolCallState::Executable
+                        || (*state == ToolCallState::Unchecked && request.tool_call.is_err()))
             })
-            .cloned()
+            .map(|(request, _)| request.clone())
             .collect::<Vec<_>>();
         if pending.is_empty() {
             return not_applicable();
         }
 
-        let available = tokio::select! {
-            biased;
-            _ = emit.cancelled() => {
-                let mut message = Message::user();
-                for request in pending {
-                    message.add_tool_response_with_metadata(
-                        request.id,
-                        interrupted_result(),
-                        request.metadata.as_ref(),
-                    );
-                }
-                let message = emit.message(message).await;
-                return applied([E::from(message)]);
-            },
-            available = self.available_tools(session) => available?,
-        };
+        let available = self.available_tools(session).await?;
         let available_names = available
             .iter()
             .map(|(tool, _)| tool.name.as_ref())
@@ -330,8 +364,6 @@ where
             return not_applicable();
         }
 
-        let mut message = Message::user();
-        let mut cancelled = false;
         for request in pending {
             let provider = match request.tool_call.as_ref() {
                 Ok(call) => available
@@ -341,31 +373,45 @@ where
                     .expect("pending requests were filtered by available tools"),
                 Err(_) => &self.registered as &dyn ToolProvider<S>,
             };
-            let tool_result = if cancelled || emit.cancel_token().is_cancelled() {
-                cancelled = true;
-                interrupted_result()
-            } else {
-                match request.tool_call.as_ref() {
-                    Err(error) => Err(error.clone()),
-                    Ok(call) => {
-                        tokio::select! {
-                            biased;
-                            _ = emit.cancelled() => {
-                                cancelled = true;
-                                interrupted_result()
-                            },
-                            result = provider.call(session, &request.id, call.clone(), emit) => result,
-                        }
-                    }
+            let tool_result = match request.tool_call.as_ref() {
+                Err(error) => Err(error.clone()),
+                Ok(call) => {
+                    provider
+                        .call(session, &request.id, call.clone(), emit)
+                        .await
                 }
             };
-            message.add_tool_response_with_metadata(
-                request.id,
-                tool_result,
-                request.metadata.as_ref(),
-            );
+            let tool_response = {
+                let mut tool_responses = self.tool_responses.lock().unwrap();
+                let tool_responses = tool_responses
+                    .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
+                tool_responses.add_tool_response_with_metadata(
+                    request.id.clone(),
+                    tool_result,
+                    request.metadata.as_ref(),
+                );
+                tool_responses
+                    .content
+                    .last()
+                    .and_then(MessageContent::as_tool_response)
+                    .cloned()
+                    .expect("tool response just added")
+            };
+            if let (Ok(_), Some(hook)) = (&request.tool_call, &self.post_tool_call_hook) {
+                if let Err(error) = hook
+                    .after_call(session, conversation, &request, &tool_response)
+                    .await
+                {
+                    tracing::warn!(%error, tool_call_id = %request.id, "post tool call hook failed");
+                }
+            }
         }
-        let message = emit.message(message).await;
-        applied([E::from(message)])
+        let tool_responses = self
+            .tool_responses
+            .lock()
+            .unwrap()
+            .take()
+            .expect("tool responses retained");
+        applied([E::from(emit.message(tool_responses))])
     }
 }

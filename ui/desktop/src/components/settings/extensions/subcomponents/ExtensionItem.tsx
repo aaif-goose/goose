@@ -21,7 +21,7 @@ const i18n = defineMessages({
 interface ExtensionItemProps {
   extension: FixedExtensionEntry;
   onToggle: (extension: FixedExtensionEntry) => Promise<boolean | void> | void;
-  onConfigure?: (extension: FixedExtensionEntry) => void;
+  onConfigure: (extension: FixedExtensionEntry) => void;
   isStatic?: boolean; // to not allow users to edit configuration
 }
 
@@ -100,7 +100,7 @@ export default function ExtensionItem({
                 aria-label={intl.formatMessage(i18n.configureExtension, {
                   name: getFriendlyTitle(extension),
                 })}
-                onClick={() => onConfigure?.(extension)}
+                onClick={() => onConfigure(extension)}
               >
                 <Gear className="w-4 h-4" />
               </button>

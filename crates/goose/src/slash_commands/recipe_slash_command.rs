@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use super::slash_command::is_builtin_command;
 use super::types::{SlashCommandEntry, SlashCommandSource};
 use super::util::normalize_command_name;
 use crate::config::Config;
@@ -63,6 +64,10 @@ pub fn get_recipe_for_command(command: &str) -> Option<PathBuf> {
         .into_iter()
         .find(|mapping| mapping.command == normalized)
         .map(|mapping| PathBuf::from(mapping.recipe_path))
+}
+
+pub(super) fn get_existing_recipe_for_command(command: &str) -> Option<PathBuf> {
+    get_recipe_for_command(command).filter(|recipe_path| recipe_path.exists())
 }
 
 pub(super) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<SlashCommandEntry> {
@@ -150,14 +155,12 @@ pub fn resolve_command(
     command: &str,
     params_str: &str,
 ) -> Result<Option<(Recipe, String)>, String> {
-    let full_command = format!("/{}", command);
-    let Some(recipe_path) = get_recipe_for_command(&full_command) else {
-        return Ok(None);
-    };
-
-    if !recipe_path.exists() {
+    if is_builtin_command(command) {
         return Ok(None);
     }
+    let Some(recipe_path) = get_existing_recipe_for_command(command) else {
+        return Ok(None);
+    };
 
     let recipe_content =
         std::fs::read_to_string(&recipe_path).map_err(|e| invalid_recipe_msg(command, e))?;

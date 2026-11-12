@@ -33,8 +33,8 @@ interface ExtensionConfigFieldsProps {
   full_cmd: string;
   endpoint: string;
   onChange: (key: string, value: string) => void;
-  submitAttempted?: boolean;
-  isValid?: boolean;
+  submitAttempted: boolean;
+  isValid: boolean;
 }
 
 export default function ExtensionConfigFields({
@@ -42,7 +42,7 @@ export default function ExtensionConfigFields({
   full_cmd,
   endpoint,
   onChange,
-  submitAttempted = false,
+  submitAttempted,
   isValid,
 }: ExtensionConfigFieldsProps) {
   const intl = useIntl();

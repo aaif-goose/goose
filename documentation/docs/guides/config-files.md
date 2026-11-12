@@ -51,8 +51,8 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_CACHE_TTL` | Anthropic prompt-cache TTL; `1h` keeps the cached prefix alive across idle gaps at a higher cache-write rate. Headless runs always use `5m` | "5m", "1h" | "5m" | No |
 | `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
-| `GOOSE_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/context-engineering/creating-plans) | Same as `GOOSE_PROVIDER` options | Falls back to `GOOSE_PROVIDER` | No |
-| `GOOSE_PLANNER_MODEL` | Model for planning mode | Model name | Falls back to `GOOSE_MODEL` | No |
+| `GOOSE_TOOL_DEFERRAL` | Publish MCP tool names up front; enable schemas on demand with `enable_tools` | "lookup" | Disabled when unset | No |
+| `GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD` | Comma-separated exact model-visible tool names to keep eager when deferral is enabled | String (e.g., "serverA__toolA,serverB__toolC") | Empty | No |
 | `GOOSE_TOOLSHIM` | Enable tool interpretation | true/false | false | No |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |
 | `GOOSE_INPUT_LIMIT` | Override input token limit for Ollama (maps to `num_ctx`) | Positive integer | Model default | No |
@@ -66,14 +66,17 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_DOCS_ROOT` | Documentation root used by `goose-doc-guide` (e.g. for offline/air-gapped docs) | Local path or HTTP(S) URL containing `goose-docs-map.md` and `docs/` | `https://goose-docs.ai` | No |
 | `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository for recipes | Format: "org/repo" | None | No |
 | `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically compacts your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0)| 0.8 | No |
+| `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` | Absolute auto-compaction trigger; the earlier of this and the percentage threshold applies while auto-compaction is enabled. Controls when compaction starts, not a guaranteed maximum request size. | Positive integer | 225000 | No |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false | No |
-| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 | No |
+| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (lower = stricter) | Float between 0.01 and 1.0 | 0.8 | No |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false | No |
 | `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | Classification endpoint URL for ML-based prompt injection detection | URL (e.g., "https://api.example.com/classify") | None | No |
 | `SECURITY_PROMPT_CLASSIFIER_TOKEN` | Authentication token for `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | String | None | No |
 | `GOOSE_TELEMETRY_ENABLED` | Enable [anonymous usage data](/docs/guides/usage-data) collection | true/false | false | No |
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
+
+With `GOOSE_TOOL_DEFERRAL: lookup`, the model calls `enable_tools` to load MCP tool schemas on demand; platform tools remain available immediately. `GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD` keeps selected tools eager using their exact model-visible names, including extension prefixes. Whitespace around comma-separated entries is ignored. This list has no effect unless deferral is enabled and does not override availability, visibility, or permissions.
 
 ## Example Configuration
 
@@ -88,10 +91,6 @@ providers:
     model: claude-sonnet-4-5-20250929
     configured: true
 GOOSE_TEMPERATURE: 0.7
-
-# Planning Configuration
-GOOSE_PLANNER_PROVIDER: "openai"
-GOOSE_PLANNER_MODEL: "gpt-4"
 
 # Tool Configuration
 GOOSE_MODE: "smart_approve"

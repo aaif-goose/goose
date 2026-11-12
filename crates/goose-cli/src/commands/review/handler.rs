@@ -41,7 +41,7 @@ pub struct ReviewOptions {
     pub quiet: bool,
     /// Disable the Rust-driven parallel orchestrator and fall back to the
     /// single-prompt path that asks the main agent to delegate checks via
-    /// `delegate(... async: true ...)`. Useful when comparing against the
+    /// `delegate(...)`. Useful when comparing against the
     /// in-process behavior or running on a model that handles dispatch
     /// reliably on its own. Checks with an explicit tool allowlist require
     /// the default orchestrator and are rejected on this path.
@@ -366,7 +366,7 @@ fn review_git_command(repo_root: &Path) -> Command {
 
 fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--name-only");
+    cmd.arg("diff").arg("--no-ext-diff").arg("--name-only");
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -397,7 +397,7 @@ fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Res
 
 fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff");
+    cmd.arg("diff").arg("--no-ext-diff");
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -421,7 +421,7 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
 
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--stat");
+    cmd.arg("diff").arg("--no-ext-diff").arg("--stat");
     match range {
         Some(r) => {
             cmd.arg(r);

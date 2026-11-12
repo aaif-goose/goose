@@ -1,4 +1,4 @@
-use crate::agents::Agent;
+use crate::agents::StateMachineServices;
 use crate::conversation::message::{
     Message, MessageContent, ToolChainSummary, ToolRequest, TOOL_META_CHAIN_SUMMARY_KEY,
     TOOL_META_TITLE_KEY,
@@ -28,17 +28,17 @@ const LABEL_GENERATION_MAX_ATTEMPTS: usize = 2;
 const LABEL_GENERATION_RETRY_DELAY: Duration = Duration::from_millis(150);
 
 pub(crate) async fn generate_tool_title(
-    agent: &Agent,
+    services: &StateMachineServices,
     session_manager: &SessionManager,
     session_id: &str,
     tool_request: &ToolRequest,
 ) -> Option<String> {
-    let provider = agent.provider().await.ok()?;
+    let provider = services.provider(session_id).await.ok()?;
     if provider.manages_own_context() {
         return None;
     }
 
-    let model_config = agent.model_config_for_session(session_id).await.ok()?;
+    let model_config = services.model_config_for_session(session_id).await.ok()?;
     let title = generate_tool_title_with_provider(
         provider.as_ref(),
         &model_config,
@@ -62,7 +62,7 @@ pub(crate) async fn generate_tool_title(
 }
 
 pub(crate) async fn generate_tool_chain_summary(
-    agent: &Agent,
+    services: &StateMachineServices,
     session_manager: &SessionManager,
     session_id: &str,
     tool_requests: &[ToolRequest],
@@ -72,12 +72,12 @@ pub(crate) async fn generate_tool_chain_summary(
         return None;
     }
 
-    let provider = agent.provider().await.ok()?;
+    let provider = services.provider(session_id).await.ok()?;
     if provider.manages_own_context() {
         return None;
     }
 
-    let model_config = agent.model_config_for_session(session_id).await.ok()?;
+    let model_config = services.model_config_for_session(session_id).await.ok()?;
     let chain_summary = ToolChainSummary {
         summary: generate_tool_chain_summary_with_provider(
             provider.as_ref(),
@@ -227,7 +227,7 @@ async fn complete_label(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::{AgentConfig, GoosePlatform};
+    use crate::agents::{GoosePlatform, StateMachineServicesConfig};
     use crate::config::{GooseMode, PermissionManager};
     use crate::providers::base::{MessageStream, ProviderUsage, Usage};
     use crate::session::{SessionManager, SessionType};
@@ -480,11 +480,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -498,7 +497,7 @@ mod tests {
                 .await
                 .unwrap();
             let provider = Arc::new(MockProvider::managing_own_context());
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
@@ -508,7 +507,7 @@ mod tests {
                 .unwrap();
 
             let title = generate_tool_title(
-                &agent,
+                &services,
                 session_manager.as_ref(),
                 &session.id,
                 &tool_request(json!({})),
@@ -554,11 +553,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -574,7 +572,7 @@ mod tests {
             let provider = Arc::new(MockProvider::new(vec![Ok(
                 Message::assistant().with_text("checking project status")
             )]));
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("test-model"), &session.id)
                 .await
                 .unwrap();
@@ -587,9 +585,13 @@ mod tests {
                 .await
                 .unwrap();
 
-            let title =
-                generate_tool_title(&agent, session_manager.as_ref(), &session.id, &tool_request)
-                    .await;
+            let title = generate_tool_title(
+                &services,
+                session_manager.as_ref(),
+                &session.id,
+                &tool_request,
+            )
+            .await;
 
             assert_eq!(title.as_deref(), Some("checking project status"));
             let loaded = session_manager
@@ -710,11 +712,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -728,7 +729,7 @@ mod tests {
                 .await
                 .unwrap();
             let provider = Arc::new(MockProvider::managing_own_context());
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
@@ -738,7 +739,7 @@ mod tests {
                 .unwrap();
 
             let summary = generate_tool_chain_summary(
-                &agent,
+                &services,
                 session_manager.as_ref(),
                 &session.id,
                 &chain_tool_requests(),
@@ -755,11 +756,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -773,7 +773,7 @@ mod tests {
                 .await
                 .unwrap();
             let provider = Arc::new(MockProvider::new(Vec::new()));
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
@@ -783,7 +783,7 @@ mod tests {
                 .unwrap();
 
             let summary = generate_tool_chain_summary(
-                &agent,
+                &services,
                 session_manager.as_ref(),
                 &session.id,
                 &[tool_request(json!({}))],
@@ -800,11 +800,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -820,7 +819,7 @@ mod tests {
             let provider = Arc::new(MockProvider::new(vec![Ok(
                 Message::assistant().with_text("inspected and tested project")
             )]));
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("test-model"), &session.id)
                 .await
                 .unwrap();
@@ -841,7 +840,7 @@ mod tests {
                 .unwrap();
 
             let summary = generate_tool_chain_summary(
-                &agent,
+                &services,
                 session_manager.as_ref(),
                 &session.id,
                 &tool_requests,

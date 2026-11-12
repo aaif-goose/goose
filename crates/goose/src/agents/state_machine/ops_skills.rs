@@ -1,9 +1,11 @@
 //! Makes filesystem skills available to inference and slash commands.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
@@ -11,25 +13,26 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_post_tool_use, pending_advertised_tool_requests, run_pre_tool_hooks, tool_span,
-    ToolDisposition,
+    pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
+use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
-use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
+use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
-use crate::hooks::HookManager;
 use crate::session::Session;
 
-const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
+pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
-    hook_manager: HookManager,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -192,11 +195,31 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(hook_manager: HookManager) -> Self {
-        Self { hook_manager }
+    pub fn new(
+        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    ) -> Self {
+        Self {
+            extension_lease,
+            post_tool_call_hook,
+        }
     }
 
-    async fn command_response(
+    fn leased_session(&self, session: &Session) -> Option<Session> {
+        let lease = self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable")
+            .clone()?;
+        if lease.scope_id() != session.id.as_str() {
+            return None;
+        }
+        let mut session = session.clone();
+        session.working_dir = lease.working_dir()?.to_path_buf();
+        Some(session)
+    }
+
+    fn command_response(
         conversation: &Conversation,
         message: String,
         emit: &Emitter,
@@ -213,8 +236,8 @@ impl SkillOperation {
         let response = Message::assistant()
             .with_text(message)
             .with_visibility(true, false);
-        emit.message(command).await;
-        let response = emit.message(response).await;
+        emit.message(command);
+        let response = emit.message(response);
         yielded_with([
             ConversationEffect::SetMessageVisibility {
                 message_id,
@@ -247,8 +270,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     &session.working_dir,
                 )),
                 emit,
-            )
-            .await;
+            );
         }
 
         let prompt = match crate::slash_commands::skill_slash_command::resolve_command(
@@ -258,7 +280,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         ) {
             Ok(Some(prompt)) => prompt,
             Ok(None) => return not_applicable(),
-            Err(error) => return Self::command_response(conversation, error, emit).await,
+            Err(error) => return Self::command_response(conversation, error, emit),
         };
         let command_message = messages_since_kickoff(conversation)?
             .first()
@@ -316,75 +338,53 @@ impl Operation<Session, GooseEffect> for SkillOperation {
             return not_applicable();
         }
 
+        let leased_session = self.leased_session(session);
         let mut response = Message::user();
         for (request, disposition) in pending {
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
                 ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
-                    // Nothing executes in chat mode, so no tool lifecycle runs.
                     Ok(CallToolResult::success(vec![ContentBlock::text(
                         CHAT_MODE_TOOL_SKIPPED_RESPONSE,
                     )]))
                 }
                 ToolDisposition::Execute => {
+                    let Some(session) = leased_session.as_ref() else {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(CallToolResult::error(vec![ContentBlock::text(
+                                EXPIRED_APPROVAL_RESPONSE,
+                            )])),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    };
                     let tool_call = request.tool_call.as_ref().map_err(|error| {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
-                    // `load_skill` is executed here rather than by
-                    // ToolExecutionOperation, which is registered after this one.
-                    // Run the same hook lifecycle it would have run, so the state
-                    // machine and the legacy loop agree on what a skill load emits.
-                    let tool_input = tool_call
-                        .arguments
-                        .as_ref()
-                        .map(|arguments| Value::Object(arguments.clone()));
-                    match run_pre_tool_hooks(
-                        &self.hook_manager,
-                        session,
-                        &request.id,
-                        &tool_call.name,
-                        tool_input.as_ref(),
-                    )
-                    .instrument(span.clone())
-                    .await
-                    {
-                        // A denial returns before execution and emits no post
-                        // event, the same shape ToolExecutionOperation has: its
-                        // dispatch returns the denial before the post-hook wrapper
-                        // is ever applied.
-                        Err(denial) => Err(denial),
-                        Ok(()) => {
-                            let result = {
-                                let _entered = span.enter();
-                                execute_skill(&session.working_dir, tool_call.arguments.clone())
-                            };
-                            if result.is_error == Some(true) {
-                                span.record("error.type", "tool_error");
-                            }
-                            let output = Ok(result);
-                            // Post event carries the same tool_call_id as the pre
-                            // events. The large-response rewrite
-                            // ToolExecutionOperation applies is deliberately not
-                            // reused: a skill body is content the model is meant to
-                            // read, not a payload to offload to a temp file.
-                            emit_post_tool_use(
-                                &self.hook_manager,
-                                &session.id,
-                                &session.working_dir.to_string_lossy(),
-                                &tool_call.name,
-                                &request.id,
-                                tool_input.as_ref(),
-                                &output,
-                            )
-                            .instrument(span.clone())
-                            .await;
-                            output
-                        }
+                    let result = {
+                        let _entered = span.enter();
+                        execute_skill(&session.working_dir, tool_call.arguments.clone())
+                    };
+                    if result.is_error == Some(true) {
+                        span.record("error.type", "tool_error");
                     }
+                    let response = ToolResponse {
+                        id: request.id.clone(),
+                        tool_result: Ok(result),
+                        metadata: request.metadata.clone(),
+                    };
+                    run_post_tool_call_hook(
+                        self.post_tool_call_hook.as_ref(),
+                        session,
+                        conversation,
+                        &request,
+                        &response,
+                    )
+                    .instrument(span)
+                    .await;
+                    response.tool_result
                 }
-                ToolDisposition::Decline => Ok(CallToolResult::error(vec![ContentBlock::text(
-                    DECLINED_RESPONSE,
-                )])),
                 ToolDisposition::ParseError(error) => {
                     Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                         "The tool call could not be parsed: {error}. Correct the arguments and try again."
@@ -393,7 +393,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
             };
             response.add_tool_response_with_metadata(request.id, result, request.metadata.as_ref());
         }
-        let response = emit.message(response).await;
+        let response = emit.message(response);
         applied([response.into()])
     }
 }

@@ -1299,6 +1299,117 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/session/steer"
     },
+    "LiveVoiceAvailabilityRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "_meta": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "description": "Ask whether a new or existing chat can enter direct Live voice.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/live-voice/availability"
+    },
+    "LiveVoiceAvailabilityResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/LiveVoiceStatus"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "message"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/live-voice/availability"
+    },
+    "LiveVoiceStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "unavailable"
+      ]
+    },
+    "LiveVoiceStartRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "offerSdp": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Added after goose's live voice instructions, including any configured\nones, for this interaction only. Blank text adds nothing."
+        },
+        "_meta": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "sessionId",
+        "offerSdp"
+      ],
+      "description": "Start a live voice interaction for a session.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/live-voice/start"
+    },
+    "LiveVoiceStartResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "interactionId": {
+          "type": "string"
+        },
+        "answerSdp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interactionId",
+        "answerSdp"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/live-voice/start"
+    },
+    "LiveVoiceStopRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "interactionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "interactionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/live-voice/stop"
+    },
     "DiagnosticsGetRequest_unstable": {
       "type": "object",
       "properties": {
@@ -1313,7 +1424,6 @@
       "required": [
         "sessionId"
       ],
-      "description": "Get a diagnostic report for a session.",
       "x-side": "agent",
       "x-method": "_goose/unstable/diagnostics/get"
     },
@@ -1334,6 +1444,172 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/diagnostics/get"
+    },
+    "ContextReportRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Break down what fills the model's context window if the session were\nprompted right now. Makes no model call.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ContextReportModel"
+        },
+        "totalTokens": {
+          "type": "integer",
+          "description": "Measured with goose's local tokenizer; always the sum of the segments.",
+          "minimum": 0
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextSegment"
+          },
+          "description": "Non-overlapping. Prompt and tool segments come in request order; the\nconversation follows grouped by message kind, with each part labelled\nby its position in the request."
+        },
+        "providerManagesContext": {
+          "type": "boolean",
+          "description": "The provider keeps its own history and only receives the latest prompt\n(Claude Code, Gemini CLI), so goose assembles no request to break down;\n`segments` is empty and `total_tokens` is zero."
+        },
+        "autoCompactionPending": {
+          "type": "boolean",
+          "description": "The session is past the auto-compaction threshold, so the loop compacts\nthe conversation before it sends the next request."
+        }
+      },
+      "required": [
+        "model",
+        "totalTokens",
+        "segments",
+        "providerManagesContext",
+        "autoCompactionPending"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportModel": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "modelName",
+        "contextLimit"
+      ]
+    },
+    "ContextSegment": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/ContextCategory"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Display-only provenance, such as a file path or a tool count."
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Truncated with a trailing `… (+N more chars)` marker. Omitted when\n`parts` carries the previews."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextPart"
+          }
+        }
+      },
+      "required": [
+        "category",
+        "label",
+        "tokenCount"
+      ]
+    },
+    "ContextCategory": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "extension_instructions",
+            "turn_context",
+            "tool_definitions",
+            "compaction_summary",
+            "messages"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "system_prompt",
+          "description": "The base prompt, plus the residual row that reconciles the segments\nwith the request total."
+        },
+        {
+          "type": "string",
+          "const": "additional_instructions",
+          "description": "Hint files, project instructions and other prompt extras."
+        }
+      ]
+    },
+    "ContextPart": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "tokenCount"
+      ],
+      "description": "Parts add up to their segment's `tokenCount`, except where a segment is\nsplit into prose sections; there the headings and framing are carried by\nthe segment alone."
     },
     "ListPromptsRequest_unstable": {
       "type": "object",
@@ -3494,26 +3770,14 @@
       "properties": {
         "input": {
           "type": "string"
-        },
-        "source": {
-          "$ref": "#/$defs/SessionImportSource"
         }
       },
       "required": [
-        "input",
-        "source"
+        "input"
       ],
-      "description": "Import a session from a JSON string or share link.",
+      "description": "Import a session from a serialized session JSON string.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/import"
-    },
-    "SessionImportSource": {
-      "type": "string",
-      "enum": [
-        "auto",
-        "json",
-        "nostr"
-      ]
     },
     "ImportSessionResponse_unstable": {
       "type": "object",
@@ -3545,55 +3809,6 @@
       "description": "Import session response — metadata about the newly created session.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/import"
-    },
-    "ShareSessionNostrRequest_unstable": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "relays": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "sessionId",
-        "relays"
-      ],
-      "description": "Share a session through Nostr and return its share links.",
-      "x-side": "agent",
-      "x-method": "_goose/unstable/session/share/nostr"
-    },
-    "ShareSessionNostrResponse_unstable": {
-      "type": "object",
-      "properties": {
-        "deeplink": {
-          "type": "string"
-        },
-        "nevent": {
-          "type": "string"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "relays": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "deeplink",
-        "nevent",
-        "eventId",
-        "relays"
-      ],
-      "x-side": "agent",
-      "x-method": "_goose/unstable/session/share/nostr"
     },
     "EncodeRecipeRequest_unstable": {
       "type": "object",
@@ -6689,6 +6904,19 @@
           "required": [
             "sessionUpdate"
           ]
+        },
+        {
+          "$ref": "#/$defs/LiveVoiceInteractionEndedUpdate",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "live_voice_interaction_ended"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ]
         }
       ],
       "description": "Discriminated union of goose-specific session update payloads.\nVariant tag matches ACP's convention (`sessionUpdate: \"<snake_case>\"`).\n\n`discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)\nemit the correct snake_case tag value even when this enum has a single\nvariant. Add a mapping entry per variant.",
@@ -6697,7 +6925,8 @@
         "mapping": {
           "usage_update": "#/$defs/SessionUsageUpdate",
           "status_message": "#/$defs/StatusMessageUpdate",
-          "message_usage": "#/$defs/MessageUsageUpdate"
+          "message_usage": "#/$defs/MessageUsageUpdate",
+          "live_voice_interaction_ended": "#/$defs/LiveVoiceInteractionEndedUpdate"
         }
       }
     },
@@ -6889,6 +7118,28 @@
         "usage"
       ],
       "description": "Per-message token usage/cost/timing, keyed by the message id used for\nchunk matching. Sent live after a turn's messages and on replay."
+    },
+    "LiveVoiceInteractionOutcome": {
+      "type": "string",
+      "enum": [
+        "stopped",
+        "failed"
+      ]
+    },
+    "LiveVoiceInteractionEndedUpdate": {
+      "type": "object",
+      "properties": {
+        "interactionId": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/LiveVoiceInteractionOutcome"
+        }
+      },
+      "required": [
+        "interactionId",
+        "outcome"
+      ]
     },
     "ProviderDeviceCodeNotification_unstable": {
       "type": "object",
@@ -7101,11 +7352,47 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/LiveVoiceAvailabilityRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/live-voice/availability",
+                  "title": "LiveVoiceAvailabilityRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/LiveVoiceStartRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/live-voice/start",
+                  "title": "LiveVoiceStartRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/LiveVoiceStopRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/live-voice/stop",
+                  "title": "LiveVoiceStopRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DiagnosticsGetRequest_unstable"
                     }
                   ],
                   "description": "Params for _goose/unstable/diagnostics/get",
                   "title": "DiagnosticsGetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ContextReportRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/context/report",
+                  "title": "ContextReportRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -7475,15 +7762,6 @@
                   ],
                   "description": "Params for _goose/unstable/session/import",
                   "title": "ImportSessionRequest_unstable"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/ShareSessionNostrRequest_unstable"
-                    }
-                  ],
-                  "description": "Params for _goose/unstable/session/share/nostr",
-                  "title": "ShareSessionNostrRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -8066,10 +8344,34 @@
                     {
                       "allOf": [
                         {
+                          "$ref": "#/$defs/LiveVoiceAvailabilityResponse_unstable"
+                        }
+                      ],
+                      "title": "LiveVoiceAvailabilityResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/LiveVoiceStartResponse_unstable"
+                        }
+                      ],
+                      "title": "LiveVoiceStartResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
                           "$ref": "#/$defs/DiagnosticsGetResponse_unstable"
                         }
                       ],
                       "title": "DiagnosticsGetResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ContextReportResponse_unstable"
+                        }
+                      ],
+                      "title": "ContextReportResponse_unstable"
                     },
                     {
                       "allOf": [
@@ -8302,14 +8604,6 @@
                         }
                       ],
                       "title": "ImportSessionResponse_unstable"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/ShareSessionNostrResponse_unstable"
-                        }
-                      ],
-                      "title": "ShareSessionNostrResponse_unstable"
                     },
                     {
                       "allOf": [

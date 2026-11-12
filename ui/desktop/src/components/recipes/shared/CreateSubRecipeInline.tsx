@@ -129,14 +129,14 @@ interface CreateSubRecipeInlineProps {
   isOpen: boolean;
   onClose: () => void;
   onSubRecipeSaved: (subRecipe: SubRecipeFormData) => void;
-  existingSubRecipes?: SubRecipeFormData[];
+  existingSubRecipes: SubRecipeFormData[];
 }
 
 export default function CreateSubRecipeInline({
   isOpen,
   onClose,
   onSubRecipeSaved,
-  existingSubRecipes = [],
+  existingSubRecipes,
 }: CreateSubRecipeInlineProps) {
   const intl = useIntl();
   useEscapeKey(isOpen, onClose);
@@ -221,12 +221,24 @@ export default function CreateSubRecipeInline({
 
       toastError({
         title: intl.formatMessage(i18n.saveFailed),
-        msg: intl.formatMessage(i18n.saveFailedMsg, { error: error instanceof Error ? error.message : 'Unknown error' }),
+        msg: intl.formatMessage(i18n.saveFailedMsg, {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        }),
       });
     } finally {
       setIsSaving(false);
     }
-  }, [form, name, toolDescription, sequentialWhenRepeated, values, existingSubRecipes, onSubRecipeSaved, onClose, intl]);
+  }, [
+    form,
+    name,
+    toolDescription,
+    sequentialWhenRepeated,
+    values,
+    existingSubRecipes,
+    onSubRecipeSaved,
+    onClose,
+    intl,
+  ]);
 
   if (!isOpen) return null;
 
@@ -236,10 +248,10 @@ export default function CreateSubRecipeInline({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-borderSubtle">
           <div>
-            <h2 className="text-xl font-medium text-textProminent">{intl.formatMessage(i18n.title)}</h2>
-            <p className="text-textSubtle text-sm">
-              {intl.formatMessage(i18n.subtitle)}
-            </p>
+            <h2 className="text-xl font-medium text-textProminent">
+              {intl.formatMessage(i18n.title)}
+            </h2>
+            <p className="text-textSubtle text-sm">{intl.formatMessage(i18n.subtitle)}</p>
           </div>
           <Button
             onClick={onClose}
@@ -270,9 +282,7 @@ export default function CreateSubRecipeInline({
               className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder={intl.formatMessage(i18n.namePlaceholder)}
             />
-            <p className="text-xs text-text-muted mt-1">
-              {intl.formatMessage(i18n.nameHint)}
-            </p>
+            <p className="text-xs text-text-muted mt-1">{intl.formatMessage(i18n.nameHint)}</p>
           </div>
 
           {/* Title Field */}
@@ -283,7 +293,8 @@ export default function CreateSubRecipeInline({
                   htmlFor="subrecipe-title"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  {intl.formatMessage(i18n.recipeTitleLabel)} <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.recipeTitleLabel)}{' '}
+                  <span className="text-text-danger">*</span>
                 </label>
                 <input
                   id="subrecipe-title"
@@ -306,7 +317,8 @@ export default function CreateSubRecipeInline({
                   htmlFor="recipe-description"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  {intl.formatMessage(i18n.recipeDescriptionLabel)} <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.recipeDescriptionLabel)}{' '}
+                  <span className="text-text-danger">*</span>
                 </label>
                 <input
                   id="recipe-description"
@@ -329,7 +341,8 @@ export default function CreateSubRecipeInline({
                   htmlFor="subrecipe-instructions"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  {intl.formatMessage(i18n.instructionsLabel)} <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.instructionsLabel)}{' '}
+                  <span className="text-text-danger">*</span>
                 </label>
                 <textarea
                   id="subrecipe-instructions"

@@ -37,13 +37,13 @@ export const deleteRecipe = async (id: string): Promise<void> => {
   await acpDeleteRecipe(id);
 };
 
-export const scheduleRecipe = async (id: string, cronSchedule?: string | null): Promise<void> => {
+export const scheduleRecipe = async (id: string, cronSchedule: string | null): Promise<void> => {
   await acpScheduleRecipe(id, cronSchedule);
 };
 
 export const setRecipeSlashCommand = async (
   id: string,
-  slashCommand?: string | null
+  slashCommand: string | null
 ): Promise<void> => {
   await acpSetRecipeSlashCommand(id, slashCommand);
 };

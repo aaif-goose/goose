@@ -11,6 +11,7 @@ use crate::formats::ollama::{create_request, response_to_streaming_message_ollam
 use crate::images::ImageFormat;
 use crate::model::ModelConfig;
 use crate::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
+use crate::thinking::ThinkingEffort;
 use anyhow::{Error, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -18,6 +19,8 @@ use futures::TryStreamExt;
 use reqwest::{Response, StatusCode};
 use rmcp::model::Tool;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::pin;
 use tokio_stream::StreamExt;
@@ -45,6 +48,13 @@ const OLLAMA_MAX_RETRIES: usize = 10;
 const OLLAMA_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
 const OLLAMA_BACKOFF_MULTIPLIER: f64 = 1.5;
 const OLLAMA_MAX_RETRY_INTERVAL_MS: u64 = 15_000;
+const SHOW_INFO_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy)]
+struct OllamaCapabilities {
+    thinking: bool,
+    vision: bool,
+}
 
 /// Provider settings resolved from `config::Config` at construction time.
 ///
@@ -86,6 +96,8 @@ pub struct OllamaProvider {
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
     options: OllamaOptions,
+    #[serde(skip)]
+    capabilities: Mutex<HashMap<String, OllamaCapabilities>>,
 }
 
 pub struct OllamaProviderBuilder {
@@ -160,6 +172,7 @@ impl OllamaProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             options: self.options,
+            capabilities: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -187,6 +200,64 @@ impl OllamaProvider {
         fetch_ollama_model_names(&self.api_client)
             .await?
             .ok_or_else(|| ProviderError::RequestFailed("No models array in response".to_string()))
+    }
+
+    async fn reasoning_effort(&self, model_config: &ModelConfig) -> Option<&'static str> {
+        let level = match model_config.thinking_effort()? {
+            ThinkingEffort::Off => return Some("none"),
+            ThinkingEffort::Low => "low",
+            ThinkingEffort::Medium => "medium",
+            ThinkingEffort::High | ThinkingEffort::Max => "high",
+        };
+        let supports_thinking = match self.model_capabilities(&model_config.model_name).await {
+            Some(capabilities) => capabilities.thinking,
+            None => model_config.is_reasoning_model(),
+        };
+        supports_thinking.then_some(level)
+    }
+
+    async fn model_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
+        if let Some(cached) = self
+            .capabilities
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(model).copied())
+        {
+            return Some(cached);
+        }
+
+        let capabilities = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_capabilities(model))
+            .await
+            .ok()
+            .flatten()?;
+        if let Ok(mut cache) = self.capabilities.lock() {
+            cache.insert(model.to_string(), capabilities);
+        }
+        Some(capabilities)
+    }
+
+    async fn fetch_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
+        let response = self
+            .api_client
+            .request("api/show")
+            .response_post(&json!({ "model": model }))
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+
+        let json: Value = response.json().await.ok()?;
+        let capabilities = json.get("capabilities")?.as_array()?;
+        let has = |name| {
+            capabilities
+                .iter()
+                .any(|capability| capability.as_str() == Some(name))
+        };
+        Some(OllamaCapabilities {
+            thinking: has("thinking"),
+            vision: has("vision"),
+        })
     }
 }
 
@@ -234,8 +305,17 @@ fn resolve_ollama_num_ctx(options: &OllamaOptions) -> Option<usize> {
     options.input_limit
 }
 
-fn apply_ollama_options(payload: &mut Value, options: &OllamaOptions, _model_config: &ModelConfig) {
+fn apply_ollama_options(
+    payload: &mut Value,
+    options: &OllamaOptions,
+    reasoning_effort: Option<&str>,
+) {
     if let Some(obj) = payload.as_object_mut() {
+        obj.remove("reasoning_effort");
+        if let Some(effort) = reasoning_effort {
+            obj.insert("reasoning_effort".to_string(), json!(effort));
+        }
+
         // Gate stream_options behind OLLAMA_STREAM_USAGE (default: true).
         // Older Ollama builds that don't support stream_options may stall before
         // emitting any SSE data, blocking until the client timeout (600s).
@@ -407,15 +487,21 @@ impl Provider for OllamaProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let mut effective_model_config = model_config.clone();
+        if let Some(capabilities) = self.model_capabilities(&model_config.model_name).await {
+            effective_model_config.supports_vision = Some(capabilities.vision);
+        }
+
         let mut payload = create_request(
-            model_config,
+            &effective_model_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             true,
         )?;
-        apply_ollama_options(&mut payload, &self.options, model_config);
+        let reasoning_effort = self.reasoning_effort(model_config).await;
+        apply_ollama_options(&mut payload, &self.options, reasoning_effort);
         let mut log = start_log(model_config, &payload)?;
 
         let response = self
@@ -477,6 +563,15 @@ impl Provider for OllamaProvider {
         }
 
         self.fetch_models_from_api().await
+    }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        Ok(crate::base::merge_configured_model_info(
+            &self.name,
+            &names,
+            self.custom_models.as_deref().unwrap_or_default(),
+        ))
     }
 }
 
@@ -555,6 +650,8 @@ fn stream_ollama(
 mod tests {
     use super::*;
     use crate::base::ModelInfo;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn ollama_config(
         dynamic_models: Option<bool>,
@@ -615,6 +712,29 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn fetch_supported_model_info_preserves_configured_metadata() {
+        let declared = ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("unrecognized-static-model").with_context_limit(4096)
+        };
+
+        let provider = from_declarative_config(
+            ollama_config(Some(false), vec![declared]),
+            None,
+            crate::declarative::EnvKeyResolver,
+        )
+        .unwrap()
+        .build();
+
+        let models = provider.fetch_supported_model_info().await.unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unrecognized-static-model");
+        assert_eq!(models[0].context_limit, Some(4096));
+        assert!(models[0].reasoning);
+    }
+
     #[test]
     fn from_custom_config_requires_static_models_when_dynamic_models_false() {
         let err = from_declarative_config(
@@ -632,9 +752,6 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_supported_models_falls_back_to_static_models_on_404() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/tags"))
@@ -667,19 +784,165 @@ mod tests {
             input_limit: Some(8192),
             ..Default::default()
         };
-        let model_config = ModelConfig::new("qwen3").with_context_limit(Some(16_000));
         let mut payload = json!({});
-        apply_ollama_options(&mut payload, &options, &model_config);
+        apply_ollama_options(&mut payload, &options, None);
         assert_eq!(payload["options"]["num_ctx"], 8192);
     }
 
     #[test]
     fn test_apply_ollama_options_ignores_context_management_limit() {
         let options = OllamaOptions::default();
-        let model_config = ModelConfig::new("qwen3").with_context_limit(Some(12_000));
         let mut payload = json!({});
-        apply_ollama_options(&mut payload, &options, &model_config);
+        apply_ollama_options(&mut payload, &options, None);
         assert!(payload.get("options").is_none());
+    }
+
+    async fn mock_show_server(show_response: ResponseTemplate, expected_calls: u64) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/show"))
+            .respond_with(show_response)
+            .expect(expected_calls)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn provider_for(server: &MockServer) -> OllamaProvider {
+        from_declarative_config(
+            ollama_config_with_base_url(None, vec![], &server.uri()),
+            None,
+            crate::declarative::EnvKeyResolver,
+        )
+        .unwrap()
+        .build()
+    }
+
+    fn show_capabilities(capabilities: &[&str]) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({ "capabilities": capabilities }))
+    }
+
+    #[tokio::test]
+    async fn reasoning_effort_disables_thinking_without_checking_capabilities() {
+        let server = mock_show_server(show_capabilities(&["completion"]), 0).await;
+        let model_config = ModelConfig::new("qwen2.5:7b").with_thinking_effort(ThinkingEffort::Off);
+
+        assert_eq!(
+            provider_for(&server).reasoning_effort(&model_config).await,
+            Some("none")
+        );
+    }
+
+    #[tokio::test]
+    async fn reasoning_effort_sends_level_for_thinking_models_and_caches_capability() {
+        let server = mock_show_server(show_capabilities(&["completion", "thinking"]), 1).await;
+        let provider = provider_for(&server);
+        let model_config =
+            ModelConfig::new("gpt-oss:20b").with_thinking_effort(ThinkingEffort::Max);
+
+        assert_eq!(provider.reasoning_effort(&model_config).await, Some("high"));
+        assert_eq!(provider.reasoning_effort(&model_config).await, Some("high"));
+    }
+
+    #[tokio::test]
+    async fn reasoning_effort_omits_level_for_models_without_thinking() {
+        let server = mock_show_server(show_capabilities(&["completion", "tools"]), 1).await;
+        let model_config = ModelConfig::new("qwen2.5:7b").with_thinking_effort(ThinkingEffort::Low);
+
+        assert_eq!(
+            provider_for(&server).reasoning_effort(&model_config).await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn reasoning_effort_falls_back_to_model_config_when_show_fails() {
+        let server = mock_show_server(ResponseTemplate::new(404), 2).await;
+        let provider = provider_for(&server);
+        let mut model_config =
+            ModelConfig::new("kimi-k3:cloud").with_thinking_effort(ThinkingEffort::Medium);
+
+        assert_eq!(
+            provider.reasoning_effort(&model_config).await,
+            Some("medium")
+        );
+        model_config.model_name = "llama3.1".to_string();
+        assert_eq!(provider.reasoning_effort(&model_config).await, None);
+    }
+
+    #[tokio::test]
+    async fn stream_uses_ollama_vision_capability_before_formatting_images() {
+        for (capabilities, supports_vision) in [
+            (vec!["completion", "vision"], true),
+            (vec!["completion"], false),
+        ] {
+            let server = mock_show_server(show_capabilities(&capabilities), 1).await;
+            Mock::given(method("POST"))
+                .and(path("/v1/chat/completions"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let model_config = ModelConfig::new("qwen3-vl:2b");
+            let message = Message::user()
+                .with_text("What is in this image?")
+                .with_image("aW1hZ2VkYXRh", "image/png");
+            let provider = provider_for(&server);
+            let _stream = provider
+                .stream(&model_config, "system", &[message], &[])
+                .await
+                .unwrap();
+
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests.len(), 2);
+            let request = requests
+                .iter()
+                .find(|request| request.url.path() == "/v1/chat/completions")
+                .unwrap();
+            let payload: Value = serde_json::from_slice(&request.body).unwrap();
+
+            if supports_vision {
+                assert_eq!(payload["messages"][1]["content"][1]["type"], "image_url");
+                assert_eq!(
+                    payload["messages"][1]["content"][1]["image_url"]["url"],
+                    "data:image/png;base64,aW1hZ2VkYXRh"
+                );
+            } else {
+                assert!(payload["messages"][1]["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("[image omitted: model does not support vision]"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_apply_ollama_options_sets_reasoning_effort() {
+        let mut payload = json!({});
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), Some("none"));
+        assert_eq!(payload["reasoning_effort"], "none");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_drops_name_derived_reasoning_effort() {
+        let model_config =
+            ModelConfig::new("gpt-5-mini").with_thinking_effort(ThinkingEffort::High);
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+        let mut payload = create_request(
+            &model_config,
+            "You are a helpful assistant.",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )
+        .unwrap();
+        assert!(payload.get("reasoning_effort").is_some());
+
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), None);
+
+        assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test]
@@ -727,7 +990,7 @@ mod tests {
         )
         .unwrap();
 
-        apply_ollama_options(&mut payload, &options, &model_config);
+        apply_ollama_options(&mut payload, &options, None);
 
         assert!(
             payload.get("stream_options").is_some(),
@@ -770,7 +1033,7 @@ mod tests {
         )
         .unwrap();
 
-        apply_ollama_options(&mut payload, &options, &model_config);
+        apply_ollama_options(&mut payload, &options, None);
 
         assert!(
             payload.get("stream_options").is_none(),

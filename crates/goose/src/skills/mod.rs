@@ -2,7 +2,6 @@
 //! built-ins) and the runtime MCP client (`client` submodule). User-facing
 //! CRUD lives in `crate::sources`, which generalizes across source types.
 
-mod arguments;
 mod builtin;
 pub mod client;
 mod supporting_files;
@@ -21,7 +20,7 @@ use crate::plugins::{
 use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
-use arguments::apply_skill_arguments;
+use goose_agent::skills::SkillRoot;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;
@@ -122,51 +121,14 @@ fn resolve_docs_root_placeholder(skill: &SourceEntry, content: &str, docs_root: 
     content.replace(GOOSE_DOCS_ROOT_PLACEHOLDER, docs_root)
 }
 
-fn loaded_skill_context(skill: &SourceEntry, content: &str) -> Result<String> {
+pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
+    let content = goose_agent::skills::skill_content_with_args(skill, args)?;
     let docs_root = Config::global()
         .get_goose_docs_root()?
         .unwrap_or_else(|| DEFAULT_GOOSE_DOCS_ROOT.to_string());
-    let content = resolve_docs_root_placeholder(skill, content, &docs_root);
+    let content = resolve_docs_root_placeholder(skill, &content, &docs_root);
 
-    let title = format!("{} ({})", skill.name, skill.source_type);
-    let mut output = format!(
-        "# Loaded Skill: {title}\n\n{}\n\n## Content\n\n{}\n",
-        skill.description, content
-    );
-
-    if !skill.supporting_files.is_empty() {
-        let skill_dir = Path::new(&skill.path);
-        output.push_str(&format!(
-            "\n## Supporting Files\n\nSkill directory: {}\n\n\
-             Relative paths in this skill resolve from the skill directory. \
-             The shell tool runs in the session working directory, so use the \
-             resolved path below or `cd` into the skill directory before running \
-             supporting scripts.\n\n",
-            skill.path
-        ));
-        for file in &skill.supporting_files {
-            if let Ok(relative) = Path::new(file).strip_prefix(skill_dir) {
-                let rel_str = relative.to_string_lossy().replace('\\', "/");
-                let resolved_path = Path::new(file).to_string_lossy().replace('\\', "/");
-                output.push_str(&format!(
-                    "- {} → {} (load_skill(name: \"{}/{}\"))\n",
-                    rel_str, resolved_path, skill.name, rel_str
-                ));
-            }
-        }
-    }
-
-    Ok(output)
-}
-
-pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
-    let content = if let Some(args) = args {
-        apply_skill_arguments(&skill.content, args, &skill_argument_names(skill))?
-    } else {
-        skill.content.clone()
-    };
-
-    loaded_skill_context(skill, &content)
+    Ok(goose_agent::skills::loaded_skill_context(skill, &content))
 }
 
 pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
@@ -176,22 +138,6 @@ pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
         .and_then(|value| value.as_str())
         .filter(|hint| !hint.is_empty())
         .map(str::to_string)
-}
-
-pub fn skill_argument_names(skill: &SourceEntry) -> Vec<String> {
-    skill
-        .properties
-        .get("arguments")
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .filter(|name| !name.is_empty())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn canonicalize_or_original(path: &Path) -> PathBuf {
@@ -486,123 +432,6 @@ fn parse_skill_content(
     })
 }
 
-fn should_skip_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some(".git") | Some(".hg") | Some(".svn")
-    )
-}
-
-fn walk_files_recursively<F, G>(
-    dir: &Path,
-    visited_dirs: &mut HashSet<PathBuf>,
-    should_descend: &mut G,
-    visit_file: &mut F,
-) where
-    F: FnMut(&Path),
-    G: FnMut(&Path) -> bool,
-{
-    let canonical_dir = match std::fs::canonicalize(dir) {
-        Ok(path) => path,
-        Err(_) => return,
-    };
-
-    if !visited_dirs.insert(canonical_dir) {
-        return;
-    }
-
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if should_descend(&path) {
-                walk_files_recursively(&path, visited_dirs, should_descend, visit_file);
-            }
-        } else if path.is_file() {
-            visit_file(&path);
-        }
-    }
-}
-
-fn scan_skills_from_dir(
-    dir: &Path,
-    global: bool,
-    writable: bool,
-    preserve_path: bool,
-    seen: &mut HashSet<String>,
-) -> Vec<SourceEntry> {
-    let mut skill_files = Vec::new();
-    let mut visited_dirs = HashSet::new();
-
-    walk_files_recursively(
-        dir,
-        &mut visited_dirs,
-        &mut |path| !should_skip_dir(path),
-        &mut |path| {
-            if path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md") {
-                skill_files.push(path.to_path_buf());
-            }
-        },
-    );
-
-    let mut sources = Vec::new();
-    for skill_file in skill_files {
-        let Some(skill_dir) = skill_file.parent() else {
-            continue;
-        };
-        let registered_skill_dir = if preserve_path {
-            skill_dir.to_path_buf()
-        } else {
-            let Ok(canonical_dir) = skill_dir.canonicalize() else {
-                continue;
-            };
-            canonical_dir
-        };
-        let content = match std::fs::read_to_string(&skill_file) {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("Failed to read skill file {}: {}", skill_file.display(), e);
-                continue;
-            }
-        };
-
-        if let Some(mut source) =
-            parse_skill_content(&content, &registered_skill_dir, global, writable)
-        {
-            if !seen.contains(&source.name) {
-                let mut files = Vec::new();
-                let mut visited_support_dirs = HashSet::new();
-                walk_files_recursively(
-                    skill_dir,
-                    &mut visited_support_dirs,
-                    &mut |path| !should_skip_dir(path) && !path.join("SKILL.md").is_file(),
-                    &mut |path| {
-                        if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
-                            if let Ok(relative) = path.strip_prefix(skill_dir) {
-                                files.push(
-                                    registered_skill_dir
-                                        .join(relative)
-                                        .to_string_lossy()
-                                        .into_owned(),
-                                );
-                            }
-                        }
-                    },
-                );
-                source.supporting_files = files;
-
-                seen.insert(source.name.clone());
-                sources.push(source);
-            }
-        }
-    }
-    sources
-}
-
 /// Discover skills from all configured filesystem locations and built-ins.
 /// Each returned entry has `global` set according to the directory it was
 /// found in (or `true` for built-ins).
@@ -611,20 +440,16 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
 }
 
 fn discover_skills_with_config(working_dir: Option<&Path>, config: &Config) -> Vec<SourceEntry> {
-    let mut sources: Vec<SourceEntry> = Vec::new();
-    let mut seen = HashSet::new();
-
-    for dir in all_skill_dirs_with_config(working_dir, config) {
-        for source in scan_skills_from_dir(
-            &dir.path,
-            dir.is_global,
-            dir.writable,
-            dir.preserve_path,
-            &mut seen,
-        ) {
-            sources.push(source);
-        }
-    }
+    let roots = all_skill_dirs_with_config(working_dir, config)
+        .into_iter()
+        .map(|dir| SkillRoot {
+            path: dir.path,
+            global: dir.is_global,
+            writable: dir.writable,
+            preserve_path: dir.preserve_path,
+        });
+    let mut sources = goose_agent::skills::discover_skills(roots);
+    let mut seen: HashSet<_> = sources.iter().map(|source| source.name.clone()).collect();
 
     for content in builtin::get_all() {
         if let Some(source) = parse_skill_content(content, &PathBuf::new(), true, true) {

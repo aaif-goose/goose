@@ -7,6 +7,7 @@ export interface AcpCreditsExhaustedError {
 }
 
 const CREDITS_EXHAUSTED_REASON = 'credits_exhausted';
+const TURN_FAILED_REASON = 'turn_failed';
 const AUTH_REQUIRED_CODE = -32000;
 
 // Kept in sync with RECIPE_PARAMS_CANCELLED_REASON in crates/goose/src/acp/server/recipe.rs.
@@ -28,6 +29,17 @@ export function isRecipeParameterScopesUnsupported(
   return error instanceof RecipeParameterScopesUnsupportedError;
 }
 
+export class RecipeDeclinedError extends Error {
+  constructor() {
+    super('Recipe was not trusted by the user');
+    this.name = 'RecipeDeclinedError';
+  }
+}
+
+export function isRecipeDeclined(error: unknown): error is RecipeDeclinedError {
+  return error instanceof RecipeDeclinedError;
+}
+
 export function isRecipeParamsCancelled(error: unknown): boolean {
   return asAcpJsonRpcError(error)?.data?.reason === RECIPE_PARAMS_CANCELLED_REASON;
 }
@@ -44,6 +56,10 @@ export function parseAcpCreditsExhaustedError(error: unknown): AcpCreditsExhaust
     message: jsonRpcError.message,
     ...(url ? { url } : {}),
   };
+}
+
+export function isAcpTurnError(error: unknown): boolean {
+  return asAcpJsonRpcError(error)?.data?.reason === TURN_FAILED_REASON;
 }
 
 export function formatAcpError(error: unknown): string {

@@ -1,17 +1,13 @@
+use super::javascript::{self, ToolCallback, ToolFuture};
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::{get_tool_owner, get_tool_resource_uri};
+use crate::agents::extension_manager::{
+    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
+};
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
-use pctx_code_mode::{
-    config::ToolDisclosure,
-    descriptions::{tools as tool_descriptions, workflow::get_workflow_description},
-    model::{CallbackConfig, ExecuteBashInput, ExecuteTypescriptInput, GetFunctionDetailsInput},
-    registry::{CallbackFn, PctxRegistry},
-    CodeMode,
-};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
     JsonObject, ListToolsResult, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
@@ -19,270 +15,146 @@ use rmcp::model::{
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::hash_map::DefaultHasher;
-use std::future::Future;
-use std::hash::{Hash, Hasher};
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "code_execution";
 
+const INSTRUCTIONS: &str = "Discover exact Goose tool names with list_functions and inspect unfamiliar parameters with get_function_details. Write JavaScript defining async function run() and execute it with execute_javascript. Call tools using await tools.call(\"extension__tool_name\", { ... }); no imports or generated namespaces are needed. Await every tool call and batch independent operations with Promise.all. Return or log only information needed for the next step. JavaScript contexts are isolated, with no filesystem, shell, network, packages, or environment access; use discovered tools for authorized external operations.";
+
 pub struct CodeExecutionClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    disclosure: ToolDisclosure,
-    state: RwLock<Option<CodeModeState>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct ToolGraphNode {
-    /// Tool name in format "server/tool" (e.g., "developer/shell")
+    /// Exact Goose tool name, such as shell or extension__tool_name.
     tool: String,
-    /// Brief description of what this call does (e.g., "list files in /src")
+    /// Brief description of what this call does.
     description: String,
-    /// Indices of nodes this depends on (empty if no dependencies)
+    /// Indices of nodes this depends on (empty if independent).
     #[serde(default)]
     depends_on: Vec<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ExecuteWithToolGraph {
-    #[serde(flatten)]
-    input: ExecuteTypescriptInput,
-    /// DAG of tool calls showing execution flow. Each node represents a tool call.
-    /// Use depends_on to show data flow (e.g., node 1 uses output from node 0).
+    /// JavaScript defining async function run(). Await tools.call(name, arguments).
+    code: String,
+    /// Optional DAG of tool calls for desktop display.
     #[serde(default)]
     tool_graph: Vec<ToolGraphNode>,
 }
 
-impl CodeExecutionClient {
-    pub fn new(context: PlatformExtensionContext, disclosure: ToolDisclosure) -> Result<Self> {
-        let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(
-                Implementation::new(EXTENSION_NAME.to_string(), "1.0.0".to_string())
-                    .with_title("Code Mode"),
-            )
-            .with_instructions(get_workflow_description(disclosure));
+#[derive(Deserialize, JsonSchema)]
+struct GetFunctionDetailsInput {
+    /// Exact tool names returned by list_functions.
+    functions: Vec<String>,
+}
 
-        Ok(Self {
-            info,
-            context,
-            disclosure,
-            state: RwLock::new(None),
+fn callable_catalog(tools: Vec<McpTool>) -> Vec<McpTool> {
+    tools
+        .into_iter()
+        .filter(|tool| {
+            get_tool_resource_uri(tool).is_none()
+                && is_tool_visible_to_model(tool)
+                && !is_tool_owned_by_extension(tool, EXTENSION_NAME)
+                && !is_summon_delegate(tool)
         })
+        .collect()
+}
+
+fn function_details(catalog: &[McpTool], names: &[String]) -> Result<Value, String> {
+    names
+        .iter()
+        .map(|name| {
+            let tool = catalog
+                .iter()
+                .find(|tool| tool.name == *name)
+                .ok_or_else(|| unknown_tool(name))?;
+            Ok(json!({
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+                "output_schema": tool.output_schema,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(Value::Array)
+}
+
+fn unknown_tool(name: &str) -> String {
+    format!("Unknown tool {name:?}; use list_functions and get_function_details to discover callable tools in the current snapshot")
+}
+
+impl CodeExecutionClient {
+    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+        let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Code Mode"))
+            .with_instructions(INSTRUCTIONS);
+        Ok(Self { info, context })
     }
 
-    async fn load_callback_configs(&self, session_id: &str) -> Option<Vec<CallbackConfig>> {
-        let manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|w| w.upgrade())?;
-
-        let tools = manager
-            .get_prefixed_tools_excluding(session_id, EXTENSION_NAME)
-            .await
-            .ok()?;
-
-        let mut cfgs = vec![];
-        for tool in tools {
-            if get_tool_resource_uri(&tool).is_some() || !is_tool_visible_to_model(&tool) {
-                continue;
-            }
-
-            let (name, namespace) = if let Some((prefix, tool_name)) = tool.name.split_once("__") {
-                (tool_name.to_string(), Some(prefix.to_string()))
-            } else if let Some(owner) = get_tool_owner(&tool) {
-                (tool.name.to_string(), Some(owner))
-            } else {
-                (tool.name.to_string(), None)
-            };
-
-            cfgs.push(CallbackConfig {
-                name,
-                namespace,
-                description: tool.description.as_ref().map(|d| d.to_string()),
-                input_schema: Some(json!(tool.input_schema)),
-                output_schema: None,
-            })
-        }
-        Some(cfgs)
-    }
-
-    /// Get the cached CodeMode, rebuilding if callback configs have changed
-    async fn get_code_mode(&self, session_id: &str) -> Result<CodeMode, String> {
-        let cfgs = self
-            .load_callback_configs(session_id)
-            .await
-            .ok_or("Failed to load callback configs")?;
-        let current_hash = CodeModeState::hash(&cfgs);
-
-        // Use cache if no state change
-        {
-            let guard = self.state.read().await;
-            if let Some(state) = guard.as_ref() {
-                if state.hash == current_hash {
-                    return Ok(state.code_mode.clone());
-                }
-            }
-        }
-
-        // Rebuild CodeMode & cache
-        let mut guard = self.state.write().await;
-        // Double-check after acquiring write lock
-        if let Some(state) = guard.as_ref() {
-            if state.hash == current_hash {
-                return Ok(state.code_mode.clone());
-            }
-        }
-
-        let state = CodeModeState::new(cfgs)?;
-        let code_mode = state.code_mode.clone();
-        *guard = Some(state);
-
-        Ok(code_mode)
-    }
-
-    /// Build a PctxRegistry with all tool callbacks registered
-    fn build_callback_registry(
+    async fn handle_execute_javascript(
         &self,
         ctx: &ToolCallContext,
-        code_mode: &CodeMode,
+        arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
-        rt: tokio::runtime::Handle,
-    ) -> Result<PctxRegistry, String> {
+    ) -> Result<Vec<ContentBlock>, String> {
+        let input: ExecuteWithToolGraph = parse_arguments(arguments)?;
+        let catalog =
+            callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
         let manager = self
             .context
             .extension_manager
             .as_ref()
             .and_then(|w| w.upgrade())
             .ok_or("Extension manager not available")?;
-
-        let registry = PctxRegistry::default();
-        for cfg in code_mode.callbacks() {
-            let full_name = format!(
-                "{}{}",
-                cfg.namespace
-                    .clone()
-                    .map(|n| format!("{n}__"))
-                    .unwrap_or_default(),
-                cfg.name
-            );
-            let callback = create_tool_callback(
-                ctx.clone(),
-                full_name,
-                manager.clone(),
-                cancellation_token.clone(),
-                rt.clone(),
-            );
-            registry
-                .add_callback(&cfg.id(), callback)
-                .map_err(|e| format!("Failed to register callback: {e}"))?;
-        }
-
-        Ok(registry)
-    }
-
-    /// Handle the list_functions tool call
-    async fn handle_list_functions(&self, session_id: &str) -> Result<Vec<ContentBlock>, String> {
-        let code_mode = self.get_code_mode(session_id).await?;
-        let output = code_mode.list_functions();
-
-        Ok(vec![ContentBlock::text(output.code)])
-    }
-
-    /// Handle the get_function_details tool call
-    async fn handle_get_function_details(
-        &self,
-        session_id: &str,
-        arguments: Option<JsonObject>,
-    ) -> Result<Vec<ContentBlock>, String> {
-        let input: GetFunctionDetailsInput = arguments
-            .map(|args| serde_json::from_value(Value::Object(args)))
-            .transpose()
-            .map_err(|e| format!("Failed to parse arguments: {e}"))?
-            .ok_or("Missing arguments for get_function_details")?;
-
-        let code_mode = self.get_code_mode(session_id).await?;
-        let output = code_mode.get_function_details(input);
-
-        Ok(vec![ContentBlock::text(output.code)])
-    }
-
-    /// Handle the execute bash tool call
-    async fn handle_execute_bash(
-        &self,
-        session_id: &str,
-        arguments: Option<JsonObject>,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, String> {
-        let input: ExecuteBashInput = arguments
-            .map(|args| serde_json::from_value(Value::Object(args)))
-            .transpose()
-            .map_err(|e| format!("Failed to parse arguments: {e}"))?
-            .ok_or("Missing arguments for execute_bash")?;
-        let command = input.command;
-        let code_mode = self.get_code_mode(session_id).await?;
-
-        let dispatch_token = cancellation_token.child_token();
-        let output = run_in_deno_runtime(
+        let dispatch = cancellation_token.child_token();
+        let callback: ToolCallback = Arc::new({
+            let ctx = ctx.clone();
+            let dispatch = dispatch.clone();
+            let rt = tokio::runtime::Handle::current();
+            move |name, args| {
+                if !catalog.iter().any(|tool| tool.name == name) {
+                    return Box::pin(async move { Err(unknown_tool(&name)) });
+                }
+                if dispatch.is_cancelled() {
+                    return Box::pin(async { Err("Execution cancelled".into()) });
+                }
+                dispatch_tool(
+                    ctx.clone(),
+                    name,
+                    manager.clone(),
+                    dispatch.clone(),
+                    rt.clone(),
+                    args,
+                )
+            }
+        });
+        let output = javascript::execute(
+            input.code,
+            callback,
             execution_timeout(),
             cancellation_token,
-            dispatch_token,
-            move || async move {
-                code_mode
-                    .execute_bash(&command)
-                    .await
-                    .map_err(|e| format!("Bash execution error: {e}"))
-            },
+            dispatch,
         )
         .await?;
-
-        Ok(vec![ContentBlock::text(format!(
-            "Exit Code: {}\n\n# STDOUT\n{}\n\n# STDERR\n{}",
-            output.exit_code, output.stdout, output.stderr
-        ))])
+        Ok(vec![ContentBlock::text(output)])
     }
+}
 
-    /// Handle the execute typescript tool call
-    async fn handle_execute_typescript(
-        &self,
-        ctx: &ToolCallContext,
-        arguments: Option<JsonObject>,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, String> {
-        let args: ExecuteWithToolGraph = arguments
-            .map(|args| serde_json::from_value(Value::Object(args)))
-            .transpose()
-            .map_err(|e| format!("Failed to parse arguments: {e}"))?
-            .ok_or("Missing arguments for execute_typescript")?;
+fn parse_arguments<T: serde::de::DeserializeOwned>(
+    arguments: Option<JsonObject>,
+) -> Result<T, String> {
+    serde_json::from_value(Value::Object(arguments.ok_or("Missing arguments")?))
+        .map_err(|e| format!("Invalid arguments: {e}; inspect the tool's input schema"))
+}
 
-        let session_id = &ctx.session_id;
-        let code_mode = self.get_code_mode(session_id).await?;
-        let dispatch_token = cancellation_token.child_token();
-        let rt = tokio::runtime::Handle::current();
-        let registry = self.build_callback_registry(ctx, &code_mode, dispatch_token.clone(), rt)?;
-        let code = args.input.code.clone();
-        let disclosure = self.disclosure;
-
-        let output = run_in_deno_runtime(
-            execution_timeout(),
-            cancellation_token,
-            dispatch_token,
-            move || async move {
-                code_mode
-                    .execute_typescript(&code, disclosure, Some(registry))
-                    .await
-                    .map_err(|e| format!("Typescript execution error: {e}"))
-            },
-        )
-        .await?;
-
-        Ok(vec![ContentBlock::text(output.markdown())])
-    }
+fn is_summon_delegate(tool: &McpTool) -> bool {
+    tool.name == "delegate" && is_tool_owned_by_extension(tool, super::summon::EXTENSION_NAME)
 }
 
 fn execution_timeout() -> Duration {
@@ -292,116 +164,71 @@ fn execution_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-/// Deno runtime is not Send, so execution runs in a blocking task with its
-/// own tokio runtime. pctx serializes all executions behind a process-wide
-/// V8 mutex, so a hung script would wedge code execution for every session:
-/// bound the wait with the extension timeout and honor cancellation.
-///
-/// `dispatch_token` is the child token shared with the callback dispatches that
-/// a script makes back into Goose tools. When execution is abandoned (timeout
-/// or cancellation), the token is cancelled so an in-flight nested tool call
-/// (e.g. a long `developer.shell` command) is told to stop instead of running
-/// on in the background.
-/// Grace period for nested tool calls to observe a dispatched cancellation
-/// signal and clean up (e.g. kill child processes) before the task future is
-/// abandoned.
-const DISPATCH_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
-
-async fn run_in_deno_runtime<T, F, Fut>(
-    timeout: Duration,
-    cancellation_token: CancellationToken,
-    dispatch_token: CancellationToken,
-    task: F,
-) -> Result<T, String>
-where
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = Result<T, String>>,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("Failed to create runtime: {e}"))?;
-
-        rt.block_on(async move {
-            let task_future = task();
-            tokio::pin!(task_future);
-
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    dispatch_token.cancel();
-                    let _ = tokio::time::timeout(
-                        DISPATCH_DRAIN_TIMEOUT,
-                        &mut task_future,
-                    ).await;
-                    Err("Execution cancelled".to_string())
-                }
-                _ = tokio::time::sleep(timeout) => {
-                    dispatch_token.cancel();
-                    let _ = tokio::time::timeout(
-                        DISPATCH_DRAIN_TIMEOUT,
-                        &mut task_future,
-                    ).await;
-                    Err(format!(
-                        "Execution timed out after {} seconds",
-                        timeout.as_secs()
-                    ))
-                }
-                result = &mut task_future => result,
-            }
-        })
-    })
-    .await
-    .map_err(|e| format!("Execution task failed: {e}"))?
+fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
+    ctx.extension_lease()
+        .expect("platform tool calls are dispatched through a lease")
 }
 
-fn create_tool_callback(
+fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
     manager: Arc<crate::agents::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
-) -> CallbackFn {
-    Arc::new(move |args: Option<Value>| {
-        let ctx = ctx.clone();
-        let full_name = full_name.clone();
-        let manager = manager.clone();
-        let cancellation_token = cancellation_token.clone();
-        let rt = rt.clone();
-        Box::pin(async move {
-            let tool_call = {
-                let mut params = CallToolRequestParams::new(full_name);
-                if let Some(args) = args.and_then(|v| v.as_object().cloned()) {
-                    params = params.with_arguments(args);
-                }
-                params
-            };
-
-            let handle = rt.spawn(async move {
-                match manager
-                    .dispatch_tool_call(&ctx, tool_call, cancellation_token)
-                    .await
-                {
-                    Ok(dispatch_result) => match dispatch_result.result.await {
+    args: Value,
+) -> ToolFuture {
+    Box::pin(async move {
+        let arguments = args
+            .as_object()
+            .cloned()
+            .ok_or("Tool arguments must be a JSON object")?;
+        let tool_call = CallToolRequestParams::new(full_name).with_arguments(arguments);
+        let handle = rt.spawn(async move {
+            let execution = async {
+                let dispatch_result = dispatching_lease(&ctx)
+                    .call(
+                        tool_call,
+                        CallRequest::from(&ctx),
+                        cancellation_token.clone(),
+                    )
+                    .await;
+                match dispatch_result {
+                    Ok(dispatch_result) => match manager
+                        .applying_mutation(dispatch_result, &ctx.session_id)
+                        .result
+                        .await
+                    {
+                        Ok(result) if result.is_error == Some(true) => {
+                            Err(callback_result_to_value(&result).to_string())
+                        }
                         Ok(result) => Ok(callback_result_to_value(&result)),
                         Err(e) => Err(format!("Tool error: {}", e.message)),
                     },
                     Err(e) => Err(format!("Dispatch error: {e}")),
                 }
-            });
-
-            struct AbortOnDrop(tokio::task::AbortHandle);
-            impl Drop for AbortOnDrop {
-                fn drop(&mut self) {
-                    self.0.abort();
+            };
+            tokio::pin!(execution);
+            tokio::select! {
+                biased;
+                result = &mut execution => result,
+                _ = cancellation_token.cancelled() => {
+                    // Cleanup runs on Goose's runtime even if the Boa worker cannot yield.
+                    tokio::time::timeout(javascript::DRAIN_TIMEOUT, &mut execution)
+                        .await
+                        .unwrap_or_else(|_| Err("Execution cancelled".into()))
                 }
             }
-            let _guard = AbortOnDrop(handle.abort_handle());
-            handle
-                .await
-                .unwrap_or_else(|e| Err(format!("Callback task failed: {e}")))
-        }) as Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>
+        });
+        struct AbortOnDrop(tokio::task::AbortHandle);
+        impl Drop for AbortOnDrop {
+            fn drop(&mut self) {
+                self.0.abort();
+            }
+        }
+        let _guard = AbortOnDrop(handle.abort_handle());
+        handle
+            .await
+            .unwrap_or_else(|e| Err(format!("Callback task failed: {e}")))
     })
 }
 
@@ -430,116 +257,27 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 
 #[async_trait]
 impl McpClientTrait for CodeExecutionClient {
-    #[allow(clippy::too_many_lines)]
     async fn list_tools(
         &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
+        _: &str,
+        _: Option<String>,
+        _: CancellationToken,
     ) -> Result<ListToolsResult, Error> {
         fn schema<T: JsonSchema>() -> JsonObject {
             serde_json::to_value(schema_for!(T))
-                .map(|v| v.as_object().unwrap().clone())
                 .expect("valid schema")
+                .as_object()
+                .expect("object schema")
+                .clone()
         }
-
-        // Empty schema for list_functions (no parameters)
-        let empty_schema: JsonObject = serde_json::from_value(json!({
-            "type": "object",
-            "properties": {},
-            "required": []
-        }))
-        .expect("valid schema");
-
-        let tools = match self.disclosure {
-            ToolDisclosure::Catalog => {
-                vec![
-                    McpTool::new(
-                        "list_functions".to_string(),
-                        tool_descriptions::LIST_FUNCTIONS.to_string(),
-                        empty_schema,
-                    )
-                    .annotate(ToolAnnotations::from_raw(
-                        Some("List functions".to_string()),
-                        Some(true),
-                        Some(false),
-                        Some(true),
-                        Some(false),
-                    )),
-                    McpTool::new(
-                        "get_function_details".to_string(),
-                        tool_descriptions::GET_FUNCTION_DETAILS.to_string(),
-                        schema::<GetFunctionDetailsInput>(),
-                    )
-                    .annotate(ToolAnnotations::from_raw(
-                        Some("Get function details".to_string()),
-                        Some(true),
-                        Some(false),
-                        Some(true),
-                        Some(false),
-                    )),
-                    McpTool::new(
-                        "execute_typescript".to_string(),
-                        tool_descriptions::EXECUTE_TYPESCRIPT_CATALOG.to_string(),
-                        schema::<ExecuteWithToolGraph>(),
-                    )
-                    .annotate(ToolAnnotations::from_raw(
-                        Some("Execute TypeScript".to_string()),
-                        Some(false),
-                        Some(true),
-                        Some(false),
-                        Some(true),
-                    )),
-                ]
-            }
-            ToolDisclosure::Filesystem => {
-                vec![
-                    McpTool::new(
-                        "execute_bash".to_string(),
-                        tool_descriptions::EXECUTE_BASH.to_string(),
-                        schema::<ExecuteBashInput>(),
-                    )
-                    .annotate(ToolAnnotations::from_raw(
-                        Some("Execute Bash".to_string()),
-                        Some(false),
-                        Some(true),
-                        Some(false),
-                        Some(true),
-                    )),
-                    McpTool::new(
-                        "execute_typescript".to_string(),
-                        tool_descriptions::EXECUTE_TYPESCRIPT_FILESYSTEM.to_string(),
-                        schema::<ExecuteWithToolGraph>(),
-                    )
-                    .annotate(ToolAnnotations::from_raw(
-                        Some("Execute TypeScript".to_string()),
-                        Some(false),
-                        Some(true),
-                        Some(false),
-                        Some(true),
-                    )),
-                ]
-            }
-            ToolDisclosure::Sidecar => {
-                vec![McpTool::new(
-                    "execute_typescript".to_string(),
-                    tool_descriptions::EXECUTE_TYPESCRIPT_SIDECAR.to_string(),
-                    schema::<ExecuteWithToolGraph>(),
-                )
-                .annotate(ToolAnnotations::from_raw(
-                    Some("Execute TypeScript".to_string()),
-                    Some(false),
-                    Some(true),
-                    Some(false),
-                    Some(true),
-                ))]
-            }
-        };
-
+        let read_only =
+            ToolAnnotations::from_raw(None, Some(true), Some(false), Some(true), Some(false));
         Ok(ListToolsResult {
-            meta: None,
-            next_cursor: None,
-            tools,
+            tools: vec![
+                McpTool::new("list_functions", "List callable tools with their exact Goose names and short descriptions. Inspect unfamiliar parameters with get_function_details before calling tools.", json!({"type":"object","properties":{}}).as_object().unwrap().clone()).annotate(read_only.clone()),
+                McpTool::new("get_function_details", "Get descriptions and original JSON input/output schemas for exact tool names returned by list_functions. Schemas are data, including recursive references.", schema::<GetFunctionDetailsInput>()).annotate(read_only),
+                McpTool::new("execute_javascript", format!("Execute JavaScript and return captured console output, the JSON result, or an error. {INSTRUCTIONS}"), schema::<ExecuteWithToolGraph>()).annotate(ToolAnnotations::from_raw(Some("Execute JavaScript".into()), Some(false), Some(true), Some(false), Some(true))),
+            ],
             ..Default::default()
         })
     }
@@ -551,121 +289,43 @@ impl McpClientTrait for CodeExecutionClient {
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
-        let session_id = &ctx.session_id;
         let result = match name {
-            "list_functions" => self.handle_list_functions(session_id).await,
+            "list_functions" => {
+                let catalog =
+                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                let functions: Vec<_> = catalog.iter().map(|tool| json!({
+                    "name": tool.name,
+                    "description": tool.description.as_deref().unwrap_or("").lines().next().unwrap_or("").chars().take(240).collect::<String>()
+                })).collect();
+                Ok(vec![ContentBlock::text(json!(functions).to_string())])
+            }
             "get_function_details" => {
-                self.handle_get_function_details(session_id, arguments)
-                    .await
+                let catalog =
+                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                parse_arguments::<GetFunctionDetailsInput>(arguments)
+                    .and_then(|input| function_details(&catalog, &input.functions))
+                    .map(|details| vec![ContentBlock::text(details.to_string())])
             }
-            "execute_bash" => {
-                self.handle_execute_bash(session_id, arguments, cancellation_token)
-                    .await
-            }
-            "execute_typescript" => {
-                self.handle_execute_typescript(ctx, arguments, cancellation_token)
+            "execute_javascript" => {
+                self.handle_execute_javascript(ctx, arguments, cancellation_token)
                     .await
             }
             _ => Err(format!("Unknown tool: {name}")),
         };
-
-        match result {
-            Ok(content) => Ok(CallToolResult::success(content)),
-            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "Error: {error}"
-            ))])),
-        }
+        Ok(match result {
+            Ok(content) => CallToolResult::success(content),
+            Err(error) => CallToolResult::error(vec![ContentBlock::text(javascript::limit_error(
+                format!("Error: {error}"),
+            ))]),
+        })
     }
 
     fn get_info(&self) -> Option<&InitializeResult> {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
-        let code_mode = self.get_code_mode(session_id).await.ok()?;
-
-        let disclosure_style_moim = match self.disclosure {
-            ToolDisclosure::Catalog => {
-                let function_count = code_mode.list_functions().functions.len();
-                catalog_disclosure_moim(function_count)
-            }
-            ToolDisclosure::Filesystem => {
-                let available_filepaths: Vec<_> = code_mode
-                    .virtual_fs().keys().map(String::from).collect();
-                format!("Use execute_bash to search and read the tool signatures and input/output types before calling execute_typescript. The available files are: {}", available_filepaths.join(", "))
-            },
-            ToolDisclosure::Sidecar => "Prioritize calling tools with the execute_typescript tool, especially when multiple tools can be called in one script.".into(),
-        };
-
-        Some(format!(
-            indoc::indoc! {r#"
-                ALWAYS batch multiple tool operations into ONE execute_typescript call.
-                - WRONG: Separate execute_typescript calls for read file, then write file
-                - RIGHT: One execute_typescript with an async run() function that reads AND writes AND logs/returns as little information as needed for the next step.
-
-                {}
-            "#},
-            disclosure_style_moim
-        ))
-    }
-}
-
-fn catalog_disclosure_moim(function_count: usize) -> String {
-    if function_count == 0 {
-        "No execute_typescript callback functions are currently registered.".to_string()
-    } else {
-        format!(
-            "{function_count} callback functions are available only from inside execute_typescript. Do not call callback function names directly as tools. Use list_functions and get_function_details to inspect signatures before writing one execute_typescript call."
-        )
-    }
-}
-
-pub fn get_tool_disclosure() -> ToolDisclosure {
-    let config = crate::config::Config::global();
-    let tool_disclosure_str: String = config
-        .get_param("CODE_MODE_TOOL_DISCLOSURE")
-        .unwrap_or_else(|_| "catalog".to_string());
-    serde_json::from_value(serde_json::json!(tool_disclosure_str)).unwrap_or_default()
-}
-
-struct CodeModeState {
-    code_mode: CodeMode,
-    hash: u64,
-}
-
-impl CodeModeState {
-    fn new(cfgs: Vec<CallbackConfig>) -> Result<Self, String> {
-        let hash = Self::hash(&cfgs);
-
-        let (code_mode, report) = CodeMode::default().with_callbacks(&cfgs);
-        if !report.failed.is_empty() {
-            let failures = report
-                .failed
-                .iter()
-                .map(|failure| format!("{}: {}", failure.id, failure.reason))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(format!(
-                "failed adding callback configs to CodeMode: {failures}"
-            ));
-        }
-
-        Ok(Self { code_mode, hash })
-    }
-
-    /// Compute order-independent hash of callback configs
-    fn hash(cfgs: &[CallbackConfig]) -> u64 {
-        let mut cfg_strings: Vec<_> = cfgs
-            .iter()
-            .filter_map(|c| serde_json::to_string(c).ok())
-            .collect();
-        cfg_strings.sort();
-
-        let mut hasher = DefaultHasher::new();
-        for s in cfg_strings {
-            s.hash(&mut hasher);
-        }
-        hasher.finish()
+    async fn get_moim(&self, _: &str, tools: &[McpTool]) -> Option<String> {
+        Some(format!("{} callable tools are available through execute_javascript in this snapshot. {INSTRUCTIONS}", callable_catalog(tools.to_vec()).len()))
     }
 }
 
@@ -674,7 +334,6 @@ mod tests {
     use super::*;
     use crate::agents::extension::ExtensionConfig;
     use crate::agents::extension_manager::ExtensionManager;
-    use pctx_code_mode::model::FunctionId;
     use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
 
     #[test]
@@ -723,6 +382,107 @@ mod tests {
 
     struct VisibilityClient;
 
+    struct PendingClient {
+        started: Arc<tokio::sync::Notify>,
+        released: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait]
+    impl McpClientTrait for PendingClient {
+        async fn list_tools(
+            &self,
+            session_id: &str,
+            next_cursor: Option<String>,
+            cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            VisibilityClient
+                .list_tools(session_id, next_cursor, cancellation_token)
+                .await
+        }
+
+        async fn call_tool(
+            &self,
+            _: &ToolCallContext,
+            _: &str,
+            _: Option<JsonObject>,
+            _: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            struct Released(Arc<tokio::sync::Notify>);
+            impl Drop for Released {
+                fn drop(&mut self) {
+                    self.0.notify_one();
+                }
+            }
+            let _guard = Released(self.released.clone());
+            self.started.notify_one();
+            std::future::pending().await
+        }
+
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_dispatch_releases_tools_without_polling_the_worker_future() {
+        use futures::FutureExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "blocked-worker".into(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let released = Arc::new(tokio::sync::Notify::new());
+        manager
+            .add_test_client(
+                &session.id,
+                ExtensionConfig::Builtin {
+                    name: "pending".into(),
+                    description: String::new(),
+                    display_name: None,
+                    timeout: None,
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Arc::new(PendingClient {
+                    started: started.clone(),
+                    released: released.clone(),
+                }),
+                None,
+            )
+            .await;
+        let lease = Arc::new(manager.scope_lease(&session.id).await);
+        let ctx = ToolCallContext::new(session.id, None, None).with_extension_lease(lease);
+        let dispatch = CancellationToken::new();
+        let mut callback = dispatch_tool(
+            ctx,
+            "pending__ordinary".into(),
+            manager,
+            dispatch.clone(),
+            tokio::runtime::Handle::current(),
+            json!({}),
+        );
+        assert!(callback.as_mut().now_or_never().is_none());
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        dispatch.cancel();
+        tokio::time::timeout(Duration::from_secs(2), released.notified())
+            .await
+            .unwrap();
+        // The Boa worker could be blocked here: callback has not been polled again.
+        drop(callback);
+    }
+
     #[async_trait]
     impl McpClientTrait for VisibilityClient {
         async fn list_tools(
@@ -770,10 +530,28 @@ mod tests {
             &self,
             _ctx: &ToolCallContext,
             _name: &str,
-            _arguments: Option<JsonObject>,
+            arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,
         ) -> Result<CallToolResult, Error> {
-            Err(Error::TransportClosed)
+            if arguments
+                .as_ref()
+                .is_some_and(|args| args.get("fail") == Some(&json!(true)))
+            {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "permission denied",
+                )]));
+            }
+            let mut result = CallToolResult::success(vec![
+                ContentBlock::text(
+                    json!({"summary": "visible", "arguments": arguments}).to_string(),
+                ),
+                ContentBlock::Text(
+                    TextContent::new("hidden audience secret")
+                        .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+                ),
+            ]);
+            result.structured_content = Some(json!({"hidden": "structured secret"}));
+            Ok(result)
         }
 
         fn get_info(&self) -> Option<&InitializeResult> {
@@ -782,14 +560,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn callback_configs_exclude_tools_hidden_from_model() {
+    async fn catalog_excludes_tools_hidden_from_model() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
-            temp.path().join("manager"),
-        ));
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         manager
-            .add_client(
-                "visibility".to_string(),
+            .install_test_client(
+                "test-session",
                 ExtensionConfig::Builtin {
                     name: "visibility".to_string(),
                     description: "Visibility test tools".to_string(),
@@ -803,321 +579,300 @@ mod tests {
             )
             .await;
 
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
-        let client = CodeExecutionClient::new(context, ToolDisclosure::Catalog).unwrap();
-        let configs = client.load_callback_configs("test-session").await.unwrap();
+        let lease = manager.scope_lease("test-session").await;
+        let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
-            .map(|config| config.name.as_str())
+            .map(|config| config.name.as_ref())
             .collect::<Vec<_>>();
 
-        assert!(!names.contains(&"app_only"));
-        assert!(names.contains(&"model_visible"));
-        assert!(names.contains(&"ordinary"));
-        assert!(configs.iter().all(|config| config.output_schema.is_none()));
+        assert!(!names.contains(&"visibility__app_only"));
+        assert!(names.contains(&"visibility__model_visible"));
+        assert!(names.contains(&"visibility__ordinary"));
+        assert!(configs.iter().any(|config| config.output_schema.is_some()));
     }
 
     #[tokio::test]
-    async fn run_in_deno_runtime_times_out_on_hung_execution() {
-        let result: Result<(), String> = run_in_deno_runtime(
-            Duration::from_millis(50),
-            CancellationToken::new(),
-            CancellationToken::new(),
-            std::future::pending,
-        )
-        .await;
-
-        assert!(result.unwrap_err().contains("timed out"));
-    }
-
-    #[tokio::test]
-    async fn run_in_deno_runtime_honors_cancellation() {
-        let token = CancellationToken::new();
-        token.cancel();
-
-        let result: Result<(), String> = run_in_deno_runtime(
-            Duration::from_secs(60),
-            token,
-            CancellationToken::new(),
-            std::future::pending,
-        )
-        .await;
-
-        assert_eq!(result.unwrap_err(), "Execution cancelled");
-    }
-
-    #[tokio::test]
-    async fn run_in_deno_runtime_cancels_dispatch_token_when_abandoned() {
-        // On timeout, an in-flight nested tool call (via the dispatch token)
-        // must be told to stop rather than left running in the background.
-        let dispatch_token = CancellationToken::new();
-        let result: Result<(), String> = run_in_deno_runtime(
-            Duration::from_millis(50),
-            CancellationToken::new(),
-            dispatch_token.clone(),
-            std::future::pending,
-        )
-        .await;
-        assert!(result.unwrap_err().contains("timed out"));
-        assert!(dispatch_token.is_cancelled());
-
-        // On cancellation, the child dispatch token is likewise cancelled.
-        let outer = CancellationToken::new();
-        outer.cancel();
-        let dispatch_token = outer.child_token();
-        let result: Result<(), String> = run_in_deno_runtime(
-            Duration::from_secs(60),
-            outer,
-            dispatch_token.clone(),
-            std::future::pending,
-        )
-        .await;
-        assert_eq!(result.unwrap_err(), "Execution cancelled");
-        assert!(dispatch_token.is_cancelled());
-    }
-
-    #[tokio::test]
-    async fn run_in_deno_runtime_drains_task_on_timeout() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-
-        let dispatch_token = CancellationToken::new();
-        let observed = Arc::new(AtomicBool::new(false));
-        let task_token = dispatch_token.clone();
-        let task_observed = observed.clone();
-
-        let result: Result<(), String> = run_in_deno_runtime(
-            Duration::from_millis(50),
-            CancellationToken::new(),
-            dispatch_token.clone(),
-            move || async move {
-                task_token.cancelled().await;
-                task_observed.store(true, Ordering::SeqCst);
-                Ok(())
-            },
-        )
-        .await;
-
-        assert!(
-            result.unwrap_err().contains("timed out"),
-            "should report timeout"
-        );
-        assert!(
-            observed.load(Ordering::SeqCst),
-            "task should observe dispatch token cancellation before being dropped"
-        );
-    }
-
-    /// Exercises the real Deno/V8 stack: a script whose event loop never
-    /// resolves must time out instead of wedging forever, and a normal
-    /// script must run right after, proving pctx's process-wide V8 mutex
-    /// was released (i.e. one hung execution no longer blocks other sessions).
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn real_v8_hung_script_times_out_and_frees_the_runtime() {
-        let hung = CodeMode::default();
-        let hung_result = run_in_deno_runtime(
-            Duration::from_secs(2),
-            CancellationToken::new(),
-            CancellationToken::new(),
-            move || async move {
-                hung.execute_typescript(
-                    "async function run() { await new Promise(() => {}); }",
-                    ToolDisclosure::default(),
-                    None,
-                )
-                .await
-                .map_err(|e| format!("execution error: {e}"))
-            },
-        )
-        .await;
-        assert!(
-            hung_result.unwrap_err().contains("timed out"),
-            "hung script should time out"
-        );
-
-        let normal = CodeMode::default();
-        let normal_result = run_in_deno_runtime(
-            Duration::from_secs(60),
-            CancellationToken::new(),
-            CancellationToken::new(),
-            move || async move {
-                normal
-                    .execute_typescript(
-                        "async function run() { return 1 + 1; }",
-                        ToolDisclosure::default(),
-                        None,
-                    )
-                    .await
-                    .map_err(|e| format!("execution error: {e}"))
-            },
-        )
-        .await
-        .expect("normal script should run after a prior timeout");
-        assert!(
-            normal_result.success,
-            "normal script should succeed once the V8 mutex is released: {}",
-            normal_result.stderr
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn callback_completing_from_main_runtime_does_not_hang() {
-        let rt = tokio::runtime::Handle::current();
-        let (tx, rx) = tokio::sync::oneshot::channel::<serde_json::Value>();
-        let rx = Arc::new(std::sync::Mutex::new(Some(rx)));
-
-        let callback: CallbackFn = Arc::new({
-            let rt = rt.clone();
-            move |_args: Option<Value>| {
-                let rt = rt.clone();
-                let rx = rx.clone();
-                Box::pin(async move {
-                    let receiver = rx.lock().unwrap().take().expect("receiver taken once");
-                    let handle = rt.spawn(async move {
-                        receiver.await.map_err(|_| "channel closed".to_string())
-                    });
-                    handle.await.unwrap_or_else(|e| Err(e.to_string()))
-                }) as Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>
-            }
-        });
-
-        rt.spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            let _ = tx.send(serde_json::json!({"done": true}));
-        });
-
-        let cfg = CallbackConfig {
-            name: "ping".to_string(),
-            namespace: Some("Test".to_string()),
-            description: Some("ping".to_string()),
-            input_schema: None,
-            output_schema: None,
-        };
-        let code_mode = CodeMode::default()
-            .with_callback(&cfg)
-            .expect("add callback");
-        let registry = PctxRegistry::default();
-        registry.add_callback(&cfg.id(), callback).unwrap();
-
-        let result = run_in_deno_runtime(
-            Duration::from_secs(5),
-            CancellationToken::new(),
-            CancellationToken::new(),
-            move || async move {
-                code_mode
-                    .execute_typescript(
-                        "async function run() { return await Test.ping(); }",
-                        ToolDisclosure::default(),
-                        Some(registry),
-                    )
-                    .await
-                    .map_err(|e| format!("execution error: {e}"))
-            },
-        )
-        .await
-        .expect("script should not time out");
-
-        assert!(result.success, "callback should succeed: {}", result.stderr);
-    }
-
-    #[test]
-    fn catalog_moim_mentions_inspection_tools_without_function_names() {
-        let moim = catalog_disclosure_moim(3);
-
-        assert!(moim.contains("3 callback functions"));
-        assert!(moim.contains("list_functions"));
-        assert!(moim.contains("get_function_details"));
-        assert!(!moim.contains("extract_relations"));
-        assert!(!moim.contains("ask_heimdall"));
-    }
-
-    #[tokio::test]
-    async fn execute_bash_annotations_require_approval() {
+    async fn catalog_leaves_delegate_to_direct_tool_calls() {
         let temp = tempfile::tempdir().unwrap();
-        let client = CodeExecutionClient::new(
-            PlatformExtensionContext {
-                extension_manager: None,
-                session_manager: Arc::new(crate::session::SessionManager::new(
-                    temp.path().join("sessions"),
-                )),
-                scheduler: None,
-                session: None,
-                use_login_shell_path: false,
-            },
-            ToolDisclosure::Filesystem,
-        )
-        .unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "code-mode-delegate".to_string(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .enable(
+                &session.id,
+                ExtensionConfig::Platform {
+                    name: super::super::summon::EXTENSION_NAME.to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
 
-        let tools = client
-            .list_tools("test", None, CancellationToken::new())
+        let lease = manager.current_lease(&session.id).await.unwrap();
+        let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
+        let names = configs
+            .iter()
+            .map(|config| config.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"load"));
+        assert!(!names.contains(&"delegate"));
+    }
+
+    #[tokio::test]
+    async fn callback_uses_lease_and_applies_extension_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "code-mode-mutation".to_string(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .enable(
+                &session.id,
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        let lease = Arc::new(manager.current_lease(&session.id).await.unwrap());
+        manager
+            .disable(&session.id, "extensionmanager")
+            .await
+            .unwrap();
+        let tool_name = lease
+            .tools()
+            .await
+            .into_iter()
+            .find(|tool| tool.name.ends_with("manage_extensions"))
+            .unwrap()
+            .name
+            .to_string();
+        let ctx = ToolCallContext::new(
+            session.id.clone(),
+            Some(session.working_dir.clone()),
+            Some("manage".into()),
+        )
+        .with_extension_lease(lease);
+        let mut context = manager.get_context().clone();
+        context.extension_manager = Some(Arc::downgrade(&manager));
+        let client = CodeExecutionClient::new(context).unwrap();
+        let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
+        let result = client
+            .call_tool(
+                &ctx,
+                "execute_javascript",
+                Some(json!({"code": code}).as_object().unwrap().clone()),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{result:?}");
+
+        assert!(manager
+            .list_extensions(&session.id)
             .await
             .unwrap()
-            .tools;
-        let execute_bash = tools
-            .iter()
-            .find(|tool| tool.name == "execute_bash")
+            .contains(&"todo".to_string()));
+        let stored_session = manager
+            .get_context()
+            .session_manager
+            .get_session(&session.id, false)
+            .await
             .unwrap();
-        let annotations = execute_bash.annotations.as_ref().unwrap();
-
-        assert_eq!(annotations.title.as_deref(), Some("Execute Bash"));
-        assert_eq!(annotations.read_only_hint, Some(false));
-        assert_eq!(annotations.destructive_hint, Some(true));
-        assert_eq!(annotations.idempotent_hint, Some(false));
-        assert_eq!(annotations.open_world_hint, Some(true));
+        let stored_extensions = crate::session::EnabledExtensionsState::from_extension_data(
+            &stored_session.extension_data,
+        )
+        .unwrap();
+        assert!(stored_extensions
+            .extensions
+            .iter()
+            .any(|config| config.key() == "todo"));
     }
-
-    fn self_referential_any_schema() -> Value {
-        json!({
-            "$ref": "#/$defs/Any",
-            "$defs": {
-                "Any": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "number"},
-                        {
-                            "type": "object",
-                            "additionalProperties": {"$ref": "#/$defs/Any"}
-                        }
-                    ]
-                }
-            }
-        })
+    #[tokio::test]
+    async fn discovery_and_execution_share_the_lease_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "snapshot-session".into(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_test_client(
+                &session.id,
+                ExtensionConfig::Builtin {
+                    name: "visibility".into(),
+                    description: String::new(),
+                    display_name: None,
+                    timeout: None,
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Arc::new(VisibilityClient),
+                None,
+            )
+            .await;
+        let lease = Arc::new(manager.scope_lease(&session.id).await);
+        let ctx = ToolCallContext::new(session.id.clone(), None, None)
+            .with_extension_lease(lease.clone());
+        let mut context = manager.get_context().clone();
+        context.extension_manager = Some(Arc::downgrade(&manager));
+        let client = CodeExecutionClient::new(context).unwrap();
+        let listed = client
+            .call_tool(&ctx, "list_functions", None, CancellationToken::new())
+            .await
+            .unwrap();
+        let listed = callback_result_to_value(&listed);
+        assert!(listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["name"] == "visibility__ordinary"));
+        assert!(!listed.to_string().contains("app_only"));
+        manager.disable(&session.id, "visibility").await.unwrap();
+        let details = client
+            .call_tool(
+                &ctx,
+                "get_function_details",
+                Some(
+                    json!({"functions": ["visibility__model_visible"]})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let details = callback_result_to_value(&details);
+        assert!(details[0]["output_schema"].is_object());
+        let result = client.call_tool(&ctx, "execute_javascript", Some(json!({"code": r#"async function run() {
+            const first = await tools.call("visibility__ordinary", {query: "first"});
+            const batch = await Promise.all([tools.call("visibility__ordinary", {query: first.summary}), tools.call("visibility__model_visible", {})]);
+            try { await tools.call("visibility__ordinary", {fail: true}); } catch (e) { console.log(e.message); }
+            try { await tools.call("visibility__app_only", {}); } catch (e) { console.log(e.message); }
+            return batch;
+        }"#}).as_object().unwrap().clone()), CancellationToken::new()).await.unwrap();
+        assert_ne!(result.is_error, Some(true), "{result:?}");
+        let output = callback_result_to_value(&result).to_string();
+        assert!(output.contains("visible"));
+        assert!(output.contains("permission denied"));
+        assert!(output.contains("list_functions"));
+        assert!(!output.contains("secret"));
+        assert!(callable_catalog(
+            manager
+                .current_lease(&session.id)
+                .await
+                .unwrap()
+                .tools()
+                .await
+        )
+        .iter()
+        .all(|tool| !tool.name.starts_with("visibility__")));
     }
 
     #[test]
-    fn code_mode_preserves_types_for_self_referential_schema() {
-        let cfg = CallbackConfig {
-            name: "retain".to_string(),
-            namespace: Some("hindsight".to_string()),
-            description: Some("Store a memory".to_string()),
-            input_schema: Some(json!({
-                "type": "object",
-                "properties": {"content": {"type": "string"}},
-                "required": ["content"]
-            })),
-            output_schema: Some(self_referential_any_schema()),
-        };
-
-        let code_mode = CodeMode::default()
-            .with_callback(&cfg)
-            .expect("recursive schemas should be supported");
-        let details = code_mode.get_function_details(GetFunctionDetailsInput {
-            functions: vec![FunctionId {
-                mod_name: "Hindsight".to_string(),
-                fn_name: "retain".to_string(),
-            }],
-        });
-        let function = details
-            .functions
-            .first()
-            .expect("hindsight.retain should have generated details");
-
-        assert_ne!(function.output_type, "any");
-        assert!(
-            function.types.contains("export type RetainOutputAny =")
-                && function.types.contains("[key: string]: RetainOutputAny"),
-            "expected RetainOutputAny to reference itself, got: {}",
-            function.types
+    fn recursive_schemas_and_names_are_preserved_as_data() {
+        let recursive = json!({"$ref": "#/$defs/Any", "$defs": {"Any": {"anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$ref": "#/$defs/Any"}}]}}});
+        let mut tool = McpTool::new(
+            "Unusual-name__snake_case",
+            "A description",
+            JsonObject::new(),
         );
+        tool.output_schema = Some(Arc::new(recursive.as_object().unwrap().clone()));
+        let details = function_details(&[tool], &["Unusual-name__snake_case".into()]).unwrap();
+        assert_eq!(details[0]["output_schema"], recursive);
+        assert_eq!(details[0]["name"], "Unusual-name__snake_case");
+    }
+
+    #[tokio::test]
+    async fn moim_uses_supplied_snapshot_and_advertises_only_three_tools() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = ExtensionManager::with_data_dir(temp.path().join("manager"));
+        let client = CodeExecutionClient::new(manager.get_context().clone()).unwrap();
+        let tool = McpTool::new("leased__tool", "Leased tool", JsonObject::new());
+        assert!(client
+            .get_moim("session", &[tool])
+            .await
+            .unwrap()
+            .contains("1 callable tools"));
+        assert!(client
+            .get_moim("session", &[])
+            .await
+            .unwrap()
+            .contains("0 callable tools"));
+        let names = client
+            .list_tools("session", None, CancellationToken::new())
+            .await
+            .unwrap()
+            .tools
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "list_functions",
+                "get_function_details",
+                "execute_javascript"
+            ]
+        );
+    }
+    #[test]
+    fn catalog_excludes_resources_code_mode_and_delegation() {
+        let make = |name, meta: Value| {
+            McpTool::new(name, "description", JsonObject::new())
+                .with_meta(MetaObject(meta.as_object().unwrap().clone()))
+        };
+        let tools = vec![
+            make("shell", json!({"goose_extension": "developer"})),
+            make(
+                "execute_javascript",
+                json!({"goose_extension": "code_execution"}),
+            ),
+            make("delegate", json!({"goose_extension": "summon"})),
+            make(
+                "resource__view",
+                json!({"ui": {"resourceUri": "ui://example"}}),
+            ),
+            make("hidden__tool", json!({"ui": {"visibility": ["app"]}})),
+        ];
+        let names = callable_catalog(tools)
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["shell"]);
     }
 }

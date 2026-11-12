@@ -1,13 +1,17 @@
 pub mod catalog;
 mod model;
+pub mod models_dev;
 mod name_builder;
 mod registry;
 
-pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, ThinkingMode};
+pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, PricingTier, ThinkingMode};
 pub use name_builder::{
-    canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
+    canonical_name, map_provider_name, map_to_canonical_model, strip_openrouter_variant,
+    strip_version_suffix,
 };
-pub use registry::CanonicalModelRegistry;
+pub use registry::{
+    fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelMapping {
@@ -46,23 +50,107 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
     let mut models_with_dates: Vec<(String, Option<String>)> = all
         .iter()
         .filter(|m| m.modalities.input.contains(&Modality::Text) && m.tool_call)
+        .filter(|m| match registry_provider {
+            "openai" => !m.id.contains("realtime"),
+            "google" => !m.id.contains("deep-research") && !m.id.contains("live"),
+            _ => true,
+        })
         .filter_map(|m| {
             let (_, name) = m.id.split_once('/')?;
-            Some((name.to_string(), m.release_date.clone()))
+            Some((
+                provider_wire_name(provider, &m.id, name),
+                m.release_date.clone(),
+            ))
         })
         .collect();
 
-    models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
-        (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.0.cmp(&b.0),
+    if matches!(provider, "google" | "xai") {
+        models_with_dates.extend(
+            mapping_report()["all_mappings"][provider]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|mapping| mapping["provider_model"].as_str())
+                .filter(|name| provider != "google" || google_generate_content_model(name))
+                .map(|name| (name.to_string(), None)),
+        );
+    }
+
+    models_with_dates.sort_by(|a, b| {
+        let date_order = match (&a.1, &b.1) {
+            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        };
+        date_order.then_with(|| a.0.cmp(&b.0))
     });
 
+    let mut seen = std::collections::HashSet::new();
+    models_with_dates.retain(|(name, _)| seen.insert(name.clone()));
     models_with_dates
         .into_iter()
         .map(|(name, _)| name)
         .collect()
+}
+
+fn google_generate_content_model(name: &str) -> bool {
+    !name.contains("deep-research")
+        && !name.contains("live")
+        && !name.contains("image")
+        && !name.contains("tts")
+        && !name.contains("embedding")
+}
+
+fn mapping_report() -> &'static serde_json::Value {
+    static REPORT: once_cell::sync::Lazy<serde_json::Value> = once_cell::sync::Lazy::new(|| {
+        serde_json::from_str(include_str!("canonical/data/canonical_mapping_report.json"))
+            .expect("bundled canonical mapping report must be valid")
+    });
+    &REPORT
+}
+
+pub fn provider_wire_name(provider: &str, canonical_id: &str, canonical_name: &str) -> String {
+    if map_provider_name(provider) == "anthropic" {
+        return dotted_version_to_dash(canonical_name);
+    }
+
+    let mapped = mapping_report()["all_mappings"][provider]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|mapping| mapping["canonical_model"].as_str() == Some(canonical_id))
+        .filter_map(|mapping| mapping["provider_model"].as_str())
+        .min_by_key(|name| (!name.ends_with("-latest"), name.len(), *name));
+    mapped
+        .or_else(|| {
+            mapping_report()["unmapped_models"]
+                .as_array()?
+                .iter()
+                .filter(|model| model["provider"].as_str() == Some(provider))
+                .filter_map(|model| model["model"].as_str())
+                .find(|name| name.strip_suffix("-latest") == Some(canonical_name))
+        })
+        .unwrap_or(canonical_name)
+        .to_string()
+}
+
+fn dotted_version_to_dash(name: &str) -> String {
+    let bytes = name.as_bytes();
+    let mut out = String::with_capacity(name.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'.'
+            && i > 0
+            && i + 1 < bytes.len()
+            && bytes[i - 1].is_ascii_digit()
+            && bytes[i + 1].is_ascii_digit()
+        {
+            out.push('-');
+        } else {
+            out.push(b as char);
+        }
+    }
+    out
 }
 
 /// Catalog pricing is not valid for local inference: models served via ollama or a
@@ -80,16 +168,48 @@ fn should_clear_catalog_pricing(provider: &str) -> bool {
 }
 
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
+    maybe_get_canonical_model_with_variant_fallback(provider, model).map(|(canonical, _)| canonical)
+}
+
+/// Resolve model metadata and report whether an OpenRouter variant used its base row.
+pub fn maybe_get_canonical_model_with_variant_fallback(
+    provider: &str,
+    model: &str,
+) -> Option<(CanonicalModel, bool)> {
     let registry = CanonicalModelRegistry::bundled().ok()?;
 
-    let canonical_id = map_to_canonical_model(provider, model, registry)?;
+    let (canonical_id, is_variant_fallback) =
+        match map_to_canonical_model(provider, model, &registry) {
+            Some(id) => (id, false),
+            None if provider == "openrouter" => (
+                map_to_canonical_model(provider, strip_openrouter_variant(model)?, &registry)?,
+                true,
+            ),
+            None => return None,
+        };
     let mut canonical = if let Some((canon_provider, canon_model)) = canonical_id.split_once('/') {
         registry.get(canon_provider, canon_model).cloned()?
     } else {
         return None;
     };
 
-    if should_clear_catalog_pricing(provider) {
+    if is_variant_fallback {
+        // Variants share capabilities, but endpoint output caps and prices can differ.
+        canonical.limit.output = None;
+        // `:thinking` is the one tag that changes capabilities: it serves the reasoning mode.
+        if model.ends_with(":thinking") {
+            canonical.reasoning = Some(true);
+        }
+        canonical.cost = if model.ends_with(":free") {
+            Pricing {
+                input: Some(0.0),
+                output: Some(0.0),
+                ..Pricing::default()
+            }
+        } else {
+            Pricing::default()
+        };
+    } else if should_clear_catalog_pricing(provider) {
         canonical.cost = Pricing::default();
     } else if name_builder::is_meta_provider(provider) && canonical.cost.has_no_usable_rate() {
         // A meta-provider model can infer to a first-party catalog entry that carries literal
@@ -97,10 +217,10 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         // row carries the rate it actually charges to proxy that model, so prefer it. Where
         // there is no such row, report nothing: billing paid proxied inference as free is
         // worse than showing no estimate at all.
-        canonical.cost = host_catalog_pricing(provider, model, registry).unwrap_or_default();
+        canonical.cost = host_catalog_pricing(provider, model, &registry).unwrap_or_default();
     }
 
-    Some(canonical)
+    Some((canonical, is_variant_fallback))
 }
 
 /// Pricing from the meta-provider's own catalog rows (`azure/*`, `databricks/*`,
@@ -127,18 +247,114 @@ fn host_catalog_pricing(
 mod tests {
     use super::*;
 
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:free"; "dated free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:nitro"; "dated nitro")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:floor"; "floor")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:online"; "online")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    fn openrouter_variants_resolve_to_base_model(model: &str) {
+        let canonical = maybe_get_canonical_model("openrouter", model).unwrap();
+        let base = maybe_get_canonical_model("openrouter", "deepseek/deepseek-v4-flash").unwrap();
+        assert_eq!(canonical.id, base.id);
+        assert_eq!(canonical.limit.context, base.limit.context);
+        assert_eq!(canonical.reasoning, base.reasoning);
+        assert_eq!(canonical.modalities.input, base.modalities.input);
+    }
+
     #[test]
-    fn ollama_models_have_zero_cost() {
-        // "mistral-nemo" resolves to mistralai/mistral-nemo which has non-zero cloud pricing.
-        // When accessed via ollama, cost must be zeroed out.
-        let canonical = maybe_get_canonical_model("ollama", "mistral-nemo")
-            .expect("mistral-nemo should resolve via ollama");
+    fn openrouter_exact_free_model_keeps_its_catalog_entry() {
+        let model = "google/gemma-4-31b-it:free";
+        let row = CanonicalModelRegistry::bundled()
+            .unwrap()
+            .get("openrouter", model)
+            .cloned()
+            .unwrap();
+        let (canonical, is_variant_fallback) =
+            maybe_get_canonical_model_with_variant_fallback("openrouter", model).unwrap();
+        assert!(!is_variant_fallback);
+        assert_eq!(canonical.id, row.id);
+        assert!(row.limit.output.is_some());
+        assert_eq!(canonical.limit.output, row.limit.output);
+    }
+
+    #[test]
+    fn openrouter_thinking_variant_is_reasoning() {
+        let base = maybe_get_canonical_model("openrouter", "qwen/qwen-plus-2025-07-28").unwrap();
+        assert_eq!(base.reasoning, Some(false));
+
+        let (thinking, is_variant_fallback) = maybe_get_canonical_model_with_variant_fallback(
+            "openrouter",
+            "qwen/qwen-plus-2025-07-28:thinking",
+        )
+        .unwrap();
+        assert!(is_variant_fallback);
+        assert_eq!(thinking.id, base.id);
+        assert_eq!(thinking.reasoning, Some(true));
+    }
+
+    #[test]
+    fn non_openrouter_colon_model_does_not_resolve_to_base_model() {
+        assert!(maybe_get_canonical_model("deepseek", "deepseek-v4-flash").is_some());
+        assert!(maybe_get_canonical_model("deepseek", "deepseek-v4-flash:free").is_none());
+    }
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:free"; "dated free")]
+    fn openrouter_free_fallback_has_zero_cost(model: &str) {
+        let paid = maybe_get_canonical_model("openrouter", "deepseek/deepseek-v4-flash").unwrap();
+        assert!(paid.cost.input.is_some_and(|price| price > 0.0));
+        assert!(paid.cost.output.is_some_and(|price| price > 0.0));
+
+        let free = maybe_get_canonical_model("openrouter", model).unwrap();
+        assert_eq!(free.id, paid.id);
+        assert_eq!(free.limit.context, paid.limit.context);
+        assert_eq!(free.cost.input, Some(0.0));
+        assert_eq!(free.cost.output, Some(0.0));
+        assert_eq!(free.cost.cache_read, None);
+        assert_eq!(free.cost.cache_write, None);
+        assert!(free.cost.tiers.is_empty());
+        let usage = crate::conversation::token_usage::Usage {
+            input_tokens: Some(1_000_000),
+            output_tokens: Some(1_000_000),
+            total_tokens: None,
+            cache_read_input_tokens: Some(100_000),
+            cache_write_input_tokens: Some(100_000),
+        };
+        assert_eq!(free.cost.estimate_cost(&usage), Some(0.0));
+    }
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:nitro"; "nitro")]
+    fn openrouter_variant_fallback_has_no_catalog_price(model: &str) {
+        let canonical = maybe_get_canonical_model("openrouter", model).unwrap();
         assert_eq!(canonical.cost.input, None);
         assert_eq!(canonical.cost.output, None);
-        assert!(
-            canonical.limit.context > 0,
-            "context limit should be preserved"
+        assert_eq!(canonical.cost.cache_read, None);
+        assert_eq!(canonical.cost.cache_write, None);
+        assert!(canonical.cost.tiers.is_empty());
+        assert_eq!(
+            canonical
+                .cost
+                .estimate_cost(&crate::conversation::token_usage::Usage::default()),
+            None
         );
+    }
+
+    #[test_case::test_case("ollama")]
+    #[test_case::test_case("local")]
+    fn local_models_have_no_catalog_cost(provider: &str) {
+        let cloud = maybe_get_canonical_model("mistralai", "ministral-3b")
+            .expect("ministral-3b should resolve for its first-party provider");
+        assert!(cloud.cost.input.is_some_and(|price| price > 0.0));
+        assert!(cloud.cost.output.is_some_and(|price| price > 0.0));
+
+        let canonical = maybe_get_canonical_model(provider, "ministral-3b")
+            .expect("ministral-3b should resolve for local inference");
+        assert_eq!(canonical.id, cloud.id);
+        assert_eq!(canonical.cost.input, None);
+        assert_eq!(canonical.cost.output, None);
+        assert_eq!(canonical.limit.context, cloud.limit.context);
     }
 
     #[test]
@@ -155,25 +371,12 @@ mod tests {
     }
 
     #[test]
-    fn meta_provider_zero_priced_inference_prefers_the_host_catalog_rate() {
-        // "llama-3.3-70b-instruct" infers to meta-llama/llama-3.3-70b-instruct, priced 0.0/0.0
-        // because the weights are free to download — but Azure bills to serve them. The
-        // azure/llama-3.3-70b-instruct row carries the rate Azure actually charges.
+    fn azure_foundry_models_use_host_catalog_pricing_without_a_publisher_entry() {
         let canonical = maybe_get_canonical_model("azure_foundry", "llama-3.3-70b-instruct")
-            .expect("llama-3.3-70b-instruct should resolve");
+            .expect("llama-3.3-70b-instruct should resolve through the Azure catalog");
+        assert_eq!(canonical.id, "azure/llama-3.3-70b-instruct");
         assert_eq!(canonical.cost.input, Some(0.71));
         assert_eq!(canonical.cost.output, Some(0.71));
-        assert!(canonical.limit.context > 0);
-    }
-
-    #[test]
-    fn meta_provider_zero_priced_inference_reports_no_cost_without_a_host_rate() {
-        // Databricks bills for llama-3.3-70b-instruct but publishes no catalog row for it.
-        // Reporting nothing beats reporting the publisher's 0.0/0.0 as if it were free.
-        let canonical = maybe_get_canonical_model("databricks", "llama-3.3-70b-instruct")
-            .expect("llama-3.3-70b-instruct should resolve");
-        assert_eq!(canonical.cost.input, None);
-        assert_eq!(canonical.cost.output, None);
         assert!(canonical.limit.context > 0);
     }
 
@@ -196,11 +399,86 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_opus_5_5_resolves_with_always_on_adaptive_thinking() {
+        let canonical = maybe_get_canonical_model("anthropic", "claude-opus-5-5")
+            .expect("claude-opus-5-5 should resolve");
+        assert_eq!(canonical.id, "anthropic/claude-opus-5.5");
+        assert_eq!(canonical.limit.context, 1_000_000);
+        assert_eq!(canonical.limit.output, Some(128_000));
+        assert_eq!(
+            canonical.thinking_mode,
+            Some(ThinkingMode::AlwaysOnAdaptive)
+        );
+        assert_eq!(canonical.cost.input, Some(4.0));
+        assert_eq!(canonical.cost.output, Some(20.0));
+    }
+
+    #[test]
+    fn openai_gpt_6_sol_and_luna_resolve() {
+        for (model, input_cost) in [("gpt-6-sol", 2.0), ("gpt-6-luna", 0.1)] {
+            let canonical = maybe_get_canonical_model("openai", model)
+                .unwrap_or_else(|| panic!("{model} should resolve"));
+            assert_eq!(canonical.limit.context, 1_050_000);
+            assert_eq!(canonical.limit.output, Some(128_000));
+            assert_eq!(canonical.cost.input, Some(input_cost));
+            assert!(canonical.tool_call);
+        }
+    }
+
+    #[test]
     fn kimi_code_k3_resolves_with_reasoning_and_context_limit() {
         let canonical = maybe_get_canonical_model("kimi_code", "k3")
-            .expect("kimi_code/k3 should resolve via kimi-for-coding provider mapping");
+            .expect("kimi_code/k3 should resolve via kimi-code-plan-cn provider mapping");
         assert_eq!(canonical.limit.context, 1_048_576);
         assert_eq!(canonical.reasoning, Some(true));
         assert_eq!(canonical.temperature, Some(false));
+    }
+
+    #[test]
+    fn recommended_google_models_use_generate_content() {
+        let models = recommended_models_from_registry("google");
+        assert!(!models.iter().any(|model| model.contains("deep-research")));
+        assert!(!models.iter().any(|model| model.contains("live")));
+        assert!(models.iter().any(|model| model == "gemini-2.5-pro"));
+        assert!(models.iter().any(|model| model == "gemini-2.0-flash"));
+        assert!(models.iter().any(|model| model == "gemini-2.0-flash-lite"));
+        assert!(models.iter().any(|model| model == "gemini-3-pro-preview"));
+    }
+
+    #[test]
+    fn anthropic_wire_name_uses_dashed_versions() {
+        assert_eq!(
+            provider_wire_name(
+                "anthropic",
+                "anthropic/claude-sonnet-4.5",
+                "claude-sonnet-4.5"
+            ),
+            "claude-sonnet-4-5"
+        );
+        assert_eq!(
+            provider_wire_name("anthropic", "anthropic/claude-opus-5", "claude-opus-5"),
+            "claude-opus-5"
+        );
+        assert_eq!(
+            provider_wire_name("openai", "openai/gpt-5.2", "gpt-5.2"),
+            "gpt-5.2"
+        );
+        assert_eq!(
+            provider_wire_name("openai", "openai/gpt-5.2-chat", "gpt-5.2-chat"),
+            "gpt-5.2-chat-latest"
+        );
+        assert_eq!(
+            provider_wire_name("openai", "openai/gpt-5.3-chat", "gpt-5.3-chat"),
+            "gpt-5.3-chat-latest"
+        );
+    }
+
+    #[test]
+    fn xai_models_include_provider_inventory_aliases() {
+        let models = recommended_models_from_registry("xai");
+        assert!(models.iter().any(|model| model == "grok-3"));
+        assert!(models.iter().any(|model| model == "grok-3-mini"));
+        assert!(models.iter().any(|model| model == "grok-4-0709"));
+        assert!(models.iter().any(|model| model == "grok-code-fast-1"));
     }
 }
