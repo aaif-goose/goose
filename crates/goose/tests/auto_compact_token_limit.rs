@@ -122,7 +122,7 @@ async fn verify_reply(
     services: &Arc<StateMachineServices>,
     session_id: &str,
     context: usize,
-    tokens: i32,
+    tokens: i64,
     expected_compaction: bool,
 ) -> Result<()> {
     let provider = Arc::new(CompactionProvider::default());

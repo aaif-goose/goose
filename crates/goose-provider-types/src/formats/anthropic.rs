@@ -661,12 +661,7 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 }
 
 fn usage_from_anthropic_fields(usage: &Value) -> Usage {
-    let field = |key: &str| {
-        usage
-            .get(key)
-            .and_then(|v| v.as_u64())
-            .map(|v| v.min(i32::MAX as u64) as i32)
-    };
+    let field = |key: &str| usage.get(key).and_then(|v| v.as_i64());
 
     Usage::from_cache_exclusive_input(
         Some(field("input_tokens").unwrap_or(0)),

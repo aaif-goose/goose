@@ -274,7 +274,7 @@ mod tests {
     enum Event {
         Start(RequestStartEvent),
         ResponseStart(ResponseStartEvent),
-        End(RequestEndEvent),
+        End(Box<RequestEndEvent>),
     }
 
     impl ObservabilityHook for Arc<Recorder> {
@@ -288,7 +288,7 @@ mod tests {
         }
 
         fn on_request_end(&self, event: RequestEndEvent) {
-            self.push(Event::End(event));
+            self.push(Event::End(Box::new(event)));
         }
     }
 

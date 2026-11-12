@@ -741,7 +741,7 @@ fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     }
 }
 
-fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
+fn to_nonnegative_u64(value: Option<i64>) -> Option<u64> {
     value.and_then(|v| u64::try_from(v).ok())
 }
 
