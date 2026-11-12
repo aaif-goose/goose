@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::{FutureExt, StreamExt};
-use goose_agent::tool_call_state::request_executable;
+use futures::FutureExt;
+use goose_agent::extension_manager::{PendingCall, ToolCallBatch};
+use goose_agent::tool_call_state::pending_tool_requests as executable_tool_requests;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
+    CallToolRequestParams, CallToolResult, ContentBlock, Role, Tool, ToolAnnotations,
 };
 
 use crate::agents::extension::ExtensionInfo;
@@ -19,13 +20,11 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::{tool_stream, ToolCallResult, ToolStreamItem};
+use crate::agents::tool_execution::ToolCallResult;
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::agents::StateMachineServices;
-use crate::conversation::message::{
-    ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
-};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::session::Session;
@@ -124,48 +123,19 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
     )
 }
 
-#[derive(Default)]
-struct ToolBatch {
-    actions: Vec<Message>,
-    response: Option<Message>,
-}
-
-impl ToolBatch {
-    fn record(
-        &mut self,
-        request_id: &str,
-        result: std::result::Result<CallToolResult, ErrorData>,
-        metadata: Option<&ProviderMetadata>,
-    ) {
-        let response = self
-            .response
-            .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-        if !response.get_tool_response_ids().contains(&request_id) {
-            response.add_tool_response_with_metadata(request_id, result, metadata);
-        }
-    }
-
-    fn take(&mut self) -> (Vec<Message>, Option<Message>) {
-        (std::mem::take(&mut self.actions), self.response.take())
-    }
-}
-
 fn with_recording(
-    batch: &Arc<StdMutex<ToolBatch>>,
+    batch: &ToolCallBatch,
     result: ToolCallResult,
     span: tracing::Span,
     request: &ToolRequest,
 ) -> ToolCallResult {
-    let batch = Arc::clone(batch);
+    let batch = batch.clone();
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
     let future = async move {
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
-        batch
-            .lock()
-            .unwrap()
-            .record(&tool_call_id, result.clone(), metadata.as_ref());
+        batch.record(&tool_call_id, result.clone(), metadata.as_ref());
         crate::agents::gen_ai_telemetry::record_tool_result(&tracing::Span::current(), &result);
         match &result {
             Ok(result) if result.is_error == Some(true) => {
@@ -486,29 +456,14 @@ impl ToolExecutionOperation {
 }
 
 pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    let answered: HashSet<&str> = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect();
-
-    messages
-        .iter()
-        .filter(|message| message.role == Role::Assistant)
-        .flat_map(|message| {
-            message.content.iter().filter_map(|c| match c {
-                MessageContent::ToolRequest(req) if req.was_executed_externally() => None,
-                MessageContent::ToolRequest(req) if !answered.contains(req.id.as_str()) => {
-                    if let Err(parse_error) = &req.tool_call {
-                        return Some((
-                            req.clone(),
-                            ToolDisposition::ParseError(parse_error.to_string()),
-                        ));
-                    }
-                    (request_executable(req) == Some(true))
-                        .then(|| (req.clone(), ToolDisposition::Execute))
-                }
-                _ => None,
-            })
+    executable_tool_requests(messages)
+        .into_iter()
+        .map(|request| {
+            let disposition = match &request.tool_call {
+                Ok(_) => ToolDisposition::Execute,
+                Err(error) => ToolDisposition::ParseError(error.to_string()),
+            };
+            (request.clone(), disposition)
         })
         .collect()
 }
@@ -851,18 +806,18 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 }
 
 pub(super) struct ToolExecution {
-    batch: Arc<StdMutex<ToolBatch>>,
+    batch: ToolCallBatch,
 }
 
 impl ToolExecution {
     pub(super) fn new() -> Self {
         Self {
-            batch: Arc::default(),
+            batch: ToolCallBatch::default(),
         }
     }
 
     fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
-        self.batch.lock().unwrap().take()
+        self.batch.take()
     }
 
     pub(super) fn finalize_cancellation(&self, emit: &Emitter) -> Vec<GooseEffect> {
@@ -883,7 +838,7 @@ impl ToolExecution {
         session: &Session,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let mut tool_streams = Vec::new();
+        let mut pending = Vec::new();
         for (request, result) in calls {
             let tool_call = request
                 .tool_call
@@ -893,39 +848,22 @@ impl ToolExecution {
             crate::agents::gen_ai_telemetry::record_tool_arguments(&span, tool_call);
             let result = with_recording(&self.batch, result, span, &request);
 
-            let req_id = request.id.clone();
-            let stream = tool_stream(
-                result
-                    .notification_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result
-                    .action_required_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result.result,
-            )
-            .map(move |item| (req_id.clone(), item));
-            tool_streams.push(stream);
+            pending.push(PendingCall {
+                request_id: request.id,
+                metadata: request.metadata,
+                call: result,
+            });
         }
-
-        let mut combined = futures::stream::select_all(tool_streams);
-        while let Some((request_id, item)) = combined.next().await {
-            match item {
-                ToolStreamItem::Result(Ok(result)) => {
-                    if let Some(notification) = platform_notification(&result) {
-                        emit.emit(AgentEvent::McpNotification((request_id, notification)));
-                    }
+        self.batch
+            .run(pending, emit, &|request_id, output| {
+                if let Some(notification) = output.as_ref().ok().and_then(platform_notification) {
+                    emit.emit(AgentEvent::McpNotification((
+                        request_id.to_string(),
+                        notification,
+                    )));
                 }
-                ToolStreamItem::Result(Err(_)) => {}
-                ToolStreamItem::Message(msg) => {
-                    emit.emit(AgentEvent::McpNotification((request_id, msg)));
-                }
-                ToolStreamItem::ActionRequired(msg) => {
-                    let msg = msg.with_generated_id_if_missing();
-                    self.batch.lock().unwrap().actions.push(msg.clone());
-                    emit.message(msg);
-                }
-            }
-        }
+            })
+            .await;
 
         let (actions, response) = self.take_batch();
         let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
