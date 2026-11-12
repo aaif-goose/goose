@@ -152,8 +152,17 @@ type NumberField = {
   display: (configValue: unknown) => string;
 };
 
+const numericString = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+// Quoted YAML numbers such as "20" are read back as strings; goose parses them as numbers.
+function parseConfigNumber(value: unknown) {
+  const number =
+    typeof value === 'string' && numericString.test(value.trim()) ? Number(value) : value;
+  return typeof number === 'number' && Number.isFinite(number) ? number : undefined;
+}
+
 function readNumber(value: unknown, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return parseConfigNumber(value) ?? fallback;
 }
 
 const asIs = (value: number) => value;
@@ -192,7 +201,7 @@ const numberFields: Record<NumberSetting, NumberField> = {
     max: 100000,
     integer: true,
     toConfig: asIs,
-    display: (value) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : ''),
+    display: (value) => String(parseConfigNumber(value) ?? ''),
   },
   retryTimeout: {
     configKey: 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS',

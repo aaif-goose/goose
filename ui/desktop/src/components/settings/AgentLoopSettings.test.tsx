@@ -285,6 +285,61 @@ describe('unusual values from config', () => {
   );
 });
 
+describe('numbers stored as strings', () => {
+  it.each([
+    ['Cutoff', 'GOOSE_TOOL_CALL_CUTOFF', '20', 20],
+    ['Turns', 'GOOSE_MAX_TURNS', '20', 20],
+    ['Threshold %', 'GOOSE_AUTO_COMPACT_THRESHOLD', '0.5', 50],
+    ['Retry timeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', ' 120 ', 120],
+    ['Turns', 'GOOSE_MAX_TURNS', 'abc', 1000],
+  ] as const)(
+    '%s (%s) stored as %j shows %s and writes nothing when left unchanged',
+    async (label, key, stored, shown) => {
+      userConfig[key] = stored;
+      const user = userEvent.setup();
+      await renderLoaded();
+      await waitFor(() => expect(input(label)).toHaveValue(shown));
+
+      await user.click(input(label));
+      await user.tab();
+
+      expect(upsert).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    }
+  );
+
+  it('clearing a cutoff stored as a string removes it and shows the value in effect', async () => {
+    userConfig.GOOSE_TOOL_CALL_CUTOFF = '20';
+    lowerConfig.GOOSE_TOOL_CALL_CUTOFF = 30;
+    const user = userEvent.setup();
+    await renderLoaded();
+    await waitFor(() => expect(input('Cutoff')).toHaveValue(20));
+
+    await user.clear(input('Cutoff'));
+    await user.tab();
+
+    await waitFor(() => expect(input('Cutoff')).toHaveValue(30));
+    expect(remove).toHaveBeenCalledWith('GOOSE_TOOL_CALL_CUTOFF', false);
+    expect(userConfig).not.toHaveProperty('GOOSE_TOOL_CALL_CUTOFF');
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('clearing max turns stored as a string removes it and shows the default', async () => {
+    userConfig.GOOSE_MAX_TURNS = '20';
+    const user = userEvent.setup();
+    await renderLoaded();
+    await waitFor(() => expect(input('Turns')).toHaveValue(20));
+
+    await user.clear(input('Turns'));
+    await user.tab();
+
+    await waitFor(() => expect(input('Turns')).toHaveValue(1000));
+    expect(remove).toHaveBeenCalledWith('GOOSE_MAX_TURNS', false);
+    expect(userConfig).not.toHaveProperty('GOOSE_MAX_TURNS');
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe('rapid edits', () => {
   const key = 'GOOSE_AUTO_COMPACT_TOKEN_LIMIT';
 
