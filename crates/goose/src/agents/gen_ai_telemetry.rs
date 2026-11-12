@@ -1,7 +1,7 @@
 use crate::conversation::message::{Message, MessageContent, ToolResult};
 use crate::session::Session;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Role};
 use serde_json::{json, Value};
 use tracing::Span;

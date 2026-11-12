@@ -1,0 +1,616 @@
+use std::{
+    borrow::Cow,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+};
+
+use anyhow::Result;
+use async_trait::async_trait;
+use oi_kit_agent::{
+    machine::{MachineSession, StateMachine, Step},
+    operation::{
+        ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
+        RunStatus,
+    },
+    post_tool_call_hook::PostToolCallHook,
+    tool::{ToolOperation, ToolProvider},
+    tool_call_state::EXECUTABLE_KEY,
+};
+use oi_kit_provider_types::conversation::{
+    message::{Message, MessageContent, ToolRequest, ToolResponse},
+    Conversation,
+};
+use rmcp::{
+    handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
+    model::{CallToolRequestParams, CallToolResult, ErrorData, Tool},
+};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Default, Deserialize, JsonSchema)]
+struct AddInput {
+    left: u64,
+    right: u64,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct AddOutput {
+    sum: u64,
+}
+
+struct Add;
+
+impl ToolBase for Add {
+    type Parameter = AddInput;
+    type Output = AddOutput;
+    type Error = ErrorData;
+
+    fn name() -> Cow<'static, str> {
+        "add".into()
+    }
+
+    fn description() -> Option<Cow<'static, str>> {
+        Some("Add two integers".into())
+    }
+}
+
+impl SyncTool<()> for Add {
+    fn invoke(_session: &(), input: AddInput) -> Result<AddOutput, ErrorData> {
+        Ok(AddOutput {
+            sum: input.left + input.right,
+        })
+    }
+}
+
+#[derive(Default, Deserialize, JsonSchema)]
+struct GreetInput {
+    name: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct GreetOutput {
+    greeting: String,
+}
+
+struct Greet;
+
+impl ToolBase for Greet {
+    type Parameter = GreetInput;
+    type Output = GreetOutput;
+    type Error = ErrorData;
+
+    fn name() -> Cow<'static, str> {
+        "greet".into()
+    }
+}
+
+impl AsyncTool<()> for Greet {
+    async fn invoke(_session: &(), input: GreetInput) -> Result<GreetOutput, ErrorData> {
+        Ok(GreetOutput {
+            greeting: format!("Hello, {}!", input.name),
+        })
+    }
+}
+
+fn emitter() -> Emitter {
+    emitter_with_token(CancellationToken::new())
+}
+
+fn emitter_with_token(cancel: CancellationToken) -> Emitter {
+    let (tx, _rx) = mpsc::unbounded_channel();
+    Emitter::new(tx, cancel)
+}
+
+fn operation() -> ToolOperation<()> {
+    ToolOperation::new()
+        .with_sync_tool::<Add>()
+        .with_async_tool::<Greet>()
+}
+
+fn executable(mut message: Message) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ToolRequest(request) = content {
+            request.tool_meta.get_or_insert_with(|| json!({}))[EXECUTABLE_KEY] = json!(true);
+        }
+    }
+    message
+}
+
+fn appended_message(result: OperationResult<ConversationEffect>) -> Message {
+    let OperationResult::Applied(result) = result else {
+        panic!("operation should apply");
+    };
+    let ConversationEffect::AppendMessage(message) = result.effects.into_iter().next().unwrap()
+    else {
+        panic!("operation should append a message");
+    };
+    message
+}
+
+#[tokio::test]
+async fn advertises_user_defined_tools_directly() {
+    let tools = <ToolOperation<()> as Operation<(), ConversationEffect>>::inference_tools(
+        &operation(),
+        &(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tools.len(), 2);
+    assert_eq!(tools[0].name, "add");
+    assert_eq!(tools[0].description.as_deref(), Some("Add two integers"));
+    assert!(tools[0].input_schema["properties"]["left"].is_object());
+    assert_eq!(tools[1].name, "greet");
+}
+
+#[tokio::test]
+async fn dispatches_calls_to_user_defined_tools() {
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("do both"),
+        executable(
+            Message::assistant()
+                .with_tool_request(
+                    "call-1",
+                    Ok(CallToolRequestParams::new("add").with_arguments(
+                        serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
+                    )),
+                )
+                .with_tool_request(
+                    "call-2",
+                    Ok(CallToolRequestParams::new("greet")
+                        .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+                ),
+        ),
+    ]);
+
+    let message = appended_message(
+        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation(),
+            &(),
+            &conversation,
+            &emitter(),
+        )
+        .await
+        .unwrap(),
+    );
+    let responses = message
+        .content
+        .iter()
+        .map(|content| match content {
+            MessageContent::ToolResponse(response) => response,
+            _ => panic!("expected tool responses"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(responses[0].id, "call-1");
+    assert_eq!(
+        responses[0]
+            .tool_result
+            .as_ref()
+            .unwrap()
+            .structured_content,
+        Some(json!({"sum": 5}))
+    );
+    assert_eq!(responses[1].id, "call-2");
+    assert_eq!(
+        responses[1]
+            .tool_result
+            .as_ref()
+            .unwrap()
+            .structured_content,
+        Some(json!({"greeting": "Hello, Goose!"}))
+    );
+}
+
+struct DynamicTools {
+    discoveries: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl ToolProvider<bool> for DynamicTools {
+    async fn tools(&self, enabled: &bool) -> Result<Vec<Tool>> {
+        self.discoveries.fetch_add(1, Ordering::SeqCst);
+        Ok(if *enabled {
+            vec![Tool::new(
+                "dynamic",
+                "A session-dependent tool",
+                Arc::new(serde_json::from_value(json!({"type": "object"}))?),
+            )]
+        } else {
+            Vec::new()
+        })
+    }
+
+    async fn call(
+        &self,
+        _session: &bool,
+        request_id: &str,
+        call: CallToolRequestParams,
+        _emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(CallToolResult::structured(json!({
+            "request_id": request_id,
+            "name": call.name
+        })))
+    }
+}
+
+#[tokio::test]
+async fn rediscovers_dynamic_tools_for_inference_and_execution() {
+    let discoveries = Arc::new(AtomicUsize::new(0));
+    let operation = ToolOperation::new().with_provider(Arc::new(DynamicTools {
+        discoveries: discoveries.clone(),
+    }));
+    let tools = <ToolOperation<bool> as Operation<bool, ConversationEffect>>::inference_tools(
+        &operation, &true,
+    )
+    .await
+    .unwrap();
+    assert_eq!(tools[0].name, "dynamic");
+
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("call the dynamic tool"),
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
+    ]);
+    let message = appended_message(
+        <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
+            &operation,
+            &true,
+            &conversation,
+            &emitter(),
+        )
+        .await
+        .unwrap(),
+    );
+
+    assert_eq!(discoveries.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        message.content[0]
+            .as_tool_response()
+            .unwrap()
+            .tool_result
+            .as_ref()
+            .unwrap()
+            .structured_content,
+        Some(json!({"request_id": "dynamic-call", "name": "dynamic"}))
+    );
+}
+
+#[tokio::test]
+async fn dynamic_tools_vary_by_session() {
+    let operation = ToolOperation::new().with_provider(Arc::new(DynamicTools {
+        discoveries: Arc::new(AtomicUsize::new(0)),
+    }));
+    let enabled = <ToolOperation<bool> as Operation<bool, ConversationEffect>>::inference_tools(
+        &operation, &true,
+    )
+    .await
+    .unwrap();
+    let disabled = <ToolOperation<bool> as Operation<bool, ConversationEffect>>::inference_tools(
+        &operation, &false,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(enabled[0].name, "dynamic");
+    assert!(disabled.is_empty());
+}
+
+#[tokio::test]
+async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
+    let operation = ToolOperation::new()
+        .with_provider(Arc::new(DynamicTools {
+            discoveries: Arc::new(AtomicUsize::new(0)),
+        }))
+        .with_provider(Arc::new(DynamicTools {
+            discoveries: Arc::new(AtomicUsize::new(0)),
+        }));
+    let kickoff = Message::user().with_text("use tools");
+
+    let inference_error =
+        <ToolOperation<bool> as Operation<bool, ConversationEffect>>::inference_tools(
+            &operation, &true,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        inference_error.to_string(),
+        "multiple tool providers registered 'dynamic'"
+    );
+
+    let conversation = Conversation::new_unvalidated([
+        kickoff,
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
+    ]);
+    let execution_error = match <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
+        &operation,
+        &true,
+        &conversation,
+        &emitter(),
+    )
+    .await
+    {
+        Ok(_) => panic!("duplicate tools should fail during execution discovery"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        execution_error.to_string(),
+        "multiple tool providers registered 'dynamic'"
+    );
+}
+
+#[tokio::test]
+async fn responds_to_unparseable_tool_requests() {
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("call a tool"),
+        Message::assistant().with_tool_request(
+            "invalid-call",
+            Err(ErrorData::invalid_params("malformed arguments", None)),
+        ),
+    ]);
+
+    let message = appended_message(
+        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation(),
+            &(),
+            &conversation,
+            &emitter(),
+        )
+        .await
+        .unwrap(),
+    );
+    let response = message.content[0].as_tool_response().unwrap();
+    assert_eq!(response.id, "invalid-call");
+    assert_eq!(
+        response.tool_result.as_ref().unwrap_err().message,
+        "malformed arguments"
+    );
+}
+
+struct BlockingDiscovery {
+    started: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl<S: Send + Sync> ToolProvider<S> for BlockingDiscovery {
+    async fn tools(&self, _session: &S) -> Result<Vec<Tool>> {
+        self.started.store(true, Ordering::SeqCst);
+        std::future::pending().await
+    }
+
+    async fn call(
+        &self,
+        _session: &S,
+        _request_id: &str,
+        _call: CallToolRequestParams,
+        _emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        unreachable!()
+    }
+}
+
+struct TestSession {
+    conversation: Conversation,
+}
+
+impl MachineSession for TestSession {
+    fn id(&self) -> &str {
+        "test"
+    }
+
+    fn conversation(&self) -> Option<&Conversation> {
+        Some(&self.conversation)
+    }
+}
+
+struct TestInference;
+
+#[async_trait]
+impl Operation<TestSession> for TestInference {
+    fn name(&self) -> &'static str {
+        "inference"
+    }
+}
+
+#[async_trait]
+impl Inference<TestSession> for TestInference {
+    fn applies(&self, _conversation: &Conversation) -> bool {
+        true
+    }
+
+    async fn infer(
+        &self,
+        _session: &TestSession,
+        _conversation: &Conversation,
+        _input: InferenceInput,
+        _emit: &Emitter,
+    ) -> Result<OperationResult<ConversationEffect>> {
+        unreachable!()
+    }
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_inference_discovery() {
+    let started = Arc::new(AtomicBool::new(false));
+    let operation = ToolOperation::new().with_provider(Arc::new(BlockingDiscovery {
+        started: started.clone(),
+    }));
+    let cancel = CancellationToken::new();
+    let machine = StateMachine::new(
+        vec![
+            Step::Operation(Arc::new(operation)),
+            Step::Inference(Arc::new(TestInference)),
+        ],
+        cancel.clone(),
+    );
+    let session = TestSession {
+        conversation: Conversation::new_unvalidated([Message::user().with_text("use tools")]),
+    };
+    let emit = emitter_with_token(cancel.clone());
+
+    let step = tokio::spawn(async move { machine.step(&session, &emit).await });
+    while !started.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    cancel.cancel();
+
+    assert_eq!(step.await.unwrap().unwrap().status, RunStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn skips_calls_it_should_not_run() {
+    let add = || {
+        Ok(CallToolRequestParams::new("add")
+            .with_arguments(json!({"left": 2, "right": 3}).as_object().unwrap().clone()))
+    };
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("old turn"),
+        executable(Message::assistant().with_tool_request("stale", add())),
+        Message::user().with_text("new turn"),
+        executable(
+            Message::assistant()
+                .with_tool_request("responded", add())
+                .with_tool_request(
+                    "unavailable",
+                    Ok(CallToolRequestParams::new("not_registered")),
+                )
+                .with_tool_request_with_metadata(
+                    "external",
+                    add(),
+                    None,
+                    Some(json!({"goose.external_dispatch": true})),
+                ),
+        ),
+        Message::assistant()
+            .with_tool_request("unmarked", add())
+            .with_tool_request_with_metadata(
+                "blocked",
+                add(),
+                None,
+                Some(json!({ EXECUTABLE_KEY: false })),
+            ),
+        Message::user().with_tool_response(
+            "responded",
+            Ok(CallToolResult::structured(json!({"sum": 5}))),
+        ),
+    ]);
+
+    let result = <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+        &operation(),
+        &(),
+        &conversation,
+        &emitter(),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(result, OperationResult::NotApplicable));
+}
+
+type Log = Arc<Mutex<Vec<String>>>;
+
+struct LoggingTools(Log);
+
+#[async_trait]
+impl ToolProvider<()> for LoggingTools {
+    async fn tools(&self, _session: &()) -> Result<Vec<Tool>> {
+        Ok(vec![Tool::new(
+            "logged",
+            "A tool that logs its calls",
+            Arc::new(serde_json::Map::new()),
+        )])
+    }
+
+    async fn call(
+        &self,
+        _session: &(),
+        request_id: &str,
+        _call: CallToolRequestParams,
+        _emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.0.lock().unwrap().push(format!("call:{request_id}"));
+        Ok(CallToolResult::structured(json!({ "id": request_id })))
+    }
+}
+
+struct LoggingHook {
+    log: Log,
+    fail: bool,
+}
+
+#[async_trait]
+impl PostToolCallHook<()> for LoggingHook {
+    async fn after_call(
+        &self,
+        _session: &(),
+        _conversation: &Conversation,
+        request: &ToolRequest,
+        response: &ToolResponse,
+    ) -> Result<()> {
+        assert_eq!(request.id, response.id);
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("hook:{}", request.id));
+        if self.fail {
+            anyhow::bail!("hook failed");
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn calls_the_post_tool_call_hook_after_each_call_and_keeps_results_if_it_fails() {
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("call tools"),
+        executable(
+            Message::assistant()
+                .with_tool_request("first", Ok(CallToolRequestParams::new("logged")))
+                .with_tool_request("second", Ok(CallToolRequestParams::new("logged"))),
+        )
+        .with_tool_request(
+            "invalid",
+            Err(ErrorData::invalid_params("malformed arguments", None)),
+        ),
+    ]);
+
+    for fail in [false, true] {
+        let log = Log::default();
+        let operation = ToolOperation::new()
+            .with_provider(Arc::new(LoggingTools(log.clone())))
+            .with_post_tool_call_hook(Arc::new(LoggingHook {
+                log: log.clone(),
+                fail,
+            }));
+        let tool_responses = appended_message(
+            <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+                &operation,
+                &(),
+                &conversation,
+                &emitter(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["call:first", "hook:first", "call:second", "hook:second"]
+        );
+        let ids = tool_responses.get_tool_response_ids();
+        assert_eq!(ids.len(), 3);
+        assert!(["first", "invalid", "second"]
+            .iter()
+            .all(|id| ids.contains(id)));
+    }
+}

@@ -1,27 +1,27 @@
-name: Maven GDK
+name: Maven oi-kit
 
 on:
   workflow_call:
     inputs:
       publish:
-        description: "Publish gdk to Maven Central after building"
+        description: "Publish oi-kit to Maven Central after building"
         required: false
         default: false
         type: boolean
       smoke-test:
-        description: "Run the Kotlin GDK smoke test"
+        description: "Run the Kotlin oi-kit smoke test"
         required: false
         default: true
         type: boolean
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish gdk to Maven Central after building"
+        description: "Publish oi-kit to Maven Central after building"
         required: true
         default: false
         type: boolean
       smoke-test:
-        description: "Run the Kotlin GDK smoke test"
+        description: "Run the Kotlin oi-kit smoke test"
         required: true
         default: true
         type: boolean
@@ -65,15 +65,15 @@ jobs:
 
       - name: Build native library
         shell: bash
-        run: cargo build -p goose-sdk --features uniffi --release
+        run: cargo build -p oi-kit-bindings --features uniffi --release
 
       - name: Stage native library
         shell: bash
         run: |
           case "${{ runner.os }}" in
-            Linux) lib="target/release/libgoose_sdk.so" ;;
-            macOS) lib="target/release/libgoose_sdk.dylib" ;;
-            Windows) lib="target/release/goose_sdk.dll" ;;
+            Linux) lib="target/release/liboi_kit_bindings.so" ;;
+            macOS) lib="target/release/liboi_kit_bindings.dylib" ;;
+            Windows) lib="target/release/oi_kit_bindings.dll" ;;
             *) echo "unsupported runner OS: ${{ runner.os }}" >&2; exit 1 ;;
           esac
           mkdir -p "maven-native/${{ matrix.resource-prefix }}"
@@ -82,7 +82,7 @@ jobs:
       - name: Upload native library artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-native-${{ matrix.name }}
+          name: oi-kit-native-${{ matrix.name }}
           path: maven-native/**
           if-no-files-found: error
 
@@ -111,31 +111,31 @@ jobs:
       - name: Download native library artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: goose-sdk-native-*
+          pattern: oi-kit-native-*
           path: native-artifacts
           merge-multiple: true
 
       - name: Generate Kotlin bindings
         shell: bash
         run: |
-          cargo build -p goose-sdk --features uniffi --release
-          crates/goose-sdk/scripts/prepare-maven-package.sh \
-            target/release/libgoose_sdk.so \
+          cargo build -p oi-kit-bindings --features uniffi --release
+          crates/oi-kit-bindings/scripts/prepare-maven-package.sh \
+            target/release/liboi_kit_bindings.so \
             linux-x86-64
 
       - name: Restore downloaded native libraries
         shell: bash
-        run: cp -R native-artifacts/* crates/goose-sdk/maven/src/main/resources/
+        run: cp -R native-artifacts/* crates/oi-kit-bindings/maven/src/main/resources/
 
       - name: Build Maven publication
-        working-directory: crates/goose-sdk/maven
+        working-directory: crates/oi-kit-bindings/maven
         run: gradle --no-daemon publishToMavenLocal
 
       - name: Resolve Maven version
         id: version
         shell: bash
         run: |
-          version=$(grep -m1 '^version =' crates/goose-sdk/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
+          version=$(grep -m1 '^version =' crates/oi-kit-bindings/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - name: Stage Maven local artifacts
@@ -144,17 +144,17 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           mkdir -p maven-artifacts
-          cp -R "$HOME/.m2/repository/io/github/aaif-goose/gdk/$VERSION" maven-artifacts/
+          cp -R "$HOME/.m2/repository/io/github/aaif-goose/oi-kit/$VERSION" maven-artifacts/
 
       - name: Upload Maven artifact bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-maven
+          name: oi-kit-maven
           path: maven-artifacts/**
           if-no-files-found: error
 
   smoke-test-linux-aarch64:
-    name: Smoke test Kotlin GDK (linux-aarch64)
+    name: Smoke test Kotlin oi-kit (linux-aarch64)
     needs: package
     if: inputs.smoke-test
     runs-on: ubuntu-22.04-arm
@@ -174,20 +174,20 @@ jobs:
       - name: Download Maven artifact bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: goose-sdk-maven
+          name: oi-kit-maven
           path: maven-artifacts
 
       - name: Install Maven artifact bundle into local repository
         shell: bash
         run: |
-          version=$(grep -m1 '^version =' crates/goose-sdk/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
-          target="$HOME/.m2/repository/io/github/aaif-goose/gdk/$version"
+          version=$(grep -m1 '^version =' crates/oi-kit-bindings/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
+          target="$HOME/.m2/repository/io/github/aaif-goose/oi-kit/$version"
           mkdir -p "$target"
           find maven-artifacts -type f -exec cp -t "$target" {} +
 
       - name: Load native library in an ARM64 JVM
         shell: bash
-        working-directory: crates/goose-sdk/examples/uniffi/kotlin
+        working-directory: crates/oi-kit-bindings/examples/uniffi/kotlin
         run: |
           gradle --no-daemon installDist
           cat > "$RUNNER_TEMP/LoadNativeLibrary.java" <<'JAVA'
@@ -206,7 +206,7 @@ jobs:
     if: inputs.publish && !cancelled() && needs.package.result == 'success' && (!inputs.smoke-test || needs.smoke-test-linux-aarch64.result == 'success')
     environment: maven-central
     concurrency:
-      group: gdk-maven-release-${{ needs.package.outputs.version }}
+      group: oi-kit-maven-release-${{ needs.package.outputs.version }}
       cancel-in-progress: false
     steps:
       - name: Checkout code
@@ -227,24 +227,24 @@ jobs:
       - name: Download native library artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: goose-sdk-native-*
+          pattern: oi-kit-native-*
           path: native-artifacts
           merge-multiple: true
 
       - name: Generate Kotlin bindings
         shell: bash
         run: |
-          cargo build -p goose-sdk --features uniffi --release
-          crates/goose-sdk/scripts/prepare-maven-package.sh \
-            target/release/libgoose_sdk.so \
+          cargo build -p oi-kit-bindings --features uniffi --release
+          crates/oi-kit-bindings/scripts/prepare-maven-package.sh \
+            target/release/liboi_kit_bindings.so \
             linux-x86-64
 
       - name: Restore downloaded native libraries
         shell: bash
-        run: cp -R native-artifacts/* crates/goose-sdk/maven/src/main/resources/
+        run: cp -R native-artifacts/* crates/oi-kit-bindings/maven/src/main/resources/
 
       - name: Publish to Maven Central
-        working-directory: crates/goose-sdk/maven
+        working-directory: crates/oi-kit-bindings/maven
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}

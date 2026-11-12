@@ -16,7 +16,7 @@ use agent_client_protocol_schema::v1::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -42,9 +42,9 @@ use crate::providers::base::{MessageStream, PermissionRouting, Provider};
 use crate::subprocess::configure_subprocess;
 use crate::token_counter::create_token_counter;
 use crate::utils::sanitize_unicode_tags;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::{
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::{
     ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
 };
 
@@ -727,7 +727,7 @@ impl Provider for AcpProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+        oi_kit_providers::context_limit::ContextLimitResolver::new(self.get_name())
             .resolve(model, override_limit, || async {
                 let size = self.context_size.load(Ordering::Relaxed);
                 Ok((size > 0).then_some(size as usize))
@@ -2941,7 +2941,7 @@ mod tests {
         let (provider, model) = test_provider();
         assert_eq!(
             provider.get_context_limit(&model.model_name, None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
 
         provider.context_size.store(200_000, Ordering::Relaxed);

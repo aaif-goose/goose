@@ -16,12 +16,12 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
-use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai_responses::{
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::formats::openai_responses::{
     is_encrypted_reasoning_error, reasoning_input_item, responses_api_to_streaming_message,
     strip_reasoning_items,
 };
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::{ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -237,7 +237,7 @@ fn get_reasoning_effort(model_name: &str) -> String {
 }
 
 fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
-    use goose_providers::thinking::ThinkingEffort;
+    use oi_kit_providers::thinking::ThinkingEffort;
 
     model_config
         .thinking_effort()
@@ -877,7 +877,7 @@ impl ChatGptCodexProvider {
 
         let request = (self.request_builder)(request)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        let response = goose_providers::http_status::send_bounded(
+        let response = oi_kit_providers::http_status::send_bounded(
             request,
             std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )
@@ -887,7 +887,7 @@ impl ChatGptCodexProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for ChatGptCodexProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ChatGptCodexProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CHATGPT_CODEX_PROVIDER_NAME,

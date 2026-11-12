@@ -1,0 +1,50 @@
+# Regenerates oi-kit API reference data from the oi-kit-bindings UniFFI surface and
+# opens a PR when it drifts from what is committed.
+#
+# The generator is deterministic and needs no build or API key, so this stays a
+# plain script run rather than an AI-assisted job.
+
+name: Update oi-kit API Reference
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-oi-kit-api-docs:
+    name: Update oi-kit API reference
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Regenerate oi-kit API reference data
+        run: python3 documentation/automation/gdk-api/generate.py
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: docs/auto-oi-kit-api-reference
+          delete-branch: true
+          add-paths: documentation/src/data/gdk-api.json
+          commit-message: "docs: update oi-kit API reference data"
+          title: "docs: update oi-kit API reference"
+          body: |
+            Regenerated `documentation/src/data/gdk-api.json` from
+            `crates/oi-kit-bindings/src/bindings.rs`.
+
+            - **Triggered by**: ${{ github.event_name }}
+            - **Release**: ${{ github.event.release.tag_name || 'n/a' }}
+
+            The oi-kit API reference renders from this file, so merging publishes the
+            updated Rust, Python, and Kotlin reference docs.
+          labels: |
+            documentation
+            automated

@@ -1,4 +1,4 @@
-name: Python GDK Wheels
+name: Python oi-kit Wheels
 
 on:
   workflow_call:
@@ -63,17 +63,17 @@ jobs:
 
       - name: Build wheel
         shell: bash
-        run: just --justfile crates/goose-sdk/justfile python-wheel
+        run: just --justfile crates/oi-kit-bindings/justfile python-wheel
 
       - name: Repair Linux wheel
         if: runner.os == 'Linux'
         shell: bash
         run: |
           python3 -m pip install auditwheel
-          mkdir -p crates/goose-sdk/python/wheelhouse
-          auditwheel repair --plat manylinux_2_28_x86_64 -w crates/goose-sdk/python/wheelhouse crates/goose-sdk/python/dist/*.whl
-          rm crates/goose-sdk/python/dist/*.whl
-          mv crates/goose-sdk/python/wheelhouse/*.whl crates/goose-sdk/python/dist/
+          mkdir -p crates/oi-kit-bindings/python/wheelhouse
+          auditwheel repair --plat manylinux_2_28_x86_64 -w crates/oi-kit-bindings/python/wheelhouse crates/oi-kit-bindings/python/dist/*.whl
+          rm crates/oi-kit-bindings/python/dist/*.whl
+          mv crates/oi-kit-bindings/python/wheelhouse/*.whl crates/oi-kit-bindings/python/dist/
 
       - name: Smoke test wheel
         shell: bash
@@ -84,12 +84,12 @@ jobs:
           else
             python_bin=".venv-wheel-test/bin/python"
           fi
-          UV_NO_CONFIG=1 uv pip install --default-index https://pypi.org/simple --python "$python_bin" crates/goose-sdk/python/dist/*.whl
-          "$python_bin" -c 'import goose; print(goose.__name__)'
+          UV_NO_CONFIG=1 uv pip install --default-index https://pypi.org/simple --python "$python_bin" crates/oi-kit-bindings/python/dist/*.whl
+          "$python_bin" -c 'import oi_kit; print(oi_kit.__name__)'
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-wheel-${{ matrix.name }}
-          path: crates/goose-sdk/python/dist/*.whl
+          name: oi-kit-wheel-${{ matrix.name }}
+          path: crates/oi-kit-bindings/python/dist/*.whl
           if-no-files-found: error

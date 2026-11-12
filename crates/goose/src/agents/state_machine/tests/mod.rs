@@ -6,7 +6,7 @@ use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
 mod advertised_tools;
 mod agent_reply;
@@ -210,10 +210,10 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
 async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Result<()> {
     use std::sync::Arc;
 
-    use goose_providers::api_client::{ApiClient, AuthMethod};
-    use goose_providers::model::ModelConfig;
-    use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
-    use goose_providers::typesafe::TypeSafeProvider;
+    use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+    use oi_kit_providers::model::ModelConfig;
+    use oi_kit_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+    use oi_kit_providers::typesafe::TypeSafeProvider;
     use serde_json::json;
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -308,9 +308,9 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     assert!(available_auto_efforts(
         "claude-acp",
         &ModelConfig::new("current"),
-        ThinkingEffortSupport::Options(goose_providers::thinking::ThinkingEffortCapability {
+        ThinkingEffortSupport::Options(oi_kit_providers::thinking::ThinkingEffortCapability {
             option_id: "effort".to_string(),
-            values: vec![goose_providers::thinking::ThinkingEffortOption {
+            values: vec![oi_kit_providers::thinking::ThinkingEffortOption {
                 value: "high".to_string(),
                 label: "High".to_string(),
             }],
@@ -333,7 +333,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     }
     let pipeline = pipeline
         .with_model_config(
-            ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+            ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
                 .with_canonical_limits("openai")
                 .with_thinking_effort(ThinkingEffort::Low),
         )

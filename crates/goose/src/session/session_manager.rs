@@ -16,9 +16,9 @@ use crate::session::session_naming::{
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
-use goose_providers::conversation::token_usage::Usage;
-use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
+use oi_kit_providers::conversation::token_usage::Usage;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Role;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -926,7 +926,7 @@ fn deserialize_session_model_config(
 ) -> Option<ModelConfig> {
     let mut model_config: ModelConfig = serde_json::from_str(json).ok()?;
     // TODO: Remove this workaround once ModelConfig guarantees deserialize(serialize(config)) == config.
-    if provider_name == Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME) {
+    if provider_name == Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME) {
         #[derive(Deserialize)]
         struct AzurePersistedFields {
             model_name: String,
@@ -3188,8 +3188,8 @@ mod tests {
     use super::*;
     use crate::conversation::message::{InferenceMetadata, Message, MessageContent};
     use crate::providers::base::MessageStream;
-    use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
-    use goose_providers::errors::ProviderError;
+    use oi_kit_providers::conversation::token_usage::{CostSource, ProviderUsage};
+    use oi_kit_providers::errors::ProviderError;
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
     use tempfile::TempDir;
     use test_case::test_case;
@@ -3266,7 +3266,7 @@ mod tests {
         .unwrap();
 
         let config = deserialize_session_model_config(
-            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
             &json,
         )
         .unwrap();
@@ -3290,7 +3290,7 @@ mod tests {
     #[test]
     fn azure_session_model_config_preserves_explicit_thinking_effort() {
         let config = deserialize_session_model_config(
-            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
             r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null,"request_params":{"thinking_effort":"low"}}"#,
         )
         .unwrap();
@@ -3298,14 +3298,14 @@ mod tests {
         assert_eq!(config.model_name, "gpt-5-high");
         assert_eq!(
             config.thinking_effort(),
-            Some(goose_providers::thinking::ThinkingEffort::Low)
+            Some(oi_kit_providers::thinking::ThinkingEffort::Low)
         );
     }
 
     #[test]
     fn non_azure_session_model_config_keeps_suffix_normalization() {
         let config = deserialize_session_model_config(
-            Some(goose_providers::openai::OPEN_AI_PROVIDER_NAME),
+            Some(oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME),
             r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null}"#,
         )
         .unwrap();
@@ -3313,7 +3313,7 @@ mod tests {
         assert_eq!(config.model_name, "gpt-5");
         assert_eq!(
             config.thinking_effort(),
-            Some(goose_providers::thinking::ThinkingEffort::High)
+            Some(oi_kit_providers::thinking::ThinkingEffort::High)
         );
     }
 
@@ -3335,7 +3335,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
-        ) -> std::result::Result<MessageStream, goose_providers::errors::ProviderError> {
+        ) -> std::result::Result<MessageStream, oi_kit_providers::errors::ProviderError> {
             unimplemented!("session naming calls complete")
         }
 

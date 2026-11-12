@@ -12,7 +12,7 @@
 
 use goose::conversation::message::Message;
 use goose::providers::create;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use std::time::Instant;
 
 const DEFAULT_TEST_MODEL: &str = "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M";

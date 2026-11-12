@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::decision::{
+use oi_kit_providers::decision::{
     DecisionAnswer, DecisionProvider, DecisionRequest, DecisionResponse, DecisionUsage,
 };
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations, CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, TextContent,
 };

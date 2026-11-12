@@ -33,12 +33,12 @@ tree-sitter = [
     "dep:tree-sitter-swift",
     "dep:tree-sitter-typescript",
 ]
-live-voice = ["goose-providers/live-websocket"]
+live-voice = ["oi-kit-providers/live-websocket"]
 local-inference = [
     "dep:candle-core",
     "dep:candle-nn",
     "dep:candle-transformers",
-    "goose-providers/local-inference-hf-hub",
+    "oi-kit-providers/local-inference-hf-hub",
     "dep:tokenizers",
     "dep:symphonia",
     "dep:rubato",
@@ -52,9 +52,9 @@ aws-providers = [
     "dep:aws-sdk-sagemakerruntime",
     "dep:smithy-transport-reqwest",
 ]
-cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "goose-providers/cuda"]
-vulkan = ["local-inference", "goose-providers/vulkan"]
-mlx = ["local-inference", "goose-providers/mlx"]
+cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "oi-kit-providers/cuda"]
+vulkan = ["local-inference", "oi-kit-providers/vulkan"]
+mlx = ["local-inference", "oi-kit-providers/mlx"]
 rustls-tls = [
     "dep:rustls",
     "dep:rcgen",
@@ -66,8 +66,8 @@ rustls-tls = [
     "rmcp/reqwest",
     "smithy-transport-reqwest?/rustls",
     "sqlx/tls-rustls",
-    "goose-providers/rustls-tls",
-    "goose-context-management/rustls-tls",
+    "oi-kit-providers/rustls-tls",
+    "oi-kit-context-management/rustls-tls",
 ]
 native-tls = [
     "dep:rcgen",
@@ -81,8 +81,8 @@ native-tls = [
     "rmcp/reqwest-native-tls",
     "smithy-transport-reqwest?/native-tls",
     "sqlx/tls-native-tls",
-    "goose-providers/native-tls",
-    "goose-context-management/native-tls",
+    "oi-kit-providers/native-tls",
+    "oi-kit-context-management/native-tls",
 ]
 system-keyring = ["dep:keyring"]
 portable-default = [
@@ -159,11 +159,11 @@ strum = { workspace = true }
 once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = { version = "3.1", default-features = false }
-goose-context-management = { path = "../goose-context-management" }
-goose-providers = { path = "../goose-providers", default-features = false }
-goose-download-manager = { path = "../goose-download-manager" }
-goose-sdk-types = { path = "../goose-sdk-types" }
-goose-agent = { path = "../goose-agent" }
+oi-kit-context-management = { path = "../oi-kit-context-management" }
+oi-kit-providers = { path = "../oi-kit-providers", default-features = false }
+oi-kit-download-manager = { path = "../oi-kit-download-manager" }
+goose-acp-types = { path = "../goose-acp-types" }
+oi-kit-agent = { path = "../oi-kit-agent" }
 rand = { workspace = true }
 tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }
 urlencoding = { workspace = true }

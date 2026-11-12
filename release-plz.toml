@@ -1,52 +1,52 @@
 [workspace]
 release = false
-pr_name = "chore(GDK): release{% if version %} v{{ version }}{% endif %}"
+pr_name = "chore(oi-kit): release{% if version %} v{{ version }}{% endif %}"
 git_tag_enable = false
-git_tag_name = "gdk-v{{ version }}"
+git_tag_name = "oi-kit-v{{ version }}"
 git_release_enable = false
 
 [[package]]
-name = "goose-provider-types"
+name = "oi-kit-provider-types"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 
 [[package]]
-name = "goose-sdk-types"
+name = "goose-acp-types"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 
 [[package]]
-name = "goose-download-manager"
+name = "oi-kit-download-manager"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 
 [[package]]
-name = "goose-local-inference"
+name = "oi-kit-local-inference"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 # cargo-semver-checks builds with --all-features, which turns on cuda/vulkan and
 # requires a CUDA Toolkit the release runner doesn't have.
 semver_check = false
 
 [[package]]
-name = "goose-providers"
+name = "oi-kit-providers"
 release = true
-version_group = "gdk"
-# Same as goose-local-inference: --all-features pulls in the cuda/vulkan
+version_group = "oi-kit"
+# Same as oi-kit-local-inference: --all-features pulls in the cuda/vulkan
 # accelerator features through the optional local-inference dependency.
 semver_check = false
 
 [[package]]
-name = "goose-agent"
+name = "oi-kit-agent"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 
 [[package]]
-name = "goose-context-management"
+name = "oi-kit-context-management"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"
 
 [[package]]
-name = "goose-sdk"
+name = "oi-kit-bindings"
 release = true
-version_group = "gdk"
+version_group = "oi-kit"

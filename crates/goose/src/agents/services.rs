@@ -38,11 +38,11 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
-use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::errors::ProviderError;
-use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
+use oi_kit_agent::stop_hook::DEFAULT_DENY_LIMIT;
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use rmcp::model::{ElicitationAction, Tool};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -59,7 +59,7 @@ const AUTO_EFFORTS: [ThinkingEffort; 5] = [
 
 pub(super) fn available_auto_efforts(
     provider_name: &str,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
     support: ThinkingEffortSupport,
 ) -> Vec<ThinkingEffort> {
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
@@ -72,7 +72,7 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified
-            if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME
+            if provider_name == oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME
                 && model_config.is_openai_reasoning_model() =>
         {
             AUTO_EFFORTS
@@ -80,7 +80,7 @@ pub(super) fn available_auto_efforts(
                 .filter(|effort| {
                     applied_as_selected(
                         effort,
-                        goose_providers::formats::openai::openai_reasoning_effort_for_thinking(
+                        oi_kit_providers::formats::openai::openai_reasoning_effort_for_thinking(
                             &model_config.model_name,
                             *effort,
                         ),
@@ -89,15 +89,15 @@ pub(super) fn available_auto_efforts(
                 .collect()
         }
         ThinkingEffortSupport::Unspecified
-            if provider_name == goose_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
+            if provider_name == oi_kit_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
                 && model_config.is_reasoning_model() =>
         {
-            let always_on = goose_providers::canonical::maybe_get_canonical_model(
+            let always_on = oi_kit_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,
             )
             .and_then(|model| model.thinking_mode)
-                == Some(goose_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
+                == Some(oi_kit_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
             AUTO_EFFORTS
                 .into_iter()
                 .filter(|effort| !always_on || *effort != ThinkingEffort::Off)
@@ -124,13 +124,13 @@ pub struct TurnSettings {
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
-    pub context_relevance: Option<Arc<dyn goose_providers::decision::DecisionProvider>>,
+    pub context_relevance: Option<Arc<dyn oi_kit_providers::decision::DecisionProvider>>,
 }
 
 impl TurnSettings {
     pub fn from_config(
         provider: &dyn Provider,
-        model_config: &goose_providers::model::ModelConfig,
+        model_config: &oi_kit_providers::model::ModelConfig,
     ) -> Self {
         let config = Config::global();
         Self {
@@ -177,7 +177,7 @@ impl TurnSettings {
 
 fn auto_effort_from_config(
     provider: &dyn Provider,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
 ) -> Option<Arc<dyn Operation<Session, GooseEffect>>> {
     let config = Config::global();
     if !config
@@ -226,9 +226,9 @@ fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> 
 }
 
 fn normalize_legacy_provider_thinking_effort(
-    mut model_config: goose_providers::model::ModelConfig,
+    mut model_config: oi_kit_providers::model::ModelConfig,
     effort_support: &ThinkingEffortSupport,
-) -> goose_providers::model::ModelConfig {
+) -> oi_kit_providers::model::ModelConfig {
     let has_raw_effort = model_config
         .request_params
         .as_ref()
@@ -598,7 +598,7 @@ impl StateMachineServices {
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
-    ) -> Result<goose_providers::model::ModelConfig> {
+    ) -> Result<oi_kit_providers::model::ModelConfig> {
         let session = self.session_manager.get_session(session_id, false).await?;
         crate::agents::provider_manager::model_config_for(&session)
     }
@@ -606,7 +606,7 @@ impl StateMachineServices {
     pub(super) async fn effective_model_config_for_session(
         &self,
         session_id: &str,
-    ) -> Result<goose_providers::model::ModelConfig> {
+    ) -> Result<oi_kit_providers::model::ModelConfig> {
         let model_config = self.model_config_for_session(session_id).await?;
         let provider_name = self.provider(session_id).await?.get_name().to_string();
         match crate::providers::get_from_registry(&provider_name).await {
@@ -721,7 +721,7 @@ impl StateMachineServices {
     pub(super) async fn create_state_machine(
         self: &Arc<Self>,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         context_limit: usize,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -748,7 +748,7 @@ impl StateMachineServices {
     pub(super) async fn create_state_machine_with_lease(
         self: &Arc<Self>,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         context_limit: usize,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -1157,7 +1157,7 @@ impl StateMachineServices {
     pub async fn update_provider(
         &self,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
         let provider_name = provider.get_name().to_string();
@@ -1170,7 +1170,7 @@ impl StateMachineServices {
         &self,
         session_id: &str,
         provider_name: &str,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
     ) -> Result<()> {
         let mut session = self.session_manager.get_session(session_id, false).await?;
         let registry_entry = crate::providers::get_from_registry(provider_name)
@@ -1665,7 +1665,7 @@ mod tests {
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
     use crate::providers::base::{stream_from_single_message, MessageStream, ModelInfo};
     use crate::session::session_manager::SessionType;
-    use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::Tool;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1732,7 +1732,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -1773,7 +1773,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await
@@ -1930,7 +1930,7 @@ mod tests {
         }
         async fn stream(
             &self,
-            _: &goose_providers::model::ModelConfig,
+            _: &oi_kit_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
             _: &[rmcp::model::Tool],
@@ -1960,7 +1960,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("test-model"),
+                oi_kit_providers::model::ModelConfig::new("test-model"),
                 &session.id,
             )
             .await
@@ -2029,9 +2029,9 @@ mod tests {
         fn thinking_effort_support(&self) -> ThinkingEffortSupport {
             if self.applies_effort {
                 ThinkingEffortSupport::Options(
-                    goose_providers::thinking::ThinkingEffortCapability {
+                    oi_kit_providers::thinking::ThinkingEffortCapability {
                         option_id: "effort".to_string(),
-                        values: vec![goose_providers::thinking::ThinkingEffortOption {
+                        values: vec![oi_kit_providers::thinking::ThinkingEffortOption {
                             value: "default".to_string(),
                             label: "Default".to_string(),
                         }],
@@ -2044,7 +2044,7 @@ mod tests {
         }
         async fn stream(
             &self,
-            _: &goose_providers::model::ModelConfig,
+            _: &oi_kit_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
             _: &[rmcp::model::Tool],
@@ -2064,7 +2064,7 @@ mod tests {
         }
         async fn apply_model_selection(
             &self,
-            model_config: &goose_providers::model::ModelConfig,
+            model_config: &oi_kit_providers::model::ModelConfig,
         ) -> Result<(), ProviderError> {
             self.model_selections
                 .lock()
@@ -2087,7 +2087,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await
@@ -2150,7 +2150,7 @@ mod tests {
         services
             .update_provider(
                 provider,
-                goose_providers::model::ModelConfig::new("test-model"),
+                oi_kit_providers::model::ModelConfig::new("test-model"),
                 &session.id,
             )
             .await
@@ -2210,7 +2210,7 @@ mod tests {
         let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Unhandled));
         let model_config =
-            goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
+            oi_kit_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
@@ -2233,7 +2233,7 @@ mod tests {
         let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Applied));
         let model_config =
-            goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
+            oi_kit_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
@@ -2483,7 +2483,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for CountingTextProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2505,7 +2505,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for ChunkedTextProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2547,7 +2547,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for OutputLimitMarkerProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2582,7 +2582,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for RefusingProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2681,7 +2681,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         services
             .update_provider(
                 provider,
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await?;
@@ -2701,7 +2701,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 stop_hook_block_cap,
                 ..TurnSettings::from_config(
                     provider.as_ref(),
-                    &goose_providers::model::ModelConfig::new("stop-hook-test"),
+                    &oi_kit_providers::model::ModelConfig::new("stop-hook-test"),
                 )
             }),
         )

@@ -1,11 +1,11 @@
 mod acp_tooling;
 pub mod amp_acp;
 pub mod anthropic {
-    pub use goose_providers::anthropic::*;
+    pub use oi_kit_providers::anthropic::*;
 }
 pub mod anthropic_def;
 pub mod api_client {
-    pub use goose_providers::api_client::*;
+    pub use oi_kit_providers::api_client::*;
 }
 pub mod avian;
 pub mod azure;
@@ -15,7 +15,7 @@ pub mod base;
 #[cfg(feature = "aws-providers")]
 pub mod bedrock;
 pub mod canonical {
-    pub use goose_providers::canonical::*;
+    pub use oi_kit_providers::canonical::*;
 }
 pub mod canonical_cost;
 mod catalog_util;
@@ -41,12 +41,12 @@ pub mod gemini_cli;
 pub mod gemini_oauth;
 pub mod githubcopilot;
 pub mod google {
-    pub use goose_providers::google::*;
+    pub use oi_kit_providers::google::*;
 }
 pub mod gondola;
 pub mod google_def;
 pub mod http_status {
-    pub use goose_providers::http_status::*;
+    pub use oi_kit_providers::http_status::*;
 }
 pub mod huggingface;
 pub mod huggingface_auth;
@@ -61,18 +61,18 @@ pub mod nanogpt;
 pub mod oauth;
 pub mod oauth_device_flow;
 pub mod ollama {
-    pub use goose_providers::ollama::*;
+    pub use oi_kit_providers::ollama::*;
 }
 pub mod ollama_cloud;
 pub mod ollama_def;
 pub mod openai {
-    pub use goose_providers::openai::*;
+    pub use oi_kit_providers::openai::*;
 }
 pub mod openai_compatible {
-    pub use goose_providers::openai_compatible::*;
+    pub use oi_kit_providers::openai_compatible::*;
 }
 pub mod openrouter {
-    pub use goose_providers::openrouter::*;
+    pub use oi_kit_providers::openrouter::*;
 }
 pub mod openrouter_def;
 pub mod pi_acp;
@@ -81,13 +81,13 @@ pub mod provider_registry;
 pub mod provider_secrets;
 pub mod provider_test;
 mod retry {
-    pub use goose_providers::retry::*;
+    pub use oi_kit_providers::retry::*;
 }
 pub mod openai_def;
 #[cfg(feature = "aws-providers")]
 pub mod sagemaker_tgi;
 pub mod snowflake {
-    pub use goose_providers::snowflake::*;
+    pub use oi_kit_providers::snowflake::*;
 }
 pub mod snowflake_def;
 pub mod testprovider;

@@ -7,7 +7,7 @@ use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryR
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
 use futures::future::BoxFuture;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

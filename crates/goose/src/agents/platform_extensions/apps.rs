@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 async fn complete_app_content(
     provider: Arc<dyn Provider>,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
     session_id: &str,
     system_prompt: String,
     messages: &[Message],
@@ -266,7 +266,7 @@ impl AppsManagerClient {
         &self,
         session_id: &str,
         provider_name: &str,
-    ) -> Result<goose_providers::model::ModelConfig, String> {
+    ) -> Result<oi_kit_providers::model::ModelConfig, String> {
         let model_config = self.context.model_config_for_session(session_id).await?;
         match crate::providers::get_from_registry(provider_name).await {
             Ok(entry) => Ok(entry
@@ -778,7 +778,7 @@ mod tests {
     use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
     use crate::providers::base::{stream_from_single_message, MessageStream, Usage};
     use crate::session::SessionManager;
-    use goose_providers::errors::ProviderError;
+    use oi_kit_providers::errors::ProviderError;
     use std::path::Path;
     use std::sync::Mutex;
 
@@ -795,7 +795,7 @@ mod tests {
 
         async fn stream(
             &self,
-            model_config: &goose_providers::model::ModelConfig,
+            model_config: &oi_kit_providers::model::ModelConfig,
             system: &str,
             _messages: &[Message],
             tools: &[McpTool],
@@ -845,7 +845,7 @@ mod tests {
     async fn app_content_completion_uses_toolshim() {
         let provider = Arc::new(AppContentProvider::default());
         let model_config =
-            goose_providers::model::ModelConfig::new("test-model").with_toolshim(true);
+            oi_kit_providers::model::ModelConfig::new("test-model").with_toolshim(true);
         let tool = AppsManagerClient::create_app_content_tool();
         let tool_schema = AppsManagerClient::schema::<CreateAppContentResponse>();
 

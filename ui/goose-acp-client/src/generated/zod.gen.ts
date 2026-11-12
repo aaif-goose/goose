@@ -2273,7 +2273,7 @@ export const zCostSourceData = z.union([
 
 /**
  * Wire mirror of the conversation `MessageUsage` (this crate cannot depend on
- * goose-provider-types); field names and serde casing MUST stay in parity.
+ * oi-kit-provider-types); field names and serde casing MUST stay in parity.
  */
 export const zMessageUsageData = z.object({
     inputTokens: z.int().nullish(),

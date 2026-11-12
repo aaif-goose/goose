@@ -19,7 +19,7 @@ pub(crate) const AMP_ACP_BINARY: &str = "amp-acp";
 
 pub struct AmpAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for AmpAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for AmpAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             AMP_ACP_PROVIDER_NAME,

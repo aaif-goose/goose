@@ -1,10 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::cache_semantics::apply_chat_payload_breakpoints;
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::images::ImageFormat;
+use oi_kit_providers::cache_semantics::apply_chat_payload_breakpoints;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::images::ImageFormat;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -20,8 +20,8 @@ use super::openai_compatible::{
 use super::retry::ProviderRetry;
 use super::utils::get_model;
 use crate::conversation::message::Message;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 
 const LITELLM_PROVIDER_NAME: &str = "litellm";
@@ -215,7 +215,7 @@ impl LiteLLMProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for LiteLLMProvider {
+impl oi_kit_providers::base::ProviderDescriptor for LiteLLMProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             LITELLM_PROVIDER_NAME,
@@ -291,7 +291,7 @@ impl Provider for LiteLLMProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        goose_providers::context_limit::ContextLimitResolver::new(&self.name)
+        oi_kit_providers::context_limit::ContextLimitResolver::new(&self.name)
             .resolve(model, override_limit, || async {
                 Ok(self
                     .get_or_fetch_models()
@@ -318,7 +318,7 @@ impl Provider for LiteLLMProvider {
                 .and_then(|info| info.supports_vision);
         }
 
-        let mut payload = goose_providers::formats::openai::create_request(
+        let mut payload = oi_kit_providers::formats::openai::create_request(
             &effective_model_config,
             system,
             messages,
@@ -360,8 +360,8 @@ impl Provider for LiteLLMProvider {
                 let _ = log.error(error);
             })?;
 
-        let message = goose_providers::formats::openai::response_to_message(&response)?;
-        let usage = goose_providers::formats::openai::get_usage(&response);
+        let message = oi_kit_providers::formats::openai::response_to_message(&response)?;
+        let usage = oi_kit_providers::formats::openai::get_usage(&response);
         let response_model = get_model(&response);
         log.write(&response, Some(&usage))?;
         let provider_usage = ProviderUsage::new(response_model, usage);
@@ -395,7 +395,7 @@ fn parse_custom_headers(headers_str: String) -> HashMap<String, String> {
 mod tests {
     use super::*;
     use futures::StreamExt;
-    use goose_providers::request_log::{install_logger, RequestLogHandle, RequestLogger};
+    use oi_kit_providers::request_log::{install_logger, RequestLogHandle, RequestLogger};
     use serde_json::json;
     use std::sync::{Mutex, Once};
     use wiremock::matchers::{method, path};
@@ -596,7 +596,7 @@ mod tests {
 
     #[test]
     fn streaming_config_defaults_to_true() {
-        let metadata = <LiteLLMProvider as goose_providers::base::ProviderDescriptor>::metadata();
+        let metadata = <LiteLLMProvider as oi_kit_providers::base::ProviderDescriptor>::metadata();
         let key = metadata
             .config_keys
             .iter()
@@ -625,7 +625,7 @@ mod tests {
 
         assert_eq!(
             provider.get_context_limit("unknown-model", None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
         assert!(matches!(
             provider.cached_model_info.lock().await.as_ref(),
@@ -633,7 +633,7 @@ mod tests {
         ));
         assert_eq!(
             provider.get_context_limit("unknown-model", None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
     }
 

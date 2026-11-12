@@ -6,11 +6,11 @@ use crate::conversation::message::Message;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai::create_request;
-use goose_providers::images::ImageFormat;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::formats::openai::create_request;
+use oi_kit_providers::images::ImageFormat;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 
 pub const NANOGPT_PROVIDER_NAME: &str = "nano-gpt";
@@ -87,7 +87,7 @@ impl NanoGptProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for NanoGptProvider {
+impl oi_kit_providers::base::ProviderDescriptor for NanoGptProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             NANOGPT_PROVIDER_NAME,
@@ -215,7 +215,7 @@ impl Provider for NanoGptProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_providers::base::ProviderDescriptor as _;
+    use oi_kit_providers::base::ProviderDescriptor as _;
 
     #[test]
     fn test_metadata() {

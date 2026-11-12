@@ -25,8 +25,8 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffort;
 
 struct FeatureProvider {
     inner: Arc<dyn Provider>,
@@ -48,7 +48,10 @@ impl Provider for RecordingProvider {
         self.inner.provider_session_id()
     }
 
-    async fn resume(&self, session_id: &str) -> Result<(), goose_providers::errors::ProviderError> {
+    async fn resume(
+        &self,
+        session_id: &str,
+    ) -> Result<(), oi_kit_providers::errors::ProviderError> {
         self.inner.resume(session_id).await
     }
 
@@ -58,7 +61,8 @@ impl Provider for RecordingProvider {
         system: &str,
         messages: &[Message],
         tools: &[rmcp::model::Tool],
-    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+    ) -> Result<crate::providers::base::MessageStream, oi_kit_providers::errors::ProviderError>
+    {
         self.model_configs
             .lock()
             .unwrap()
@@ -79,7 +83,7 @@ impl Provider for RecordingProvider {
     async fn fetch_model_info(
         &self,
         model_name: &str,
-    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+    ) -> Result<oi_kit_providers::base::ModelInfo, oi_kit_providers::errors::ProviderError> {
         self.inner.fetch_model_info(model_name).await
     }
 }
@@ -96,7 +100,8 @@ impl Provider for FeatureProvider {
         system: &str,
         messages: &[Message],
         tools: &[rmcp::model::Tool],
-    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+    ) -> Result<crate::providers::base::MessageStream, oi_kit_providers::errors::ProviderError>
+    {
         self.inner
             .stream(model_config, system, messages, tools)
             .await
@@ -113,7 +118,7 @@ impl Provider for FeatureProvider {
     async fn fetch_model_info(
         &self,
         model_name: &str,
-    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+    ) -> Result<oi_kit_providers::base::ModelInfo, oi_kit_providers::errors::ProviderError> {
         let mut model_info = self.inner.fetch_model_info(model_name).await?;
         if let Some(resolved_model) = self.features.resolved_model {
             model_info.resolved_model = Some(resolved_model.to_string());
@@ -260,7 +265,7 @@ impl TestPipeline {
 
     pub(super) fn with_context_relevance(
         mut self,
-        decisions: Arc<dyn goose_providers::decision::DecisionProvider>,
+        decisions: Arc<dyn oi_kit_providers::decision::DecisionProvider>,
     ) -> Self {
         assert!(
             !self.services.initialized(),
@@ -347,7 +352,7 @@ impl TestPipeline {
     }
 
     pub(super) async fn set_total_tokens(&self, tokens: i32) {
-        use goose_providers::conversation::token_usage::Usage;
+        use oi_kit_providers::conversation::token_usage::Usage;
         self.session_manager
             .update(&self.session_id)
             .usage(Usage::new(None, None, Some(tokens)))
@@ -849,7 +854,7 @@ async fn test_pipeline_with_components(
             GooseMode::Auto,
         )
         .await?;
-    let model_config = ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+    let model_config = ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
         .with_canonical_limits("openai");
     session_manager
         .update(&session.id)
@@ -883,13 +888,13 @@ async fn build_test_pipeline(
         .provider_name
         .as_deref()
         .expect("test session has a provider");
-    let api_client = goose_providers::api_client::ApiClient::new_with_tls(
+    let api_client = oi_kit_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
-        goose_providers::api_client::AuthMethod::NoAuth,
+        oi_kit_providers::api_client::AuthMethod::NoAuth,
         None,
     )?;
     let provider: Arc<dyn Provider> = Arc::new(
-        goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+        oi_kit_providers::openai::OpenAiProviderBuilder::new(api_client)
             .base_path("chat/completions")
             .name(provider_name)
             .preserve_thinking_context(provider_features.preserves_thinking)

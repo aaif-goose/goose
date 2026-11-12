@@ -4,7 +4,7 @@ use async_stream::try_stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use futures::TryStreamExt;
-use goose_providers::formats::anthropic::AnthropicFormatOptions;
+use oi_kit_providers::formats::anthropic::AnthropicFormatOptions;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -29,9 +29,9 @@ use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 
 const KIMI_CODE_PROVIDER_NAME: &str = "kimi_code";
@@ -331,7 +331,7 @@ impl KimiCodeProvider {
 
         let request = (self.request_builder)(builder)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        goose_providers::http_status::send_bounded(
+        oi_kit_providers::http_status::send_bounded(
             request,
             StdDuration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )
@@ -368,7 +368,7 @@ fn kimi_refresh_error(error: anyhow::Error) -> ProviderError {
 
 // ── ProviderDef ───────────────────────────────────────────────────────────────
 
-impl goose_providers::base::ProviderDescriptor for KimiCodeProvider {
+impl oi_kit_providers::base::ProviderDescriptor for KimiCodeProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             KIMI_CODE_PROVIDER_NAME,
@@ -520,7 +520,7 @@ impl Provider for KimiCodeProvider {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use goose_providers::base::ProviderDescriptor as _;
+    use oi_kit_providers::base::ProviderDescriptor as _;
     use serde_json::json;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};

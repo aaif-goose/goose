@@ -42,20 +42,20 @@ mod usage;
 mod tests;
 
 pub use effects::GooseEffect;
-pub use goose_agent::machine::{
+pub use oi_kit_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
-pub use goose_agent::operation::{
+pub use oi_kit_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
     CLIENT_LOG,
 };
-pub(super) use goose_agent::pre_tool_call_hook::PreToolCallHookOperation;
-pub(super) use goose_agent::stop_hook::StopHookOperation;
-pub(super) use goose_agent::subagent::SubagentOperation;
-pub(super) use goose_agent::tool_approval::ToolApprovalOperation;
-pub(super) use goose_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
+pub(super) use oi_kit_agent::pre_tool_call_hook::PreToolCallHookOperation;
+pub(super) use oi_kit_agent::stop_hook::StopHookOperation;
+pub(super) use oi_kit_agent::subagent::SubagentOperation;
+pub(super) use oi_kit_agent::tool_approval::ToolApprovalOperation;
+pub(super) use oi_kit_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,

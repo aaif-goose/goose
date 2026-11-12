@@ -17,8 +17,8 @@ use crate::conversation::message::{Message, MessageErrorKind, SystemNotification
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::Session;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 

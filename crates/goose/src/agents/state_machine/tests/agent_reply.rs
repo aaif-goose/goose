@@ -10,7 +10,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -30,7 +30,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(
     Arc<StateMachineServices>,
@@ -62,14 +62,14 @@ async fn agent_with(
     tempfile::TempDir,
 )> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
-    let api_client = goose_providers::api_client::ApiClient::new_with_tls(
+    let api_client = oi_kit_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
-        goose_providers::api_client::AuthMethod::NoAuth,
+        oi_kit_providers::api_client::AuthMethod::NoAuth,
         None,
     )?
     .with_request_builder(crate::session_context::session_id_request_builder());
     let provider: Arc<dyn Provider> = Arc::new(
-        goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+        oi_kit_providers::openai::OpenAiProviderBuilder::new(api_client)
             .base_path("chat/completions")
             .name("openai")
             .build(),
@@ -98,7 +98,7 @@ async fn agent_with(
     services
         .update_provider(
             provider,
-            ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+            ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
                 .with_canonical_limits("openai"),
             &session.id,
         )

@@ -4,18 +4,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose_agent::inference::InferenceEffect;
-pub use goose_agent::inference::InferenceRunner;
-use goose_providers::base::{MessageStream, ModelInfo, Provider};
-use goose_providers::conversation::message::Message;
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_agent::inference::InferenceEffect;
+pub use oi_kit_agent::inference::InferenceRunner;
+use oi_kit_providers::base::{MessageStream, ModelInfo, Provider};
+use oi_kit_providers::conversation::message::Message;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::GooseEffect;
 
-pub(super) use goose_agent::inference::{chat_span, record_chat_usage};
+pub(super) use oi_kit_agent::inference::{chat_span, record_chat_usage};
 
 pub(super) const ADVERTISED_TOOLS_NOTE: &str = "advertised_tools";
 pub(super) const LLM_OPERATION_NAME: &str = "llm";
@@ -50,7 +50,7 @@ pub(crate) fn enrich_unclaimed_tool_errors(
     let mut messages = messages.to_vec();
     for message in &mut messages {
         for content in &mut message.content {
-            let goose_providers::conversation::message::MessageContent::ToolResponse(response) =
+            let oi_kit_providers::conversation::message::MessageContent::ToolResponse(response) =
                 content
             else {
                 continue;
@@ -82,7 +82,7 @@ fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model:
         .collect::<Vec<_>>();
 
     for content in &mut message.content {
-        let goose_providers::conversation::message::MessageContent::ToolRequest(request) = content
+        let oi_kit_providers::conversation::message::MessageContent::ToolRequest(request) = content
         else {
             continue;
         };
@@ -224,7 +224,7 @@ mod canonicalization_tests {
             .with_tool_request("request", Ok(CallToolRequestParams::new(name.to_string())))
     }
 
-    fn tool_request(message: &Message) -> &goose_providers::conversation::message::ToolRequest {
+    fn tool_request(message: &Message) -> &oi_kit_providers::conversation::message::ToolRequest {
         message.content[0].as_tool_request().unwrap()
     }
 

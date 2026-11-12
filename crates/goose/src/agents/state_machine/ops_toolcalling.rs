@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
-use goose_agent::post_tool_call_hook::PostToolCallHook;
-use goose_agent::tool_call_state::request_executable;
+use oi_kit_agent::post_tool_call_hook::PostToolCallHook;
+use oi_kit_agent::tool_call_state::request_executable;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
 };
@@ -1156,7 +1156,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_agent::tool_call_state::EXECUTABLE_KEY;
+    use oi_kit_agent::tool_call_state::EXECUTABLE_KEY;
 
     #[test]
     fn extension_prompt_parts_render_one_block_per_extension() {

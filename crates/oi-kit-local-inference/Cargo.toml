@@ -1,0 +1,59 @@
+[package]
+name = "oi-kit-local-inference"
+version = "0.1.0-alpha.14"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+cuda = ["llama-cpp-2/cuda"]
+vulkan = ["llama-cpp-2/vulkan"]
+mlx = ["dep:safemlx", "dep:safemlx-lm", "dep:safemlx-lm-utils"]
+hf-hub = [
+    "dep:futures",
+    "dep:oi-kit-download-manager",
+    "dep:goose-acp-types",
+    "dep:hf-hub",
+]
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+etcetera = { workspace = true }
+encoding_rs = { version = "0.8.35", default-features = false }
+futures = { workspace = true, optional = true }
+oi-kit-download-manager = { version = "0.1.0-alpha.14", path = "../oi-kit-download-manager", optional = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.14", path = "../oi-kit-provider-types", default-features = false }
+goose-acp-types = { version = "0.1.0-alpha.14", path = "../goose-acp-types", default-features = false, optional = true }
+hf-hub = { version = "1.0.0", default-features = false, optional = true }
+include_dir = { workspace = true }
+llama-cpp-2 = { workspace = true }
+llama-cpp-sys-2 = { workspace = true }
+minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde"] }
+pulldown-cmark = { version = "0.13.4", default-features = false }
+regex = { workspace = true }
+rmcp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "rt-multi-thread", "sync", "time"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4", "std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { workspace = true, features = ["sampler", "metal", "mtmd"] }
+safemlx = { default-features = false, features = ["accelerate", "metal", "safetensors"], optional = true, version = "0.1.2" }
+safemlx-lm = { optional = true, version = "0.4.1" }
+safemlx-lm-utils = { optional = true, version = "0.1.2" }
+
+[dev-dependencies]
+env-lock.workspace = true

@@ -11,7 +11,7 @@ use crate::{
         session_id_request_builder, session_id_request_builder_with_header_override,
     },
 };
-use goose_providers::{
+use oi_kit_providers::{
     anthropic::{self, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION},
     api_client::{ApiClient, AuthMethod, TlsConfig},
     base::ProviderDescriptor,
@@ -21,7 +21,7 @@ use goose_providers::{
 pub struct AnthropicProviderDef;
 
 impl ProviderDescriptor for AnthropicProviderDef {
-    fn metadata() -> goose_providers::base::ProviderMetadata {
+    fn metadata() -> oi_kit_providers::base::ProviderMetadata {
         AnthropicProvider::metadata().with_setup(
             crate::providers::catalog::ProviderSetupMetadata::api_key(
                 crate::providers::catalog::ProviderSetupGroup::Default,
@@ -113,7 +113,7 @@ pub fn from_custom_config(
 mod tests {
     use super::*;
     use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
-    use goose_providers::base::{ModelInfo, Provider};
+    use oi_kit_providers::base::{ModelInfo, Provider};
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

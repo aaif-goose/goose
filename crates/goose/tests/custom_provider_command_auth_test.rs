@@ -6,8 +6,8 @@
 use goose::conversation::message::Message;
 use goose::providers::base::Provider;
 use goose::providers::openai_def;
-use goose_providers::declarative::{AuthConfig, DeclarativeProviderConfig, ProviderEngine};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::declarative::{AuthConfig, DeclarativeProviderConfig, ProviderEngine};
+use oi_kit_providers::model::ModelConfig;
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,7 +22,7 @@ fn custom_config_with_auth(base_url: &str, auth: AuthConfig) -> DeclarativeProvi
         description: None,
         api_key_env: String::new(),
         base_url: base_url.to_string(),
-        models: vec![goose_providers::base::ModelInfo::new("test-model")],
+        models: vec![oi_kit_providers::base::ModelInfo::new("test-model")],
         headers: None,
         session_id_header_override: None,
         timeout_seconds: None,

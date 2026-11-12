@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_providers::conversation::{effective_role, Conversation, EffectiveRole};
-use goose_providers::decision::{
+use oi_kit_providers::conversation::{effective_role, Conversation, EffectiveRole};
+use oi_kit_providers::decision::{
     DecisionAnswer, DecisionProvider, DecisionQuestion, DecisionRequest,
 };
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::thinking::ThinkingEffort;
 use serde::{Deserialize, Serialize};
 
 use super::{

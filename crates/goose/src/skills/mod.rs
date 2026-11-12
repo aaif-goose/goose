@@ -20,8 +20,8 @@ use crate::plugins::{
 use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
-use goose_agent::skills::SkillRoot;
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
+use oi_kit_agent::skills::SkillRoot;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -122,13 +122,13 @@ fn resolve_docs_root_placeholder(skill: &SourceEntry, content: &str, docs_root: 
 }
 
 pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
-    let content = goose_agent::skills::skill_content_with_args(skill, args)?;
+    let content = oi_kit_agent::skills::skill_content_with_args(skill, args)?;
     let docs_root = Config::global()
         .get_goose_docs_root()?
         .unwrap_or_else(|| DEFAULT_GOOSE_DOCS_ROOT.to_string());
     let content = resolve_docs_root_placeholder(skill, &content, &docs_root);
 
-    Ok(goose_agent::skills::loaded_skill_context(skill, &content))
+    Ok(oi_kit_agent::skills::loaded_skill_context(skill, &content))
 }
 
 pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
@@ -448,7 +448,7 @@ fn discover_skills_with_config(working_dir: Option<&Path>, config: &Config) -> V
             writable: dir.writable,
             preserve_path: dir.preserve_path,
         });
-    let mut sources = goose_agent::skills::discover_skills(roots);
+    let mut sources = oi_kit_agent::skills::discover_skills(roots);
     let mut seen: HashSet<_> = sources.iter().map(|source| source.name.clone()).collect();
 
     for content in builtin::get_all() {

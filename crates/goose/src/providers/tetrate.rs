@@ -9,12 +9,12 @@ use crate::conversation::message::Message;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::images::ImageFormat;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::images::ImageFormat;
 
-use goose_providers::formats::openai::create_request;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::formats::openai::create_request;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 use serde_json::Value;
 
@@ -86,7 +86,7 @@ impl TetrateProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for TetrateProvider {
+impl oi_kit_providers::base::ProviderDescriptor for TetrateProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             TETRATE_PROVIDER_NAME,
@@ -165,7 +165,7 @@ impl Provider for TetrateProvider {
                     .is_some_and(|v| v.contains("json"));
 
                 if is_json {
-                    let body = goose_providers::http_status::read_error_body(resp)
+                    let body = oi_kit_providers::http_status::read_error_body(resp)
                         .await
                         .unwrap_or_default();
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&body) {

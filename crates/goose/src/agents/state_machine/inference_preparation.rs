@@ -7,10 +7,10 @@ use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
-use goose_agent::operation::{messages_since_kickoff, InferenceInput};
-use goose_providers::conversation::message::Message;
-use goose_providers::conversation::Conversation;
+use oi_kit_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
+use oi_kit_agent::operation::{messages_since_kickoff, InferenceInput};
+use oi_kit_providers::conversation::message::Message;
+use oi_kit_providers::conversation::Conversation;
 use std::sync::{Arc, Mutex as StdMutex};
 
 pub struct GooseInferenceRequestPreparer<'a> {

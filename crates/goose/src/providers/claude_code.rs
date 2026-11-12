@@ -2,8 +2,8 @@ use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -28,7 +28,7 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::subprocess::configure_subprocess;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 
 use super::cli_common::{error_from_event, extract_usage_tokens};
 use super::private_file::create_private_named_temp_file;
@@ -618,7 +618,7 @@ fn write_system_prompt_file(
     write_claude_temp_file(state_dir, &prefix, ".txt", system_prompt)
 }
 
-impl goose_providers::base::ProviderDescriptor for ClaudeCodeProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ClaudeCodeProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CLAUDE_CODE_PROVIDER_NAME,

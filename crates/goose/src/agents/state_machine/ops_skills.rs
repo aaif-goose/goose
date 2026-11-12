@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
+use oi_kit_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;

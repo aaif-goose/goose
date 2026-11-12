@@ -26,12 +26,12 @@ use goose::providers::sagemaker_tgi::SAGEMAKER_TGI_DEFAULT_MODEL;
 use goose::providers::snowflake::SNOWFLAKE_DEFAULT_MODEL;
 use goose::providers::xai::XAI_DEFAULT_MODEL;
 use goose::session::{SessionManager, SessionType};
-use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
-use goose_providers::errors::ProviderError;
-use goose_providers::thinking::ThinkingEffortSupport;
 use goose_test_support::{
     EnforceSessionId, ExpectedSessionId, IgnoreSessionId, McpFixture, FAKE_CODE,
 };
+use oi_kit_providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -105,7 +105,7 @@ struct ProviderFixture {
     expect_context_length_exceeded: bool,
     context_length_exceeded: usize,
     provider: Arc<dyn Provider>,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
     services: Arc<StateMachineServices>,
     session_id: String,
     _mcp: McpFixture,
@@ -309,7 +309,7 @@ impl ProviderFixture {
     async fn tool_roundtrip(
         &self,
         prompt: &str,
-        model_config: Option<goose_providers::model::ModelConfig>,
+        model_config: Option<oi_kit_providers::model::ModelConfig>,
     ) -> Result<Message> {
         let lease = self
             .services
@@ -462,7 +462,7 @@ impl ProviderFixture {
 
     async fn test_image_content_support(&self) -> Result<()> {
         let image_config = self.image_model.as_ref().map(|model| {
-            goose_providers::model::ModelConfig::new(model).with_canonical_limits(&self.name)
+            oi_kit_providers::model::ModelConfig::new(model).with_canonical_limits(&self.name)
         });
         let response = self
             .tool_roundtrip(
@@ -483,7 +483,7 @@ impl ProviderFixture {
         let default = &self.model_config.model_name;
         let alt = self.model_switch_name.as_deref().unwrap();
         let alt_config =
-            goose_providers::model::ModelConfig::new(alt).with_canonical_limits(&self.name);
+            oi_kit_providers::model::ModelConfig::new(alt).with_canonical_limits(&self.name);
 
         let message = Message::user().with_text("Just say hello!");
         let (response, _) = goose::session_context::with_session_id(

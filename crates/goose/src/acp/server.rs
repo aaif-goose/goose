@@ -66,7 +66,7 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
     TextContent as RmcpTextContent,
@@ -656,7 +656,7 @@ fn push_or_replace_extension(extensions: &mut Vec<ExtensionConfig>, extension: E
 
 fn resolve_default_provider_model_config(
     config: &Config,
-) -> Result<(String, goose_providers::model::ModelConfig), agent_client_protocol::Error> {
+) -> Result<(String, oi_kit_providers::model::ModelConfig), agent_client_protocol::Error> {
     let resolved_provider = config.get_goose_provider().map_err(|error| {
         agent_client_protocol::Error::internal_error()
             .data(format!("Failed to resolve provider: {}", error))
@@ -1722,7 +1722,7 @@ fn status_message_from_system_notification(
     }
 }
 
-/// Conversion to the sdk-types wire mirror carried by `message_usage`.
+/// Conversion to the acp-types wire mirror carried by `message_usage`.
 fn message_usage_update(
     message_id: Option<String>,
     usage: &crate::conversation::message::MessageUsage,
@@ -2690,8 +2690,8 @@ mod tests {
         McpServerStdio, PermissionOptionId, ResourceLink, Role as AcpRole,
         SelectedPermissionOutcome, TextResourceContents,
     };
-    use goose_providers::conversation::token_usage::Usage as TokenUsage;
-    use goose_providers::thinking::{
+    use oi_kit_providers::conversation::token_usage::Usage as TokenUsage;
+    use oi_kit_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
     use std::io::Write;
@@ -2747,7 +2747,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
@@ -3559,7 +3559,7 @@ print(\"hello, world\")
             TokenUsage::default(),
         );
         session.model_config = Some(
-            goose_providers::model::ModelConfig::new("test-model")
+            oi_kit_providers::model::ModelConfig::new("test-model")
                 .with_context_limit(Some(258_000)),
         );
         let totals = SessionUsageTotals {
@@ -3773,7 +3773,7 @@ print(\"hello, world\")
             .services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
+                oi_kit_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
                     HashMap::from([("thinking_effort".to_string(), serde_json::json!("xhigh"))]),
                 ),
                 &session.id,

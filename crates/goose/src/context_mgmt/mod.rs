@@ -1,4 +1,4 @@
-pub use goose_context_management::structured;
+pub use oi_kit_context_management::structured;
 
 use crate::conversation::message::MessageMetadata;
 use crate::conversation::message::{Message, MessageContent};
@@ -8,17 +8,17 @@ use crate::providers::base::Provider;
 use crate::providers::base::{stream_from_single_message, MessageStream};
 use crate::{config::Config, token_counter::create_token_counter};
 use anyhow::Result;
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
 use indoc::indoc;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Role;
 #[cfg(test)]
 use rmcp::model::{Annotations, ContentBlock, TextContent};
 use tracing::info;
 use tracing::log::warn;
 
-pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
+pub use oi_kit_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
 /// Starts compaction with headroom below OpenAI's long-context price tier
 /// (above 272k input tokens). This is not a maximum request size.
@@ -328,7 +328,7 @@ struct GooseCompactionModel<'a> {
 }
 
 #[async_trait::async_trait]
-impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
+impl oi_kit_context_management::CompactionModel for GooseCompactionModel<'_> {
     async fn complete(
         &self,
         system: &str,
@@ -349,7 +349,7 @@ impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
 struct GooseTokenEstimator;
 
 #[async_trait::async_trait]
-impl goose_context_management::TokenEstimator for GooseTokenEstimator {
+impl oi_kit_context_management::TokenEstimator for GooseTokenEstimator {
     async fn count_chat_tokens(&self, system: &str, messages: &[Message]) -> usize {
         match create_token_counter().await {
             Ok(counter) => counter.count_chat_tokens(system, messages, &[]),
@@ -371,8 +371,8 @@ impl goose_context_management::TokenEstimator for GooseTokenEstimator {
     }
 }
 
-fn compaction_templates() -> Result<goose_context_management::Templates> {
-    Ok(goose_context_management::Templates {
+fn compaction_templates() -> Result<oi_kit_context_management::Templates> {
+    Ok(oi_kit_context_management::Templates {
         compaction: crate::prompt_template::template_source("compaction.md")?,
         summary: crate::prompt_template::template_source("compaction_summary.md")?,
     })
@@ -398,7 +398,7 @@ async fn do_compact(
         model_config,
         session_id,
     };
-    let summary = goose_context_management::summarize(
+    let summary = oi_kit_context_management::summarize(
         &model,
         Some(&GooseTokenEstimator),
         &compaction_templates()?,
@@ -409,7 +409,7 @@ async fn do_compact(
     Ok((summary.message, summary.usage))
 }
 
-pub use goose_context_management::format_message_for_compacting;
+pub use oi_kit_context_management::format_message_for_compacting;
 
 pub fn compute_tool_call_cutoff(context_limit: usize, compaction_threshold: f64) -> usize {
     let threshold = if compaction_threshold > 0.0 && compaction_threshold <= 1.0 {
@@ -541,7 +541,7 @@ pub async fn summarize_tool_call(
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use goose_providers::conversation::token_usage::Usage;
+    use oi_kit_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
 
     #[test]
