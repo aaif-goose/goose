@@ -72,7 +72,7 @@ it.
 
 ## Python package
 
-The PyPI package is published as `oi-kit-sdk` and imports as `goose`.
+The PyPI package is published as `oi-kit-sdk` and imports as `oi_kit`.
 Build a local wheel from the repository root with:
 
 ```bash

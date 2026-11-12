@@ -31,4 +31,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-goose = ["*.so", "*.dylib", "*.dll", "py.typed"]
+oi_kit = ["*.so", "*.dylib", "*.dll", "py.typed"]

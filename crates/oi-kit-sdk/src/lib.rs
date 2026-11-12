@@ -13,7 +13,7 @@
 pub use oi_kit_sdk_types::{custom_notifications, custom_requests};
 
 #[cfg(feature = "uniffi")]
-uniffi::setup_scaffolding!("goose");
+uniffi::setup_scaffolding!("oi_kit");
 
 #[cfg(feature = "uniffi")]
 pub mod bindings;

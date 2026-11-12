@@ -19,7 +19,7 @@ if [ ! -f "$native_lib" ]; then
   exit 1
 fi
 
-bindgen="target/release/goose-uniffi-bindgen"
+bindgen="target/release/oi-kit-uniffi-bindgen"
 if [ ! -x "$bindgen" ]; then
   cargo build -p oi-kit-sdk --features uniffi --release -q
 fi
@@ -40,7 +40,7 @@ cp LICENSE "$resources_dir/META-INF/LICENSE"
   --no-format \
   --out-dir "$kotlin_dir" 2>/dev/null
 
-python3 - "$kotlin_dir/io/github/aaif_goose/goose.kt" <<'PY'
+python3 - "$kotlin_dir/io/github/aaif_goose/oi_kit.kt" <<'PY'
 import sys
 from pathlib import Path
 

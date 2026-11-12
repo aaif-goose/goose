@@ -13,7 +13,7 @@ name = "oi_kit_sdk"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [[bin]]
-name = "goose-uniffi-bindgen"
+name = "oi-kit-uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 required-features = ["uniffi"]
 

@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "goose-sdk-kotlin-smoke-test"
+rootProject.name = "oi-kit-sdk-kotlin-smoke-test"

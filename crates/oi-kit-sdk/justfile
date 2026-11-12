@@ -8,13 +8,13 @@ debug_lib_dir := "./target/debug"
 release_lib_dir := "./target/release"
 debug_lib_path := debug_lib_dir / lib_name
 release_lib_path := release_lib_dir / lib_name
-debug_bindgen := "./target/debug/goose-uniffi-bindgen"
-release_bindgen := "./target/release/goose-uniffi-bindgen"
+debug_bindgen := "./target/debug/oi-kit-uniffi-bindgen"
+release_bindgen := "./target/release/oi-kit-uniffi-bindgen"
 config := "./crates/oi-kit-sdk/uniffi.toml"
 gen_dir := "./crates/oi-kit-sdk/generated"
 examples_dir := "./crates/oi-kit-sdk/examples/uniffi"
 python_dir := "./crates/oi-kit-sdk/python"
-python_package_dir := python_dir / "src/goose"
+python_package_dir := python_dir / "src/oi_kit"
 maven_dir := "./crates/oi-kit-sdk/maven"
 maven_resources_dir := maven_dir / "src/main/resources"
 maven_kotlin_dir := maven_dir / "src/main/kotlin"
@@ -49,7 +49,7 @@ python-bindings profile="debug":
     rm -rf {{python_package_dir}}; \
     mkdir -p {{python_package_dir}}; \
     "$bindgen" generate --library "$lib_path" --config {{config}} --language python --no-format --out-dir {{python_package_dir}} 2>/dev/null; \
-    mv {{python_package_dir}}/goose.py {{python_package_dir}}/__init__.py; \
+    mv {{python_package_dir}}/oi_kit.py {{python_package_dir}}/__init__.py; \
     cp "$lib_path" {{python_package_dir}}/; \
     touch {{python_package_dir}}/py.typed
 
@@ -59,7 +59,7 @@ python-wheel: (python-bindings "release")
 
 python-check: python-wheel
     python3 -m pip install --force-reinstall {{python_dir}}/dist/*.whl
-    python3 -c 'import goose; print(goose.__name__)'
+    python3 -c 'import oi_kit; print(oi_kit.__name__)'
 
 python-publish repository="pypi": python-wheel
     UV_NO_CONFIG=1 PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple uvx --default-index https://pypi.org/simple twine check {{python_dir}}/dist/*.whl

@@ -85,11 +85,11 @@ jobs:
             python_bin=".venv-wheel-test/bin/python"
           fi
           UV_NO_CONFIG=1 uv pip install --default-index https://pypi.org/simple --python "$python_bin" crates/oi-kit-sdk/python/dist/*.whl
-          "$python_bin" -c 'import goose; print(goose.__name__)'
+          "$python_bin" -c 'import oi_kit; print(oi_kit.__name__)'
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-wheel-${{ matrix.name }}
+          name: oi-kit-sdk-wheel-${{ matrix.name }}
           path: crates/oi-kit-sdk/python/dist/*.whl
           if-no-files-found: error

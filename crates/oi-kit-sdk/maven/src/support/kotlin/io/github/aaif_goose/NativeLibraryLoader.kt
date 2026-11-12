@@ -5,12 +5,12 @@ import java.nio.file.Files
 
 internal object NativeLibraryLoader {
     init {
-        val componentName = "goose"
+        val componentName = "oi_kit"
         if (System.getProperty("uniffi.component.$componentName.libraryOverride") == null) {
             val resource = nativeResourcePath()
             val stream = NativeLibraryLoader::class.java.classLoader.getResourceAsStream(resource)
-                ?: error("Goose SDK native library resource not found: $resource")
-            val library = Files.createTempFile("goose-sdk-", nativeLibraryFileName()).toFile()
+                ?: error("oi-kit-sdk native library resource not found: $resource")
+            val library = Files.createTempFile("oi-kit-sdk-", nativeLibraryFileName()).toFile()
             library.deleteOnExit()
             stream.use { input -> library.outputStream().use { output -> input.copyTo(output) } }
             System.setProperty("uniffi.component.$componentName.libraryOverride", library.absolutePath)

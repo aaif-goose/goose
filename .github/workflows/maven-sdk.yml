@@ -82,7 +82,7 @@ jobs:
       - name: Upload native library artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-native-${{ matrix.name }}
+          name: oi-kit-sdk-native-${{ matrix.name }}
           path: maven-native/**
           if-no-files-found: error
 
@@ -111,7 +111,7 @@ jobs:
       - name: Download native library artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: goose-sdk-native-*
+          pattern: oi-kit-sdk-native-*
           path: native-artifacts
           merge-multiple: true
 
@@ -149,7 +149,7 @@ jobs:
       - name: Upload Maven artifact bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: goose-sdk-maven
+          name: oi-kit-sdk-maven
           path: maven-artifacts/**
           if-no-files-found: error
 
@@ -174,7 +174,7 @@ jobs:
       - name: Download Maven artifact bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: goose-sdk-maven
+          name: oi-kit-sdk-maven
           path: maven-artifacts
 
       - name: Install Maven artifact bundle into local repository
@@ -227,7 +227,7 @@ jobs:
       - name: Download native library artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: goose-sdk-native-*
+          pattern: oi-kit-sdk-native-*
           path: native-artifacts
           merge-multiple: true
 

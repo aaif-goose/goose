@@ -93,7 +93,7 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: goose-sdk-wheel-*
+          pattern: oi-kit-sdk-wheel-*
           path: dist
           merge-multiple: true
 

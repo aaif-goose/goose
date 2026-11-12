@@ -12,4 +12,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "goose-sdk-maven"
+rootProject.name = "oi-kit-sdk-maven"
