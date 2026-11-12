@@ -145,8 +145,8 @@
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vitejs/plugin-react": "^5.1.4",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@vitest/ui": "^4.1.10",
+    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/ui": "^5.1.0",
     "autoprefixer": "^10.5.4",
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
@@ -161,7 +161,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^8.2.4",
-    "vitest": "^4.1.11"
+    "vitest": "^5.1.0"
   },
   "keywords": [],
   "license": "Apache-2.0"
