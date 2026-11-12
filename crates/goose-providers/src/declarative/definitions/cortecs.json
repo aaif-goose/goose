@@ -5,6 +5,9 @@
   "description": "EU-based AI router with a focus on privacy and security. Offers a wide range of GDPR-compliant AI models.",
   "api_key_env": "CORTECS_API_KEY",
   "base_url": "https://api.cortecs.ai/v1",
+  "headers": {
+    "x-cortecs-cost-unit": "USD"
+  },
   "models": [
     {
       "name": "deepseek-v4-flash-0731",
