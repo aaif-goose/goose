@@ -6,9 +6,8 @@ use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::ops_toolcalling::{
-    leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
-};
+use crate::agents::state_machine::extension_operation_host::request_was_advertised;
+use crate::agents::state_machine::tool_hook_context::{leased_working_dir, tool_span};
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
@@ -19,6 +18,7 @@ use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
+use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
 
 use goose_agent::extension_manager::TurnLease;
 

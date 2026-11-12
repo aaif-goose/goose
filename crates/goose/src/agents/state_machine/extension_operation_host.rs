@@ -184,7 +184,7 @@ impl GooseExtensionOperationHost {
     }
 }
 
-pub(super) use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
+use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
 
 pub(super) fn pending_advertised_tool_requests(
     messages: &[Message],

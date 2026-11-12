@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::tool_approval::{ApprovalDecision, ToolApproval};
 
-use crate::agents::state_machine::ops_toolcalling::call_will_not_run;
+use crate::agents::state_machine::extension_operation_host::call_will_not_run;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::ToolRequest;

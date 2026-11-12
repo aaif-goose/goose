@@ -1020,6 +1020,7 @@ struct OperationHost {
     before_calls: AtomicUsize,
     completed_hooks: AtomicUsize,
     block_after_call: bool,
+    deny_before_call: bool,
     hook_started: Semaphore,
     resolve_generated: bool,
     skip: bool,
@@ -1033,6 +1034,7 @@ impl OperationHost {
             before_calls: AtomicUsize::new(0),
             completed_hooks: AtomicUsize::new(0),
             block_after_call: false,
+            deny_before_call: false,
             hook_started: Semaphore::new(0),
             resolve_generated: false,
             skip: false,
@@ -1086,7 +1088,8 @@ impl ExtensionOperationHost<()> for OperationHost {
         _: &goose_provider_types::conversation::message::ToolRequest,
     ) -> Option<CallToolResult> {
         self.before_calls.fetch_add(1, Ordering::SeqCst);
-        None
+        self.deny_before_call
+            .then(|| CallToolResult::error(vec![rmcp::model::ContentBlock::text("denied by hook")]))
     }
 
     fn decorate_call(
@@ -1183,6 +1186,42 @@ async fn extension_operation_uses_prepared_snapshot_without_resolving_again() {
         ),
         ["first__a", "second__b"]
     );
+}
+
+#[tokio::test]
+async fn extension_operation_pre_call_denial_skips_dispatch_and_post_hooks() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let mut host = OperationHost::new(manager);
+    host.deny_before_call = true;
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
+    Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    let (emit, _) = emitter();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        responses,
+        [("call-first__a".to_string(), "denied by hook".to_string())]
+    );
+    assert_eq!(host.before_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(host.completed_hooks.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        Operation::<(), Msg>::finalize_cancellation(
+            &operation,
+            &(),
+            &turn_requesting(&["first__a"]),
+            &emit
+        )
+        .await
+        .as_slice(),
+        []
+    ));
 }
 
 #[tokio::test]

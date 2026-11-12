@@ -28,7 +28,6 @@ mod ops_stop_hook;
 mod ops_subagent;
 mod ops_subdirectory_hints;
 mod ops_tool_pair_compaction;
-mod ops_toolcalling;
 mod proactive_compaction;
 mod session;
 mod tool_hook_context;
