@@ -15,6 +15,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-std", "io-util"] }
+tokio-util = { workspace = true, features = ["compat", "rt"] }
+
 [package.metadata.cargo-machete]
 # Used to provide extras imports for agent-client-protocol
 ignored = ["agent-client-protocol-schema"]

@@ -10,13 +10,13 @@
 //! # Usage
 //!
 //! ```bash
-//! cargo run -p oi-kit-bindings --example acp_client -- "What is 2 + 2?"
+//! cargo run -p goose-acp-types --example acp_client -- "What is 2 + 2?"
 //! ```
 //!
 //! Or with a custom goose binary path:
 //!
 //! ```bash
-//! cargo run -p oi-kit-bindings --example acp_client -- --goose-bin ./target/debug/goose "Explain Rust's ownership model in one sentence"
+//! cargo run -p goose-acp-types --example acp_client -- --goose-bin ./target/debug/goose "Explain Rust's ownership model in one sentence"
 //! ```
 
 use agent_client_protocol::schema::v1::{
@@ -25,7 +25,7 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Client, ConnectionTo};
-use oi_kit_bindings::custom_requests::GetExtensionsRequest;
+use goose_acp_types::custom_requests::GetExtensionsRequest;
 use std::path::PathBuf;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 

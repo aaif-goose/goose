@@ -1,8 +1,7 @@
 # oi-kit-bindings
 
 Python and Kotlin bindings for the Open Intelligence Kit (oi-kit), published as
-`oi-kit` on PyPI and Maven. With default features it re-exports the shared ACP
-types from `goose-acp-types`.
+`oi-kit` on PyPI and Maven.
 
 With `--features uniffi` the crate compiles to native bindings for Python and
 Kotlin (namespace `oi_kit` / `io.github.aaif_goose`). The UniFFI surface lets
