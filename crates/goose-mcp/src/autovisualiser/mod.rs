@@ -26,6 +26,26 @@ fn ui_resource_meta(uri: &str) -> MetaObject {
     meta
 }
 
+/// Basemap tile source used by the map template.
+///
+/// The host serves MCP App guest documents with a CSP whose `img-src` only allows
+/// the domains a resource declares, so this must stay in sync with the tile URL
+/// in `templates/map_template.html`.
+const MAP_TILE_RESOURCE_DOMAINS: &[&str] = &["https://tile.openstreetmap.org"];
+
+/// Build the `_meta` of a `ui://` resource, including the CSP domains that
+/// resource needs to load remote content.
+fn ui_resource_contents_meta(uri: &str) -> MetaObject {
+    let mut ui = json!({ "prefersBorder": true });
+    if uri == "ui://autovisualiser/map" {
+        ui["csp"] = json!({ "resourceDomains": MAP_TILE_RESOURCE_DOMAINS });
+    }
+
+    let mut meta = MetaObject::new();
+    meta.0.insert("ui".to_string(), ui);
+    meta
+}
+
 /// Struct representing the UI resource definitions for autovisualiser chart types.
 struct UIResourceDef {
     uri: &'static str,
@@ -669,9 +689,7 @@ impl ServerHandler for AutoVisualiserRouter {
     ) -> Result<ReadResourceResponse, ErrorData> {
         let html = self.get_template_html(&params.uri)?;
 
-        let mut meta = MetaObject::new();
-        meta.0
-            .insert("ui".to_string(), json!({ "prefersBorder": true }));
+        let meta = ui_resource_contents_meta(&params.uri);
 
         let resource_contents = ResourceContents::TextResourceContents {
             uri: params.uri,
@@ -1549,6 +1567,58 @@ mod tests {
         assert!(!html.contains("tt.innerHTML"));
         assert!(html.contains("name.textContent = d.data.name"));
         assert!(html.contains("document.createTextNode(d.data.category)"));
+    }
+
+    #[test]
+    fn map_resource_declares_basemap_tile_domains() {
+        let meta = ui_resource_contents_meta("ui://autovisualiser/map");
+        let ui = meta.0.get("ui").expect("meta should have 'ui' key");
+
+        assert_eq!(ui["prefersBorder"], json!(true));
+        assert_eq!(
+            ui["csp"]["resourceDomains"],
+            json!(["https://tile.openstreetmap.org"])
+        );
+    }
+
+    #[test]
+    fn other_resources_declare_no_csp_domains() {
+        for uri in [
+            "ui://autovisualiser/chart",
+            "ui://autovisualiser/donut",
+            "ui://autovisualiser/mermaid",
+        ] {
+            let meta = ui_resource_contents_meta(uri);
+            let ui = meta.0.get("ui").expect("meta should have 'ui' key");
+
+            assert_eq!(ui["prefersBorder"], json!(true));
+            assert!(
+                ui.get("csp").is_none(),
+                "{uri} loads no remote content and should not declare CSP domains"
+            );
+        }
+    }
+
+    #[test]
+    fn map_template_fetches_tiles_from_a_declared_csp_domain() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/map")
+            .unwrap();
+
+        MAP_TILE_RESOURCE_DOMAINS
+            .iter()
+            .map(|domain| {
+                domain
+                    .trim_start_matches("https://")
+                    .trim_start_matches("*.")
+            })
+            .find(|host| html.contains(&format!("https://{host}/{{z}}/{{x}}/{{y}}")))
+            .expect("the map template must fetch tiles from a declared CSP domain");
+
+        assert!(
+            !html.contains("basemaps.cartocdn.com"),
+            "CARTO's keyless raster endpoints answer with an API-key placeholder"
+        );
     }
 }
 

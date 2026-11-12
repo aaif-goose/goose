@@ -78,6 +78,11 @@
             font: 12px var(--font-sans, sans-serif);
             line-height: 30px; color: #fff; font-weight: var(--font-weight-semibold);
         }
+
+        /* OSM ships a single light style, so dark mode inverts the tile pane. */
+        .dark-tiles .leaflet-tile-pane {
+            filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+        }
     </style>
 </head>
 <body>
@@ -97,7 +102,12 @@
     (function () {
         "use strict";
 
-        var map, markerClusterGroup, savedBounds, tileLayer;
+        var map, markerClusterGroup, savedBounds;
+
+        // CARTO's keyless raster endpoints now answer with an "API KEY REQUIRED"
+        // placeholder, so the basemap comes from OSM. Keep this host in sync with
+        // MAP_TILE_RESOURCE_DOMAINS in ../mod.rs.
+        var OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
         var markerPalette = ["#5c98f9", "#47c9a2", "#f0a03c", "#f97066", "#9b8afb"];
 
@@ -105,6 +115,12 @@
             var ratio = value / maxValue;
             var idx = Math.min(Math.floor(ratio * markerPalette.length), markerPalette.length - 1);
             return markerPalette[idx];
+        }
+
+        function applyTileTheme() {
+            if (!map) return;
+            var isDark = document.documentElement.style.colorScheme === "dark";
+            map.getContainer().classList.toggle("dark-tiles", isDark);
         }
 
         function initMap(mapData) {
@@ -117,15 +133,11 @@
 
             map = L.map("map").setView([lat, lng], zoom);
 
-            var isDark = document.documentElement.style.colorScheme === "dark";
-            var tileUrl = isDark
-                ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-            tileLayer = L.tileLayer(tileUrl, {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+            L.tileLayer(OSM_TILE_URL, {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 19,
-                subdomains: "abcd",
             }).addTo(map);
+            applyTileTheme();
 
             if (mapData.clustering !== false) {
                 markerClusterGroup = L.markerClusterGroup({
@@ -205,13 +217,7 @@
                 if (map) setTimeout(function () {
                     map.invalidateSize();
                     if (savedBounds) map.fitBounds(savedBounds.pad(0.05));
-                    var isDark = document.documentElement.style.colorScheme === "dark";
-                    var newUrl = isDark
-                        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-                    if (tileLayer) {
-                        tileLayer.setUrl(newUrl);
-                    }
+                    applyTileTheme();
                 }, 100);
             },
             extractData: function (msg) {
