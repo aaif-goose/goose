@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - gdk-release-plz # Temporary: remove after validating this workflow
     paths:
       # BEGIN oi-kit CRATE PATHS
       - "crates/oi-kit-provider-types/**"
