@@ -1190,7 +1190,8 @@ mod tests {
     use rmcp::model::{CallToolRequestParams, GetPromptResult, Resource};
     use rmcp::ServiceExt;
     use std::sync::atomic::AtomicUsize;
-    use tokio::sync::{mpsc, Semaphore};
+    use std::sync::LazyLock;
+    use tokio::sync::{mpsc, Barrier, Semaphore};
 
     impl ExtensionManager {
         pub(crate) async fn add_test_client(
@@ -1910,6 +1911,18 @@ mod tests {
         });
     }
 
+    static RENDEZVOUS_FIXTURES: LazyLock<Barrier> = LazyLock::new(|| Barrier::new(2));
+
+    /// Serves only once both rendezvous fixtures have been started, so a
+    /// lease that started them one at a time would never finish.
+    fn serve_rendezvous_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        tokio::spawn(async move {
+            RENDEZVOUS_FIXTURES.wait().await;
+            let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+            let _ = running.waiting().await;
+        });
+    }
+
     /// A real MCP server that runs in-process, so starting it reads no
     /// secrets; an HTTP server would look up OAuth credentials in the keyring.
     fn fixture_config(
@@ -2070,6 +2083,37 @@ mod tests {
         }
 
         assert_eq!(COUNTED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_lease_starts_its_extensions_concurrently() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        let session = session_selecting(
+            &manager,
+            temp_dir.path(),
+            vec![
+                fixture_config("rendezvous_first", serve_rendezvous_fixture),
+                fixture_config("rendezvous_second", serve_rendezvous_fixture),
+            ],
+        )
+        .await;
+
+        // A hang guard, not a timing assertion: serial starts never finish.
+        let results = tokio::time::timeout(Duration::from_secs(60), async {
+            manager
+                .current_lease(&session.id)
+                .await
+                .unwrap()
+                .start()
+                .await
+        })
+        .await
+        .expect("the lease started its extensions one at a time");
+
+        assert!(results.iter().all(|result| result.success), "{results:?}");
     }
 
     #[tokio::test]
