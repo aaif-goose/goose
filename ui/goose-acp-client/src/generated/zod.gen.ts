@@ -69,23 +69,24 @@ export const zMcpServer = z.union([
 
 export const zGooseExtension = z.union([
     z.object({
+        type: z.literal('builtin'),
         name: z.string(),
         description: z.string().nullish(),
         display_name: z.string().nullish(),
         timeout: z.int().gte(0).nullish(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('builtin')
+        available_tools: z.array(z.string()).nullish()
     }),
     z.object({
+        type: z.literal('platform'),
         name: z.string(),
         description: z.string().nullish(),
         display_name: z.string().nullish(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('platform')
+        available_tools: z.array(z.string()).nullish()
     }),
     z.object({
+        type: z.literal('mcp'),
         server: zMcpServer,
         envKeys: z.array(z.string()).optional(),
         description: z.string().nullish(),
@@ -95,8 +96,7 @@ export const zGooseExtension = z.union([
         clientSecretKey: z.string().nullish(),
         scopes: z.array(z.string()).optional(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('mcp')
+        available_tools: z.array(z.string()).nullish()
     })
 ]);
 
@@ -1258,23 +1258,24 @@ export const zImportSessionResponse_unstable = z.object({
 
 export const zRecipeExtensionDto = z.union([
     z.object({
+        type: z.literal('builtin'),
         name: z.string(),
         description: z.string().nullish(),
         display_name: z.string().nullish(),
         timeout: z.int().gte(0).nullish(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('builtin')
+        available_tools: z.array(z.string()).nullish()
     }),
     z.object({
+        type: z.literal('platform'),
         name: z.string(),
         description: z.string().nullish(),
         display_name: z.string().nullish(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('platform')
+        available_tools: z.array(z.string()).nullish()
     }),
     z.object({
+        type: z.literal('stdio'),
         name: z.string(),
         description: z.string().nullish(),
         cmd: z.string(),
@@ -1284,10 +1285,10 @@ export const zRecipeExtensionDto = z.union([
         timeout: z.int().gte(0).nullish(),
         cwd: z.string().nullish(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('stdio')
+        available_tools: z.array(z.string()).nullish()
     }),
     z.object({
+        type: z.literal('streamable_http'),
         name: z.string(),
         description: z.string().nullish(),
         uri: z.string(),
@@ -1300,8 +1301,7 @@ export const zRecipeExtensionDto = z.union([
         client_secret_key: z.string().nullish(),
         scopes: z.array(z.string()).optional(),
         bundled: z.boolean().nullish(),
-        available_tools: z.array(z.string()).nullish(),
-        type: z.literal('streamable_http')
+        available_tools: z.array(z.string()).nullish()
     })
 ]);
 
@@ -1354,8 +1354,8 @@ export const zSubRecipeDto = z.object({
 });
 
 export const zRecipeSuccessCheckDto = z.object({
-    command: z.string(),
-    type: z.literal('shell')
+    type: z.literal('shell'),
+    command: z.string()
 });
 
 export const zRecipeRetryConfigDto = z.object({
@@ -1700,12 +1700,12 @@ export const zSourceScope = z.union([
         scope: z.literal('global')
     }),
     z.object({
-        projectDir: z.string(),
-        scope: z.literal('projectDir')
+        scope: z.literal('projectDir'),
+        projectDir: z.string()
     }),
     z.object({
-        projectId: z.string(),
-        scope: z.literal('projectId')
+        scope: z.literal('projectId'),
+        projectId: z.string()
     })
 ]);
 
@@ -2002,18 +2002,18 @@ export const zLocalInferenceSamplingConfig = z.union([
         type: z.literal('Greedy')
     }),
     z.object({
+        type: z.literal('Temperature'),
         temperature: z.number(),
         topK: z.int(),
         topP: z.number(),
         minP: z.number(),
-        seed: z.int().gte(0).nullish(),
-        type: z.literal('Temperature')
+        seed: z.int().gte(0).nullish()
     }),
     z.object({
+        type: z.literal('MirostatV2'),
         tau: z.number(),
         eta: z.number(),
-        seed: z.int().gte(0).nullish(),
-        type: z.literal('MirostatV2')
+        seed: z.int().gte(0).nullish()
     })
 ]);
 
@@ -2028,12 +2028,12 @@ export const zLocalInferenceChatTemplate = z.union([
         type: z.literal('embedded')
     }),
     z.object({
-        name: z.string(),
-        type: z.literal('builtin')
+        type: z.literal('builtin'),
+        name: z.string()
     }),
     z.object({
-        template: z.string(),
-        type: z.literal('custom_inline')
+        type: z.literal('custom_inline'),
+        template: z.string()
     })
 ]);
 
@@ -2246,12 +2246,12 @@ export const zSessionUsageUpdate = z.object({
 
 export const zStatusMessage = z.union([
     z.object({
-        message: z.string(),
-        type: z.literal('notice')
+        type: z.literal('notice'),
+        message: z.string()
     }),
     z.object({
-        message: z.string(),
-        type: z.literal('progress')
+        type: z.literal('progress'),
+        message: z.string()
     })
 ]);
 
