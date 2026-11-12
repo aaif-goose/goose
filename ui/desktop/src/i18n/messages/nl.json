@@ -20,15 +20,6 @@
   "acpReadinessPanel.connectionNotChecked": {
     "defaultMessage": "Controleer je accountverbinding voordat je verdergaat."
   },
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Automatisch verdichten bij"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Nu verdichten"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Drempel opslaan mislukt: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Duidelijk!"
   },
@@ -197,9 +188,6 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose is klaar met de taak."
   },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Contextvenster"
-  },
   "chatInput.dictationError": {
     "defaultMessage": "Fout bij dicteren"
   },
@@ -340,6 +328,63 @@
   },
   "confirmationModal.processing": {
     "defaultMessage": "Bezig..."
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} van {limit} tokens gebruikt. Laat zien wat er in het contextvenster zit"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Voorbij de drempel voor automatisch verdichten: het gesprek wordt verdicht voordat het volgende verzoek wordt verstuurd."
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructies en hints"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Samenvatting na verdichting"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instructies van extensies"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Gesprek"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Systeemprompt"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Tooldefinities"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Context van deze beurt"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Nu verdichten"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Vrij"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Het contextrapport kon niet worden geladen."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · contextvenster van {limit} tokens"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} houdt zelf de gespreksgeschiedenis bij en krijgt van goose alleen de laatste prompt. Er is dus geen verzoek om uit te splitsen."
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Verversen"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Contextvenster"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Tokenaantallen zijn geschat met de o200k-tokenizer."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "van {limit} tokens · {percent} van het contextvenster"
   },
   "conversationLimitsDropdown.conversationLimits": {
     "defaultMessage": "Gesprekslimieten"
@@ -1273,6 +1318,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Gestructureerd resultaat is niet opgehaald"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Gestructureerd resultaat is afgewezen"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Gestructureerd resultaat teruggegeven"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Gestructureerd resultaat teruggeven…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Overschakelen naar {branch} mislukt"
@@ -3765,7 +3822,7 @@
     "defaultMessage": "Gebruik ML-modellen om mogelijke prompt injection in je chat te herkennen"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Hoe hoger, hoe strenger (0,01 = heel soepel, 1,0 = zo streng mogelijk)"
+    "defaultMessage": "Hoe lager, hoe strenger (0,01 = zo streng mogelijk, 1,0 = heel soepel)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Herkenning van command injection werkt het best met een WARP-verbinding (die is nodig om de classificatiedienst te bereiken)."
@@ -4282,6 +4339,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Opslaan"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Altijd"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Ingeklapt"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Toon het denkwerk van het model in de chat. Bij \"Ingeklapt\" blijft het dicht tot je het opent."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nooit"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Denkwerk tonen"
   },
   "skillsView.addSkill": {
     "defaultMessage": "Vaardigheid toevoegen"
