@@ -1,6 +1,7 @@
 use super::*;
 use crate::tool_execution::ToolCallContext;
 use async_trait::async_trait;
+use futures::FutureExt;
 use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
 use rmcp::ServiceError as Error;
 use std::sync::atomic::AtomicUsize;
