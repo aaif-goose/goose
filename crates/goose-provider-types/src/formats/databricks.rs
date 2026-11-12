@@ -1571,6 +1571,8 @@ mod tests {
             "databricks-claude-opus-4-8",
             "databricks-claude-fable-5",
             "global.anthropic.claude-fable-5",
+            "databricks-claude-fable-5-2",
+            "system.ai.claude-fable-5-2",
         ] {
             let mut model_config = ModelConfig::new(name);
             model_config.max_tokens = Some(4096);
