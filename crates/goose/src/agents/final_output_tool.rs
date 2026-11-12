@@ -1,9 +1,12 @@
+use crate::agents::state_machine::messages_since_kickoff;
 use crate::agents::tool_execution::ToolCallResult;
 use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::Conversation;
 use crate::recipe::Response;
 use indoc::formatdoc;
 use rmcp::model::{
-    CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Tool, ToolAnnotations,
+    Annotations, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, TextContent,
+    Tool, ToolAnnotations,
 };
 use serde_json::Value;
 use std::borrow::Cow;
@@ -50,6 +53,12 @@ impl FinalOutputTool {
             response,
             final_output: None,
         })
+    }
+
+    pub(crate) fn latest_turn_output(conversation: &Conversation) -> Option<String> {
+        messages_since_kickoff(conversation)
+            .ok()
+            .and_then(Self::successful_output)
     }
 
     pub(crate) fn successful_output(messages: &[Message]) -> Option<String> {
@@ -184,7 +193,11 @@ impl FinalOutputTool {
                     Ok(parsed_value) => {
                         self.final_output = Some(Self::parsed_final_output_string(parsed_value));
                         ToolCallResult::from(Ok(rmcp::model::CallToolResult::success(vec![
-                            ContentBlock::text(FINAL_OUTPUT_SUCCESS_MESSAGE.to_string()),
+                            ContentBlock::Text(
+                                TextContent::new(FINAL_OUTPUT_SUCCESS_MESSAGE).with_annotations(
+                                    Annotations::default().with_audience(vec![Role::Assistant]),
+                                ),
+                            ),
                         ])))
                     }
                     Err(error) => ToolCallResult::from(Err(ErrorData {

@@ -6,6 +6,12 @@ yanked = "deny"
 unmaintained = "none"
 unsound = "none"
 
+# Remove when a published SQLx release supports libsqlite3-sys >=0.39.
+# Reassess if database access expands beyond trusted application storage.
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0459"
+reason = "Goose opens its application-owned session database in a trusted data directory. Exploitation requires an attacker-controlled database and sibling WAL file in that directory; on Unix, the session directory is restricted to the owner (0700). This does not protect against same-user writes or attacker-controlled storage. Temporarily accepted pending a SQLx release supporting patched SQLite."
+
 # These releases require zip 8 but only read or write individual archive entries;
 # none calls ZipArchive::extract or ZipStreamReader::extract. Goose uses zip 9.
 # Reassess if these dependencies or their zip callers change. Reviewed versions:
@@ -25,3 +31,7 @@ reason = "The reviewed dependents do not call the extraction helpers that create
 [[advisories.ignore]]
 id = "RUSTSEC-2026-0369"
 reason = "The reviewed dependents do not call the extraction helpers that apply permissions through symlinks."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0429"
+reason = "The reviewed dependents do not call the extraction helper that sizes symlink targets from the declared entry size."

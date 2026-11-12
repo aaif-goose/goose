@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "自動圧縮の実行タイミング"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "今すぐ圧縮"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "しきい値の保存に失敗しました: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "了解しました"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gooseがタスクを完了しました。"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "コンテキストウィンドウ"
   },
   "chatInput.dictationError": {
     "defaultMessage": "音声入力エラー"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近のディレクトリ"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "構造化された結果は取得されませんでした"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "構造化された結果が拒否されました"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "構造化された結果を返しました"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "構造化された結果を返しています…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} への切り替えに失敗しました"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "MLモデルを使用してチャット内の潜在的なプロンプトインジェクションを検出します"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "値が高いほど厳格です（0.01 = 非常に緩い、1.0 = 最大限に厳格）"
+    "defaultMessage": "値が低いほど厳格です（0.01 = 最大限に厳格、1.0 = 非常に緩い）"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "コマンドインジェクション検出は、WARPに接続していると最も効果的です（分類サービスに到達するために必要です）。"
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "保存"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "常に展開"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "折りたたむ"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "チャットにモデルの思考を表示します。「折りたたむ」を選択すると、開くまで閉じたままです。"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "表示しない"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "思考を表示"
   },
   "skillsView.addSkill": {
     "defaultMessage": "スキルを追加"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "次のURLにアクセスし、"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} 中 {used} トークンを使用中。コンテキストウィンドウの内容を表示"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "今すぐコンパクト化"
+  },
+  "contextXray.free": {
+    "defaultMessage": "空き"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "コンテキストレポートを読み込めませんでした。"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} トークンのコンテキストウィンドウ"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "更新"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "再試行"
+  },
+  "contextXray.title": {
+    "defaultMessage": "コンテキストウィンドウ"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "トークン数は o200k トークナイザーによる推定値です。"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} トークン · コンテキストウィンドウの {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "指示とヒント"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "コンパクト化の要約"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "拡張機能の指示"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "会話"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "システムプロンプト"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "ツール定義"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "ターンコンテキスト"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "エージェントループ"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} は独自の会話履歴を保持し、goose からは最新のプロンプトのみを受け取るため、内訳を表示するリクエストはありません。"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "自動コンパクション閾値を超えています。次のリクエストを送信する前に会話がコンパクションされます。"
   }
 }

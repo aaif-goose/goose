@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compactação automática em"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compactar agora"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Falha ao guardar o limite: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Entendido!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "O Goose concluiu a tarefa."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Janela de contexto"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Erro de ditado"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Diretórios recentes"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "O resultado estruturado não foi coletado"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "O resultado estruturado foi rejeitado"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Resultado estruturado retornado"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Retornando resultado estruturado…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Falha ao mudar para {branch}"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "Usar modelos de ML para detetar potenciais injeções de prompts na sua conversa"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Valores mais altos são mais rigorosos (0,01 = muito tolerante, 1,0 = rigor máximo)"
+    "defaultMessage": "Valores mais baixos são mais rigorosos (0,01 = rigor máximo, 1,0 = muito tolerante)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "A deteção de injeção de comandos funciona melhor quando ligada ao WARP (necessário para aceder ao serviço de classificação)."
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Guardar"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Sempre"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Recolhido"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Mostrar o raciocínio do modelo na conversa. Com \"Recolhido\", fica fechado até ser aberto."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nunca"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Mostrar Raciocínio"
   },
   "skillsView.addSkill": {
     "defaultMessage": "Adicionar Competência"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Acesse"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} de {limit} tokens usados. Mostrar o que está na janela de contexto"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compactar agora"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Livre"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Não foi possível carregar o relatório de contexto."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · janela de contexto de {limit} tokens"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Atualizar"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Tentar novamente"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Janela de contexto"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "A contagem de tokens é estimada com o tokenizador o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "de {limit} tokens · {percent} da janela de contexto"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instruções e dicas"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Resumo da compactação"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instruções das extensões"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversa"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt do sistema"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definições de ferramentas"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contexto do turno"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Loop do agente"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} mantém o próprio histórico de conversa e recebe do goose apenas o prompt mais recente, portanto não há pedido para detalhar."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Limite de compactação automática ultrapassado: a conversa é compactada antes de o próximo pedido ser enviado."
   }
 }

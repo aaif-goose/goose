@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Otomatik sıkıştırma eşiği"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Şimdi sıkıştır"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Eşik kaydedilemedi: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Anladım!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose görevi tamamladı."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Bağlam penceresi"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Dikte Hatası"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Son dizinler"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Yapılandırılmış sonuç toplanmadı"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Yapılandırılmış sonuç reddedildi"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürüldü"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürülüyor…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} dalına geçilemedi"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "Sohbetinize olası istem eklemeyi tespit etmek için makine öğrenimi modellerini kullanın"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Daha yüksek değerler daha katıdır (0,01 = çok yumuşak, 1,0 = maksimum katı)"
+    "defaultMessage": "Daha düşük değerler daha katıdır (0,01 = maksimum katı, 1,0 = çok yumuşak)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Komut enjeksiyonu algılama, WARP bağlantısı olduğunda en iyi şekilde çalışır (sınıflandırma hizmetine erişmek için gereklidir)."
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Kaydet"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Her zaman"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Daraltılmış"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Modelin düşünmesini sohbette gösterin. \"Daraltılmış\" seçeneğinde, siz açana kadar kapalı kalır."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Asla"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Düşünmeyi Göster"
   },
   "skillsView.addSkill": {
     "defaultMessage": "Beceri Ekle"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Ziyaret edin"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} jetonun {used} kadarı kullanıldı. Bağlam penceresindekileri göster"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Şimdi sıkıştır"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Boş"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Bağlam raporu yüklenemedi."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} jetonluk bağlam penceresi"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Yenile"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Yeniden dene"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Bağlam penceresi"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jeton sayıları o200k belirteçleyicisiyle tahmin edilir."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} jeton · bağlam penceresinin {percent} kadarı"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Talimatlar ve ipuçları"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Sıkıştırma özeti"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Uzantı talimatları"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Sohbet"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Sistem istemi"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Araç tanımları"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Tur bağlamı"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatik"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Ajan döngüsü"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} kendi konuşma geçmişini tutar ve goose'dan yalnızca en son istemi alır; bu nedenle ayrıştırılacak bir istek yok."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Otomatik sıkıştırma eşiği aşıldı: bir sonraki istek gönderilmeden önce konuşma sıkıştırılır."
   }
 }

@@ -661,12 +661,7 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 }
 
 fn usage_from_anthropic_fields(usage: &Value) -> Usage {
-    let field = |key: &str| {
-        usage
-            .get(key)
-            .and_then(|v| v.as_u64())
-            .map(|v| v.min(i32::MAX as u64) as i32)
-    };
+    let field = |key: &str| usage.get(key).and_then(|v| v.as_i64());
 
     Usage::from_cache_exclusive_input(
         Some(field("input_tokens").unwrap_or(0)),
@@ -707,6 +702,23 @@ fn merge_delta_usage(existing: &Usage, delta: &Usage, delta_data: &Value) -> Usa
             existing.cache_read_input_tokens,
             existing.cache_write_input_tokens,
         )
+    }
+}
+
+pub fn error_for_type(error_type: Option<&str>, details: String) -> ProviderError {
+    match error_type {
+        Some("authentication_error" | "permission_error") => ProviderError::Authentication(details),
+        Some("rate_limit_error") => ProviderError::RateLimitExceeded {
+            details,
+            retry_delay: None,
+        },
+        Some("billing_error") => ProviderError::CreditsExhausted {
+            details,
+            top_up_url: None,
+        },
+        Some("request_too_large") => ProviderError::ContextLengthExceeded(details),
+        Some("api_error" | "overloaded_error") => ProviderError::ServerError(details),
+        _ => ProviderError::RequestFailed(details),
     }
 }
 
@@ -1050,10 +1062,12 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
+        let mut held = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
         let mut stop_reason: Option<String> = None;
+        let mut message_stopped = false;
         let mut additional_data: Option<Map<String, Value>> = None;
 
         while let Some(line_result) = stream.next().await {
@@ -1067,21 +1081,26 @@ where
 
             let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
 
+            if data_part.trim().is_empty() {
+                continue;
+            }
+
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
                 break;
             }
 
-            // Parse the JSON event
-            let event: StreamingEvent = match serde_json::from_str(data_part) {
-                Ok(event) => event,
-                Err(e) => {
-                    tracing::debug!("Failed to parse streaming event: {} - Line: {}", e, data_part);
-                    continue;
-                }
-            };
+            let event: StreamingEvent = serde_json::from_str(data_part)
+                .map_err(ProviderError::stream_decode_error)?;
 
             match event.event_type.as_str() {
+                "error" => {
+                    let error = event.data.get("error").unwrap_or(&event.data);
+                    let error_type = error.get("type").and_then(Value::as_str);
+                    let message = error.get("message").and_then(Value::as_str).unwrap_or("Anthropic stream error");
+                    let details = format!("{}: {message}", error_type.unwrap_or("unknown_error"));
+                    Err(error_for_type(error_type, details))?;
+                }
                 EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
                         additional_data = get_additional_data(message_data);
@@ -1140,7 +1159,7 @@ where
                                     let mut message = Message::assistant()
                                         .with_redacted_thinking(data);
                                     message.id = message_id.clone();
-                                    yield (Some(message), None);
+                                    if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                 } else {
                                     tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
                                 }
@@ -1156,7 +1175,7 @@ where
                             Ok(ContentBlockDelta::TextDelta { text }) => {
                                 let mut message = Message::assistant().with_text(&text);
                                 message.id = message_id.clone();
-                                yield (Some(message), None);
+                                if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                             }
                             Ok(ContentBlockDelta::InputJsonDelta { partial_json }) => {
                                 if let Some(call) = block_index(&event.data)
@@ -1189,7 +1208,7 @@ where
                             let mut message = Message::assistant()
                                 .with_thinking(state.text, state.signature);
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     if let Some(index) = block_index(&event.data) {
@@ -1216,7 +1235,7 @@ where
                                             vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
                                         );
                                         message.id = message_id.clone();
-                                        yield (Some(message), None);
+                                        if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                         continue;
                                     }
                                 }
@@ -1230,7 +1249,7 @@ where
                                 vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
                             );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            held.push(message);
                         }
                     }
                     continue;
@@ -1287,12 +1306,13 @@ where
                                 "The provider ended the response with: {details}"
                             ));
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     continue;
                 }
                 EVENT_MESSAGE_STOP => {
+                    message_stopped = true;
                     if let Some(usage_data) = event.data.get("usage") {
                         let usage = get_usage(usage_data).unwrap_or_default();
                         let model = event.data.get("model")
@@ -1310,6 +1330,14 @@ where
                     continue;
                 }
             }
+        }
+
+        if !message_stopped {
+            Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
+        }
+
+        for message in held {
+            yield (Some(message), None);
         }
 
         // A tool_use block left open at stream end never received its
@@ -2932,6 +2960,54 @@ mod tests {
         assert_eq!(merged.output_tokens, Some(510));
         assert_eq!(merged.cache_read_input_tokens, Some(5000));
         assert_eq!(merged.cache_write_input_tokens, Some(10000));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_permission_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"permission_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::Authentication(details))
+                    if details == "permission_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_billing_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"billing_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::CreditsExhausted { details, top_up_url: None })
+                    if details == "billing_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_request_too_large_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"request_too_large","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::ContextLengthExceeded(details))
+                    if details == "request_too_large: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     fn expect_refusal(

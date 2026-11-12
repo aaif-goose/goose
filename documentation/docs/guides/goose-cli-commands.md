@@ -828,6 +828,7 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills [<name>...]`** - List available skills, or load one or more skills by name
+- **`/status`** - Show the current session ID, model, provider, mode, and token usage. Use the ID to resume the same session in another client, or with `goose session --resume --session-id <session_id>` in the CLI.
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)
 

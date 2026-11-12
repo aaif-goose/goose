@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Padatkan automatik pada"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Padatkan sekarang"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Gagal menyimpan ambang: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Faham!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose telah menyelesaikan tugasan."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Tetingkap konteks"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Ralat Imlak"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terkini"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Hasil berstruktur tidak dikumpulkan"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Hasil berstruktur telah ditolak"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Hasil berstruktur dikembalikan"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Mengembalikan hasil berstruktur…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Gagal beralih ke {branch}"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "Gunakan model ML untuk mengesan potensi suntikan gesaan dalam sembang anda"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Nilai yang lebih tinggi adalah lebih ketat (0.01 = sangat longgar, 1.0 = paling ketat)"
+    "defaultMessage": "Nilai yang lebih rendah adalah lebih ketat (0.01 = paling ketat, 1.0 = sangat longgar)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Pengesanan suntikan arahan berfungsi paling baik apabila disambungkan ke WARP (diperlukan untuk mencapai perkhidmatan pengelasan)."
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Simpan"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Sentiasa"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Diruntuhkan"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Tunjukkan pemikiran model dalam sembang. Dengan pilihan \"Diruntuhkan\", pemikiran kekal tertutup sehingga anda membukanya."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Tidak pernah"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Tunjukkan Pemikiran"
   },
   "skillsView.addSkill": {
     "defaultMessage": "Tambah Kemahiran"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Lawati"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} daripada {limit} token digunakan. Tunjukkan kandungan tetingkap konteks"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Padatkan sekarang"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Kosong"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Tidak dapat memuatkan laporan konteks."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · tetingkap konteks {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Muat semula"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Cuba lagi"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Tetingkap konteks"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Bilangan token dianggarkan dengan tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "daripada {limit} token · {percent} daripada tetingkap konteks"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Arahan & petunjuk"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Ringkasan pemadatan"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Arahan sambungan"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Perbualan"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt sistem"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definisi alat"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Konteks giliran"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatik"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Gelung ejen"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} menyimpan sejarah perbualannya sendiri dan hanya menerima gesaan terkini daripada goose, jadi tiada permintaan untuk dipecahkan."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Melebihi ambang pemadatan automatik: perbualan dipadatkan sebelum permintaan seterusnya dihantar."
   }
 }

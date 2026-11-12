@@ -105,6 +105,10 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn build(self) -> anyhow::Result<String> {
+        Ok(self.build_parts()?.join())
+    }
+
+    pub fn build_parts(self) -> anyhow::Result<SystemPromptParts> {
         let mut extensions_info = self.extensions_info;
 
         // Stable tool ordering is important for multi session prompt caching.
@@ -117,7 +121,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
                 ext_info
             })
             .collect();
-
         let goose_mode = self
             .goose_mode
             .unwrap_or_else(|| Config::global().get_goose_mode().unwrap_or_default());
@@ -132,7 +135,8 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             moim_system_prompt_block: moim::system_prompt_block(),
         };
 
-        let base_prompt = if let Some(override_prompt) = &self.system_prompt_override {
+        let base_is_override = self.system_prompt_override.is_some();
+        let rendered = if let Some(override_prompt) = &self.system_prompt_override {
             let sanitized_override_prompt = sanitize_unicode_tags(override_prompt);
             prompt_template::render_string(&sanitized_override_prompt, &context)
         } else {
@@ -140,34 +144,55 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         }
         .map_err(|error| anyhow::anyhow!("Could not render system prompt: {error}"))?;
 
-        let mut system_prompt_extras = self.prompt_extras;
+        let mut extras = self.prompt_extras;
 
         if let Some(hints) = self.hints {
-            system_prompt_extras.insert("hints".to_string(), hints);
+            extras.insert("hints".to_string(), hints);
         }
 
         if goose_mode == GooseMode::Chat {
-            system_prompt_extras.insert(
+            extras.insert(
                 "chat_mode".to_string(),
                 "Right now you are in the chat only mode, no access to any tool use and system."
                     .to_string(),
             );
         }
 
-        if system_prompt_extras.is_empty() {
-            Ok(base_prompt)
-        } else {
-            let sanitized_system_prompt_extras: Vec<String> = system_prompt_extras
-                .into_values()
-                .map(|extra| sanitize_unicode_tags(&extra))
-                .collect();
+        let extras = extras
+            .into_iter()
+            .map(|(key, extra)| (key, sanitize_unicode_tags(&extra)))
+            .collect();
 
-            Ok(format!(
-                "{}\n\n# Additional Instructions:\n\n{}",
-                base_prompt,
-                sanitized_system_prompt_extras.join("\n\n")
-            ))
+        Ok(SystemPromptParts {
+            base: rendered.clone(),
+            rendered,
+            base_is_override,
+            extras,
+        })
+    }
+}
+
+pub struct SystemPromptParts {
+    rendered: String,
+    pub base: String,
+    pub base_is_override: bool,
+    pub extras: IndexMap<String, String>,
+}
+
+impl SystemPromptParts {
+    pub fn join(&self) -> String {
+        if self.extras.is_empty() {
+            return self.rendered.clone();
         }
+        format!(
+            "{}\n\n# Additional Instructions:\n\n{}",
+            self.rendered,
+            self.extras
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        )
     }
 }
 
@@ -193,13 +218,24 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> anyhow::Result<String> {
+        Ok(self
+            .build_system_prompt_parts(session, prompt_parts, goose_mode)?
+            .join())
+    }
+
+    pub fn build_system_prompt_parts(
+        &self,
+        session: &Session,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+    ) -> anyhow::Result<SystemPromptParts> {
         self.builder()
             .with_session(session)
             .with_prompt_extras(prompt_parts)
             .with_hints(&session.working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
-            .build()
+            .build_parts()
     }
 
     pub fn builder<'a>(&'a self) -> SystemPromptBuilder<'a, Self> {
@@ -270,6 +306,26 @@ mod tests {
         assert!(!result.contains('\u{E0043}'));
         assert!(result.contains("Extra instruction"));
         assert!(result.contains("hidden"));
+    }
+
+    #[test]
+    fn build_parts_preserves_prompt_contribution_keys() {
+        let manager = PromptManager::new();
+        let parts = manager
+            .builder()
+            .with_prompt_extras([
+                ("recipe".to_string(), "Follow the recipe.".to_string()),
+                ("project".to_string(), "Project instructions.".to_string()),
+            ])
+            .build_parts()
+            .unwrap();
+
+        assert_eq!(
+            parts.extras.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["recipe", "project"]
+        );
+        assert!(parts.join().contains("Follow the recipe."));
+        assert!(parts.join().contains("Project instructions."));
     }
 
     #[test]

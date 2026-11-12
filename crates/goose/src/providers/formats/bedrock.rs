@@ -639,16 +639,15 @@ pub fn from_bedrock_role(role: &bedrock::ConversationRole) -> Result<Role> {
 }
 
 pub fn from_bedrock_usage(usage: &bedrock::TokenUsage) -> Usage {
-    let cache_read = usage.cache_read_input_tokens;
-    let cache_write = usage.cache_write_input_tokens;
-    let input_tokens = usage
-        .input_tokens
+    let cache_read = usage.cache_read_input_tokens.map(i64::from);
+    let cache_write = usage.cache_write_input_tokens.map(i64::from);
+    let input_tokens = i64::from(usage.input_tokens)
         .saturating_add(cache_read.unwrap_or(0))
         .saturating_add(cache_write.unwrap_or(0));
     Usage::new(
         Some(input_tokens),
-        Some(usage.output_tokens),
-        Some(usage.total_tokens),
+        Some(i64::from(usage.output_tokens)),
+        Some(i64::from(usage.total_tokens)),
     )
     .with_cache_tokens(cache_read, cache_write)
 }

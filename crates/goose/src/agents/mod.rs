@@ -1,5 +1,6 @@
 mod active_run;
 pub mod container;
+pub mod context_report;
 pub mod execute_commands;
 pub mod extension;
 pub mod extension_malware_check;

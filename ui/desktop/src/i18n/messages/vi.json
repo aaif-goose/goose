@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Tự động nén tại"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Nén ngay"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Không thể lưu ngưỡng: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Đã hiểu!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose đã hoàn thành tác vụ."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Cửa sổ ngữ cảnh"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Lỗi đọc chính tả"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Chưa thu thập được kết quả có cấu trúc"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Kết quả có cấu trúc đã bị từ chối"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Đã trả về kết quả có cấu trúc"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Đang trả về kết quả có cấu trúc…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Không thể chuyển sang {branch}"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "Sử dụng các mô hình ML để phát hiện việc chèn lời nhắc tiềm ẩn trong cuộc trò chuyện của bạn"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Giá trị cao hơn thì nghiêm ngặt hơn (0.01 = rất khoan dung, 1.0 = nghiêm ngặt tối đa)"
+    "defaultMessage": "Giá trị thấp hơn thì nghiêm ngặt hơn (0.01 = nghiêm ngặt tối đa, 1.0 = rất khoan dung)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Phát hiện chèn lệnh hoạt động tốt nhất khi được kết nối với WARP (bắt buộc để truy cập dịch vụ phân loại)."
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Lưu"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Luôn luôn"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Thu gọn"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Hiển thị suy nghĩ của mô hình trong cuộc trò chuyện. Với \"Thu gọn\", phần này sẽ đóng cho đến khi bạn mở ra."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Không bao giờ"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Hiển thị suy nghĩ"
   },
   "skillsView.addSkill": {
     "defaultMessage": "Thêm kỹ năng"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Truy cập"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Đã dùng {used} trong {limit} token. Xem nội dung cửa sổ ngữ cảnh"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Nén ngay"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Còn trống"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Không thể tải báo cáo ngữ cảnh."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · cửa sổ ngữ cảnh {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Làm mới"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Thử lại"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Cửa sổ ngữ cảnh"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Số token được ước tính bằng tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "trong {limit} token · {percent} cửa sổ ngữ cảnh"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Hướng dẫn & gợi ý"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Tóm tắt nén"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Hướng dẫn của tiện ích mở rộng"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Cuộc trò chuyện"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt hệ thống"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Định nghĩa công cụ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Ngữ cảnh lượt"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Tự động"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Vòng lặp tác nhân"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} giữ lịch sử hội thoại riêng và chỉ nhận lời nhắc mới nhất từ goose, nên không có yêu cầu nào để phân tích."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Đã vượt ngưỡng nén tự động: hội thoại sẽ được nén trước khi gửi yêu cầu tiếp theo."
   }
 }

@@ -4,8 +4,8 @@ use crate::{
     api_client::TlsConfig,
     live::{LiveSessionEndReason, LiveSessionEvent},
     live_voice_provider::{
-        DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
-        ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
+        append_instructions, DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage,
+        LiveVoiceProvider, ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
     },
     openai_live::{
         ConnectedOpenAiLiveSession, OpenAiLiveClient, OpenAiLiveContext, OpenAiLiveContextChannel,
@@ -28,6 +28,7 @@ const SIDEBAND_ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
 const DELEGATION_UPDATE_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct OpenAiLiveVoiceProvider {
     client: OpenAiLiveClient,
+    model: String,
     voice: String,
     instructions: String,
     delivery_failure_instructions: String,
@@ -49,6 +50,7 @@ impl OpenAiLiveVoiceProvider {
         }
         Ok(Self {
             client: OpenAiLiveClient::new(api_key),
+            model: OPENAI_LIVE_MODEL.into(),
             voice,
             instructions,
             delivery_failure_instructions,
@@ -59,6 +61,16 @@ impl OpenAiLiveVoiceProvider {
         self.client = self.client.with_tls_config(tls_config);
         self
     }
+
+    pub fn with_model(mut self, model: String) -> Self {
+        self.model = model;
+        self
+    }
+
+    pub fn with_endpoint(mut self, endpoint: &str) -> Result<Self> {
+        self.client = self.client.with_endpoint(endpoint)?;
+        Ok(self)
+    }
 }
 
 #[async_trait]
@@ -67,10 +79,11 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
         &self,
         offer: WebRtcOffer,
         input_messages: Vec<LiveVoiceInputMessage>,
+        instructions: Option<String>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         let config = OpenAiLiveSessionConfig {
-            model: OPENAI_LIVE_MODEL.into(),
-            instructions: self.instructions.clone(),
+            model: self.model.clone(),
+            instructions: append_instructions(&self.instructions, instructions.as_deref()),
             voice: Some(self.voice.clone()),
             input_messages: input_messages
                 .into_iter()

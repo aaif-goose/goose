@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/set-cargo-version.sh "$VERSION"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: windows-msvc-desktop-${{ inputs.windows_variant }}
 
@@ -147,7 +147,7 @@ jobs:
           Get-Item $binaryPath
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: internal-goose-x86_64-pc-windows-msvc${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: target/x86_64-pc-windows-msvc/release/goose.exe
@@ -162,7 +162,7 @@ jobs:
     runs-on: ${{ inputs.windows_variant == 'cuda' && 'windows-2022' || 'windows-latest' }}
     steps:
       - name: Download binary artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-goose-x86_64-pc-windows-msvc${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: package
@@ -177,7 +177,7 @@ jobs:
           7z a -tzip "goose-x86_64-pc-windows-msvc${VARIANT_SUFFIX}.zip" goose-package/
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: goose-x86_64-pc-windows-msvc${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: goose-x86_64-pc-windows-msvc${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
@@ -196,7 +196,7 @@ jobs:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 24.10.0
 
@@ -224,7 +224,7 @@ jobs:
             windows-pnpm-cache-v1-${{ runner.os }}-node24-
 
       - name: Download binary artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-goose-x86_64-pc-windows-msvc${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: backend
@@ -281,7 +281,7 @@ jobs:
           ls -la ./dist-windows/resources/bin/
 
       - name: Upload unsigned distribution
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: internal-windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: ui/desktop/dist-windows/
@@ -299,13 +299,13 @@ jobs:
       id-token: write
     steps:
       - name: Download unsigned distribution
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
 
       - name: Azure login
-        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c  # v3.0.2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906  # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -337,7 +337,7 @@ jobs:
 
       - name: Upload signed distribution
         if: ${{ inputs.windows_variant != 'cuda' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: internal-windows-signed
           path: dist-windows/
@@ -352,7 +352,7 @@ jobs:
         run: 7z a -tzip "Goose-win32-x64${VARIANT_SUFFIX}.zip" dist-windows/
 
       - name: Upload signed Windows build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
@@ -366,7 +366,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Download unsigned distribution
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
@@ -378,7 +378,7 @@ jobs:
         run: 7z a -tzip "Goose-win32-x64${VARIANT_SUFFIX}.zip" dist-windows/
 
       - name: Upload Windows build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
@@ -406,7 +406,7 @@ jobs:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 24.10.0
 
@@ -447,7 +447,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Download distribution
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: ${{ inputs.signing && 'internal-windows-signed' || 'internal-windows-unsigned' }}
           path: dist-windows
@@ -461,7 +461,7 @@ jobs:
 
       - name: Azure login
         if: ${{ inputs.signing }}
-        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c  # v3.0.2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906  # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -498,7 +498,7 @@ jobs:
           }
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-win32-x64-setup
           path: ui/desktop/out/make/nsis/win32/x64/Goose-win32-x64-setup.exe

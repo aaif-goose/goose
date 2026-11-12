@@ -76,6 +76,7 @@ impl AcpConnection {
         let start = self.live_voice.start_interaction(
             reservation,
             offer,
+            req.instructions,
             self.services.session_manager.clone(),
             transcript_publisher,
             main_agent,
@@ -107,7 +108,7 @@ impl AcpConnection {
             let [MessageContent::Text(text)] = message.content.as_slice() else {
                 return;
             };
-            let chunk = content_chunk_for_message(
+            let chunk = live_transcript_chunk(
                 &message,
                 ContentBlock::Text(TextContent::new(text.text.clone())),
             );
@@ -302,7 +303,11 @@ impl AcpConnection {
                         let text = projected_message
                             .content
                             .iter()
-                            .filter_map(MessageContent::as_text)
+                            .filter_map(|content| match content {
+                                MessageContent::Text(text) => Some(text.text.as_str()),
+                                MessageContent::Error(error) => Some(error.message.as_str()),
+                                _ => None,
+                            })
                             .collect::<String>();
                         if !text.trim().is_empty() {
                             if outcome_message_id.is_some()

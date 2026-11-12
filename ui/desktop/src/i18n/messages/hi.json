@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "ऑटो कॉम्पैक्ट पर"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "अब संक्षिप्त करें"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "सीमा सहेजने में विफल: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "समझ गया!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose ने कार्य पूरा किया।"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "प्रसंग विंडो"
   },
   "chatInput.dictationError": {
     "defaultMessage": "श्रुतलेख त्रुटि"
@@ -943,6 +931,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "हाल की निर्देशिकाएँ"
+  },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "संरचित परिणाम एकत्र नहीं किया गया"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "संरचित परिणाम अस्वीकार कर दिया गया"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "संरचित परिणाम लौटाया गया"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "संरचित परिणाम लौटाया जा रहा है…"
   },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} पर स्विच नहीं किया जा सका"
@@ -3717,7 +3717,7 @@
     "defaultMessage": "अपनी चैट में संभावित शीघ्र इंजेक्शन का पता लगाने के लिए एमएल मॉडल का उपयोग करें"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "उच्च मान अधिक सख्त होते हैं (0.01 = बहुत उदार, 1.0 = अधिकतम सख्त)"
+    "defaultMessage": "निम्न मान अधिक सख्त होते हैं (0.01 = अधिकतम सख्त, 1.0 = बहुत उदार)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "WARP से कनेक्ट होने पर कमांड इंजेक्शन डिटेक्शन सबसे अच्छा काम करता है (वर्गीकरण सेवा तक पहुंचने के लिए आवश्यक)।"
@@ -4144,6 +4144,21 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "सहेजें"
+  },
+  "showThinkingSetting.always": {
+    "defaultMessage": "हमेशा"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "क्लिक करने पर"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "चैट में मॉडल की सोच दिखाएँ। \"क्लिक करने पर\" विकल्प में यह तब तक बंद रहती है जब तक आप इसे खोलते नहीं।"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "कभी नहीं"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "सोच दिखाएँ"
   },
   "skillsView.addSkill": {
     "defaultMessage": "कौशल जोड़ें"
@@ -4688,6 +4703,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "जाएं"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} में से {used} टोकन उपयोग में। कॉन्टेक्स्ट विंडो में क्या है, दिखाएँ"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "अभी संक्षिप्त करें"
+  },
+  "contextXray.free": {
+    "defaultMessage": "खाली"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "कॉन्टेक्स्ट रिपोर्ट लोड नहीं हो सकी।"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} टोकन कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "रीफ़्रेश करें"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "पुनः प्रयास करें"
+  },
+  "contextXray.title": {
+    "defaultMessage": "कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "टोकन गिनती o200k टोकनाइज़र से अनुमानित है।"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "{limit} टोकन में से · कॉन्टेक्स्ट विंडो का {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "निर्देश और संकेत"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "संक्षेपण सारांश"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "एक्सटेंशन निर्देश"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "वार्तालाप"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "सिस्टम प्रॉम्प्ट"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "टूल परिभाषाएँ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "टर्न कॉन्टेक्स्ट"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "स्वचालित"
   },
@@ -4777,5 +4843,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "एजेंट लूप"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} अपना स्वयं का वार्तालाप इतिहास रखता है और goose से केवल नवीनतम प्रॉम्प्ट प्राप्त करता है, इसलिए विश्लेषण के लिए कोई अनुरोध नहीं है।"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "स्वतः-संकुचन सीमा पार हो गई: अगला अनुरोध भेजने से पहले वार्तालाप को संकुचित किया जाता है।"
   }
 }

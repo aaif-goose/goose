@@ -190,14 +190,14 @@ pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
     let Some(message) = messages.last() else {
         return false;
     };
-    let mut responses = message
+    let mut tool_responses = message
         .content
         .iter()
         .filter_map(MessageContent::as_tool_response)
         .peekable();
-    responses.peek().is_some()
-        && responses.all(|response| {
-            response
+    tool_responses.peek().is_some()
+        && tool_responses.all(|tool_response| {
+            tool_response
                 .tool_result
                 .as_ref()
                 .is_ok_and(|result| !result.is_error.unwrap_or(false))
@@ -255,13 +255,13 @@ pub struct InferenceRunner<'a, S, E> {
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
-/// unanswered by an earlier turn are dropped, since nothing will answer them now.
+/// with no response from an earlier turn are dropped, since nothing will respond to them now.
 fn messages_for_provider(
     conversation: &Conversation,
     turn: &[Message],
     keep_empty_messages: bool,
 ) -> Vec<Message> {
-    let answered: HashSet<&str> = conversation
+    let tool_response_ids: HashSet<&str> = conversation
         .messages()
         .iter()
         .flat_map(|message| message.get_tool_response_ids())
@@ -276,7 +276,9 @@ fn messages_for_provider(
             let mut message = message.agent_visible_content();
             if index < start {
                 message.content.retain(|content| match content {
-                    MessageContent::ToolRequest(request) => answered.contains(request.id.as_str()),
+                    MessageContent::ToolRequest(request) => {
+                        tool_response_ids.contains(request.id.as_str())
+                    }
                     _ => true,
                 });
             }
@@ -284,6 +286,24 @@ fn messages_for_provider(
         })
         .filter(|message| keep_empty_messages || !message.content.is_empty())
         .collect()
+}
+
+/// Signed reasoning only verifies with the provider account that produced it.
+fn drop_foreign_signed_thinking(messages: &mut [Message], provider: &str) {
+    for message in messages {
+        if message
+            .metadata
+            .inference
+            .as_ref()
+            .is_some_and(|inference| inference.provider != provider)
+        {
+            message.content.retain(|content| match content {
+                MessageContent::Thinking(thinking) => thinking.signature.is_empty(),
+                MessageContent::RedactedThinking(_) => false,
+                _ => true,
+            });
+        }
+    }
 }
 
 fn latest_provider_session_id<'a>(
@@ -467,6 +487,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             self.output().additional_messages = additional_messages;
 
             let provider_name = self.provider.get_name();
+            drop_foreign_signed_thinking(&mut messages_for_provider, provider_name);
             if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
                 if let Err(error) = self.provider.resume(session_id).await {
                     tracing::warn!(

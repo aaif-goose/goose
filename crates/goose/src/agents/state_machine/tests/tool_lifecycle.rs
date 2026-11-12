@@ -8,17 +8,17 @@ use super::calculator_extension::{
     delayed_value, value, ADD, ADD_WITH_AUDIENCE, APP_ONLY, DIVIDE, REQUEST_VALUE,
 };
 use super::dummy_api::DummyApi;
-use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
+use super::pipeline::MessageKind::{Agent, Confirmation, Error, ToolCall, ToolResponse};
 use super::pipeline::TestPipeline;
 use super::pipeline::MAX_TURNS;
 use super::test_pipeline;
-use crate::agents::state_machine::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
@@ -94,7 +94,7 @@ async fn max_turns_waits_for_an_open_tool_confirmation() -> Result<()> {
 
     pipeline.confirm("gated", Permission::AllowOnce).await?;
     let result = pipeline.resume().await?;
-    result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
     assert_eq!(pipeline.calculator_total(), 2);
     assert_eq!(api.call_count(), 1);
     Ok(())
@@ -163,6 +163,61 @@ async fn basic_tool_calling() -> Result<()> {
     result.assert_message(7, Agent, "The total is 5");
     result.assert_message(-1, Agent, "hi there!");
     assert_eq!(api.call_count(), 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_tools_remain_eager_with_deferral() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_deferred_tools()
+        .with_always_load_tools(vec![ADD.to_string(), APP_ONLY.to_string()]);
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    pipeline.run(["add one"]).await?;
+    let calls = api.calls();
+    assert!(calls[0].advertises_tool(ADD));
+    assert!(!calls[0].advertises_tool(DIVIDE));
+    assert!(!calls[0].advertises_tool(APP_ONLY));
+    assert!(!calls[0].system_contains(&format!("{ADD},")));
+    assert!(calls[0].system_contains(DIVIDE));
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_tools_follow_the_conversation_lifecycle() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_deferred_tools();
+    api.on("add one")
+        .call("enable_tools", json!({"tool_names": [ADD]}))
+        .times(1);
+    api.on(r#""enabled":["calculator__add"]"#)
+        .call(ADD, value(1));
+    api.on("result: 1").reply("one");
+    let result = pipeline.run(["add one"]).await?;
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    assert!(api.calls()[0].system_contains(ADD));
+    result.assert_message(-1, Agent, "one");
+
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("add two").call(ADD, value(2));
+    api.on("result: 3").reply("three");
+    pipeline
+        .run(["add two"])
+        .await?
+        .assert_message(-1, Agent, "three");
+    assert!(!api.calls().last().unwrap().input_contains(r#""enabled""#));
+
+    pipeline.run(["/clear"]).await?;
+    api.on("add again").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("enable it again");
+    pipeline
+        .run(["add again"])
+        .await?
+        .assert_message(-2, ToolResponse, "not available");
     Ok(())
 }
 
@@ -322,7 +377,7 @@ async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let result = pipeline.run(["repeat malformed forever"]).await?;
 
     assert_eq!(api.call_count() - calls_before, MAX_TURNS as usize);
-    result.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     Ok(())
 }

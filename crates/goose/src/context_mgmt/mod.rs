@@ -73,6 +73,25 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
 
+/// Summaries persisted before the `compaction_summary` flag existed are known
+/// by the continuation text compaction merges into them. Conversation repair
+/// may have concatenated it onto the summary text, so match the tail.
+pub fn is_compaction_summary(message: &Message) -> bool {
+    message.is_compaction_summary()
+        || (message.is_agent_visible()
+            && !message.metadata.user_visible
+            && message.content.iter().any(|content| match content {
+                MessageContent::Text(text) => [
+                    CONVERSATION_CONTINUATION_TEXT,
+                    TOOL_LOOP_CONTINUATION_TEXT,
+                    MANUAL_COMPACT_CONTINUATION_TEXT,
+                ]
+                .iter()
+                .any(|continuation| text.text.ends_with(continuation)),
+                _ => false,
+            }))
+}
+
 pub struct CompactionResult {
     pub conversation: Conversation,
     /// Billable usage of the summarization call, counting the raw model
@@ -81,7 +100,7 @@ pub struct CompactionResult {
     /// Estimated tokens of the agent-visible context retained after
     /// compaction. Smaller than the billable output when the raw response was
     /// rewritten to the rendered structured summary.
-    pub retained_context_tokens: i32,
+    pub retained_context_tokens: i64,
 }
 
 /// Compact messages by summarizing them
@@ -173,7 +192,8 @@ pub async fn compact_messages(
         final_messages.push(updated_msg);
     }
 
-    let summary_msg = summary_message.with_metadata(MessageMetadata::agent_only());
+    let summary_msg =
+        summary_message.with_metadata(MessageMetadata::agent_only().with_compaction_summary());
 
     let mut continuation_messages = vec![summary_msg];
 
@@ -236,14 +256,14 @@ pub async fn compact_messages(
 
 /// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
-pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
+pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i64> {
     let counter = create_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
     let total: usize = messages
         .iter()
         .filter(|message| message.is_agent_visible())
-        .map(|message| counter.count_chat_tokens("", std::slice::from_ref(message), &[]))
+        .map(|message| counter.count_message_tokens(message))
         .sum();
     Ok(total.try_into()?)
 }
@@ -281,13 +301,13 @@ pub async fn check_if_compaction_needed(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-            let token_counts: Vec<_> = messages
+            let estimated: usize = messages
                 .iter()
-                .filter(|m| m.is_agent_visible())
-                .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
-                .collect();
+                .filter(|message| message.is_agent_visible())
+                .map(|message| token_counter.count_message_tokens(message))
+                .sum();
 
-            (token_counts.iter().sum(), "estimated")
+            (estimated, "estimated")
         }
     };
 
@@ -524,6 +544,33 @@ mod tests {
     use goose_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
 
+    #[test]
+    fn summaries_written_before_the_flag_are_still_recognized() {
+        let legacy = Message::assistant()
+            .with_text("# Conversation Summary\nWe were adding a test.")
+            .with_text(CONVERSATION_CONTINUATION_TEXT)
+            .with_metadata(MessageMetadata::agent_only());
+        let ordinary = Message::assistant()
+            .with_text("Continuing.")
+            .with_metadata(MessageMetadata::agent_only());
+        let quoted = Message::assistant().with_text(CONVERSATION_CONTINUATION_TEXT);
+
+        assert!(is_compaction_summary(&legacy));
+        assert!(!is_compaction_summary(&ordinary));
+        assert!(!is_compaction_summary(&quoted));
+
+        // The report repairs the conversation first, which concatenates the
+        // summary's text blocks.
+        let (repaired, _) =
+            crate::conversation::fix_conversation(Conversation::new_unvalidated(vec![
+                Message::user().with_text("hi"),
+                legacy,
+                Message::user().with_text("next"),
+            ]));
+        assert_eq!(repaired.messages()[1].content.len(), 1);
+        assert!(is_compaction_summary(&repaired.messages()[1]));
+    }
+
     fn create_tool_pair(
         call_id: &str,
         response_id: &str,
@@ -710,7 +757,7 @@ mod tests {
 
     #[tokio::test]
     async fn retained_context_counts_preserved_user_message() {
-        async fn retained(final_user_text: &str) -> i32 {
+        async fn retained(final_user_text: &str) -> i64 {
             let provider =
                 MockProvider::new(Message::assistant().with_text("<mock summary>"), 100_000);
             let conversation = Conversation::new_unvalidated(vec![

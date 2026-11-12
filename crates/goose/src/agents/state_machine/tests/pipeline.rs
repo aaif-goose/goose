@@ -254,6 +254,34 @@ impl TestPipeline {
         self.reconstruct().await
     }
 
+    pub(super) fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    pub(super) fn with_context_relevance(
+        mut self,
+        decisions: Arc<dyn goose_providers::decision::DecisionProvider>,
+    ) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.context_relevance = Some(decisions);
+        self
+    }
+
+    pub(super) fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.always_load_tools = tools;
+        self
+    }
+
+    pub(super) fn with_deferred_tools(mut self) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.defer_tools = true;
+        self
+    }
+
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
         self.max_turns = max_turns;
         self
@@ -318,7 +346,7 @@ impl TestPipeline {
         self
     }
 
-    pub(super) async fn set_total_tokens(&self, tokens: i32) {
+    pub(super) async fn set_total_tokens(&self, tokens: i64) {
         use goose_providers::conversation::token_usage::Usage;
         self.session_manager
             .update(&self.session_id)
@@ -895,10 +923,13 @@ async fn build_test_pipeline(
             on_failure_timeout: std::time::Duration::from_secs(1),
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
+            defer_tools: false,
+            always_load_tools: Vec::new(),
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,
             auto_effort: None,
+            context_relevance: None,
         },
         max_turns: MAX_TURNS,
         session_id: session.id.clone(),
@@ -1108,13 +1139,17 @@ impl TestRun {
     }
 
     pub(super) fn assert_emitted_message_matches_persisted(&self, contains: &str) {
+        let contains_text = |message: &Message| {
+            message
+                .content
+                .iter()
+                .any(|content| content.to_string().contains(contains))
+        };
         let emitted = self
             .events
             .iter()
             .find_map(|event| match event {
-                AgentEvent::Message(message) if message.as_concat_text().contains(contains) => {
-                    Some(message)
-                }
+                AgentEvent::Message(message) if contains_text(message) => Some(message),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no emitted message contains {contains:?}"));
@@ -1122,7 +1157,7 @@ impl TestRun {
             .conversation()
             .messages()
             .iter()
-            .find(|message| message.as_concat_text().contains(contains))
+            .find(|message| contains_text(message))
             .unwrap_or_else(|| panic!("no persisted message contains {contains:?}"));
         assert_eq!(emitted.id, persisted.id);
     }
@@ -1209,12 +1244,14 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 5] = [
+const TOOL_OPERATIONS: [&str; 7] = [
+    "final_output",
     "tool_approval",
+    "pre_tool_call_hook",
     "skills",
-    "recipe",
     "tool_execution",
     "remaining_tool_calls",
+    "unhandled_tool_calls",
 ];
 
 fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step: Option<&str>) {
