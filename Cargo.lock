@@ -4378,7 +4378,6 @@ dependencies = [
  "goose-roaming",
  "indicatif",
  "libc",
- "ntapi",
  "open",
  "qrcode",
  "rand 0.10.3",
