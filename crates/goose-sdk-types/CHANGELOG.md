@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-12
+
+### Added
+
+- *(live-voice)* configurable and per-start voice instructions ([#13375](https://github.com/aaif-goose/goose/pull/13375))
+- context window report and viewer ([#10462](https://github.com/aaif-goose/goose/pull/10462))
+
 ## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
 
 ### Other
