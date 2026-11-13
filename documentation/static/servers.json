@@ -804,6 +804,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "within",
+    "name": "within",
+    "description": "Find clothes, shoes and bags in stock at independent boutiques, with sizes, prices and cost delivered",
+    "url": "https://shopwithin.co/mcp",
+    "link": "https://shopwithin.co/agents",
+    "installation_notes": "Hosted remote server. No key and no sign-in. All 26 tools only read.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
