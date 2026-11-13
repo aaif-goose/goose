@@ -3,7 +3,7 @@
     "defaultMessage": "知道了！"
   },
   "appLayout.collapseNavigation": {
-    "defaultMessage": "Collapse navigation"
+    "defaultMessage": "收起导航"
   },
   "appLayout.openNavigation": {
     "defaultMessage": "展开导航"
@@ -12,10 +12,10 @@
     "defaultMessage": "自定义应用"
   },
   "appsView.deleteApp": {
-    "defaultMessage": "Delete app"
+    "defaultMessage": "删除应用"
   },
   "appsView.deleteConfirm": {
-    "defaultMessage": "Delete \"{name}\"? This cannot be undone."
+    "defaultMessage": "确定要删除“{name}”吗？此操作无法撤销。"
   },
   "appsView.description": {
     "defaultMessage": "来自你 MCP 服务器的应用，以及 goose 自己构建的应用。你可以通过聊天界面让它创建新应用，新应用会显示在这里。"
@@ -24,7 +24,7 @@
     "defaultMessage": "加载应用出错：{error}"
   },
   "appsView.errorPrefix": {
-    "defaultMessage": "Error: {error}"
+    "defaultMessage": "错误：{error}"
   },
   "appsView.importApp": {
     "defaultMessage": "导入应用"
@@ -42,10 +42,10 @@
     "defaultMessage": "暂无可用应用"
   },
   "appsView.retiredChatApp": {
-    "defaultMessage": "Chat app retired"
+    "defaultMessage": "聊天应用已停用"
   },
   "appsView.retiredChatAppDetail": {
-    "defaultMessage": "We removed this feature because MCP sampling is no longer supported."
+    "defaultMessage": "由于不再支持 MCP sampling，我们已移除此功能。"
   },
   "appsView.retry": {
     "defaultMessage": "重试"
@@ -213,10 +213,10 @@
     "defaultMessage": "正在等待图片保存…"
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "配置 Goose 与工具和扩展的交互方式"
+    "defaultMessage": "选择 Goose 在新会话中使用的默认模式。已有会话保持当前模式。"
   },
   "chatSettings.modeTitle": {
-    "defaultMessage": "模式"
+    "defaultMessage": "默认模式"
   },
   "chatSettings.responseStylesDescription": {
     "defaultMessage": "选择 Goose 格式化和呈现回复的方式"
@@ -813,10 +813,10 @@
     "defaultMessage": "配置项"
   },
   "diagnosticsModal.description": {
-    "defaultMessage": "你可以下载诊断 zip 文件分享给团队，或直接在 GitHub 上提交一个预填了系统详情的 bug。诊断报告包含以下内容："
+    "defaultMessage": "你可以下载诊断 JSON 报告分享给团队，或直接在 GitHub 上提交一个预填了系统详情的 bug。诊断报告包含以下内容："
   },
   "diagnosticsModal.diagnosticsErrorMsg": {
-    "defaultMessage": "下载诊断信息失败"
+    "defaultMessage": "下载诊断报告失败"
   },
   "diagnosticsModal.diagnosticsErrorTitle": {
     "defaultMessage": "诊断错误"
@@ -909,13 +909,13 @@
     "defaultMessage": "当前目录"
   },
   "dirSwitcher.enterPath": {
-    "defaultMessage": "Enter path"
+    "defaultMessage": "输入路径"
   },
   "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+    "defaultMessage": "输入绝对路径（例如 /home/goose/workspace）"
   },
   "dirSwitcher.enterPathInvalid": {
-    "defaultMessage": "Working directory must be an absolute path"
+    "defaultMessage": "工作目录必须是绝对路径"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "更新工作目录失败"
@@ -972,7 +972,7 @@
     "defaultMessage": "提交"
   },
   "elicitationRequest.submitError": {
-    "defaultMessage": "This request is no longer active. The extension will need to ask again."
+    "defaultMessage": "此请求已失效，扩展需要重新询问。"
   },
   "elicitationRequest.submitted": {
     "defaultMessage": "信息已提交"
@@ -1092,10 +1092,10 @@
     "defaultMessage": "确定"
   },
   "extensionInstallModal.policyErrorMessage": {
-    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+    "defaultMessage": "无法获取扩展允许列表策略。在策略可用之前，扩展安装将被阻止。请联系管理员检查 GOOSE_ALLOWLIST 配置。"
   },
   "extensionInstallModal.policyErrorTitle": {
-    "defaultMessage": "Extension Policy Unavailable"
+    "defaultMessage": "扩展策略不可用"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "确定要安装 {name} 扩展吗？命令：{command}"
@@ -1215,34 +1215,34 @@
     "defaultMessage": "AA:BB:CC:… 或 sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "默认情况下 goose 会为你启动一个服务器，此选项用于连接到外部的 goose 服务器"
+    "defaultMessage": "默认情况下 Goose 会启动本地后端。此选项用于连接到外部的 ACP 兼容后端。"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
-    "defaultMessage": "Certificate fingerprint requires an https URL"
+    "defaultMessage": "使用证书指纹时 URL 必须为 https"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "更改需要重启 Goose 才能生效。新的聊天窗口将连接到外部服务器。"
+    "defaultMessage": "更改将应用于新的聊天窗口。重启 Goose 可更新现有窗口。"
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "密钥"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "在 Goose 服务器上配置的密钥（GOOSE_SERVER__SECRET_KEY）"
+    "defaultMessage": "在外部后端上配置的密钥（GOOSE_SERVER__SECRET_KEY）。"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "输入服务器的密钥"
   },
   "externalBackendSection.serverUrl": {
-    "defaultMessage": "服务器地址"
+    "defaultMessage": "后端基础 URL"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "输入 HTTP(S) 基础 URL。Goose 会检查该地址下的 /status，并连接到其下的 /acp。"
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Goose 服务器"
+    "defaultMessage": "外部后端（ACP）"
   },
   "externalBackendSection.urlBaseError": {
-    "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
+    "defaultMessage": "URL 必须是 /acp 之前的后端基础 URL，且不能包含查询参数或片段"
   },
   "externalBackendSection.urlFormatError": {
     "defaultMessage": "URL 格式无效"
@@ -1251,10 +1251,10 @@
     "defaultMessage": "URL 必须使用 http 或 https 协议"
   },
   "externalBackendSection.useExternalServer": {
-    "defaultMessage": "使用外部服务器"
+    "defaultMessage": "使用外部后端"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "连接到运行在其他位置的 goose 服务器（需要重启应用）"
+    "defaultMessage": "连接到运行在其他位置的 ACP 兼容后端。"
   },
   "externalBackendSection.workingDir": {
     "defaultMessage": "远程工作目录（可选）"
@@ -1407,7 +1407,7 @@
     "defaultMessage": "正在加载变体…"
   },
   "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "未找到此查询的 GGUF 模型。"
+    "defaultMessage": "未找到与此查询匹配的兼容本地模型。"
   },
   "huggingFaceModelSearch.recommended": {
     "defaultMessage": "推荐"
@@ -1425,7 +1425,7 @@
     "defaultMessage": "搜索未返回数据。"
   },
   "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "搜索 GGUF 模型…"
+    "defaultMessage": "搜索本地模型…"
   },
   "huggingFaceModelSearch.tooLarge": {
     "defaultMessage": "可能超出内存（模型 {size}，可用 {available}）"
@@ -1740,28 +1740,28 @@
     "defaultMessage": "问 goose 任何问题…"
   },
   "liveVoice.connecting": {
-    "defaultMessage": "Connecting Live voice"
+    "defaultMessage": "正在连接实时语音"
   },
   "liveVoice.emptyComposerRequired": {
-    "defaultMessage": "Clear the message and attachments to use Live voice"
+    "defaultMessage": "请先清空消息和附件，再使用实时语音"
   },
   "liveVoice.error": {
-    "defaultMessage": "Live voice failed. Try again"
+    "defaultMessage": "实时语音失败，请重试"
   },
   "liveVoice.live": {
-    "defaultMessage": "Stop Live voice"
+    "defaultMessage": "停止实时语音"
   },
   "liveVoice.mute": {
-    "defaultMessage": "Mute microphone"
+    "defaultMessage": "静音麦克风"
   },
   "liveVoice.returnToActive": {
-    "defaultMessage": "Return to active Live voice"
+    "defaultMessage": "返回进行中的实时语音"
   },
   "liveVoice.stopping": {
-    "defaultMessage": "Stopping Live voice"
+    "defaultMessage": "正在停止实时语音"
   },
   "liveVoice.unmute": {
-    "defaultMessage": "Unmute microphone"
+    "defaultMessage": "取消麦克风静音"
   },
   "liveVoiceSettings.description": {
     "defaultMessage": "与 Goose 进行实时语音对话"
@@ -1815,13 +1815,13 @@
     "defaultMessage": "下载中"
   },
   "localInferenceSettings.evictFromMemory": {
-    "defaultMessage": "Evict from memory"
+    "defaultMessage": "从内存中卸载"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "登录后可在搜索和下载模型时提高速率限制，并访问私有或受限的 Hugging Face 仓库。"
   },
   "localInferenceSettings.loadedInMemory": {
-    "defaultMessage": "Loaded in memory"
+    "defaultMessage": "已加载到内存"
   },
   "localInferenceSettings.modelSettings": {
     "defaultMessage": "模型设置"
@@ -2376,7 +2376,7 @@
     "defaultMessage": "配方"
   },
   "navigation.itemScheduler": {
-    "defaultMessage": "调度"
+    "defaultMessage": "定时计划"
   },
   "navigation.itemSessions": {
     "defaultMessage": "会话历史"
@@ -2535,7 +2535,7 @@
     "defaultMessage": "为 {key} 输入值…"
   },
   "parameterInputModal.false": {
-    "defaultMessage": "False"
+    "defaultMessage": "否"
   },
   "parameterInputModal.recipeParameters": {
     "defaultMessage": "配方参数"
@@ -2553,7 +2553,7 @@
     "defaultMessage": "启动配方"
   },
   "parameterInputModal.true": {
-    "defaultMessage": "True"
+    "defaultMessage": "是"
   },
   "parameterInputModal.whatToDo": {
     "defaultMessage": "你想做什么？"
@@ -3489,7 +3489,7 @@
     "defaultMessage": "编辑计划"
   },
   "scheduleModal.failedLoadRecipes": {
-    "defaultMessage": "加载方案失败。"
+    "defaultMessage": "加载配方失败。"
   },
   "scheduleModal.failedParseRecipe": {
     "defaultMessage": "从文件解析配方失败。"
@@ -3504,7 +3504,7 @@
     "defaultMessage": "文件类型无效：请选择 YAML 文件（.yaml 或 .yml）"
   },
   "scheduleModal.loadingRecipes": {
-    "defaultMessage": "正在加载方案..."
+    "defaultMessage": "正在加载配方…"
   },
   "scheduleModal.nameLabel": {
     "defaultMessage": "名称："
@@ -3513,7 +3513,7 @@
     "defaultMessage": "例如：daily-summary-job"
   },
   "scheduleModal.noSavedRecipes": {
-    "defaultMessage": "未找到已保存的方案。"
+    "defaultMessage": "未找到已保存的配方。"
   },
   "scheduleModal.provideValidRecipe": {
     "defaultMessage": "请提供有效的配方来源。"
@@ -3531,7 +3531,7 @@
     "defaultMessage": "标题：{title}"
   },
   "scheduleModal.savedRecipes": {
-    "defaultMessage": "已保存的方案"
+    "defaultMessage": "已保存的配方"
   },
   "scheduleModal.scheduleIdRequired": {
     "defaultMessage": "计划 ID 为必填项。"
@@ -3540,7 +3540,7 @@
     "defaultMessage": "计划："
   },
   "scheduleModal.selectRecipePlaceholder": {
-    "defaultMessage": "选择一个已保存的方案"
+    "defaultMessage": "选择一个已保存的配方"
   },
   "scheduleModal.selected": {
     "defaultMessage": "已选择：{path}"
@@ -3558,7 +3558,7 @@
     "defaultMessage": "YAML"
   },
   "schedulesView.confirmDelete": {
-    "defaultMessage": "确定要删除计划“{id}”吗？"
+    "defaultMessage": "确定要移除计划“{id}”吗？配方会保留。"
   },
   "schedulesView.createSchedule": {
     "defaultMessage": "创建计划"
@@ -3639,7 +3639,7 @@
     "defaultMessage": "已成功更新计划“{id}”"
   },
   "schedulesView.scheduler": {
-    "defaultMessage": "调度"
+    "defaultMessage": "定时计划"
   },
   "schedulesView.unpauseError": {
     "defaultMessage": "恢复计划错误"
@@ -3885,10 +3885,10 @@
     "defaultMessage": "保存中…"
   },
   "sessions.scheduledJobs": {
-    "defaultMessage": "Scheduled Jobs"
+    "defaultMessage": "定时任务"
   },
   "sessions.scheduledJobsCount": {
-    "defaultMessage": "{count,plural,one{{count} job} other{{count} jobs}}"
+    "defaultMessage": "{count,plural,one{{count} 个任务} other{{count} 个任务}}"
   },
   "sessions.search.noResults": {
     "defaultMessage": "未找到匹配的会话"
@@ -4020,7 +4020,7 @@
     "defaultMessage": "简体中文"
   },
   "settings.language.zhTW": {
-    "defaultMessage": "中文（繁体）"
+    "defaultMessage": "繁体中文"
   },
   "settings.menuBarIcon.description": {
     "defaultMessage": "在菜单栏显示 goose"
@@ -4110,7 +4110,7 @@
     "defaultMessage": "聊天"
   },
   "settingsView.tabExternalBackend": {
-    "defaultMessage": "外部后端"
+    "defaultMessage": "Agent"
   },
   "settingsView.tabKeyboard": {
     "defaultMessage": "键盘"
@@ -4305,7 +4305,7 @@
     "defaultMessage": "加载最新进度"
   },
   "subagentSessionNotice.notice": {
-    "defaultMessage": "子代理的进度不会在此实时显示。"
+    "defaultMessage": "子 agent 的进度不会在此实时显示。"
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "返回模型列表"
@@ -4380,7 +4380,7 @@
     "defaultMessage": "推荐"
   },
   "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "选择努力级别"
+    "defaultMessage": "选择思考强度"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "请选择一个模型"
@@ -4407,7 +4407,7 @@
     "defaultMessage": "思考预算（词元）"
   },
   "switchModelModal.thinkingEffort": {
-    "defaultMessage": "思考努力"
+    "defaultMessage": "思考强度"
   },
   "switchModelModal.thinkingEffortOff": {
     "defaultMessage": "关闭 - 不使用扩展思考"
@@ -4509,7 +4509,7 @@
     "defaultMessage": "拒绝"
   },
   "toolApprovalButtons.staleApprovalRequest": {
-    "defaultMessage": "This approval request is no longer active."
+    "defaultMessage": "此批准请求已失效。"
   },
   "toolCallStatusIndicator.toolStatus": {
     "defaultMessage": "工具状态：{status}"
@@ -4545,7 +4545,7 @@
     "defaultMessage": "Goose 想调用 {toolName}，允许吗？"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "更新将在后台自动下载。"
+    "defaultMessage": "Goose 会在后台下载更新，并在你下次退出或重启时安装。"
   },
   "updateSection.autoDownloadDisabledByEnv": {
     "defaultMessage": "自动下载已通过 GOOSE_DISABLE_AUTO_DOWNLOAD 环境变量禁用。"
@@ -4701,7 +4701,7 @@
     "defaultMessage": "访问"
   },
   "contextWindowIndicator.open": {
-    "defaultMessage": "已使用 {used} / {limit} 个 token。查看上下文窗口内容"
+    "defaultMessage": "已使用 {used} / {limit} 个词元。查看上下文窗口内容"
   },
   "contextXray.compactNow": {
     "defaultMessage": "立即压缩"
@@ -4713,7 +4713,7 @@
     "defaultMessage": "无法加载上下文报告。"
   },
   "contextXray.modelSummary": {
-    "defaultMessage": "{model} · {limit} token 上下文窗口"
+    "defaultMessage": "{model} · {limit} 词元上下文窗口"
   },
   "contextXray.refresh": {
     "defaultMessage": "刷新"
@@ -4725,10 +4725,10 @@
     "defaultMessage": "上下文窗口"
   },
   "contextXray.tokenizerNote": {
-    "defaultMessage": "token 数量由 o200k 分词器估算。"
+    "defaultMessage": "词元数量由 o200k 分词器估算。"
   },
   "contextXray.usage": {
-    "defaultMessage": "/ {limit} 个 token · 占上下文窗口的 {percent}"
+    "defaultMessage": "/ {limit} 个词元 · 占上下文窗口的 {percent}"
   },
   "contextXray.category.additionalInstructions": {
     "defaultMessage": "指令与提示"
@@ -4770,10 +4770,10 @@
     "defaultMessage": "保存密钥"
   },
   "settings.agentLoop.operations.autoEffort.description": {
-    "defaultMessage": "使用 Jev 为每个请求选择思考级别。请求文本会发送给 TypeSafe AI；技能和配方斜杠命令会包含展开后的本地指令。"
+    "defaultMessage": "使用 Jev 为每个请求选择思考强度。请求文本会发送给 TypeSafe AI；技能和配方斜杠命令会包含展开后的本地指令。"
   },
   "settings.agentLoop.operations.autoEffort.title": {
-    "defaultMessage": "自动思考级别"
+    "defaultMessage": "自动思考强度"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "阻止上限"
@@ -4839,7 +4839,7 @@
     "defaultMessage": "轮次"
   },
   "settings.agentLoop.title": {
-    "defaultMessage": "代理循环"
+    "defaultMessage": "Agent 循环"
   },
   "contextXray.providerManagesContext": {
     "defaultMessage": "{provider} 自行保存对话历史，只从 goose 接收最新的提示，因此没有可拆解的请求。"
