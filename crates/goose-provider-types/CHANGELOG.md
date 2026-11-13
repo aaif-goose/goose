@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-13
+
+### Added
+
+- context window report and viewer ([#10462](https://github.com/aaif-goose/goose/pull/10462))
+
+### Fixed
+
+- do not retry 400s that reject the thinking setting ([#13325](https://github.com/aaif-goose/goose/pull/13325))
+- *(providers)* send adaptive thinking to MiniMax-M3.1-Flash ([#13305](https://github.com/aaif-goose/goose/pull/13305))
+- *(anthropic)* use adaptive thinking for Claude Fable 5.2 ([#13478](https://github.com/aaif-goose/goose/pull/13478))
+- *(usage)* store token counts as i64 ([#13422](https://github.com/aaif-goose/goose/pull/13422))
+- *(providers)* refresh Vercel AI Gateway models from the API ([#13442](https://github.com/aaif-goose/goose/pull/13442))
+- *(providers)* surface stream errors and premature completion ([#13226](https://github.com/aaif-goose/goose/pull/13226))
+- preserve tool-image batch ordering in persisted transcripts ([#13294](https://github.com/aaif-goose/goose/pull/13294))
+- *(providers)* replay OpenAI Responses reasoning across tool turns ([#13222](https://github.com/aaif-goose/goose/pull/13222))
+- *(deps)* bump zstd to 0.14.3 for RUSTSEC advisories ([#13162](https://github.com/aaif-goose/goose/pull/13162))
+- *(openrouter)* resolve variant suffixes like :free and :nitro to the base model ([#12979](https://github.com/aaif-goose/goose/pull/12979))
+
+### Other
+
+- Make turn limits reusable in GDK ([#13194](https://github.com/aaif-goose/goose/pull/13194))
+- *(release)* bump version to 1.59.0 (minor) ([#13393](https://github.com/aaif-goose/goose/pull/13393))
+- *(release)* bump version to 1.58.0 (minor) ([#13290](https://github.com/aaif-goose/goose/pull/13290))
+- *(release)* bump version to 1.57.0 (minor) ([#13161](https://github.com/aaif-goose/goose/pull/13161))
+
 ## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
 
 ### Fixed

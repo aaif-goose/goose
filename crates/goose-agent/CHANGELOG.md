@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-13
+
+### Added
+
+- *(oi-kit)* move steering operation ([#13502](https://github.com/aaif-goose/goose/pull/13502))
+- context window report and viewer ([#10462](https://github.com/aaif-goose/goose/pull/10462))
+
+### Fixed
+
+- *(providers)* replay OpenAI Responses reasoning across tool turns ([#13222](https://github.com/aaif-goose/goose/pull/13222))
+
+### Other
+
+- Move ExitOnErrorOperation to oi-kit ([#13500](https://github.com/aaif-goose/goose/pull/13500))
+- remove hook APIs from the GDK and fire hooks directly in Goose ([#13486](https://github.com/aaif-goose/goose/pull/13486))
+- prepare Goose extension configs and shared MCP types for GDK extraction ([#13467](https://github.com/aaif-goose/goose/pull/13467))
+- Make turn limits reusable in GDK ([#13194](https://github.com/aaif-goose/goose/pull/13194))
+- gdk (goose-agent): Add stop, approval, and tool hook operations ([#13169](https://github.com/aaif-goose/goose/pull/13169))
+
 ## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
 
 ### Added
