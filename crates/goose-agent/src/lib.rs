@@ -1,22 +1,31 @@
+#[cfg(not(target_arch = "wasm32"))]
+pub mod action_required_manager;
 pub mod events;
 pub mod exit_on_error;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod extension;
+#[cfg(all(not(target_arch = "wasm32"), feature = "extension-malware-check"))]
+pub mod extension_malware_check;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod extension_manager;
 pub mod inference;
 pub mod machine;
 pub mod max_turns;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod mcp_client;
 pub mod operation;
 pub mod skills;
 pub mod steer;
 pub mod subagent;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod subprocess;
 pub mod tool;
 pub mod tool_approval;
 pub mod tool_call_state;
-pub mod unhandled_tool_calls;
-
 #[cfg(not(target_arch = "wasm32"))]
-pub mod action_required_manager;
+pub mod tool_execution;
 #[cfg(not(target_arch = "wasm32"))]
-pub mod subprocess;
+mod tool_schema_normalize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tool_visibility;
+pub mod unhandled_tool_calls;

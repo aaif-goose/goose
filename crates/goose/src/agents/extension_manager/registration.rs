@@ -1,11 +1,11 @@
 use super::goose_host::GooseExtensionHost;
 use crate::agents::container::Container;
 use crate::agents::extension_config::{name_to_key, ExtensionConfig, ExtensionResult};
-use crate::agents::extension_runtime::host::ExtensionEnvironment;
-use crate::agents::extension_runtime::{ConnectRequest, Connector, Registration};
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use async_trait::async_trait;
+use goose_agent::extension_manager::host::ExtensionEnvironment;
+use goose_agent::extension_manager::{ConnectRequest, Connector, Registration};
+use goose_agent::mcp_client::McpClientTrait;
 use std::sync::Arc;
 
 pub(super) fn registration(
@@ -118,7 +118,7 @@ struct GoosePlacement {
     container: Option<Container>,
     host: Arc<GooseExtensionHost>,
 }
-impl crate::agents::extension_runtime::StdioCommand for GoosePlacement {
+impl goose_agent::extension_manager::StdioCommand for GoosePlacement {
     fn command(
         &self,
         program: &str,

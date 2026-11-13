@@ -1,6 +1,6 @@
 //! Goose's private MCP App attachment format and trust boundary.
-use crate::agents::extension_runtime::{get_tool_resource_uri, host::ResultContext};
-use crate::agents::mcp_client::McpClientTrait;
+use goose_agent::extension_manager::{get_tool_resource_uri, host::ResultContext};
+use goose_agent::mcp_client::McpClientTrait;
 use rmcp::model::{CallToolResult, MetaObject};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;

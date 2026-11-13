@@ -2,12 +2,12 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agents::extension_runtime::host::{
+use anyhow::Result;
+use async_trait::async_trait;
+use goose_agent::extension_manager::host::{
     ExtensionAuth, ExtensionEnvironment, ExtensionServices, ExtensionToolPolicy,
     StaticOAuthClientConfig,
 };
-use anyhow::Result;
-use async_trait::async_trait;
 use rmcp::transport::auth::CredentialStore;
 use rmcp::transport::AuthorizationManager;
 
@@ -157,7 +157,7 @@ impl ExtensionToolPolicy for GooseExtensionHost {
 
     async fn process_result(
         &self,
-        context: crate::agents::extension_runtime::host::ResultContext<'_>,
+        context: goose_agent::extension_manager::host::ResultContext<'_>,
         result: &mut rmcp::model::CallToolResult,
     ) {
         super::apps::process_result(context, result).await;

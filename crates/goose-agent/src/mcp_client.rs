@@ -1,5 +1,5 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::extension_runtime::tool_execution::ToolCallContext;
+use crate::tool_execution::ToolCallContext;
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,

@@ -139,7 +139,7 @@ async fn wait_for_callback(
     }
 }
 
-pub use crate::agents::extension_runtime::host::StaticOAuthClientConfig;
+pub use goose_agent::extension_manager::host::StaticOAuthClientConfig;
 
 /// Pre-registered client supplied through the environment, used by tools that
 /// drive the flow without an extension config (`goose mcp-probe`, conformance

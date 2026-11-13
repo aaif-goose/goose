@@ -1,9 +1,9 @@
-pub use crate::agents::extension_runtime::tool_execution::{
-    ToolCallContext, ToolCallNotificationEmitter, ToolCallResult,
-};
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use futures::{Stream, StreamExt};
+pub use goose_agent::tool_execution::{
+    ToolCallContext, ToolCallNotificationEmitter, ToolCallResult,
+};
 use rmcp::model::CallToolResult;
 use rmcp::model::ServerNotification;
 use std::future::Future;

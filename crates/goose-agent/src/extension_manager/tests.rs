@@ -1,5 +1,5 @@
 use super::*;
-use crate::agents::extension_runtime::tool_execution::ToolCallContext;
+use crate::tool_execution::ToolCallContext;
 use async_trait::async_trait;
 use rmcp::model::{InitializeResult, JsonObject, ListToolsResult};
 use rmcp::ServiceError as Error;
@@ -480,11 +480,13 @@ fn reserved_result_metadata_is_removed_without_touching_other_keys() {
     assert!(result.meta.is_none());
 }
 
+#[cfg(feature = "mcp-stdio")]
 struct ChangingEnvironment {
     generation: AtomicU64,
     resolutions: AtomicUsize,
 }
 
+#[cfg(feature = "mcp-stdio")]
 #[async_trait]
 impl host::ExtensionEnvironment for ChangingEnvironment {
     fn config_generation(&self) -> u64 {
@@ -493,10 +495,10 @@ impl host::ExtensionEnvironment for ChangingEnvironment {
 
     async fn resolve_config(
         &self,
-        mut config: goose_agent::extension::ExtensionConfig,
-    ) -> ExtensionResult<goose_agent::extension::ExtensionConfig> {
+        mut config: crate::extension::ExtensionConfig,
+    ) -> ExtensionResult<crate::extension::ExtensionConfig> {
         self.resolutions.fetch_add(1, Ordering::SeqCst);
-        if let goose_agent::extension::ExtensionConfig::Stdio { cmd, .. } = &mut config {
+        if let crate::extension::ExtensionConfig::Stdio { cmd, .. } = &mut config {
             *cmd = format!("resolved-{}", self.config_generation());
         }
         Ok(config)
@@ -505,11 +507,10 @@ impl host::ExtensionEnvironment for ChangingEnvironment {
 
 #[test]
 fn config_and_custom_connections_are_not_interchangeable() {
-    let config: goose_agent::extension::ExtensionConfig =
-        serde_json::from_value(serde_json::json!({
-            "type": "stdio", "name": "custom", "cmd": "unused", "args": [], "timeout": 30
-        }))
-        .unwrap();
+    let config: crate::extension::ExtensionConfig = serde_json::from_value(serde_json::json!({
+        "type": "stdio", "name": "custom", "cmd": "unused", "args": [], "timeout": 30
+    }))
+    .unwrap();
     let identity = serde_json::json!("same-inputs");
     let configured = Registration::from_config(config, None).with_identity(identity.clone());
     let custom = Registration::new("custom", StaticConnector::new(None)).with_identity(identity);
@@ -518,8 +519,10 @@ fn config_and_custom_connections_are_not_interchangeable() {
     assert!(!configured.is_equivalent(&custom));
 }
 
+#[cfg(feature = "mcp-stdio")]
 struct RecordingCommand(std::sync::Mutex<Vec<String>>);
 
+#[cfg(feature = "mcp-stdio")]
 impl StdioCommand for RecordingCommand {
     fn command(
         &self,
@@ -532,6 +535,7 @@ impl StdioCommand for RecordingCommand {
     }
 }
 
+#[cfg(feature = "mcp-stdio")]
 #[tokio::test]
 async fn manager_environment_owns_resolution_and_connection_freshness() {
     let environment = Arc::new(ChangingEnvironment {
@@ -547,11 +551,10 @@ async fn manager_environment_owns_resolution_and_connection_freshness() {
             capabilities: Default::default(),
         },
     ));
-    let config: goose_agent::extension::ExtensionConfig =
-        serde_json::from_value(serde_json::json!({
-            "type": "stdio", "name": "external", "cmd": "unresolved", "args": [], "timeout": 30
-        }))
-        .unwrap();
+    let config: crate::extension::ExtensionConfig = serde_json::from_value(serde_json::json!({
+        "type": "stdio", "name": "external", "cmd": "unresolved", "args": [], "timeout": 30
+    }))
+    .unwrap();
     let command = Arc::new(RecordingCommand(std::sync::Mutex::new(vec![])));
     let registration = Registration::from_config(config.clone(), Some(command.clone()));
     let set = ExtensionSet::new("scope", None, vec![registration.clone()]).unwrap();

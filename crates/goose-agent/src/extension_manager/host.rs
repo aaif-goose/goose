@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+#[cfg(feature = "mcp-http")]
 use rmcp::transport::auth::{CredentialStore, InMemoryCredentialStore};
+#[cfg(feature = "mcp-http")]
 use rmcp::transport::AuthorizationManager;
 
 use super::ClientContext;
@@ -23,9 +25,10 @@ pub struct ResultContext<'a> {
 }
 
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::mcp_client::{McpClientTrait, TraceContextInjector};
-use goose_agent::extension::{ExtensionConfig, ExtensionResult, DEFAULT_EXTENSION_TIMEOUT};
+use crate::extension::{ExtensionConfig, ExtensionResult, DEFAULT_EXTENSION_TIMEOUT};
+use crate::mcp_client::{McpClientTrait, TraceContextInjector};
 
+#[cfg(feature = "mcp-http")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticOAuthClientConfig {
     pub client_id: String,
@@ -33,6 +36,7 @@ pub struct StaticOAuthClientConfig {
     pub scopes: Vec<String>,
 }
 
+#[cfg(feature = "mcp-http")]
 #[async_trait]
 pub trait ExtensionAuth: Send + Sync {
     fn credential_store(&self, name: &str) -> Box<dyn CredentialStore>;
@@ -46,10 +50,12 @@ pub trait ExtensionAuth: Send + Sync {
     ) -> Result<AuthorizationManager>;
 }
 
+#[cfg(feature = "mcp-http")]
 /// Authorization for hosts without credential storage or an OAuth flow: servers
 /// that require authorization fail to start.
 pub struct NoExtensionAuth;
 
+#[cfg(feature = "mcp-http")]
 #[async_trait]
 impl ExtensionAuth for NoExtensionAuth {
     fn credential_store(&self, _name: &str) -> Box<dyn CredentialStore> {
@@ -143,6 +149,7 @@ impl ExtensionRuntimeSettings {
 pub struct ExtensionServices {
     pub environment: Arc<dyn ExtensionEnvironment>,
     pub tool_policy: Arc<dyn ExtensionToolPolicy>,
+    #[cfg(feature = "mcp-http")]
     pub auth: Arc<dyn ExtensionAuth>,
     pub settings: ExtensionRuntimeSettings,
 }
@@ -152,6 +159,7 @@ impl ExtensionServices {
         Self {
             environment: Arc::new(DefaultExtensionEnvironment),
             tool_policy: Arc::new(DefaultExtensionToolPolicy),
+            #[cfg(feature = "mcp-http")]
             auth: Arc::new(NoExtensionAuth),
             settings: ExtensionRuntimeSettings::new(action_required),
         }
