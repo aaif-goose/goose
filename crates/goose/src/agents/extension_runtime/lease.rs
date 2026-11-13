@@ -10,7 +10,7 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
+    CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
     ServerNotification, Tool,
 };
@@ -21,23 +21,21 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+use super::host::ExtensionHost;
 use super::{
-    get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
-    recover_mangled_tool_name, remove_subagent_session_meta, remove_untrusted_mcp_app_meta,
-    ActionRequiredStream, Extension, ExtensionLoadResult, ExtensionMutation, ExtensionSlot,
-    GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    get_tool_owner, recover_mangled_tool_name, remove_reserved_meta, ActionRequiredStream,
+    ClientContext, Extension, ExtensionLoadResult, ExtensionSlot, Registration,
+    TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::container::Container;
-use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
-use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::platform_extensions::ext_manager::{
-    EXTENSION_NAME as EXTENSION_MANAGER_NAME, LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
+use crate::agents::extension_runtime::tool_execution::{
+    ToolCallContext, ToolCallNotificationEmitter, ToolCallResult,
 };
-use crate::agents::reply_parts::is_tool_visible_to_app;
-use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
-use crate::config::extensions::name_to_key;
+use crate::agents::mcp_client::McpClientTrait;
 use crate::conversation::message::Message;
+use goose_agent::extension::name_to_key;
+use goose_agent::extension::{ExtensionError, ExtensionInfo};
+use goose_agent::tool_visibility::is_tool_visible_to_app;
 
 fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
     let value = value.get(name).ok_or_else(|| {
@@ -60,37 +58,44 @@ fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, Er
 pub struct ExtensionSet {
     scope_id: String,
     pub(super) working_dir: Option<PathBuf>,
-    pub(super) container: Option<Container>,
-    extensions: Vec<ExtensionConfig>,
+    extensions: Vec<Registration>,
 }
-
 impl ExtensionSet {
     pub fn new(
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
-        extensions: Vec<ExtensionConfig>,
+        extensions: Vec<Registration>,
     ) -> Result<Self, ExtensionError> {
-        crate::session::EnabledExtensionsState::check_unique_keys(&extensions)
-            .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
+        let mut keys = std::collections::HashSet::new();
+        for registration in &extensions {
+            if registration.key.is_empty() || !keys.insert(registration.key.clone()) {
+                return Err(ExtensionError::ConfigError(format!(
+                    "empty or duplicate extension key: {}",
+                    registration.key
+                )));
+            }
+        }
         Ok(Self {
             scope_id: scope_id.into(),
             working_dir,
-            container: None,
             extensions,
         })
     }
-
-    pub fn with_container(mut self, container: Option<Container>) -> Self {
-        self.container = container;
-        self
+    pub fn with_registration(mut self, registration: Registration) -> Result<Self, ExtensionError> {
+        if self.extensions.iter().any(|r| r.key == registration.key) {
+            return Err(ExtensionError::ConfigError(format!(
+                "duplicate extension key: {}",
+                registration.key
+            )));
+        }
+        self.extensions.push(registration);
+        Ok(self)
     }
-
     pub fn scope_id(&self) -> &str {
         &self.scope_id
     }
-
-    pub fn extensions(&self) -> &[ExtensionConfig] {
-        &self.extensions
+    pub fn registrations(&self) -> impl Iterator<Item = Registration> + '_ {
+        self.extensions.iter().cloned()
     }
 }
 
@@ -116,21 +121,45 @@ struct ToolCatalog {
 }
 
 impl ToolCatalog {
-    async fn build(scope_id: &str, extensions: &[Arc<Extension>]) -> Self {
-        let supports_resources = extensions
-            .iter()
-            .any(|extension| extension.supports_resources());
-        let extension_manager_key = name_to_key(EXTENSION_MANAGER_NAME);
-        let lists = futures::future::join_all(
-            extensions
-                .iter()
-                .map(|extension| extension.public_tools(scope_id)),
-        )
+    async fn build(scope_id: &str, slots: &[Arc<ExtensionSlot>], host: &dyn ExtensionHost) -> Self {
+        let outcomes = futures::future::join_all(slots.iter().map(|slot| async move {
+            let extension = match slot.outcome().await {
+                Ok(Some(extension)) => Arc::clone(extension),
+                Ok(None) => return None,
+                Err(error) => {
+                    return Some((
+                        false,
+                        Err(format!(
+                            "extension {} failed to start: {error}",
+                            slot.registration.name
+                        )),
+                    ))
+                }
+            };
+            let supports_resources = extension.supports_resources();
+            let tools = extension.public_tools(scope_id).await.map_err(|error| {
+                format!("extension {} failed to list tools: {error}", extension.key)
+            });
+            Some((supports_resources, tools.map(|tools| (extension, tools))))
+        }))
         .await;
 
-        let mut entries = Vec::new();
+        // Resource support is independent of tool discovery: a resource-only
+        // server whose tool listing fails still serves resources.
+        let mut supports_resources = false;
+        let mut lists = Vec::new();
+        for (extension_supports_resources, outcome) in outcomes.into_iter().flatten() {
+            supports_resources |= extension_supports_resources;
+            match outcome {
+                Ok(list) => lists.push(list),
+                // Start failures are reported by `ExtensionLease::start`; discovery
+                // failures only here.
+                Err(error) => warn!(%error, "omitting extension from the tool catalog"),
+            }
+        }
+        let mut entries: Vec<CatalogEntry> = Vec::new();
         let mut by_name = HashMap::new();
-        for (extension, tools) in extensions.iter().zip(lists) {
+        for (extension, tools) in &lists {
             for tool in tools.iter() {
                 let name = provider_safe_tool_name(&tool.name);
                 if by_name.contains_key(&name) {
@@ -146,13 +175,7 @@ impl ToolCatalog {
                     .strip_prefix(&format!("{}__", extension.key))
                     .unwrap_or(&tool.name)
                     .to_string();
-                if extension.key == extension_manager_key
-                    && !supports_resources
-                    && matches!(
-                        server_name.as_str(),
-                        LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME
-                    )
-                {
+                if !host.exposes_tool(&extension.key, &server_name, supports_resources) {
                     continue;
                 }
                 let mut tool = tool.clone();
@@ -199,7 +222,8 @@ pub struct ExtensionLease {
     slots: Vec<Arc<ExtensionSlot>>,
     tool_catalog: Arc<OnceCell<ToolCatalog>>,
     action_required: Arc<ActionRequiredManager>,
-    hydrate_mcp_apps: bool,
+    host: Arc<dyn ExtensionHost>,
+    client_context: Arc<ClientContext>,
 }
 
 struct ResolvedTool<'a> {
@@ -213,8 +237,8 @@ impl ExtensionLease {
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
         slots: Vec<Arc<ExtensionSlot>>,
-        action_required: Arc<ActionRequiredManager>,
-        hydrate_mcp_apps: bool,
+        host: Arc<dyn ExtensionHost>,
+        client_context: Arc<ClientContext>,
     ) -> Self {
         Self {
             id: LeaseId::next(),
@@ -222,16 +246,15 @@ impl ExtensionLease {
             working_dir,
             slots,
             tool_catalog: Arc::new(OnceCell::new()),
-            action_required,
-            hydrate_mcp_apps,
+            action_required: host.action_required(),
+            host,
+            client_context,
         }
     }
 
     async fn tool_catalog(&self) -> &ToolCatalog {
         self.tool_catalog
-            .get_or_init(|| async {
-                ToolCatalog::build(&self.scope_id, &self.start_extensions().await).await
-            })
+            .get_or_init(|| ToolCatalog::build(&self.scope_id, &self.slots, self.host.as_ref()))
             .await
     }
 
@@ -250,8 +273,17 @@ impl ExtensionLease {
         slot.start().await.cloned()
     }
 
+    /// Start every extension and report each one's outcome. Does not build the
+    /// tool catalog; see [`Self::ready`].
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
         futures::future::join_all(self.slots.iter().map(|slot| slot.load_result())).await
+    }
+
+    /// Start every extension and build its best-effort tool catalog.
+    pub async fn ready(&self) -> Vec<ExtensionLoadResult> {
+        let results = self.start().await;
+        self.tool_catalog().await;
+        results
     }
 
     pub fn id(&self) -> LeaseId {
@@ -280,10 +312,11 @@ impl ExtensionLease {
         self.tools_where(|extension| extension.key != key).await
     }
 
-    pub(in crate::agents) async fn tools_where(
-        &self,
-        predicate: impl Fn(&Extension) -> bool,
-    ) -> Vec<Tool> {
+    pub async fn untrusted_tools(&self) -> Vec<Tool> {
+        self.tools_where(|extension| !extension.is_trusted()).await
+    }
+
+    async fn tools_where(&self, predicate: impl Fn(&Extension) -> bool) -> Vec<Tool> {
         self.tool_catalog()
             .await
             .entries
@@ -298,8 +331,11 @@ impl ExtensionLease {
         self.slots.iter().any(|slot| slot.key == key)
     }
 
-    pub fn configs(&self) -> Vec<ExtensionConfig> {
-        self.slots.iter().map(|slot| slot.config.clone()).collect()
+    pub fn registrations(&self) -> Vec<Registration> {
+        self.slots
+            .iter()
+            .map(|slot| slot.registration.clone())
+            .collect()
     }
 
     pub async fn read_resource_tool(
@@ -576,7 +612,7 @@ impl ExtensionLease {
             .start_extensions()
             .await
             .iter()
-            .filter(|extension| extension.is_platform())
+            .filter(|extension| extension.is_trusted())
         {
             let tools = self.tools_excluding(&extension.key).await;
             if let Some(part) = extension.client.get_moim(&self.scope_id, &tools).await {
@@ -687,7 +723,6 @@ impl ExtensionLease {
         let CallRequest {
             tool_call_id,
             notification_emitter,
-            container,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -701,16 +736,22 @@ impl ExtensionLease {
             self.working_dir.clone(),
             tool_call_id,
         )
-        .with_container(container)
         .with_extension_lease(Arc::new(self.clone()));
         let call_context = match emitter {
             Some(emitter) => call_context.with_notification_emitter(emitter),
             None => call_context,
         };
 
-        let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
+        let tool = resolved.tool.clone();
+        let extension_key = resolved.extension.key.clone();
+        let client_context = Arc::clone(&self.client_context);
+        let host = Arc::clone(&self.host);
         let server_name = resolved.server_name.to_string();
-        let is_platform_extension = resolved.extension.is_platform();
+        let reserved_meta = if resolved.extension.is_trusted() {
+            &[]
+        } else {
+            self.host.reserved_result_meta_keys()
+        };
         let session_id = self.scope_id.clone();
         let result = async move {
             let mut result = client
@@ -725,16 +766,20 @@ impl ExtensionLease {
                     ServiceError::McpError(error_data) => error_data,
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
-            remove_untrusted_mcp_app_meta(&mut result);
-            if !is_platform_extension {
-                ExtensionMutation::take(&mut result);
-                remove_subagent_session_meta(&mut result);
-            }
-            if let Some(mcp_app_call) = mcp_app_call {
-                mcp_app_call
-                    .attach_resource(&*client, &session_id, &mut result, cancellation_token)
-                    .await;
-            }
+            remove_reserved_meta(&mut result, reserved_meta);
+            host.process_result(
+                super::host::ResultContext {
+                    scope_id: &session_id,
+                    extension: &extension_key,
+                    server_tool_name: &server_name,
+                    tool: &tool,
+                    client_context: &client_context,
+                    client: &*client,
+                    cancellation_token,
+                },
+                &mut result,
+            )
+            .await;
             Ok(result)
         };
 
@@ -795,7 +840,6 @@ impl ExtensionLease {
 pub struct CallRequest {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
-    pub(crate) container: Option<Container>,
 }
 
 impl CallRequest {
@@ -805,11 +849,6 @@ impl CallRequest {
             ..Default::default()
         }
     }
-
-    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
-        self.container = container;
-        self
-    }
 }
 
 impl From<&ToolCallContext> for CallRequest {
@@ -817,59 +856,6 @@ impl From<&ToolCallContext> for CallRequest {
         Self {
             tool_call_id: ctx.tool_call_request_id.clone(),
             notification_emitter: ctx.notification_emitter().cloned(),
-            container: ctx.container().cloned(),
         }
-    }
-}
-
-struct McpAppCall {
-    server_tool_name: String,
-    extension_key: String,
-    resource_uri: String,
-    tool_meta: Option<serde_json::Value>,
-}
-
-impl McpAppCall {
-    fn from_resolved(resolved: &ResolvedTool<'_>, host_supports_apps: bool) -> Option<Self> {
-        if !host_supports_apps {
-            return None;
-        }
-        Some(Self {
-            server_tool_name: resolved.server_name.to_string(),
-            extension_key: resolved.extension.key.clone(),
-            resource_uri: get_tool_resource_uri(resolved.tool)?,
-            tool_meta: get_tool_meta_value(resolved.tool),
-        })
-    }
-
-    async fn attach_resource(
-        self,
-        client: &dyn McpClientTrait,
-        session_id: &str,
-        result: &mut CallToolResult,
-        cancellation_token: CancellationToken,
-    ) {
-        if result.is_error == Some(true) {
-            return;
-        }
-        let mut attachment = GooseMcpAppToolAttachment {
-            tool_name: self.server_tool_name,
-            tool_name_is_actual: true,
-            extension_name: self.extension_key,
-            resource_uri: self.resource_uri.clone(),
-            tool_meta: self.tool_meta,
-            resource_result: None,
-            read_error: None,
-        };
-        match client
-            .read_resource(session_id, &self.resource_uri, cancellation_token)
-            .await
-        {
-            Ok(resource_result) => {
-                attachment.resource_result = serde_json::to_value(&resource_result).ok();
-            }
-            Err(error) => attachment.read_error = Some(error.to_string()),
-        }
-        insert_trusted_tool_update_meta(result, &attachment);
     }
 }

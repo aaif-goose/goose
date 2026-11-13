@@ -1069,7 +1069,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         .extension_manager
         .scope_lease(subagent_id)
         .await
-        .configs()
+        .registrations()
         .is_empty());
     Ok(())
 }
@@ -1528,7 +1528,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
                         .extension_manager
                         .scope_lease(subagent_id)
                         .await
-                        .configs()
+                        .registrations()
                         .is_empty()
                 {
                     return subagent_id.clone();
@@ -1745,7 +1745,7 @@ async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resum
                 .extension_manager
                 .scope_lease(&subagent_id)
                 .await
-                .configs()
+                .registrations()
                 .is_empty()
         {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -1806,7 +1806,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
 
 fn attachment() -> crate::agents::Attachment {
     crate::agents::Attachment {
-        client: crate::agents::extension_manager::ClientContext::new(
+        client: crate::agents::extension_manager::client_context(
             &GoosePlatform::GooseDesktop,
             None,
         ),

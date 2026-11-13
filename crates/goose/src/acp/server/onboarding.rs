@@ -518,7 +518,7 @@ fn apply_claude_desktop_candidate(
                 args: server.args,
                 envs: Envs::new(server.env),
                 env_keys: Vec::new(),
-                timeout: Some(crate::config::DEFAULT_EXTENSION_TIMEOUT),
+                timeout: Some(crate::agents::extension_config::DEFAULT_EXTENSION_TIMEOUT),
                 cwd: None,
                 bundled: None,
                 available_tools: Vec::new(),

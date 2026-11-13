@@ -113,6 +113,7 @@ impl CodeExecutionClient {
             .and_then(|w| w.upgrade())
             .ok_or("Extension manager not available")?;
         let dispatch = cancellation_token.child_token();
+        let context = self.context.clone();
         let callback: ToolCallback = Arc::new({
             let ctx = ctx.clone();
             let dispatch = dispatch.clone();
@@ -130,6 +131,7 @@ impl CodeExecutionClient {
                     manager.clone(),
                     dispatch.clone(),
                     rt.clone(),
+                    context.clone(),
                     args,
                 )
             }
@@ -172,9 +174,10 @@ fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::ExtensionManager>,
+    manager: Arc<crate::agents::extension_runtime::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
+    context: PlatformExtensionContext,
     args: Value,
 ) -> ToolFuture {
     Box::pin(async move {
@@ -193,17 +196,23 @@ fn dispatch_tool(
                     )
                     .await;
                 match dispatch_result {
-                    Ok(dispatch_result) => match manager
-                        .applying_mutation(dispatch_result, &ctx.session_id)
+                    Ok(dispatch_result) => {
+                        match crate::agents::extension_manager::applying_mutation(
+                            &manager,
+                            dispatch_result,
+                            &ctx.session_id,
+                            &context,
+                        )
                         .result
                         .await
-                    {
-                        Ok(result) if result.is_error == Some(true) => {
-                            Err(callback_result_to_value(&result).to_string())
+                        {
+                            Ok(result) if result.is_error == Some(true) => {
+                                Err(callback_result_to_value(&result).to_string())
+                            }
+                            Ok(result) => Ok(callback_result_to_value(&result)),
+                            Err(e) => Err(format!("Tool error: {}", e.message)),
                         }
-                        Ok(result) => Ok(callback_result_to_value(&result)),
-                        Err(e) => Err(format!("Tool error: {}", e.message)),
-                    },
+                    }
                     Err(e) => Err(format!("Dispatch error: {e}")),
                 }
             };
@@ -466,9 +475,10 @@ mod tests {
         let mut callback = dispatch_tool(
             ctx,
             "pending__ordinary".into(),
-            manager,
+            manager.runtime().clone(),
             dispatch.clone(),
             tokio::runtime::Handle::current(),
+            manager.get_context().clone(),
             json!({}),
         );
         assert!(callback.as_mut().now_or_never().is_none());
@@ -680,7 +690,7 @@ mod tests {
         )
         .with_extension_lease(lease);
         let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        context.extension_manager = Some(Arc::downgrade(manager.runtime()));
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
         let result = client
@@ -748,7 +758,7 @@ mod tests {
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
             .with_extension_lease(lease.clone());
         let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        context.extension_manager = Some(Arc::downgrade(manager.runtime()));
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
             .call_tool(&ctx, "list_functions", None, CancellationToken::new())

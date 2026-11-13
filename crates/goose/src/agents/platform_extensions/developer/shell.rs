@@ -409,7 +409,7 @@ fn resolve_shell_timeout(timeout_secs: Option<u64>) -> u64 {
     timeout_secs.unwrap_or_else(|| {
         crate::config::Config::global()
             .get_goose_default_extension_timeout()
-            .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
+            .unwrap_or(crate::agents::extension_config::DEFAULT_EXTENSION_TIMEOUT)
     })
 }
 

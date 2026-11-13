@@ -1,15 +1,15 @@
 use super::base::Config;
 use crate::agents::extension::PLATFORM_EXTENSIONS;
+pub use crate::agents::extension_config::{
+    DEFAULT_DISPLAY_NAME, DEFAULT_EXTENSION, DEFAULT_EXTENSION_TIMEOUT,
+};
 use crate::agents::ExtensionConfig;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
 use tracing::{info, warn};
 
-pub const DEFAULT_EXTENSION: &str = "developer";
-pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
 pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
-pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -24,7 +24,8 @@ pub use goose_agent::extension::name_to_key;
 pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     match config {
         ExtensionConfig::Platform { name, .. } => {
-            crate::agents::extension::PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+            crate::agents::platform_extensions::PLATFORM_EXTENSIONS
+                .contains_key(name_to_key(name).as_str())
         }
         _ => true,
     }

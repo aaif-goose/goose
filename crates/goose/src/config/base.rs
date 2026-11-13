@@ -94,7 +94,7 @@ impl From<keyring::Error> for ConfigError {
 /// # Examples
 ///
 /// ```no_run
-/// use goose::config::Config;
+/// use goose::config::{Config};
 /// use serde::Deserialize;
 ///
 /// // Get a string value
