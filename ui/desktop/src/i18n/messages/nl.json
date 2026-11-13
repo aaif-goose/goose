@@ -4112,9 +4112,6 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Drempel %"
   },
-  "settings.agentLoop.operations.tokenLimit.label": {
-    "defaultMessage": "Tokenlimiet"
-  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Vat oudere toolaanroepen en hun antwoorden samen om context te sparen. Laat je dit leeg, dan bepaalt goose het afkappunt zelf."
   },

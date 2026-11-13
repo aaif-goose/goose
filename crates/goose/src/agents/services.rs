@@ -118,8 +118,8 @@ pub struct TurnSettings {
     pub tool_pair_summarization: bool,
     pub defer_tools: bool,
     pub always_load_tools: Vec<String>,
-    pub compaction_threshold: f64,
-    pub compaction_token_limit: usize,
+    /// `None` derives it from the context limit.
+    pub compaction_threshold: Option<f64>,
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
@@ -159,12 +159,7 @@ impl TurnSettings {
                 .filter(|name| !name.is_empty())
                 .map(str::to_string)
                 .collect(),
-            compaction_threshold: config
-                .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-                .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
-            compaction_token_limit: config
-                .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-                .unwrap_or(crate::context_mgmt::DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+            compaction_threshold: config.get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD").ok(),
             tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
             auto_effort: auto_effort_from_config(provider, model_config),
             context_relevance: crate::agents::state_machine_builder::context_relevance_provider(
@@ -732,11 +727,8 @@ impl StateMachineServices {
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
         };
         let max_turns = session_config.max_turns.unwrap_or(settings.max_turns);
-        let compaction_threshold = crate::context_mgmt::capped_compaction_threshold(
-            settings.compaction_threshold,
-            settings.compaction_token_limit,
-            context_limit,
-        );
+        let compaction_threshold =
+            crate::context_mgmt::compaction_threshold(settings.compaction_threshold, context_limit);
         let tool_call_cutoff = settings.tool_call_cutoff.unwrap_or_else(|| {
             crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
         });
