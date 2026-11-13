@@ -237,16 +237,19 @@ export default function ModelsBottomBar({
                 <span className="truncate">{triggerLabel}</span>
               </span>
             ) : (
-              <span className="flex min-w-0 text-xs" title={triggerTitle}>
+              <span
+                className="grid min-w-0 grid-cols-[minmax(0,max-content)_auto_minmax(0,max-content)] text-xs"
+                title={triggerTitle}
+              >
                 {triggerProvider && (
                   <>
-                    <bdi dir="auto" className="max-w-[50%] flex-shrink-0 truncate">
+                    <bdi dir="auto" className="truncate">
                       {triggerProvider}
                     </bdi>
-                    <span className="flex-shrink-0">/</span>
+                    <span>/</span>
                   </>
                 )}
-                <bdi dir="auto" className="min-w-0 truncate">
+                <bdi dir="auto" className="truncate">
                   {triggerLabel}
                 </bdi>
               </span>
