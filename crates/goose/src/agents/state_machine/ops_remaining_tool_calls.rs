@@ -144,60 +144,15 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
 mod tests {
     use super::*;
     use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-    use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
+    use crate::agents::state_machine::tests::hooks_lifecycle::{
+        HookTestEnv, RECORD_AND_ALLOW_SCRIPT,
+    };
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
-    struct PostFailureLog {
-        _temp_dir: tempfile::TempDir,
-        plugin_dir: std::path::PathBuf,
-    }
-
-    impl PostFailureLog {
-        fn new() -> Self {
-            let temp_dir = tempfile::tempdir().unwrap();
-            let plugin_dir = temp_dir.path().join("test-plugin");
-            std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
-            std::fs::write(
-                plugin_dir.join("hooks/hooks.json"),
-                r#"{"hooks": {"PostToolUseFailure": [{"hooks": [{"type": "command", "command": "sh ${PLUGIN_ROOT}/hook.sh"}]}]}}"#,
-            )
-            .unwrap();
-            std::fs::write(
-                plugin_dir.join("hook.sh"),
-                "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/hook.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n",
-            )
-            .unwrap();
-            Self {
-                _temp_dir: temp_dir,
-                plugin_dir,
-            }
-        }
-
-        fn hook_manager(&self) -> HookManager {
-            HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
-                name: "test-plugin".into(),
-                root: self.plugin_dir.clone(),
-                scope: PluginScope::Project,
-            }])
-        }
-
-        fn tool_call_ids(&self) -> Vec<String> {
-            std::fs::read_to_string(self.plugin_dir.join("hook.log"))
-                .unwrap_or_default()
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .map(|line| {
-                    let payload: serde_json::Value = serde_json::from_str(line).unwrap();
-                    payload["tool_call_id"].as_str().unwrap().to_string()
-                })
-                .collect()
-        }
-    }
-
-    async fn run_with_hooks(
+    async fn run(
         session: &Session,
         messages: Vec<Message>,
         hook_manager: HookManager,
@@ -209,13 +164,6 @@ mod tests {
         RemainingToolCallsOperation::new(hook_manager, post_tool_call_hook)
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
-    }
-
-    async fn run(
-        session: &Session,
-        messages: Vec<Message>,
-    ) -> Result<OperationResult<GooseEffect>> {
-        run_with_hooks(session, messages, HookManager::default()).await
     }
 
     fn executable_calls(calls: &[(&str, &str)]) -> Message {
@@ -243,17 +191,22 @@ mod tests {
             ]
         };
 
-        let log = PostFailureLog::new();
-        run_with_hooks(&Session::default(), messages(), log.hook_manager()).await?;
-        assert_eq!(log.tool_call_ids(), ["missing", "final"]);
+        let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
+        run(&Session::default(), messages(), env.hook_manager()).await?;
+        let tool_call_ids: Vec<_> = env
+            .payloads()
+            .iter()
+            .map(|payload| payload["tool_call_id"].clone())
+            .collect();
+        assert_eq!(tool_call_ids, ["missing", "final"]);
 
         let chat = Session {
             goose_mode: GooseMode::Chat,
             ..Session::default()
         };
-        let log = PostFailureLog::new();
-        run_with_hooks(&chat, messages(), log.hook_manager()).await?;
-        assert!(log.tool_call_ids().is_empty());
+        let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
+        run(&chat, messages(), env.hook_manager()).await?;
+        assert!(env.payloads().is_empty());
         Ok(())
     }
 
@@ -273,7 +226,7 @@ mod tests {
         ];
 
         assert!(matches!(
-            run(&Session::default(), messages).await?,
+            run(&Session::default(), messages, HookManager::default()).await?,
             OperationResult::NotApplicable
         ));
         Ok(())

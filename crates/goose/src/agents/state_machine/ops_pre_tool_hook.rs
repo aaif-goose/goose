@@ -189,69 +189,92 @@ impl Operation<Session, GooseEffect> for PreToolCallHookOperation {
 mod tests {
     use super::*;
     use crate::agents::state_machine::OperationResult;
+    use crate::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
+    use serde_json::{json, Value};
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
-    fn call(message: Message, id: &str, allowed: bool) -> Message {
-        let meta = if allowed {
-            serde_json::json!({ EXECUTABLE_KEY: true, PRE_HOOK_ALLOWED_KEY: true })
-        } else {
-            serde_json::json!({ EXECUTABLE_KEY: true })
-        };
-        message.with_tool_request_with_metadata(
-            id,
-            Ok(CallToolRequestParams::new("shell")),
-            None,
-            Some(meta),
-        )
-    }
-
-    async fn allowed_ids(calls: &[(&str, bool)]) -> Result<Option<Vec<String>>> {
+    async fn allowed_ids(
+        calls: &[(&str, Value)],
+        answered: &[&str],
+    ) -> Result<Option<Vec<String>>> {
         let reply = calls
             .iter()
-            .fold(Message::assistant(), |message, (id, allowed)| {
-                call(message, id, *allowed)
+            .fold(Message::assistant(), |message, (id, meta)| {
+                message.with_tool_request_with_metadata(
+                    *id,
+                    Ok(CallToolRequestParams::new("shell")),
+                    None,
+                    Some(meta.clone()),
+                )
             });
-        let conversation = Conversation::new_unvalidated([Message::user().with_text("go"), reply]);
+        let mut messages = vec![Message::user().with_text("go"), reply];
+        if !answered.is_empty() {
+            messages.push(answered.iter().fold(Message::user(), |message, id| {
+                message.with_tool_response(*id, Ok(CallToolResult::success(vec![])))
+            }));
+        }
+        let conversation = Conversation::new_unvalidated(messages);
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
         let result = PreToolCallHookOperation::new(HookManager::default(), Arc::default())
             .run(&Session::default(), &conversation, &emit)
             .await?;
-        Ok(match result {
-            OperationResult::NotApplicable => None,
-            OperationResult::Applied(step) => Some(
-                step.effects
-                    .into_iter()
-                    .map(|effect| match effect {
-                        GooseEffect::Conversation(ConversationEffect::PatchToolRequestMeta {
-                            tool_call_id,
-                            patch,
-                        }) => {
-                            assert_eq!(patch, serde_json::json!({ PRE_HOOK_ALLOWED_KEY: true }));
-                            tool_call_id
-                        }
-                        _ => panic!("expected a pre-hook allowed patch"),
-                    })
-                    .collect(),
-            ),
-        })
+        let OperationResult::Applied(step) = result else {
+            return Ok(None);
+        };
+        Ok(Some(
+            step.effects
+                .into_iter()
+                .map(|effect| match effect {
+                    GooseEffect::Conversation(ConversationEffect::PatchToolRequestMeta {
+                        tool_call_id,
+                        patch,
+                    }) => {
+                        assert_eq!(patch, json!({ PRE_HOOK_ALLOWED_KEY: true }));
+                        tool_call_id
+                    }
+                    _ => panic!("expected a pre-hook allowed patch"),
+                })
+                .collect(),
+        ))
     }
 
     #[tokio::test]
-    async fn allows_one_call_per_pass_and_skips_calls_already_allowed() -> Result<()> {
+    async fn allows_one_call_per_pass_and_skips_calls_that_cannot_run_or_were_already_allowed(
+    ) -> Result<()> {
+        let ready = json!({ EXECUTABLE_KEY: true });
+        let allowed = json!({ EXECUTABLE_KEY: true, PRE_HOOK_ALLOWED_KEY: true });
+
         assert_eq!(
-            allowed_ids(&[("first", false), ("second", false)]).await?,
+            allowed_ids(&[("first", ready.clone()), ("second", ready.clone())], &[]).await?,
             Some(vec!["first".to_string()])
         );
         assert_eq!(
-            allowed_ids(&[("first", true), ("second", false)]).await?,
+            allowed_ids(
+                &[("first", allowed.clone()), ("second", ready.clone())],
+                &[]
+            )
+            .await?,
             Some(vec!["second".to_string()])
         );
         assert_eq!(
-            allowed_ids(&[("first", true), ("second", true)]).await?,
+            allowed_ids(
+                &[
+                    ("allowed", allowed),
+                    ("unchecked", json!({})),
+                    ("awaiting", json!({ EXECUTABLE_KEY: false })),
+                    (
+                        "external",
+                        json!({ EXECUTABLE_KEY: true, TOOL_META_EXTERNAL_DISPATCH_KEY: true }),
+                    ),
+                    ("answered", ready),
+                ],
+                &["answered"],
+            )
+            .await?,
             None
         );
         Ok(())
