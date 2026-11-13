@@ -16,7 +16,7 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
+use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -25,13 +25,14 @@ use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
+use crate::hooks::HookManager;
 use crate::session::Session;
 
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    post_tool_call_hook: Arc<GoosePostToolHook>,
+    hook_manager: HookManager,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -196,11 +197,11 @@ fn load_supporting_file(
 impl SkillOperation {
     pub fn new(
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-        post_tool_call_hook: Arc<GoosePostToolHook>,
+        hook_manager: HookManager,
     ) -> Self {
         Self {
             extension_lease,
-            post_tool_call_hook,
+            hook_manager,
         }
     }
 
@@ -373,9 +374,14 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         tool_result: Ok(result),
                         metadata: request.metadata.clone(),
                     };
-                    self.post_tool_call_hook
-                        .after_call(session, &request, &response)
-                        .instrument(span)
+                    emit_post_tool_hooks(
+                        &self.hook_manager,
+                        &session.id,
+                        &session.working_dir,
+                        &request,
+                        &response,
+                    )
+                    .instrument(span)
                     .await;
                     response.tool_result
                 }

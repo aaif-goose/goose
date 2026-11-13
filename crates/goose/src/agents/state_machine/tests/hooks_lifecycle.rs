@@ -1,14 +1,25 @@
 use anyhow::Result;
-use rmcp::model::{Annotations, Role, TextContent};
-use serde_json::Value;
+use goose_agent::tool_call_state::EXECUTABLE_KEY;
+use rmcp::model::{Annotations, CallToolRequestParams, CallToolResult, Role, TextContent};
+use serde_json::{json, Value};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
+use crate::agents::state_machine::{
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, PreToolCallHookOperation,
+};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
+use crate::conversation::message::{
+    Message, MessageContent, SystemNotificationType, TOOL_META_EXTERNAL_DISPATCH_KEY,
+};
+use crate::conversation::Conversation;
+use crate::hooks::HookManager;
+use crate::session::Session;
 
 pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
@@ -1361,6 +1372,87 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
     assert!(
         tool_error.ends_with(HOOK_FAILURE_REFUSAL),
         "expected the shared refusal, got {tool_error}"
+    );
+    Ok(())
+}
+
+async fn allowed_ids(calls: &[(&str, Value)], answered: &[&str]) -> Result<Option<Vec<String>>> {
+    let reply = calls
+        .iter()
+        .fold(Message::assistant(), |message, (id, meta)| {
+            message.with_tool_request_with_metadata(
+                *id,
+                Ok(CallToolRequestParams::new("shell")),
+                None,
+                Some(meta.clone()),
+            )
+        });
+    let mut messages = vec![Message::user().with_text("go"), reply];
+    if !answered.is_empty() {
+        messages.push(answered.iter().fold(Message::user(), |message, id| {
+            message.with_tool_response(*id, Ok(CallToolResult::success(vec![])))
+        }));
+    }
+    let conversation = Conversation::new_unvalidated(messages);
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, CancellationToken::new());
+    let result = PreToolCallHookOperation::new(HookManager::default(), Default::default())
+        .run(&Session::default(), &conversation, &emit)
+        .await?;
+    let OperationResult::Applied(step) = result else {
+        return Ok(None);
+    };
+    Ok(Some(
+        step.effects
+            .into_iter()
+            .map(|effect| match effect {
+                GooseEffect::Conversation(ConversationEffect::PatchToolRequestMeta {
+                    tool_call_id,
+                    patch,
+                }) => {
+                    assert_eq!(patch, json!({ "goose.pre_hook_allowed": true }));
+                    tool_call_id
+                }
+                _ => panic!("expected a pre-hook allowed patch"),
+            })
+            .collect(),
+    ))
+}
+
+#[tokio::test]
+async fn pre_tool_hook_allows_one_call_per_pass_and_skips_calls_that_cannot_run_or_were_already_allowed(
+) -> Result<()> {
+    let ready = json!({ EXECUTABLE_KEY: true });
+    let allowed = json!({ EXECUTABLE_KEY: true, "goose.pre_hook_allowed": true });
+
+    assert_eq!(
+        allowed_ids(&[("first", ready.clone()), ("second", ready.clone())], &[]).await?,
+        Some(vec!["first".to_string()])
+    );
+    assert_eq!(
+        allowed_ids(
+            &[("first", allowed.clone()), ("second", ready.clone())],
+            &[]
+        )
+        .await?,
+        Some(vec!["second".to_string()])
+    );
+    assert_eq!(
+        allowed_ids(
+            &[
+                ("allowed", allowed),
+                ("unchecked", json!({})),
+                ("awaiting", json!({ EXECUTABLE_KEY: false })),
+                (
+                    "external",
+                    json!({ EXECUTABLE_KEY: true, TOOL_META_EXTERNAL_DISPATCH_KEY: true }),
+                ),
+                ("answered", ready),
+            ],
+            &["answered"],
+        )
+        .await?,
+        None
     );
     Ok(())
 }

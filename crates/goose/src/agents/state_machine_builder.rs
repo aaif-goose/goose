@@ -14,8 +14,8 @@ use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
     EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook, GooseToolApproval,
-    InferenceRunner, Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner,
+    Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
     RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
     StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
     SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
@@ -120,10 +120,6 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let post_tool_call_hook = Arc::new(GoosePostToolHook::new(
-        hook_manager.clone(),
-        Arc::clone(&extension_lease),
-    ));
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
@@ -136,20 +132,19 @@ pub(crate) fn build_state_machine(
         )),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
-            Arc::clone(&post_tool_call_hook),
+            hook_manager.clone(),
         )),
         Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
             hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
             Arc::clone(&extension_lease),
             defer_tools,
             always_load_tools,
         )),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
-            post_tool_call_hook,
+            Arc::clone(&extension_lease),
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(

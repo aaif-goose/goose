@@ -1,18 +1,19 @@
 //! Answers tool requests that no other operation handled.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
-    ToolDisposition,
+    emit_extended_pre_hooks, leased_working_dir, pending_tool_requests, request_was_advertised,
+    tool_span, ToolDisposition,
 };
-use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
+use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -27,14 +28,17 @@ pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<GoosePostToolHook>,
+    extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
 }
 
 impl RemainingToolCallsOperation {
-    pub fn new(hook_manager: HookManager, post_tool_call_hook: Arc<GoosePostToolHook>) -> Self {
+    pub fn new(
+        hook_manager: HookManager,
+        extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    ) -> Self {
         Self {
             hook_manager,
-            post_tool_call_hook,
+            extension_lease,
         }
     }
 }
@@ -111,9 +115,14 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                                 tool_result: output.clone(),
                                 metadata: request.metadata.clone(),
                             };
-                            self.post_tool_call_hook
-                                .after_call(session, &request, &tool_response)
-                                .instrument(span.clone())
+                            emit_post_tool_hooks(
+                                &self.hook_manager,
+                                &session.id,
+                                &leased_working_dir(&self.extension_lease, session),
+                                &request,
+                                &tool_response,
+                            )
+                            .instrument(span.clone())
                             .await;
                             (output, true)
                         }
@@ -159,9 +168,7 @@ mod tests {
     ) -> Result<OperationResult<GooseEffect>> {
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
-        let post_tool_call_hook =
-            Arc::new(GoosePostToolHook::new(hook_manager.clone(), Arc::default()));
-        RemainingToolCallsOperation::new(hook_manager, post_tool_call_hook)
+        RemainingToolCallsOperation::new(hook_manager, Arc::default())
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
     }

@@ -16,7 +16,7 @@ use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionMan
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
-use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
+use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -238,8 +238,9 @@ fn recording_result(
     result: ToolCallResult,
     span: tracing::Span,
     request: &ToolRequest,
-    session: Arc<Session>,
-    post_tool_call_hook: Arc<GoosePostToolHook>,
+    hook_manager: HookManager,
+    session_id: String,
+    working_dir: PathBuf,
 ) -> ToolCallResult {
     let batch = Arc::clone(batch);
     let request = request.clone();
@@ -267,9 +268,14 @@ fn recording_result(
             tool_result: result.clone(),
             metadata,
         };
-        post_tool_call_hook
-            .after_call(session.as_ref(), &request, &response)
-            .await;
+        emit_post_tool_hooks(
+            &hook_manager,
+            &session_id,
+            &working_dir,
+            &request,
+            &response,
+        )
+        .await;
         result
     }
     .instrument(span);
@@ -304,7 +310,6 @@ fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
 pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<GoosePostToolHook>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
@@ -315,7 +320,6 @@ impl ToolExecutionOperation {
     pub fn new(
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
-        post_tool_call_hook: Arc<GoosePostToolHook>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         defer_tools: bool,
         always_load_tools: Vec<String>,
@@ -323,7 +327,6 @@ impl ToolExecutionOperation {
         Self {
             extension_manager,
             hook_manager,
-            post_tool_call_hook,
             lease,
             batch: Arc::default(),
             defer_tools,
@@ -406,9 +409,8 @@ impl ToolExecutionOperation {
         tool_call: CallToolRequestParams,
         request: &ToolRequest,
         cancellation_token: CancellationToken,
-        call_session: &Arc<Session>,
+        session: &Session,
     ) -> ToolCallResult {
-        let session = call_session.as_ref();
         let request_id = request.id.clone();
         let span = tool_span(&tool_call.name, &request_id, &session.id);
         crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
@@ -455,8 +457,9 @@ impl ToolExecutionOperation {
                 result,
                 result_span,
                 request,
-                Arc::clone(call_session),
-                Arc::clone(&self.post_tool_call_hook),
+                self.hook_manager.clone(),
+                session.id.clone(),
+                session.working_dir.clone(),
             )
         }
         .instrument(span)
@@ -1067,7 +1070,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             return applied([response.into()]);
         }
 
-        let call_session = Arc::new(session_in_lease(&lease, session));
+        let call_session = session_in_lease(&lease, session);
         let mut tool_streams = Vec::new();
         for (request, disposition) in &pending {
             if *disposition != ToolDisposition::Execute {

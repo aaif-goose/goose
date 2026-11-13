@@ -85,5 +85,4 @@ pub(crate) use ops_stop_hook::{StopHookOperation, DEFAULT_DENY_LIMIT};
 pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
-pub(super) use post_tool_hook::GoosePostToolHook;
 pub(super) use tool_approval::GooseToolApproval;
