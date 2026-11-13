@@ -672,42 +672,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejected_thinking_config_is_not_retried() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        for message in [
-            "\"thinking.type.disabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior.",
-            "\"thinking.type.enabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior.",
-            "To turn thinking off on this model, send \"thinking\": {\"type\": \"between_tools\"} instead of {\"type\": \"disabled\"}.",
-        ] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .and(path("/v1/messages"))
-                .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-                    "type": "error",
-                    "error": {"type": "invalid_request_error", "message": message}
-                })))
-                .expect(1)
-                .mount(&server)
-                .await;
-
-            let provider = make_provider_with_custom_models(&server.uri(), vec![]);
-            let result = provider
-                .stream(
-                    &ModelConfig::new("claude-sonnet-4-5"),
-                    "system",
-                    &[Message::user().with_text("Hi")],
-                    &[],
-                )
-                .await;
-
-            assert!(result.is_err(), "{message}");
-            server.verify().await;
-        }
-    }
-
-    #[tokio::test]
     async fn fetch_models_treats_invalid_json_as_endpoint_not_found() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};

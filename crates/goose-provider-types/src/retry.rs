@@ -91,14 +91,10 @@ impl RetryConfig {
 /// Anthropic rejects signed `thinking`/`redacted_thinking` blocks as immutable
 /// once a thinking model's config changes mid-conversation, and the identical
 /// payload is rebuilt on every retry — so retrying can never succeed.
-/// A model also rejects a thinking setting it does not support, such as an
-/// explicit disable or a budget on an always-on model, on every retry.
 const PERMANENT_REQUEST_FAILURE_MARKERS: &[&str] = &[
     "blocks in the latest assistant message cannot be modified",
     "must remain as they were in the original response",
     "Reasoning is mandatory for this endpoint",
-    "is not supported for this model",
-    "To turn thinking off on this model",
 ];
 
 fn is_permanent_request_failure(message: &str) -> bool {
@@ -106,6 +102,7 @@ fn is_permanent_request_failure(message: &str) -> bool {
         .iter()
         .any(|marker| message.contains(marker))
         || crate::formats::anthropic::is_thinking_signature_error(message)
+        || crate::formats::anthropic::is_unsupported_thinking_config_error(message)
         || crate::formats::openai_responses::is_encrypted_reasoning_error(message)
 }
 
@@ -318,6 +315,9 @@ mod tests {
         ));
         assert!(!is_permanent_request_failure(
             "Bad request (400): model not found"
+        ));
+        assert!(!is_permanent_request_failure(
+            "tools.0: Tool type 'web_fetch_20250910' is not supported for this model."
         ));
     }
 
