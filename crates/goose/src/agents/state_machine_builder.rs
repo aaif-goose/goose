@@ -1,8 +1,10 @@
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::write_integrity::{WriteIntegrityChecker, WritePolicyConfig};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -89,6 +91,36 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
     Ok(Arc::new(TypeSafeProvider::new(client)))
 }
 
+/// Load the write-integrity policy when `GOOSE_WRITE_POLICY_FILE` points
+/// at a JSON config file. Unset means no write-integrity enforcement. A
+/// set-but-unloadable file installs a checker that denies every tool call
+/// instead of failing open: without a policy goose cannot tell a read from
+/// a write, so a typo'd config is loud rather than silently ignored.
+fn load_write_policy() -> Option<Arc<WriteIntegrityChecker>> {
+    let path = Config::global()
+        .get_param::<String>("GOOSE_WRITE_POLICY_FILE")
+        .ok()?;
+    match WritePolicyConfig::load_from_file(Path::new(&path)) {
+        Ok(config) => {
+            tracing::info!(
+                "write integrity loaded from {path} ({} write tools)",
+                config.writes.len()
+            );
+            Some(Arc::new(WriteIntegrityChecker::new(Arc::new(config))))
+        }
+        Err(error) => {
+            tracing::error!(
+                "write policy config file {path} failed to load ({error}); denying all tool calls"
+            );
+            Some(Arc::new(WriteIntegrityChecker::new(Arc::new(
+                WritePolicyConfig::unavailable(format!(
+                    "Write policy config file {path} failed to load: {error}. Fix or unset GOOSE_WRITE_POLICY_FILE."
+                )),
+            ))))
+        }
+    }
+}
+
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
 ) -> StateMachine<'_, Session, GooseEffect> {
@@ -120,14 +152,18 @@ pub(crate) fn build_state_machine(
         hook_manager.clone(),
         Arc::clone(&extension_lease),
     ));
+    let write_integrity = load_write_policy();
+    let mut pre_tool_hook =
+        GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease));
+    if let Some(checker) = &write_integrity {
+        pre_tool_hook = pre_tool_hook.with_write_integrity(Arc::clone(checker));
+    }
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(Arc::new(
-            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
-        ))),
+        Arc::new(PreToolCallHookOperation::new(Arc::new(pre_tool_hook))),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),

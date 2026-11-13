@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
+use goose_agent::write_integrity::WriteIntegrityChecker;
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::messages_since_kickoff;
@@ -77,6 +78,13 @@ async fn pre_tool_use_denial(
 pub struct GoosePreToolHook {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    /// Write integrity: deterministic, no-model-call enforcement that a
+    /// write tool only runs when every argument deciding whom or what it
+    /// affects is grounded in the user's request (CapLite). When set,
+    /// every proposed write call is checked before the hook chain runs;
+    /// a denial short-circuits with the ungrounded argument and value.
+    /// `None` preserves the previous behavior exactly.
+    write_integrity: Option<Arc<WriteIntegrityChecker>>,
 }
 
 impl GoosePreToolHook {
@@ -87,7 +95,13 @@ impl GoosePreToolHook {
         Self {
             hook_manager,
             extension_lease,
+            write_integrity: None,
         }
+    }
+
+    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
+        self.write_integrity = Some(checker);
+        self
     }
 }
 
@@ -111,6 +125,13 @@ impl PreToolCallHook<Session> for GoosePreToolHook {
         let Ok(tool_call) = &request.tool_call else {
             return Ok(PreToolCallDecision::Allow);
         };
+        if let Some(checker) = &self.write_integrity {
+            if let Err(reason) =
+                checker.check(conversation, &tool_call.name, tool_call.arguments.as_ref())
+            {
+                return Ok(PreToolCallDecision::Deny { reason });
+            }
+        }
         let tool_input = tool_call
             .arguments
             .as_ref()
