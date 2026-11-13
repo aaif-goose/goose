@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
+use goose_agent::steer::SteerQueue;
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
@@ -17,7 +18,7 @@ use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, SteerQueue, DEFAULT_BLOCK_CAP,
+    Operation, StateMachine, DEFAULT_BLOCK_CAP,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
