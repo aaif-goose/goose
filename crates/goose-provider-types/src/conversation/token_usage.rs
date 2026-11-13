@@ -107,6 +107,10 @@ pub struct Usage {
     pub total_tokens: Option<i64>,
     pub cache_read_input_tokens: Option<i64>,
     pub cache_write_input_tokens: Option<i64>,
+    /// The part of `cache_write_input_tokens` written with Anthropic's 1-hour
+    /// cache TTL, which is billed higher than the default 5-minute TTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_input_tokens: Option<i64>,
 }
 
 fn sum_optionals(a: Option<i64>, b: Option<i64>) -> Option<i64> {
@@ -134,6 +138,10 @@ impl Add for Usage {
                 other.cache_write_input_tokens,
             ),
         )
+        .with_cache_write_1h_tokens(sum_optionals(
+            self.cache_write_1h_input_tokens,
+            other.cache_write_1h_input_tokens,
+        ))
     }
 }
 
@@ -166,6 +174,7 @@ impl Usage {
             total_tokens: calculated_total,
             cache_read_input_tokens: None,
             cache_write_input_tokens: None,
+            cache_write_1h_input_tokens: None,
         }
     }
 
@@ -176,6 +185,11 @@ impl Usage {
     ) -> Self {
         self.cache_read_input_tokens = cache_read_input_tokens;
         self.cache_write_input_tokens = cache_write_input_tokens;
+        self
+    }
+
+    pub fn with_cache_write_1h_tokens(mut self, cache_write_1h_input_tokens: Option<i64>) -> Self {
+        self.cache_write_1h_input_tokens = cache_write_1h_input_tokens;
         self
     }
 
@@ -303,5 +317,18 @@ mod tests {
         assert_eq!(combined.total_tokens, Some(178));
         assert_eq!(combined.cache_read_input_tokens, Some(14));
         assert_eq!(combined.cache_write_input_tokens, Some(6));
+    }
+
+    #[test]
+    fn test_usage_addition_includes_one_hour_cache_writes() {
+        let usage_a = Usage::new(Some(100), Some(20), None)
+            .with_cache_tokens(None, Some(50))
+            .with_cache_write_1h_tokens(Some(40));
+        let usage_b = Usage::new(Some(50), Some(8), None).with_cache_tokens(None, Some(10));
+
+        let combined = usage_a + usage_b;
+
+        assert_eq!(combined.cache_write_input_tokens, Some(60));
+        assert_eq!(combined.cache_write_1h_input_tokens, Some(40));
     }
 }
