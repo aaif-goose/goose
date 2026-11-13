@@ -100,7 +100,7 @@ pub struct CompactionResult {
     /// Estimated tokens of the agent-visible context retained after
     /// compaction. Smaller than the billable output when the raw response was
     /// rewritten to the rendered structured summary.
-    pub retained_context_tokens: i32,
+    pub retained_context_tokens: i64,
 }
 
 /// Compact messages by summarizing them
@@ -256,7 +256,7 @@ pub async fn compact_messages(
 
 /// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
-pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
+pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i64> {
     let counter = create_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
@@ -280,12 +280,6 @@ pub async fn check_if_compaction_needed(
     }
 
     let messages = conversation.messages();
-    let config = Config::global();
-    let threshold = threshold_override.unwrap_or_else(|| {
-        config
-            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
-    });
 
     let model_config = session
         .model_config
@@ -293,6 +287,7 @@ pub async fn check_if_compaction_needed(
         .unwrap_or_else(|| ModelConfig::new("unknown"));
     let context_limit =
         crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
+    let threshold = threshold_override.unwrap_or_else(|| auto_compact_threshold(context_limit));
 
     let (current_tokens, _token_source) = match session.usage.total_tokens {
         Some(tokens) => (tokens as usize, "session metadata"),
@@ -757,7 +752,7 @@ mod tests {
 
     #[tokio::test]
     async fn retained_context_counts_preserved_user_message() {
-        async fn retained(final_user_text: &str) -> i32 {
+        async fn retained(final_user_text: &str) -> i64 {
             let provider =
                 MockProvider::new(Message::assistant().with_text("<mock summary>"), 100_000);
             let conversation = Conversation::new_unvalidated(vec![

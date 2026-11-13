@@ -34,7 +34,7 @@ impl MockCompactionProvider {
 
     /// Calculate input tokens based on system prompt and messages
     /// Simulates realistic token counts for different scenarios
-    fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i32 {
+    fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i64 {
         // Check if this is a compaction call
         let is_compaction_call = messages.len() == 1
             && messages[0].content.iter().any(|c| {
@@ -48,12 +48,12 @@ impl MockCompactionProvider {
         if is_compaction_call {
             // For compaction: system prompt length is a good proxy for conversation size
             // Base: 6000 (system) + conversation content embedded in prompt
-            6000 + (system_prompt.len() as i32 / 4).max(400)
+            6000 + (system_prompt.len() as i64 / 4).max(400)
         } else {
             // Regular call: system prompt + messages
             let system_tokens = if system_prompt.is_empty() { 0 } else { 6000 };
 
-            let message_tokens: i32 = messages
+            let message_tokens: i64 = messages
                 .iter()
                 .map(|msg| {
                     let mut tokens = 100;
@@ -73,7 +73,7 @@ impl MockCompactionProvider {
     }
 
     /// Calculate output tokens based on response type
-    fn calculate_output_tokens(&self, is_compaction: bool, messages: &[Message]) -> i32 {
+    fn calculate_output_tokens(&self, is_compaction: bool, messages: &[Message]) -> i64 {
         if is_compaction {
             // Compaction produces a compact summary
             200
@@ -127,7 +127,7 @@ impl Provider for MockCompactionProvider {
         let output_tokens = self.calculate_output_tokens(is_compaction, messages);
 
         // Simulate context limit: if input > 20k tokens and we haven't compacted yet, fail
-        const CONTEXT_LIMIT: i32 = 20000;
+        const CONTEXT_LIMIT: i64 = 20000;
         if !is_compaction
             && input_tokens > CONTEXT_LIMIT
             && !self.has_compacted.load(Ordering::SeqCst)
@@ -289,7 +289,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
 
     // Track compaction and context size changes
     let mut compaction_occurred = false;
-    let mut input_tokens_after_compaction: Option<i32> = None;
+    let mut input_tokens_after_compaction: Option<i64> = None;
 
     while let Some(event_result) = reply_stream.next().await {
         match event_result {

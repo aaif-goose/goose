@@ -18,7 +18,7 @@ use tokio_util::io::StreamReader;
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContentBlock};
 use crate::databricks_auth::{
     DatabricksAuth, DatabricksAuthProvider, DatabricksOauthTokenProvider, DatabricksRefreshHook,
     DatabricksTokenResolver,
@@ -36,6 +36,7 @@ use crate::retry::{
 };
 use crate::thinking::ThinkingEffort;
 use rmcp::model::Tool;
+use uuid::Uuid;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
 const DATABRICKS_V2_DEFAULT_GATEWAY_PATH: &str = "ai-gateway";
@@ -470,7 +471,29 @@ impl DatabricksV2Provider {
                 let _ = log.error(e);
             })?;
 
-        stream_openai_compat(response, log)
+        let stream = stream_openai_compat(response, log)?;
+        if Self::is_gemini_model(&model_config.model_name) {
+            return Ok(Self::with_unique_tool_call_ids(stream));
+        }
+        Ok(stream)
+    }
+
+    /// The gateway gives each Gemini tool call the function's name as its id, so two
+    /// `shell` calls, in one response or in two turns, share an id and goose loses all
+    /// but one of them. The gateway pairs tool results by whatever id we send back, so
+    /// give each call its own id.
+    fn with_unique_tool_call_ids(stream: MessageStream) -> MessageStream {
+        Box::pin(stream.map_ok(|(message, usage)| {
+            let message = message.map(|mut message| {
+                for content in &mut message.content {
+                    if let MessageContentBlock::ToolRequest(request) = content {
+                        request.id = format!("call_{}", Uuid::new_v4().simple());
+                    }
+                }
+                message
+            });
+            (message, usage)
+        }))
     }
 
     async fn stream_anthropic_messages(
@@ -1247,6 +1270,74 @@ mod tests {
                 json!({"include_thoughts": false, "thinking_level": "high"})
             );
             assert!(request.get("reasoning_effort").is_none());
+        }
+
+        #[test_case::test_case("system.ai.gemini-4-carbon", true ; "gemini")]
+        #[test_case::test_case("catalog.schema.goose-glm-5-3", false ; "not gemini")]
+        #[tokio::test]
+        async fn gemini_tool_calls_get_unique_ids(model: &str, rewritten: bool) {
+            // The gateway names each Gemini tool call after its function.
+            let call = |index: u32, command: &str, signature: &str| {
+                format!(
+                    r#"data: {{"model":"{model}","choices":[{{"delta":{{"role":"assistant","content":null,"tool_calls":[{{{signature}"id":"shell","function":{{"name":"shell","arguments":"{{\"command\":\"{command}\"}}"}},"type":"function","index":{index}}}]}},"finish_reason":null}}]}}"#
+                )
+            };
+            let last = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{"role":"assistant","content":null}},"finish_reason":"stop"}}]}}"#
+            );
+            let body = format!(
+                "{}\n\n{}\n\n{last}\n\ndata: [DONE]\n\n",
+                call(0, "echo a", r#""thoughtSignature":"sig_a","#),
+                call(1, "echo b", "")
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let (message, _) = provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("tool calls should stream");
+
+            let requests: Vec<_> = message
+                .content
+                .iter()
+                .filter_map(|content| content.as_tool_request())
+                .collect();
+            assert_eq!(requests.len(), 2);
+            let commands: Vec<_> = requests
+                .iter()
+                .map(|request| {
+                    request
+                        .tool_call
+                        .as_ref()
+                        .unwrap()
+                        .arguments
+                        .as_ref()
+                        .unwrap()["command"]
+                        .clone()
+                })
+                .collect();
+            assert_eq!(commands, vec![json!("echo a"), json!("echo b")]);
+            assert_eq!(
+                requests[0].metadata.as_ref().unwrap()["thoughtSignature"],
+                "sig_a"
+            );
+            if rewritten {
+                assert_ne!(requests[0].id, requests[1].id);
+                assert!(requests.iter().all(|request| request.id != "shell"));
+            } else {
+                assert!(requests.iter().all(|request| request.id == "shell"));
+            }
         }
 
         #[tokio::test]

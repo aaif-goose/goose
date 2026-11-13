@@ -1,156 +1,58 @@
-//! Applies recipe commands and enforces their structured final output.
+//! Applies recipe commands and recipe instructions.
 
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
-use tracing_futures::Instrument;
 
 use crate::agents::extension_manager::ExtensionManager;
-use crate::agents::final_output_tool::{
-    structured_output_unsupported_message, FinalOutputTool, FINAL_OUTPUT_CONTINUATION_MESSAGE,
-    FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
-};
-use crate::agents::state_machine::ops_toolcalling::{
-    pending_advertised_tool_requests, tool_span, ToolDisposition,
-};
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect,
-    Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
+    GooseEffect, Operation, OperationResult, SlashCommand,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::extensions::is_extension_available;
-use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
+use crate::conversation::message::Message;
 use crate::conversation::Conversation;
-use crate::providers::base::Provider;
 use crate::session::Session;
 
-pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
-    session
-        .recipe
-        .as_ref()
-        .and_then(|recipe| recipe.response.clone())
-        .map(FinalOutputTool::try_new)
-        .transpose()
-        .map_err(|error| anyhow!(error))
-}
-
-fn assistant_block_bounds(messages: &[Message], message_index: usize) -> (usize, usize) {
-    let start = (0..message_index)
-        .rev()
-        .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
-        .last()
-        .unwrap_or(message_index);
-    let end = (message_index + 1..messages.len())
-        .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
-        .last()
-        .map_or(message_index + 1, |index| index + 1);
-    (start, end)
-}
-
-pub(super) fn final_output_called_with_other_tools(
-    session: &Session,
-    messages: &[Message],
-    request: &ToolRequest,
-) -> bool {
-    session
-        .recipe
-        .as_ref()
-        .is_some_and(|recipe| recipe.response.is_some())
-        && request
-            .tool_call
-            .as_ref()
-            .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-        && has_sibling_tool_calls(messages, &request.id)
-}
-
-fn has_sibling_tool_calls(messages: &[Message], request_id: &str) -> bool {
-    let Some(message_index) = messages.iter().position(|message| {
-        message
-            .content
-            .iter()
-            .filter_map(MessageContent::as_tool_request)
-            .any(|request| request.id == request_id)
-    }) else {
-        return false;
-    };
-    let (start, end) = assistant_block_bounds(messages, message_index);
-    messages[start..end]
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .any(|request| request.id != request_id && !request.was_executed_externally())
-}
-
-pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, String)>> {
-    let instructions = session
-        .recipe
-        .as_ref()
-        .and_then(|recipe| recipe.instructions.clone())
-        .map(|instructions| ("recipe".to_string(), instructions));
-    let final_output =
-        final_output_tool(session)?.map(|tool| ("final_output".to_string(), tool.system_prompt()));
-    Ok(instructions.into_iter().chain(final_output).collect())
+pub(super) fn command_error(
+    conversation: &Conversation,
+    message: String,
+    emit: &Emitter,
+) -> Result<OperationResult<GooseEffect>> {
+    let command = messages_since_kickoff(conversation)?
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow!("recipe command conversation has no kickoff message"))?;
+    let message_id = command
+        .id
+        .clone()
+        .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
+    let command = command.with_visibility(true, false);
+    let response = Message::assistant()
+        .with_text(message)
+        .with_visibility(true, false);
+    emit.message(command);
+    let response = emit.message(response);
+    yielded_with([
+        ConversationEffect::SetMessageVisibility {
+            message_id,
+            user_visible: true,
+            agent_visible: false,
+        }
+        .into(),
+        response.into(),
+    ])
 }
 
 pub struct RecipeOperation {
-    provider: Arc<dyn Provider>,
     extension_manager: Arc<ExtensionManager>,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-    response: std::sync::Mutex<Option<Message>>,
 }
 
 impl RecipeOperation {
-    pub fn new(
-        provider: Arc<dyn Provider>,
-        extension_manager: Arc<ExtensionManager>,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-    ) -> Self {
-        Self {
-            provider,
-            extension_manager,
-            post_tool_call_hook,
-            response: std::sync::Mutex::default(),
-        }
-    }
-
-    fn take_response(&self) -> Option<Message> {
-        self.response.lock().unwrap().take()
-    }
-
-    fn command_error(
-        &self,
-        conversation: &Conversation,
-        message: String,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let command = messages_since_kickoff(conversation)?
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow!("recipe command conversation has no kickoff message"))?;
-        let message_id = command
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        let command = command.with_visibility(true, false);
-        let response = Message::assistant()
-            .with_text(message)
-            .with_visibility(true, false);
-        emit.message(command);
-        let response = emit.message(response);
-        yielded_with([
-            ConversationEffect::SetMessageVisibility {
-                message_id,
-                user_visible: true,
-                agent_visible: false,
-            }
-            .into(),
-            response.into(),
-        ])
+    pub fn new(extension_manager: Arc<ExtensionManager>) -> Self {
+        Self { extension_manager }
     }
 }
 
@@ -158,18 +60,6 @@ impl RecipeOperation {
 impl Operation<Session, GooseEffect> for RecipeOperation {
     fn name(&self) -> &'static str {
         "recipe"
-    }
-
-    async fn finalize_cancellation(
-        &self,
-        _session: &Session,
-        _conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Vec<GooseEffect> {
-        match self.take_response() {
-            Some(response) => vec![emit.message(response).into()],
-            None => Vec::new(),
-        }
     }
 
     async fn run_command(
@@ -185,16 +75,12 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         ) {
             Ok(Some(recipe)) => recipe,
             Ok(None) => return not_applicable(),
-            Err(error) => return self.command_error(conversation, error, emit),
+            Err(error) => return command_error(conversation, error, emit),
         };
 
         if let Some(response) = recipe.response.clone() {
             if let Err(error) = FinalOutputTool::try_new(response) {
-                return self.command_error(
-                    conversation,
-                    format!("Recipe is not valid: {error}"),
-                    emit,
-                );
+                return command_error(conversation, format!("Recipe is not valid: {error}"), emit);
             }
         }
 
@@ -209,7 +95,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 .enable(&session.id, extension.clone())
                 .await
             {
-                return self.command_error(
+                return command_error(
                     conversation,
                     format!(
                         "Could not load recipe extension '{}': {error}",
@@ -245,139 +131,17 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         ])
     }
 
-    async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(final_output_tool(session)?
-            .as_ref()
-            .map(FinalOutputTool::tool)
-            .into_iter()
-            .collect())
-    }
-
     async fn prompt_parts(
         &self,
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        recipe_prompt_parts(session)
-    }
-
-    async fn run(
-        &self,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let Some(mut final_output) = final_output_tool(session)? else {
-            return not_applicable();
-        };
-
-        if !self.provider.supports_builtin_tools() {
-            return self.command_error(
-                conversation,
-                structured_output_unsupported_message(self.provider.get_name()),
-                emit,
-            );
-        }
-
-        let messages = messages_since_kickoff(conversation)?;
-        let pending = pending_advertised_tool_requests(messages).into_iter().find(
-            |(request, disposition)| {
-                *disposition == ToolDisposition::Execute
-                    && request
-                        .tool_call
-                        .as_ref()
-                        .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-            },
-        );
-        if let Some((request, _)) = pending {
-            if session.goose_mode == GooseMode::Chat {
-                let mut response = Message::user();
-                response.add_tool_response_with_metadata(
-                    request.id,
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )])),
-                    request.metadata.as_ref(),
-                );
-                let response = emit.message(response);
-                return applied([response.into()]);
-            }
-            if has_sibling_tool_calls(messages, &request.id) {
-                let mut response = Message::user();
-                response.add_tool_response_with_metadata(
-                    request.id,
-                    Err(ErrorData::new(
-                        ErrorCode::INVALID_REQUEST,
-                        FINAL_OUTPUT_NOT_ALONE_MESSAGE,
-                        None,
-                    )),
-                    request.metadata.as_ref(),
-                );
-                let response = emit.message(response);
-                return applied([response.into()]);
-            }
-
-            let tool_call = request
-                .tool_call
-                .clone()
-                .map_err(|error| anyhow!("final output tool call could not be parsed: {error}"))?;
-            let span = tool_span(&tool_call.name, &request.id, &session.id);
-            let result = final_output
-                .execute_tool_call(tool_call)
-                .instrument(span.clone())
-                .await;
-            let output = result.result.instrument(span.clone()).await;
-            match &output {
-                Ok(result) if result.is_error == Some(true) => {
-                    span.record("error.type", "tool_error");
-                }
-                Err(_) => {
-                    span.record("error.type", "tool_execution_error");
-                }
-                _ => {}
-            }
-            let mut response = Message::user().with_generated_id_if_missing();
-            response.add_tool_response_with_metadata(
-                request.id.clone(),
-                output.clone(),
-                request.metadata.as_ref(),
-            );
-            *self.response.lock().unwrap() = Some(response);
-            let tool_response = ToolResponse {
-                id: request.id.clone(),
-                tool_result: output,
-                metadata: request.metadata.clone(),
-            };
-            run_post_tool_call_hook(
-                self.post_tool_call_hook.as_ref(),
-                session,
-                conversation,
-                &request,
-                &tool_response,
-            )
-            .instrument(span)
-            .await;
-            let response = self.take_response().expect("recipe response held");
-            let response = emit.message(response);
-            let Some(accepted) = final_output.final_output.take() else {
-                return applied([response.into()]);
-            };
-            let accepted = emit.message(Message::assistant().with_text(accepted));
-            return applied([response.into(), accepted.into()]);
-        }
-
-        if FinalOutputTool::successful_output(messages).is_some() {
-            return not_applicable();
-        }
-
-        if ends_turn(messages) {
-            let message = Message::user()
-                .with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE)
-                .agent_only();
-            let message = emit.message(message);
-            return applied([message.into()]);
-        }
-
-        not_applicable()
+        Ok(session
+            .recipe
+            .as_ref()
+            .and_then(|recipe| recipe.instructions.clone())
+            .map(|instructions| ("recipe".to_string(), instructions))
+            .into_iter()
+            .collect())
     }
 }

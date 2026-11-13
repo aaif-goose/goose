@@ -8,7 +8,7 @@ use crate::session::Session;
 
 /// Reported usage stops at the inference that requested the tools, so the
 /// results that answered it are not counted until the next request.
-async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
+async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i64> {
     let messages = conversation.messages();
     if last_effective_role(messages)? != EffectiveRole::Tool {
         return Ok(0);
@@ -27,7 +27,7 @@ pub(super) async fn proactive_compaction_tokens(
     conversation: &Conversation,
     context_limit: usize,
     threshold: f64,
-) -> Result<Option<i32>> {
+) -> Result<Option<i64>> {
     if threshold <= 0.0 || threshold >= 1.0 {
         return Ok(None);
     }
@@ -36,7 +36,7 @@ pub(super) async fn proactive_compaction_tokens(
         return Ok(None);
     }
     let tokens = match session.usage.total_tokens {
-        Some(tokens) => tokens + unreported_tool_tokens(conversation).await?,
+        Some(tokens) => tokens.saturating_add(unreported_tool_tokens(conversation).await?),
         None => count_context_tokens(conversation.messages()).await?,
     };
     Ok((tokens > 0 && tokens as f64 / context_limit as f64 > threshold).then_some(tokens))

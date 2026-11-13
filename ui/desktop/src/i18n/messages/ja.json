@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近のディレクトリ"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "構造化された結果は取得されませんでした"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "構造化された結果が拒否されました"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "構造化された結果を返しました"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "構造化された結果を返しています…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} への切り替えに失敗しました"
   },

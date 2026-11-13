@@ -98,15 +98,15 @@ pub struct MessageUsageUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct MessageUsageData {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_tokens: Option<i32>,
+    pub output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_tokens: Option<i32>,
+    pub total_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<i32>,
+    pub cache_read_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_write_tokens: Option<i32>,
+    pub cache_write_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

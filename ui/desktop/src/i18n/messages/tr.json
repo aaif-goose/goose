@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Son dizinler"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Yapılandırılmış sonuç toplanmadı"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Yapılandırılmış sonuç reddedildi"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürüldü"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Yapılandırılmış sonuç döndürülüyor…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} dalına geçilemedi"
   },

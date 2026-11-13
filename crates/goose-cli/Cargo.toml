@@ -79,7 +79,6 @@ fs2 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 anstream = { version = "1", default-features = false, features = ["wincon"] }
-ntapi = { version = "0.4.3", default-features = false, features = ["user"] }
 winapi = { workspace = true, features = [
     "consoleapi",
     "processenv",

@@ -10,6 +10,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -1166,14 +1167,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         }
     }
 
-    assert_eq!(
-        approved_tools,
-        vec![
-            "delegate",
-            "shell",
-            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
-        ]
-    );
+    assert_eq!(approved_tools, vec!["delegate", "shell"]);
     assert!(texts.concat().ends_with("the subagent printed it"));
     Ok(())
 }
@@ -1181,10 +1175,13 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
 fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
     use rmcp::ServiceExt;
     tokio::spawn(async move {
-        let running = goose_test_support::mcp::McpFixtureServer::new()
-            .serve((read, write))
-            .await
-            .unwrap();
+        // Server-to-client elicitation is only supported by the legacy protocol.
+        let running = goose_test_support::mcp::McpFixtureServer::with_max_protocol_version(
+            rmcp::model::ProtocolVersion::V_2025_11_25,
+        )
+        .serve((read, write))
+        .await
+        .unwrap();
         let _ = running.waiting().await;
     });
 }
@@ -1645,18 +1642,17 @@ async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> 
     );
     api.on("count the files")
         .call("shell", json!({ "command": "echo partial-progress" }));
-    api.on("max turns reached")
+    api.on(MAX_TURNS_MESSAGE)
         .reply("the subagent ran out of turns");
 
     reply_approving(&services, &session_id, "hand this off", None).await?;
     let subagent_id = delegated_subagent_id(&services, &session_id).await?;
-    assert!(
-        parent_texts(&services, &session_id)
-            .await?
-            .iter()
-            .any(|text| text
-                .starts_with(&format!("Subagent {subagent_id} failed: max turns reached")))
-    );
+    assert!(parent_texts(&services, &session_id)
+        .await?
+        .iter()
+        .any(|text| text.starts_with(&format!(
+            "Subagent {subagent_id} failed: {MAX_TURNS_MESSAGE}"
+        ))));
 
     let resumed_request =
         resume_until_completed(&services, &api, &session_id, &subagent_id).await?;

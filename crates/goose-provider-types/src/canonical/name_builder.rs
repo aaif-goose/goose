@@ -53,6 +53,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "databricks_v2" => "databricks",
         "zhipu" => "zhipuai",
         "moonshot" => "moonshotai",
+        "vercel_ai_gateway" => "vercel",
         "together" => "togetherai",
         "novita" => "novita-ai",
         "opencode_go" => "opencode-go",
@@ -373,6 +374,10 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("opencode_zen", "kimi-k3", &r),
             Some("opencode/kimi-k3".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("vercel_ai_gateway", "anthropic/claude-sonnet-4.5", &r),
+            Some("vercel/anthropic/claude-sonnet-4.5".to_string())
         );
 
         // === OpenRouter ===

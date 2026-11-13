@@ -156,6 +156,12 @@ predicates they need: `messages_since_kickoff`, `last_effective_role`,
 remember that it already did something, it records that on the message itself via
 `Operation::set_message_meta` / `message_meta` rather than in memory.
 
+## Turn limits
+
+`max_turns::MaxTurnsOperation::new(limit)` limits autonomous turns using the persisted conversation. Place it after tool execution, pending approvals, and normal completion, before inference. It counts consecutive assistant-message blocks since the latest kickoff; provider retries and history transformations can affect how closely that approximates inference calls. A new user prompt resets the budget, and a zero limit yields immediately. A completed assistant answer is preserved even at the limit.
+
+At exhaustion, the operation appends a user-visible `ResourceExhausted` error and yields. The operation also contributes a `moim_parts` budget reminder once half the limit is used. Hosts must render these parts in their request preparer; `IdentityInferenceRequestPreparer` does not include them.
+
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference

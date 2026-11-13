@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose-acp",
-  "version": "1.58.0",
+  "version": "1.59.0",
   "description": "Install and resolve the Goose executable through npm",
   "license": "Apache-2.0",
   "repository": {
@@ -45,8 +45,8 @@
     "@aaif/goose-binary-win32-x64": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "prettier": "^3.9.6",
+    "@types/node": "^26.6.6",
+    "prettier": "^3.9.10",
     "typescript": "~5.9.3"
   }
 }
