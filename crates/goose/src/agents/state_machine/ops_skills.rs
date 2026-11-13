@@ -11,9 +11,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing_futures::Instrument;
 
-use crate::agents::state_machine::ops_toolcalling::{
-    pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
+use crate::agents::state_machine::extension_operation_host::{
+    pending_advertised_tool_requests, EXPIRED_APPROVAL_RESPONSE,
 };
+use crate::agents::state_machine::tool_hook_context::tool_span;
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
@@ -25,6 +26,7 @@ use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
+use goose_agent::extension_manager::ToolDisposition;
 use goose_agent::extension_manager::TurnLease;
 
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";

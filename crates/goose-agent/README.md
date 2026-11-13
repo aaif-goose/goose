@@ -226,8 +226,18 @@ result), and collects one response message that survives cancellation.
 `LeaseResolver`, after `ToolApprovalOperation` (use an always-allow policy if no
 confirmation is needed). It shares `tool_call_state::pending_tool_requests` with
 `ToolOperation` and goose execution, so unanswered calls still require approval
-and provider-executed calls are never redispatched. `goose`'s own tool execution
-adds hooks and chat mode on the same `TurnLease` and `ToolCallBatch`.
+and provider-executed calls are never redispatched.
+
+Goose uses `ExtensionOperation` directly, with an `ExtensionOperationHost` for
+advertisement policy, deferred tools, chat mode, result processing, hooks and
+telemetry. The operation owns dispatch, batch recording and cancellation. Results
+are recorded after host transformation but before post-call hooks, so cancellation
+during a hook does not lose a completed response. `with_inference_lease` shares the
+lease prepared alongside Goose's inference session snapshot instead of resolving
+a second snapshot. Prompt slash commands and subdirectory hints are separate
+Goose operations. Hosts can reject unadvertised requests and claim expired
+requests without starting replacement extensions; only explicitly eligible
+operation-generated requests may resolve a lease for execution.
 
 The native transports and their additional dependencies are target-gated; the
 existing WebAssembly agent loop does not acquire native process/network runtime

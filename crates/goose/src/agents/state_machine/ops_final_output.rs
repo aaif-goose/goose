@@ -10,8 +10,9 @@ use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FinalOutputTool, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
 };
+use crate::agents::state_machine::extension_operation_host::request_was_advertised;
 use crate::agents::state_machine::ops_recipe::command_error;
-use crate::agents::state_machine::ops_toolcalling::{request_was_advertised, tool_span};
+use crate::agents::state_machine::tool_hook_context::tool_span;
 use crate::agents::state_machine::{
     applied, ends_turn, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
     OperationResult,
