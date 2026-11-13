@@ -1040,7 +1040,24 @@ mod tests {
         }
 
         #[test]
-        fn preserves_explicit_vision_setting() {
+        fn declared_vision_matches_by_model_name() {
+            let declared = [ModelInfo::new("other-model").with_vision_support(false)];
+            let config = ModelConfig::new(KIMI)
+                .with_declared_vision_support(&declared)
+                .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));
+            assert_eq!(config.supports_vision, Some(true));
+        }
+
+        #[test]
+        fn catalog_entry_wins_over_name_inference() {
+            // Name inference maps this model to an upstream entry that reports vision.
+            let config = ModelConfig::new("deepseek-v4-flash")
+                .with_provider_vision_support("custom_aihubmix", Some("aihubmix"));
+            assert_eq!(config.supports_vision, Some(false));
+        }
+
+        #[test]
+        fn catalog_lookup_keeps_existing_value() {
             let config = ModelConfig::new(KIMI)
                 .with_vision_support(false)
                 .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));

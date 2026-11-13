@@ -392,6 +392,7 @@ impl ProviderRegistry {
 mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
+    use crate::providers::azure_foundry_def::AzureFoundryProviderDef;
     use crate::providers::openai_def::OpenAiProviderDef;
 
     fn test_config() -> DeclarativeProviderConfig {
@@ -532,6 +533,17 @@ mod tests {
             .normalize_model_config(ModelConfig::new(KIMI))
             .unwrap();
         assert_eq!(without_catalog.supports_vision, None);
+    }
+
+    #[test]
+    fn azure_foundry_skips_name_vision_lookup() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<AzureFoundryProviderDef>(true);
+
+        let model = registry.entries["azure_foundry"]
+            .normalize_model_config(ModelConfig::new("gpt-4o"))
+            .unwrap();
+        assert_eq!(model.supports_vision, None);
     }
 
     #[test]

@@ -780,6 +780,10 @@ impl ProviderHandle {
         self.provider.get_name().to_string()
     }
 
+    fn model_config(&self, model: &ProviderModelConfig) -> Result<ModelConfig, GooseError> {
+        model.to_goose_model_config(self.provider.get_name(), &self.declared)
+    }
+
     async fn context_limit(&self, model: ProviderModelConfig) -> Result<usize, GooseError> {
         let normalized_model = ModelConfig::new(&model.model_name);
         let override_limit = model
@@ -809,7 +813,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<Arc<ProviderStream>, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(self.provider.get_name(), &self.declared)?;
+        let model = self.model_config(&model)?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = Arc::new(RequestObserver::start(RequestDescriptor {
@@ -852,7 +856,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<ProviderCompletion, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(self.provider.get_name(), &self.declared)?;
+        let model = self.model_config(&model)?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = RequestObserver::start(RequestDescriptor {
@@ -1825,7 +1829,14 @@ mod tests {
         .to_string();
 
         let provider = declarative_provider_from_json(json).unwrap();
-        assert_eq!(kimi_vision(&provider.handle.declared), Some(false));
+        let model = provider
+            .handle
+            .model_config(&ProviderModelConfig {
+                model_name: KIMI.to_string(),
+                ..base_model_config()
+            })
+            .unwrap();
+        assert_eq!(model.supports_vision, Some(false));
         assert_eq!(
             provider.handle.declared.catalog_provider_id.as_deref(),
             Some("fireworks-ai")
