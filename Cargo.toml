@@ -82,7 +82,7 @@ shell-words = { version = "1", default-features = false, features = ["std"] }
 snap = { version = "1", default-features = false }
 test-case = { version = "3", default-features = false }
 url = { version = "2.5.4", default-features = false, features = ["std"] }
-opentelemetry = { version = "0.32", default-features = false }
+opentelemetry = { version = "0.33", default-features = false }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics"] }
 opentelemetry-http = { version = "0.32", default-features = false, features = ["internal-logs", "reqwest"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "internal-logs", "logs", "metrics", "reqwest-client", "trace"] }
