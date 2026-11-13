@@ -6,6 +6,7 @@ pub mod machine;
 pub mod max_turns;
 pub mod operation;
 pub mod skills;
+pub mod steer;
 pub mod subagent;
 pub mod tool;
 pub mod tool_approval;

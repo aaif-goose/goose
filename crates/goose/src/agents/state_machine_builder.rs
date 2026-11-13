@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::max_turns::MaxTurnsOperation;
+use goose_agent::steer::{SteerOperation, SteerQueue};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -16,9 +17,9 @@ use crate::agents::state_machine::{
     EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
     GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner,
     Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation,
-    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
-    SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
