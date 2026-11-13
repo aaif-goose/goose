@@ -55,6 +55,13 @@
     }
   ],
   "preserves_thinking": true,
+  "reasoning_effort_mapping": {
+    "off": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "max": "xhigh"
+  },
   "supports_streaming": true,
   "model_doc_link": "https://dev.meta.ai/docs",
   "setup_steps": [
