@@ -110,7 +110,7 @@ In your first session, goose prompts you to [set up an LLM (Large Language Model
         To rename an existing session, use the `session rename` subcommand:
 
         ```sh
-        goose session rename --session-id 20260213_9 --new-name my-new-name
+        goose session rename --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a --new-name my-new-name
         ```
 
         If you omit the session ID, goose will prompt you to select a session interactively:
@@ -129,10 +129,10 @@ In your first session, goose prompts you to [set up an LLM (Large Language Model
         
         ```text
         Available sessions:
-        20260213_9 - react-migration - 2026-02-13 16:20:37 UTC
+        019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a - react-migration - 2026-02-13 16:20:37 UTC
         ```
 
-        In the output above, `20260213_9` is the session ID. Session IDs use the format `YYYYMMDD_<COUNT>`. Many [goose CLI commands](/docs/guides/goose-cli-commands) let you identify a session by name (`--name` / `-n`) as an alternative to `--session-id`.
+        In the output above, `019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a` is the session ID. Session IDs are UUIDs; sessions created by older versions of goose keep their `YYYYMMDD_<COUNT>` IDs. Many [goose CLI commands](/docs/guides/goose-cli-commands) let you identify a session by name (`--name` / `-n`) as an alternative to `--session-id`.
     </TabItem>
 </Tabs>
 
@@ -375,7 +375,7 @@ Create a complete copy of any session to reuse configurations, experiment with v
         goose session --resume --fork --name my-project
 
         # Fork a specific session by ID
-        goose session --resume --fork --session-id 20251108_3
+        goose session --resume --fork --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 
         # Fork and show message history
         goose session --resume --fork --history

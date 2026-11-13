@@ -14,7 +14,7 @@ goose provides a command-line interface (CLI) with commands for managing session
 
 goose CLI follows consistent patterns for flag naming to make commands intuitive and predictable:
 
-- **`--session-id`**: Used for session identifiers (e.g., `20251108_1`)
+- **`--session-id`**: Used for session identifiers (e.g., `019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a`)
 - **`--schedule-id`**: Used for schedule job identifiers (e.g., `daily-report`)
 - **`-n, --name`**: Used for human-readable names
 - **`--path`**: Used for file paths (legacy support)
@@ -202,7 +202,7 @@ Your existing sessions are automatically imported to the database. Legacy `.json
 Start or resume interactive chat sessions.
 
 **Basic Options:**
-- **`--session-id <session_id>`**: Specify a session by its ID (e.g., '20251108_1')
+- **`--session-id <session_id>`**: Specify a session by its ID (e.g., '019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a')
 - **`-n, --name <name>`**: Give the session a name
 - **`--path <path>`**: Legacy parameter for specifying session by file path
 - **`-r, --resume`**: Resume a previous session
@@ -226,7 +226,7 @@ goose session -n my-project
 
 # Resume a previous session
 goose session --resume -n my-project
-goose session --resume --session-id 20251108_2
+goose session --resume --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 goose session --resume --path ./session.json    # exported session
 goose session --resume --path ./session.jsonl   # legacy session storage
 
@@ -237,10 +237,10 @@ goose session --resume --fork --name my-project
 goose session --resume --fork --history
 
 # Edit a session's conversation in your editor
-goose session --resume --session-id 20251108_2 --edit
+goose session --resume --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a --edit
 
 # Edit and fork — create a new session from the edited conversation
-goose session --resume --session-id 20251108_2 --fork --edit --history
+goose session --resume --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a --fork --edit --history
 
 # Start with extensions
 goose session --with-extension "npx -y @modelcontextprotocol/server-memory"
@@ -306,7 +306,7 @@ Remove one or more saved sessions.
 goose session remove
 
 # Remove a specific session by ID
-goose session remove --session-id 20251108_3
+goose session remove --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 
 # Remove a specific session by name
 goose session remove -n my-project
@@ -328,13 +328,13 @@ Session removal is permanent and cannot be undone. goose will show which session
 Rename a saved session. If no session ID is provided, goose will prompt you to select a session interactively.
 
 **Options:**
-- **`--session-id <session_id>`**: Rename a specific session by its session ID (e.g., `20251108_3`)
+- **`--session-id <session_id>`**: Rename a specific session by its session ID (e.g., `019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a`)
 - **`-n, --new-name <name>`**: The new name for the session (required)
 
 **Usage:**
 ```bash
 # Rename a specific session by ID
-goose session rename --session-id 20251108_3 --new-name my-project
+goose session rename --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a --new-name my-project
 
 # Interactive selection (prompts you to choose a session)
 goose session rename --new-name my-project
@@ -369,7 +369,7 @@ goose session export -n my-session --format json -o session-backup.json
 goose session export -n my-session -o session.md
 
 # Export to stdout in different formats
-goose session export --session-id 20251108_4 --format json
+goose session export --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a --format json
 goose session export -n my-session --format yaml
 
 # Export session by path (legacy)
@@ -396,13 +396,13 @@ Generate a comprehensive diagnostics JSON report for troubleshooting issues with
 **Usage:**
 ```bash
 # Generate diagnostics for a specific session by ID
-goose session diagnostics --session-id 20251108_5
+goose session diagnostics --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 
 # Generate diagnostics for a session by name
 goose session diagnostics -n my-project-session
 
 # Save diagnostics to a custom location
-goose session diagnostics --session-id 20251108_5 -o /path/to/my-diagnostics.json
+goose session diagnostics --session-id 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a -o /path/to/my-diagnostics.json
 
 # Interactive selection (prompts you to choose a session)
 goose session diagnostics
