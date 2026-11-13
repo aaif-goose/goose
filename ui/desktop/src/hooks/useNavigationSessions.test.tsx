@@ -131,6 +131,49 @@ describe('useNavigationSessions session names', () => {
     expect(listRecent.mock.calls.length).toBe(callsAfterFirstLoad);
   });
 
+  it('keeps a rename made while the session names reload', async () => {
+    const { result } = await renderWithSessions([listItem('session-1', 'Old name')]);
+    let finishReload!: (sessions: SessionListItem[]) => void;
+    listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
+
+    dispatchStatus('session-1', 'streaming');
+    dispatchStatus('session-1', 'idle');
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_RENAMED, {
+          detail: { sessionId: 'session-1', newName: 'Renamed in Desktop', userInitiated: true },
+        })
+      );
+    });
+    await act(async () => finishReload([listItem('session-1', 'Old name')]));
+
+    expect(result.current.recentSessions[0].name).toBe('Renamed in Desktop');
+  });
+
+  it('does not bring back a session deleted while the session names reload', async () => {
+    const { result } = await renderWithSessions([
+      listItem('session-1', 'First'),
+      listItem('session-2', 'Second'),
+    ]);
+    let finishReload!: (sessions: SessionListItem[]) => void;
+    listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
+
+    dispatchStatus('session-1', 'streaming');
+    dispatchStatus('session-1', 'idle');
+    listRecent.mockResolvedValue([listItem('session-1', 'First')]);
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: 'session-2' } })
+      );
+    });
+    await act(async () => {});
+    await act(async () =>
+      finishReload([listItem('session-1', 'First'), listItem('session-2', 'Second')])
+    );
+
+    expect(result.current.recentSessions.map((session) => session.id)).toEqual(['session-1']);
+  });
+
   it('keeps a new empty session when the session names reload', async () => {
     routerState.searchParams = new URLSearchParams({ resumeSessionId: 'new-session' });
     getListItem.mockResolvedValue(listItem('new-session', '', 0));
