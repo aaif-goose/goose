@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Недавние каталоги"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Структурированный результат не получен"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Структурированный результат отклонён"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Структурированный результат возвращён"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Возвращается структурированный результат…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Не удалось переключиться на {branch}"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "Использовать ML-модели для обнаружения потенциального prompt injection в чате"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Чем выше значение, тем строже проверка (0.01 = очень мягко, 1.0 = максимально строго)"
+    "defaultMessage": "Чем ниже значение, тем строже проверка (0.01 = максимально строго, 1.0 = очень мягко)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Обнаружение внедрения команд работает лучше всего при подключении к WARP (требуется для доступа к сервису классификации)."
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Выберите язык интерфейса goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Нидерландский"
   },
   "settings.language.english": {
     "defaultMessage": "Английский"

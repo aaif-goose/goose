@@ -14,11 +14,10 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
-use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, SteerQueue,
+    Operation, StateMachine, SteerQueue, DEFAULT_BLOCK_CAP,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -39,7 +38,6 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
-use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -118,6 +116,8 @@ pub struct TurnSettings {
     pub on_failure_timeout: std::time::Duration,
     pub stop_hook_block_cap: u32,
     pub tool_pair_summarization: bool,
+    pub defer_tools: bool,
+    pub always_load_tools: Vec<String>,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
     /// `None` derives it from the context limit.
@@ -146,8 +146,19 @@ impl TurnSettings {
             ),
             stop_hook_block_cap: config
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_DENY_LIMIT),
+                .unwrap_or(DEFAULT_BLOCK_CAP),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
+            defer_tools: config
+                .get_param::<String>("GOOSE_TOOL_DEFERRAL")
+                .is_ok_and(|value| value == "lookup"),
+            always_load_tools: config
+                .get_param::<String>("GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect(),
             compaction_threshold: config
                 .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
                 .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
@@ -381,39 +392,12 @@ impl StateMachineServices {
         services
     }
 
-    /// Emit a lifecycle hook event with no extra context. Useful for events
-    /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
-    pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
-        if !self.hook_manager.has_hooks(event) {
-            return;
-        }
-        self.hook_manager
-            .emit(event, crate::hooks::HookContext::new(event, session_id))
-            .await;
-    }
-
-    /// Fires `SessionStart` for a client opening the session and returns the hooks'
-    /// banners, which the client shows before the first prompt.
-    pub async fn emit_session_start(&self, session_id: &str) -> Result<Vec<String>> {
-        let event = crate::hooks::HookEvent::SessionStart;
-        if !self.hook_manager.has_hooks(event) {
-            return Ok(Vec::new());
-        }
-        let banners = self
-            .hook_manager
-            .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
-            .await;
-        self.session_manager
-            .add_message(
-                session_id,
-                &crate::agents::state_machine::session_start_message(&banners),
-            )
-            .await?;
-        Ok(banners)
-    }
-
-    pub async fn steer(&self, session_id: &str, message: Message) {
+    pub async fn steer(&self, session_id: &str, message: Message) -> Result<()> {
+        let session = self.session_manager.get_session(session_id, false).await?;
+        let prompt = agent_visible_message_text(&message);
         self.runtime.steer(session_id, message).await;
+        self.emit_user_prompt_submit(&session, prompt).await;
+        Ok(())
     }
 
     pub fn discard_pending_steers(&self, session_id: &str) {
@@ -610,25 +594,11 @@ impl StateMachineServices {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
-        let include_final_output = extension_name.is_none();
         let lease = self.extension_manager.current_lease(session_id).await?;
-        let mut prefixed_tools = match extension_name {
+        Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
-        };
-
-        if include_final_output {
-            let final_output_tool = self
-                .session_manager
-                .get_session(session_id, false)
-                .await
-                .and_then(|session| ops_recipe::final_output_tool(&session));
-            if let Ok(Some(final_output_tool)) = final_output_tool {
-                prefixed_tools.push(final_output_tool.tool());
-            }
-        }
-
-        Ok(prefixed_tools)
+        })
     }
 
     pub async fn submit_tool_confirmation(
@@ -778,6 +748,8 @@ impl StateMachineServices {
             compaction_threshold,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
+            defer_tools: settings.defer_tools,
+            always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
@@ -916,6 +888,7 @@ impl StateMachineServices {
         session_manager
             .add_message(&session_config.id, &user_message)
             .await?;
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
 
         if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
@@ -942,7 +915,7 @@ impl StateMachineServices {
     }
 
     /// Runs a subagent on the conversation saved for it.
-    pub(super) fn run_subagent_turn(
+    pub(super) async fn run_subagent_turn(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -953,6 +926,7 @@ impl StateMachineServices {
             .session(&session_config.id)
             .try_start_turn()?;
         turn_guard.state().start_new_turn();
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
         Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
@@ -1127,7 +1101,6 @@ impl StateMachineServices {
                         run_goose(
                             &machine,
                             session_manager.as_ref(),
-                            &self.hook_manager,
                             &session_id,
                             &emit,
                         ),

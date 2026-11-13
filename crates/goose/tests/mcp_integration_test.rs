@@ -157,7 +157,7 @@ impl Fixture {
 fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
     let mut args = vec!["stdio".to_string()];
     args.extend(mode.map(str::to_string));
-    ExtensionConfig::Stdio {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
@@ -168,11 +168,11 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
-    }
+    })
 }
 
 fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
-    ExtensionConfig::StreamableHttp {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
         name: name.to_string(),
         description: "HTTP fixture".to_string(),
         uri: uri.to_string(),
@@ -186,7 +186,7 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
-    }
+    })
 }
 
 fn platform(name: &str) -> ExtensionConfig {
@@ -604,7 +604,7 @@ async fn extension_protocol_traffic_through_a_lease() {
     let discovery_2025 = stdio_fixture(
         "fixture_discovery_2025",
         Some(ProtocolVersion::V_2025_11_25.as_str()),
-        &["inspect_context"],
+        &["inspect_context", "elicit"],
     );
     let manager_ext = platform("extensionmanager");
     let http = http_fixture("fixture_http", &http_server.url);
@@ -685,7 +685,8 @@ async fn extension_protocol_traffic_through_a_lease() {
         modern.instance_id
     );
 
-    // Elicitation: the server asks, the host answers on the originating call.
+    // Server-to-client elicitation requires the legacy protocol: the server
+    // asks, the host answers on the originating call.
     // Without an echoed _meta the client correlates by the one active call;
     // with two active calls that is ambiguous unless the server echoes.
     let elicit = |id: &str, echo_meta: bool| {
@@ -694,7 +695,10 @@ async fn extension_protocol_traffic_through_a_lease() {
         async move {
             lease
                 .call(
-                    request("fixture__elicit", Some(object!({ "echo_meta": echo_meta }))),
+                    request(
+                        "fixture_discovery_2025__elicit",
+                        Some(object!({ "echo_meta": echo_meta })),
+                    ),
                     CallRequest::new(id),
                     CancellationToken::default(),
                 )
@@ -893,18 +897,19 @@ async fn test_replayed_session(
     }
 
     let envs = Envs::new(env);
-    let extension_config = ExtensionConfig::Stdio {
-        name: "test".to_string(),
-        description: "Test".to_string(),
-        cmd,
-        args,
-        envs,
-        env_keys: vec![],
-        timeout: Some(30),
-        cwd: None,
-        bundled: Some(false),
-        available_tools: vec![],
-    };
+    let extension_config =
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name: "test".to_string(),
+            description: "Test".to_string(),
+            cmd,
+            args,
+            envs,
+            env_keys: vec![],
+            timeout: Some(30),
+            cwd: None,
+            bundled: Some(false),
+            available_tools: vec![],
+        });
 
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(

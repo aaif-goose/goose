@@ -1319,6 +1319,18 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Structured result wasn't collected"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Structured result was rejected"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Returned structured result"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Returning structured result…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Failed to switch to {branch}"
   },
@@ -3810,7 +3822,7 @@
     "defaultMessage": "Use ML models to detect potential prompt injection in your chat"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)"
+    "defaultMessage": "Lower values are more strict (0.01 = maximum strict, 1.0 = very lenient)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Command injection detection works best when connected to WARP (required to reach the classification service)."
@@ -4150,6 +4162,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Choose the display language for goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Dutch"
   },
   "settings.language.english": {
     "defaultMessage": "English"

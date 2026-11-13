@@ -5,7 +5,8 @@ use crate::conversation::Conversation;
 use crate::recipe::Response;
 use indoc::formatdoc;
 use rmcp::model::{
-    CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Tool, ToolAnnotations,
+    Annotations, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, TextContent,
+    Tool, ToolAnnotations,
 };
 use serde_json::Value;
 use std::borrow::Cow;
@@ -192,7 +193,11 @@ impl FinalOutputTool {
                     Ok(parsed_value) => {
                         self.final_output = Some(Self::parsed_final_output_string(parsed_value));
                         ToolCallResult::from(Ok(rmcp::model::CallToolResult::success(vec![
-                            ContentBlock::text(FINAL_OUTPUT_SUCCESS_MESSAGE.to_string()),
+                            ContentBlock::Text(
+                                TextContent::new(FINAL_OUTPUT_SUCCESS_MESSAGE).with_annotations(
+                                    Annotations::default().with_audience(vec![Role::Assistant]),
+                                ),
+                            ),
                         ])))
                     }
                     Err(error) => ToolCallResult::from(Err(ErrorData {

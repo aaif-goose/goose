@@ -42,6 +42,10 @@ tasks.jar {
     }
 }
 
+tasks.named<Jar>("sourcesJar") {
+    exclude("**/*.so", "**/*.dylib", "**/*.dll")
+}
+
 mavenPublishing {
     publishToMavenCentral(automaticRelease = true)
     if (providers.gradleProperty("signingInMemoryKey").isPresent) {

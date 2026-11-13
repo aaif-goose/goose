@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Cartelle recenti"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Il risultato strutturato non è stato raccolto"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Il risultato strutturato è stato rifiutato"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Risultato strutturato restituito"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Restituzione del risultato strutturato…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Impossibile passare a {branch}"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "Usa modelli ML per rilevare potenziali iniezioni di prompt nella tua chat"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Valori più alti sono più rigidi (0,01 = molto permissivo, 1,0 = massimo rigore)"
+    "defaultMessage": "Valori più bassi sono più rigidi (0,01 = massimo rigore, 1,0 = molto permissivo)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Il rilevamento dell'iniezione di comandi funziona al meglio quando si è connessi a WARP (necessario per raggiungere il servizio di classificazione)."
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Scegli la lingua di visualizzazione per goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Olandese"
   },
   "settings.language.english": {
     "defaultMessage": "English"

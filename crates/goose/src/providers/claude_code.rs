@@ -545,7 +545,9 @@ fn claude_mcp_config_json(extensions: &[ExtensionConfig]) -> Option<String> {
 
     for extension in extensions {
         match extension {
-            ExtensionConfig::StreamableHttp { uri, headers, .. } => {
+            ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp { uri, headers, .. },
+            ) => {
                 let key = extension.key();
                 let mut config = serde_json::Map::new();
                 config.insert("type".to_string(), json!("http"));
@@ -555,9 +557,12 @@ fn claude_mcp_config_json(extensions: &[ExtensionConfig]) -> Option<String> {
                 }
                 mcp_servers.insert(key, Value::Object(config));
             }
-            ExtensionConfig::Stdio {
-                cmd, args, envs, ..
-            } => {
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                cmd,
+                args,
+                envs,
+                ..
+            }) => {
                 let key = extension.key();
                 let mut config = serde_json::Map::new();
                 config.insert("type".to_string(), json!("stdio"));
@@ -1057,8 +1062,8 @@ mod tests {
     #[test_case(json!({}), None, None ; "empty_usage")]
     fn test_extract_usage_tokens(
         usage_json: Value,
-        expected_input: Option<i32>,
-        expected_output: Option<i32>,
+        expected_input: Option<i64>,
+        expected_output: Option<i64>,
     ) {
         let usage = extract_usage_tokens(&usage_json);
         assert_eq!(usage.input_tokens, expected_input);
@@ -1237,7 +1242,7 @@ mod tests {
         ; "empty_extensions_returns_none"
     )]
     #[test_case(
-        vec![ExtensionConfig::Stdio {
+        vec![ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name: "lookup".into(),
             description: String::new(),
             cmd: "node".into(),
@@ -1248,7 +1253,7 @@ mod tests {
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "lookup": {
                 "type": "stdio",
@@ -1260,7 +1265,7 @@ mod tests {
         ; "stdio_converts_to_mcp_config_json"
     )]
     #[test_case(
-        vec![ExtensionConfig::StreamableHttp {
+        vec![ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name: "lookup".into(),
             description: String::new(),
             uri: "http://localhost/mcp".into(),
@@ -1274,7 +1279,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "lookup": {
                 "type": "http",
@@ -1285,7 +1290,7 @@ mod tests {
         ; "streamable_http_converts_to_mcp_config_json"
     )]
     #[test_case(
-        vec![ExtensionConfig::StreamableHttp {
+        vec![ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name: "mcp_kiwi_com".into(),
             description: String::new(),
             uri: "https://mcp.kiwi.com".into(),
@@ -1299,7 +1304,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "mcp_kiwi_com": {
                 "type": "http",

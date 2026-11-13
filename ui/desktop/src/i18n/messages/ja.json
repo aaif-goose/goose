@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近のディレクトリ"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "構造化された結果は取得されませんでした"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "構造化された結果が拒否されました"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "構造化された結果を返しました"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "構造化された結果を返しています…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} への切り替えに失敗しました"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "MLモデルを使用してチャット内の潜在的なプロンプトインジェクションを検出します"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "値が高いほど厳格です（0.01 = 非常に緩い、1.0 = 最大限に厳格）"
+    "defaultMessage": "値が低いほど厳格です（0.01 = 最大限に厳格、1.0 = 非常に緩い）"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "コマンドインジェクション検出は、WARPに接続していると最も効果的です（分類サービスに到達するために必要です）。"
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "goose の表示言語を選択"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "オランダ語"
   },
   "settings.language.english": {
     "defaultMessage": "英語"

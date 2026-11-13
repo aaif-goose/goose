@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terkini"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Hasil berstruktur tidak dikumpulkan"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Hasil berstruktur telah ditolak"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Hasil berstruktur dikembalikan"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Mengembalikan hasil berstruktur…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Gagal beralih ke {branch}"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "Gunakan model ML untuk mengesan potensi suntikan gesaan dalam sembang anda"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Nilai yang lebih tinggi adalah lebih ketat (0.01 = sangat longgar, 1.0 = paling ketat)"
+    "defaultMessage": "Nilai yang lebih rendah adalah lebih ketat (0.01 = paling ketat, 1.0 = sangat longgar)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Pengesanan suntikan arahan berfungsi paling baik apabila disambungkan ke WARP (diperlukan untuk mencapai perkhidmatan pengelasan)."
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Pilih bahasa paparan untuk goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Bahasa Belanda"
   },
   "settings.language.english": {
     "defaultMessage": "English"

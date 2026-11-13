@@ -5,6 +5,7 @@ import { formatMessageTimestamp } from '../utils/timeUtils';
 import MarkdownContent from './MarkdownContent';
 import ThinkingContent from './ThinkingContent';
 import ToolCallWithResponse from './ToolCallWithResponse';
+import FinalOutputLine, { isFinalOutputToolRequest } from './FinalOutputLine';
 import {
   getTextAndImageContent,
   getThinkingContent,
@@ -179,18 +180,25 @@ function GooseMessage({
                   );
                   return (
                     <div className="goose-message-tool" key={toolRequest.id}>
-                      <ToolCallWithResponse
-                        sessionId={sessionId}
-                        isCancelledMessage={false}
-                        toolRequest={toolRequest}
-                        toolResponse={toolState.response}
-                        notifications={toolNotifications[toolIndex]}
-                        isStreamingMessage={isStreaming}
-                        isPendingApproval={toolState.isPending}
-                        append={append}
-                        confirmationContent={toolState.confirmation}
-                        isApprovalClicked={isApprovalClicked}
-                      />
+                      {isFinalOutputToolRequest(toolRequest) ? (
+                        <FinalOutputLine
+                          toolResponse={toolState.response}
+                          isStreaming={isStreaming}
+                        />
+                      ) : (
+                        <ToolCallWithResponse
+                          sessionId={sessionId}
+                          isCancelledMessage={false}
+                          toolRequest={toolRequest}
+                          toolResponse={toolState.response}
+                          notifications={toolNotifications[toolIndex]}
+                          isStreamingMessage={isStreaming}
+                          isPendingApproval={toolState.isPending}
+                          append={append}
+                          confirmationContent={toolState.confirmation}
+                          isApprovalClicked={isApprovalClicked}
+                        />
+                      )}
                     </div>
                   );
                 })}

@@ -25,6 +25,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "builtin"
+            },
             "name": {
               "type": "string"
             },
@@ -62,10 +66,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "builtin"
             }
           },
           "required": [
@@ -76,6 +76,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "platform"
+            },
             "name": {
               "type": "string"
             },
@@ -106,10 +110,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "platform"
             }
           },
           "required": [
@@ -120,6 +120,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "mcp"
+            },
             "server": {
               "$ref": "#/$defs/McpServer"
             },
@@ -184,10 +188,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "mcp"
             }
           },
           "required": [
@@ -1353,6 +1353,13 @@
         "offerSdp": {
           "type": "string"
         },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Added after goose's live voice instructions, including any configured\nones, for this interaction only. Blank text adds nothing."
+        },
         "_meta": {
           "type": [
             "object",
@@ -1365,7 +1372,7 @@
         "sessionId",
         "offerSdp"
       ],
-      "description": "Get a diagnostic report for a session.",
+      "description": "Start a live voice interaction for a session.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/live-voice/start"
     },
@@ -3929,6 +3936,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "builtin"
+            },
             "name": {
               "type": "string"
             },
@@ -3966,10 +3977,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "builtin"
             }
           },
           "required": [
@@ -3980,6 +3987,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "platform"
+            },
             "name": {
               "type": "string"
             },
@@ -4010,10 +4021,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "platform"
             }
           },
           "required": [
@@ -4024,6 +4031,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "stdio"
+            },
             "name": {
               "type": "string"
             },
@@ -4082,10 +4093,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "stdio"
             }
           },
           "required": [
@@ -4097,6 +4104,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "streamable_http"
+            },
             "name": {
               "type": "string"
             },
@@ -4176,10 +4187,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "streamable_http"
             }
           },
           "required": [
@@ -4379,12 +4386,12 @@
         {
           "type": "object",
           "properties": {
-            "command": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "shell"
+            },
+            "command": {
+              "type": "string"
             }
           },
           "required": [
@@ -5220,12 +5227,12 @@
         {
           "type": "object",
           "properties": {
-            "projectDir": {
-              "type": "string"
-            },
             "scope": {
               "type": "string",
               "const": "projectDir"
+            },
+            "projectDir": {
+              "type": "string"
             }
           },
           "required": [
@@ -5236,12 +5243,12 @@
         {
           "type": "object",
           "properties": {
-            "projectId": {
-              "type": "string"
-            },
             "scope": {
               "type": "string",
               "const": "projectId"
+            },
+            "projectId": {
+              "type": "string"
             }
           },
           "required": [
@@ -6244,6 +6251,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "Temperature"
+            },
             "temperature": {
               "type": "number",
               "format": "float"
@@ -6265,10 +6276,6 @@
                 "null"
               ],
               "minimum": 0
-            },
-            "type": {
-              "type": "string",
-              "const": "Temperature"
             }
           },
           "required": [
@@ -6282,6 +6289,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "MirostatV2"
+            },
             "tau": {
               "type": "number",
               "format": "float"
@@ -6296,10 +6307,6 @@
                 "null"
               ],
               "minimum": 0
-            },
-            "type": {
-              "type": "string",
-              "const": "MirostatV2"
             }
           },
           "required": [
@@ -6335,12 +6342,12 @@
         {
           "type": "object",
           "properties": {
-            "name": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "builtin"
+            },
+            "name": {
+              "type": "string"
             }
           },
           "required": [
@@ -6351,12 +6358,12 @@
         {
           "type": "object",
           "properties": {
-            "template": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "custom_inline"
+            },
+            "template": {
+              "type": "string"
             }
           },
           "required": [
@@ -6963,12 +6970,12 @@
         {
           "type": "object",
           "properties": {
-            "message": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "notice"
+            },
+            "message": {
+              "type": "string"
             }
           },
           "required": [
@@ -6979,12 +6986,12 @@
         {
           "type": "object",
           "properties": {
-            "message": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "progress"
+            },
+            "message": {
+              "type": "string"
             }
           },
           "required": [

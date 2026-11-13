@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::write_integrity::WriteIntegrityChecker;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
@@ -17,7 +17,9 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::state_machine::tool_hooks::{
+    check_pre_tool_hooks, check_write_integrity, emit_post_tool_hooks,
+};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -26,13 +28,15 @@ use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
+use crate::hooks::HookManager;
 use crate::session::Session;
 
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    hook_manager: HookManager,
+    write_integrity: Option<Arc<WriteIntegrityChecker>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -197,12 +201,18 @@ fn load_supporting_file(
 impl SkillOperation {
     pub fn new(
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+        hook_manager: HookManager,
     ) -> Self {
         Self {
             extension_lease,
-            post_tool_call_hook,
+            hook_manager,
+            write_integrity: None,
         }
+    }
+
+    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
+        self.write_integrity = Some(checker);
+        self
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
@@ -362,6 +372,34 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
+                    if let Some(denied) = check_write_integrity(
+                        self.write_integrity.as_deref(),
+                        conversation,
+                        &request,
+                    ) {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(denied),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    }
+                    if let Some(denied) = check_pre_tool_hooks(
+                        &self.hook_manager,
+                        &session.id,
+                        &session.working_dir,
+                        &request,
+                    )
+                    .instrument(span.clone())
+                    .await
+                    {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(denied),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    }
                     let result = {
                         let _entered = span.enter();
                         execute_skill(&session.working_dir, tool_call.arguments.clone())
@@ -374,10 +412,10 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         tool_result: Ok(result),
                         metadata: request.metadata.clone(),
                     };
-                    run_post_tool_call_hook(
-                        self.post_tool_call_hook.as_ref(),
-                        session,
-                        conversation,
+                    emit_post_tool_hooks(
+                        &self.hook_manager,
+                        &session.id,
+                        &session.working_dir,
                         &request,
                         &response,
                     )

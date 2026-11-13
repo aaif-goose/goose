@@ -37,14 +37,14 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     assert!(!api.calls().last().unwrap().input_contains("<compaction>"));
 
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * 0.79) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.79) as i64)
         .await;
     let near_threshold = pipeline.run(["check the budget"]).await?;
     near_threshold.assert_message(-1, Agent, "budget checked");
     assert_eq!(near_threshold.history_replacements(), 0);
     assert!(!api.calls().last().unwrap().input_contains("<compaction>"));
 
-    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i32;
+    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i64;
     pipeline.set_total_tokens(filled_usage).await;
     let compacted = pipeline.run(["continue"]).await?;
     compacted.assert_message(-1, Agent, "continued after compaction");
@@ -210,7 +210,7 @@ async fn context_owning_provider_has_no_compaction_operation() -> Result<()> {
     .await?;
     api.on("continue").reply("continued");
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i64)
         .await;
 
     let continued = pipeline.run(["continue"]).await?;
@@ -259,7 +259,7 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(calls.len(), 3);
     let (summary, retry) = (&calls[1], &calls[2]);
     let usage = &recovered.session.usage;
-    let output_tokens = "recovered after compaction".chars().count() as i32;
+    let output_tokens = "recovered after compaction".chars().count() as i64;
     assert_eq!(usage.input_tokens, Some(retry.input_tokens()));
     assert_eq!(usage.output_tokens, Some(output_tokens));
     assert_eq!(
@@ -269,7 +269,7 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(
         recovered.session.accumulated_usage.total_tokens,
         Some(
-            summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
+            summary.input_tokens() + "summary".len() as i64 + retry.input_tokens() + output_tokens
         )
     );
 
@@ -550,7 +550,7 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
     pipeline
         .seed([Message::user().with_text("old work"), request, response])
         .await?;
-    let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i32;
+    let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i64;
     pipeline.set_total_tokens(filled_usage).await;
 
     api.on(SUMMARIZE_HISTORY).reply("large work summarized");

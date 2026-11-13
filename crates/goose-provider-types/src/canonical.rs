@@ -414,6 +414,19 @@ mod tests {
     }
 
     #[test]
+    fn minimax_m3_1_flash_resolves_with_always_on_adaptive_thinking() {
+        // MiniMax rejects `thinking: {type: disabled}` and requires adaptive
+        // thinking, so it must never be sent an explicit disable.
+        let canonical = maybe_get_canonical_model("minimax", "MiniMax-M3.1-Flash")
+            .expect("MiniMax-M3.1-Flash should resolve");
+        assert_eq!(canonical.id, "minimax/MiniMax-M3.1-Flash");
+        assert_eq!(
+            canonical.thinking_mode,
+            Some(ThinkingMode::AlwaysOnAdaptive)
+        );
+    }
+
+    #[test]
     fn openai_gpt_6_sol_and_luna_resolve() {
         for (model, input_cost) in [("gpt-6-sol", 2.0), ("gpt-6-luna", 0.1)] {
             let canonical = maybe_get_canonical_model("openai", model)

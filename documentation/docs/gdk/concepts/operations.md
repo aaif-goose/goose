@@ -46,6 +46,8 @@ Suppose an application should allow at most three assistant turns for each
 user request. Once the current tool results have been saved, it should hand
 control back to the user instead of making another model call.
 
+This example illustrates the `Operation` contract. For an application turn limit, use the reusable `goose_agent::max_turns::MaxTurnsOperation` instead; its usage is shown after the example.
+
 We can implement this without changing inference or the state machine. This
 native Rust operation works with any session and any effect type that can
 represent a `Message`:
@@ -119,8 +121,17 @@ tool calls that need separate handling.
 
 When the user sends a new message, it becomes the next kickoff and the count
 starts again. No mutable counter needs to survive a restart. This is a limit
-on assistant turns, not a dollar, token, or tool-call budget. The complete goose
-application has its own `MaxTurnsOperation` with additional prompt context.
+on assistant turns, not a dollar, token, or tool-call budget.
+
+`MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`:
+
+```rust
+use goose_agent::max_turns::MaxTurnsOperation;
+
+let turn_limit = MaxTurnsOperation::new(3);
+```
+
+At exhaustion, it appends a user-visible `ResourceExhausted` error and yields. Your inference request preparer must render `moim_parts` for budget reminders to reach the model.
 
 ## Operations available today
 
@@ -133,6 +144,8 @@ tools, provider, or subagent runner:
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | [`ToolOperation`](https://docs.rs/goose-agent/latest/goose_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
 | [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
+| [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
+| [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 
 ### Operations in goose
@@ -145,11 +158,12 @@ your application.
 
 | Operation                     | Purpose                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `FinalOutputOperation`        | Offer the structured final output tool to the model and collect the answer.                       |
 | `ToolApprovalOperation`       | Inspect pending tool requests and record whether they can execute or need approval.               |
 | `ToolExecutionOperation`      | Execute eligible extension tool calls, including tool hooks and streamed output.                  |
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |
 | `SkillOperation`              | Discover and load skills, contribute their context, and handle skill commands.                    |
-| `RecipeOperation`             | Apply recipe instructions and tools, handle recipe commands, and collect structured final output. |
+| `RecipeOperation`             | Apply recipe instructions and handle recipe commands.                                             |
 | `SteerOperation`              | Incorporate queued user guidance between model and tool turns.                                    |
 | `BangShellOperation`          | Turn a user message beginning with `!` into a direct shell tool request.                          |
 | `CompactionOperation`         | Compact conversation history automatically or through a command.                                  |
@@ -159,8 +173,6 @@ your application.
 | `RetryOperation`              | Evaluate recipe success checks and goal/grind continuation or retry behavior.                     |
 | `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
-| `ExitOnErrorOperation`        | Yield when an error remains at the end of the conversation.                                       |
-| `MaxTurnsOperation`           | Enforce goose's autonomous turn budget and contribute remaining-budget context.                   |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
 | `SlashCommandOperation`       | Route a recognized slash command to operations' command handlers.                                 |
 | `StatusOperation`             | Report the current session, model, and usage through `/status`.                                   |

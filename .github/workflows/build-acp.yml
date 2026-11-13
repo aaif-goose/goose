@@ -74,7 +74,7 @@ jobs:
             tar
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: ${{ matrix.target }}
           cache-key: lean-acp-${{ matrix.target }}
@@ -86,7 +86,7 @@ jobs:
           cargo build -p goose --bin goose-acp \
             --profile lean \
             --no-default-features \
-            --features rustls-tls,system-keyring,online-model-meta \
+            --features rustls-tls,system-keyring,online-model-meta,live-voice \
             --target "$TARGET"
 
       - name: Verify macOS system library dependencies
@@ -130,7 +130,7 @@ jobs:
           Compress-Archive -Path "target/$env:TARGET/lean/goose-acp.exe" -DestinationPath "dist/goose-acp-$env:TARGET.zip"
 
       - name: Upload ACP artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: goose-acp-${{ matrix.target }}
           path: dist/goose-acp-${{ matrix.target }}.*
