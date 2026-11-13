@@ -1,8 +1,5 @@
 use super::api_client::TlsConfig;
-use super::base::{
-    find_declared_model, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata,
-    ProviderType,
-};
+use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -78,16 +75,14 @@ impl ProviderEntry {
         if self.toolshim_enabled(model.toolshim) {
             model = model.with_toolshim(true);
         }
-        // Declared model metadata is authoritative over canonical detection, which
-        // may already have populated supports_vision earlier in materialization.
-        if let Some(supports_vision) =
-            find_declared_model(&self.metadata.known_models, &model.model_name)
-                .and_then(|m| m.supports_vision)
-        {
-            model.supports_vision = Some(supports_vision);
-        }
-        if let Some(catalog_provider_id) = &self.catalog_provider_id {
-            model = model.with_canonical_vision_support(catalog_provider_id);
+        // Canonical detection may already have populated supports_vision earlier
+        // in materialization, so declared metadata has to overwrite it here.
+        model = model.with_declared_vision_support(&self.metadata.known_models);
+        // Without a catalog id the name lookup is left to materialization, which
+        // skips it for providers such as Azure Foundry.
+        if let Some(catalog_provider_id) = self.catalog_provider_id.as_deref() {
+            model =
+                model.with_provider_vision_support(&self.metadata.name, Some(catalog_provider_id));
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -397,6 +392,7 @@ impl ProviderRegistry {
 mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
+    use crate::providers::azure_foundry_def::AzureFoundryProviderDef;
     use crate::providers::openai_def::OpenAiProviderDef;
 
     fn test_config() -> DeclarativeProviderConfig {
@@ -500,6 +496,54 @@ mod tests {
                 .unwrap();
             assert_eq!(overridden.supports_vision, Some(!canonical_vision));
         }
+    }
+
+    #[test]
+    fn renamed_provider_keeps_catalog_vision_support() {
+        const KIMI: &str = "accounts/fireworks/models/kimi-k3";
+        let mut registry = ProviderRegistry::new(None);
+        for (name, catalog_provider_id) in [
+            ("custom_fireworks_live", Some("fireworks-ai")),
+            ("custom_fireworks_plain", None),
+        ] {
+            let mut config = test_config();
+            config.name = name.to_string();
+            config.catalog_provider_id = catalog_provider_id.map(str::to_string);
+            config.models = vec![ModelInfo::new(KIMI)];
+            registry.register_with_name::<OpenAiProviderDef, _, _>(
+                &config,
+                ProviderType::Custom,
+                false,
+                |_| unreachable!("constructor is not used by this test"),
+                move || Ok(InventoryIdentityInput::new(name, name)),
+            );
+        }
+
+        let with_catalog = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(with_catalog.supports_vision, Some(true));
+
+        let explicit = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI).with_vision_support(false))
+            .unwrap();
+        assert_eq!(explicit.supports_vision, Some(false));
+
+        let without_catalog = registry.entries["custom_fireworks_plain"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(without_catalog.supports_vision, None);
+    }
+
+    #[test]
+    fn azure_foundry_skips_name_vision_lookup() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<AzureFoundryProviderDef>(true);
+
+        let model = registry.entries["azure_foundry"]
+            .normalize_model_config(ModelConfig::new("gpt-4o"))
+            .unwrap();
+        assert_eq!(model.supports_vision, None);
     }
 
     #[test]
