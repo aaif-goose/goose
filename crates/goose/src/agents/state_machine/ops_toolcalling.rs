@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
-use goose_agent::tool_call_state::request_executable;
+use goose_agent::{tool_call_state::request_executable, write_integrity::WriteIntegrityChecker};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
 };
@@ -15,7 +15,9 @@ use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
+use crate::agents::state_machine::tool_hooks::{
+    check_pre_tool_hooks, check_write_integrity, emit_post_tool_hooks,
+};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -243,6 +245,7 @@ fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
 pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
+    write_integrity: Option<Arc<WriteIntegrityChecker>>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
@@ -260,11 +263,17 @@ impl ToolExecutionOperation {
         Self {
             extension_manager,
             hook_manager,
+            write_integrity: None,
             lease,
             batch: Arc::default(),
             defer_tools,
             always_load_tools: always_load_tools.into_iter().collect(),
         }
+    }
+
+    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
+        self.write_integrity = Some(checker);
+        self
     }
 
     fn defers_tools(&self, lease: &ExtensionLease) -> bool {
@@ -963,6 +972,16 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 .tool_call
                 .clone()
                 .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
+            if let Some(denied) =
+                check_write_integrity(self.write_integrity.as_deref(), conversation, request)
+            {
+                self.batch.lock().unwrap().record(
+                    &request.id,
+                    Ok(denied),
+                    request.metadata.as_ref(),
+                );
+                continue;
+            }
             let result = self
                 .dispatch_tool_call(
                     Arc::clone(&lease),

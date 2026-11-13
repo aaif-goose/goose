@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::write_integrity::WriteIntegrityChecker;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
@@ -12,7 +13,9 @@ use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
     leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
 };
-use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
+use crate::agents::state_machine::tool_hooks::{
+    check_pre_tool_hooks, check_write_integrity, emit_post_tool_hooks,
+};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -28,6 +31,7 @@ pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    write_integrity: Option<Arc<WriteIntegrityChecker>>,
 }
 
 impl RemainingToolCallsOperation {
@@ -38,7 +42,13 @@ impl RemainingToolCallsOperation {
         Self {
             hook_manager,
             extension_lease,
+            write_integrity: None,
         }
+    }
+
+    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
+        self.write_integrity = Some(checker);
+        self
     }
 }
 
@@ -94,7 +104,13 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     match request.tool_call.as_ref() {
                         Ok(tool_call) => {
                             let working_dir = leased_working_dir(&self.extension_lease, session);
-                            if let Some(denied) = check_pre_tool_hooks(
+                            if let Some(denied) = check_write_integrity(
+                                self.write_integrity.as_deref(),
+                                conversation,
+                                &request,
+                            ) {
+                                (Ok(denied), false)
+                            } else if let Some(denied) = check_pre_tool_hooks(
                                 &self.hook_manager,
                                 &session.id,
                                 &working_dir,

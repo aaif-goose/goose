@@ -1,9 +1,24 @@
 use std::path::Path;
 
+use goose_agent::write_integrity::WriteIntegrityChecker;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
 use crate::conversation::message::{ToolRequest, ToolResponse};
+use crate::conversation::Conversation;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
+
+pub(super) fn check_write_integrity(
+    checker: Option<&WriteIntegrityChecker>,
+    conversation: &Conversation,
+    request: &ToolRequest,
+) -> Option<CallToolResult> {
+    let checker = checker?;
+    let tool_call = request.tool_call.as_ref().ok()?;
+    checker
+        .check(conversation, &tool_call.name, tool_call.arguments.as_ref())
+        .err()
+        .map(|reason| CallToolResult::error(vec![ContentBlock::text(reason)]))
+}
 
 pub(super) async fn check_pre_tool_hooks(
     hook_manager: &HookManager,

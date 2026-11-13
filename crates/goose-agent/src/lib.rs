@@ -13,6 +13,7 @@ pub mod tool;
 pub mod tool_approval;
 pub mod tool_call_state;
 pub mod unhandled_tool_calls;
+pub mod write_integrity;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod action_required_manager;

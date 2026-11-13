@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::write_integrity::WriteIntegrityChecker;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
@@ -16,7 +17,9 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
+use crate::agents::state_machine::tool_hooks::{
+    check_pre_tool_hooks, check_write_integrity, emit_post_tool_hooks,
+};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -33,6 +36,7 @@ pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     hook_manager: HookManager,
+    write_integrity: Option<Arc<WriteIntegrityChecker>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -202,7 +206,13 @@ impl SkillOperation {
         Self {
             extension_lease,
             hook_manager,
+            write_integrity: None,
         }
+    }
+
+    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
+        self.write_integrity = Some(checker);
+        self
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
@@ -362,6 +372,18 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
+                    if let Some(denied) = check_write_integrity(
+                        self.write_integrity.as_deref(),
+                        conversation,
+                        &request,
+                    ) {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(denied),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    }
                     if let Some(denied) = check_pre_tool_hooks(
                         &self.hook_manager,
                         &session.id,
