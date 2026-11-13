@@ -131,15 +131,13 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
-          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-13-openssl3' || 'macos-deployment-target-13-openssl3' }}
+          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-13' || 'macos-deployment-target-13' }}
 
       - name: Build goose
         env:
           TARGET: ${{ inputs.target }}
         run: |
           source ./bin/activate-hermit
-          brew install openssl@3
-          export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
           rustup target add "$TARGET"
           cargo build --release -p goose-cli --bin goose --target "$TARGET"
 
