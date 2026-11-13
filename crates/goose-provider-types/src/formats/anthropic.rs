@@ -935,6 +935,13 @@ pub fn is_thinking_signature_error(message: &str) -> bool {
             || lower.contains("block_binding"))
 }
 
+pub fn is_unsupported_thinking_config_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("thinking")
+        && (lower.contains("is not supported for this model")
+            || lower.contains("to turn thinking off on this model"))
+}
+
 pub fn create_request(
     provider_name: &str,
     model_config: &ModelConfig,
