@@ -188,13 +188,13 @@ pub(crate) fn prepare_inference_tools(
     #[cfg(feature = "code-mode")]
     if code_execution_active {
         tools.retain(|tool| {
-            let owner = crate::agents::extension_manager::get_tool_owner(tool);
+            let owner = crate::agents::extension_runtime::get_tool_owner(tool);
             (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
                 && owner.is_none())
                 || owner.is_some_and(|owner| {
                     crate::agents::extension_manager::is_first_class_extension(&owner)
                 })
-                || crate::agents::extension_manager::get_tool_resource_uri(tool).is_some()
+                || crate::agents::extension_runtime::get_tool_resource_uri(tool).is_some()
         });
     }
 
@@ -490,7 +490,8 @@ pub(crate) async fn stream_response_from_provider(
     }))
 }
 
-pub use goose_agent::tool_visibility::{is_tool_visible_to_app, is_tool_visible_to_model};
+pub(crate) use goose_agent::tool_visibility::is_tool_visible_to_app;
+pub(crate) use goose_agent::tool_visibility::is_tool_visible_to_model;
 
 #[cfg(test)]
 mod tests {

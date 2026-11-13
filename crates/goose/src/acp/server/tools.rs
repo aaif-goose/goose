@@ -119,7 +119,6 @@ impl AcpConnection {
                 .data("app tool calls require auto mode"));
         }
 
-        let container = session.container;
         let tool_result = self
             .services
             .extension_manager
@@ -129,8 +128,7 @@ impl AcpConnection {
             .call_for_app(
                 tool_call,
                 &req.extension_name,
-                crate::agents::extension_manager::CallRequest::default()
-                    .with_container(container.clone()),
+                crate::agents::extension_manager::CallRequest::default(),
                 CancellationToken::new(),
             )
             .await

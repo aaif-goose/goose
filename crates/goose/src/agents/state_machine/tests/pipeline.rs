@@ -616,9 +616,9 @@ impl TestPipeline {
             .extension_manager
             .current_lease(&self.session_id)
             .await?
-            .configs()
+            .registrations()
             .iter()
-            .map(ExtensionConfig::key)
+            .map(|registration| registration.key().to_string())
             .collect())
     }
 

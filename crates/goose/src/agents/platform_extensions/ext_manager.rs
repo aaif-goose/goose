@@ -63,8 +63,8 @@ pub struct ListResourcesParams {
     pub extension_name: Option<String>,
 }
 
-pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const LIST_RESOURCES_TOOL_NAME: &str = "list_resources";
+pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME: &str = "search_available_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME: &str = "manage_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE: &str = "extensionmanager__manage_extensions";
@@ -106,9 +106,9 @@ impl ExtensionManagerClient {
         let enabled: Vec<String> = ctx
             .extension_lease()
             .expect("platform tool calls are dispatched through a lease")
-            .configs()
+            .registrations()
             .iter()
-            .map(ExtensionConfig::key)
+            .map(|registration| registration.key().to_string())
             .collect();
         vec![ContentBlock::text(search_available_extensions(&enabled))]
     }

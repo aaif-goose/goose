@@ -278,7 +278,7 @@ impl ToolExecutionOperation {
 
     async fn mcp_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
         lease
-            .tools_where(|extension| !extension.is_platform())
+            .untrusted_tools()
             .await
             .into_iter()
             .filter(is_tool_visible_to_model)
@@ -356,8 +356,7 @@ impl ToolExecutionOperation {
                 let result = lease
                     .call(
                         tool_call.clone(),
-                        CallRequest::new(request_id.clone())
-                            .with_container(session.container.clone()),
+                        CallRequest::new(request_id.clone()),
                         cancellation_token,
                     )
                     .await;

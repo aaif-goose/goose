@@ -12,7 +12,7 @@ use tracing_futures::Instrument;
 use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
@@ -356,7 +356,8 @@ fn agent_visible_message_text(message: &Message) -> String {
 
 impl StateMachineServices {
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
-        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        let mut default_client =
+            crate::agents::extension_manager::client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
@@ -1498,7 +1499,7 @@ mod tests {
         }
 
         fn attachment(name: &str) -> crate::agents::Attachment {
-            let mut client = crate::agents::extension_manager::ClientContext::new(
+            let mut client = crate::agents::extension_manager::client_context(
                 &GoosePlatform::GooseDesktop,
                 None,
             );

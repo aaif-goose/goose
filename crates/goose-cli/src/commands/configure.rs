@@ -1097,7 +1097,7 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
 fn prompt_extension_timeout() -> anyhow::Result<u64> {
     Ok(
         cliclack::input("Please set the timeout for this tool (in secs):")
-            .placeholder(&goose::config::DEFAULT_EXTENSION_TIMEOUT.to_string())
+            .placeholder(&goose::agents::extension_config::DEFAULT_EXTENSION_TIMEOUT.to_string())
             .validate(|input: &String| match input.parse::<u64>() {
                 Ok(_) => Ok(()),
                 Err(_) => Err("Please enter a valid timeout"),
@@ -2042,7 +2042,10 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                             config: ExtensionConfig::Platform {
                                 name: "developer".to_string(),
                                 description: "Developer extension".to_string(),
-                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                display_name: Some(
+                                    goose::agents::extension_config::DEFAULT_DISPLAY_NAME
+                                        .to_string(),
+                                ),
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
@@ -2111,7 +2114,10 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                             config: ExtensionConfig::Platform {
                                 name: "developer".to_string(),
                                 description: "Developer extension".to_string(),
-                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                display_name: Some(
+                                    goose::agents::extension_config::DEFAULT_DISPLAY_NAME
+                                        .to_string(),
+                                ),
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },

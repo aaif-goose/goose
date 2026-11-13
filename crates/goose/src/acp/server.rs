@@ -9,7 +9,6 @@ pub(super) use crate::acp::response_builder::{
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
-use crate::agents::extension_manager::ClientContext;
 use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -864,7 +863,10 @@ impl AcpConnection {
                 session_id,
                 self.connection_id,
                 Attachment {
-                    client: ClientContext::new(&self.services.goose_platform, None),
+                    client: crate::agents::extension_manager::client_context(
+                        &self.services.goose_platform,
+                        None,
+                    ),
                     session_names: None,
                 },
                 run_id,
@@ -1072,7 +1074,7 @@ impl AcpConnection {
                 .get_or_init(|| spawn_session_name_update_notifier(cx.clone()))
                 .clone()
         });
-        let client = ClientContext::new(
+        let client = crate::agents::extension_manager::client_context(
             &self.services.goose_platform,
             self.client_mcp_host_info.get().cloned(),
         );
@@ -3796,7 +3798,10 @@ print(\"hello, world\")
                 &session.id,
                 server.connection_id,
                 Attachment {
-                    client: ClientContext::new(&GoosePlatform::GooseCli, None),
+                    client: crate::agents::extension_manager::client_context(
+                        &GoosePlatform::GooseCli,
+                        None,
+                    ),
                     session_names: None,
                 },
             )

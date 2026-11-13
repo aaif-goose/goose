@@ -220,7 +220,7 @@ pub struct PlatformExtensionContext {
     /// (extension management, code mode). Everything else uses the fields
     /// below.
     pub extension_manager:
-        Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
+        Option<std::sync::Weak<crate::agents::extension_runtime::ExtensionManager>>,
     pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,

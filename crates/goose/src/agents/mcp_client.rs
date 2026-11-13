@@ -1,6 +1,5 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::tool_execution::ToolCallContext;
-use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
+use crate::agents::extension_runtime::tool_execution::ToolCallContext;
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,
@@ -40,6 +39,10 @@ use tokio::sync::{
     Mutex,
 };
 use tokio_util::sync::CancellationToken;
+
+pub const SESSION_ID_HEADER: &str = "agent-session-id";
+pub const TOOL_CALL_REQUEST_ID_HEADER: &str = "agent-tool-call-request-id";
+pub const WORKING_DIR_HEADER: &str = "agent-working-dir";
 
 pub type BoxError = Box<dyn std::error::Error + Sync + Send>;
 
@@ -170,6 +173,7 @@ pub struct GooseClient {
     session_id: Mutex<Option<String>>,
     active_tool_calls: Arc<StdMutex<HashMap<String, Vec<String>>>>,
     client_name: String,
+    client_version: String,
     capabilities: GooseMcpClientCapabilities,
     working_dir: PathBuf,
     action_required: Arc<ActionRequiredManager>,
@@ -180,6 +184,7 @@ impl GooseClient {
     pub(crate) fn new(
         handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
         client_name: String,
+        client_version: &str,
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
         action_required: Arc<ActionRequiredManager>,
@@ -190,6 +195,7 @@ impl GooseClient {
             session_id: Mutex::new(None),
             active_tool_calls: Arc::new(StdMutex::new(HashMap::new())),
             client_name,
+            client_version: client_version.to_string(),
             capabilities,
             working_dir,
             action_required,
@@ -299,7 +305,7 @@ impl GooseClient {
             .and_then(|host_info| host_info.client_version.clone())
             .unwrap_or_else(|| {
                 std::env::var("GOOSE_MCP_CLIENT_VERSION")
-                    .unwrap_or(env!("CARGO_PKG_VERSION").to_owned())
+                    .unwrap_or_else(|_| self.client_version.clone())
             });
 
         Implementation::new(name, version)
@@ -382,7 +388,13 @@ impl ClientHandler for GooseClient {
         if let Some(handler) = &self.capabilities.elicitation_handler {
             return Ok(handler(&request));
         }
-
+        if !self.capabilities.action_required_elicitation {
+            return Err(ErrorData::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                "elicitation is not supported by this client",
+                None,
+            ));
+        }
         let session_id = self
             .resolve_session_id(&context.meta)
             .await
@@ -443,24 +455,27 @@ impl ClientHandler for GooseClient {
 
     fn get_info(&self) -> ClientConfig {
         let extensions = self.resolved_extensions();
+        #[expect(deprecated)]
+        let mut capabilities = ClientCapabilities::builder()
+            .enable_roots()
+            .enable_extensions_with(extensions)
+            .enable_elicitation_with(
+                ElicitationCapability::new().with_form(FormElicitationCapability::new()),
+            )
+            .build();
 
-        InitializeRequestParams::new(
-            #[expect(deprecated)]
-            ClientCapabilities::builder()
-                .enable_roots()
-                .enable_extensions_with(extensions)
-                .enable_elicitation_with(
-                    ElicitationCapability::new().with_form(FormElicitationCapability::new()),
-                )
-                .build(),
-            self.resolved_client_info(),
-        )
-        .with_protocol_version(
-            self.capabilities
-                .protocol_version
-                .clone()
-                .unwrap_or_default(),
-        )
+        if self.capabilities.elicitation_handler.is_none()
+            && !self.capabilities.action_required_elicitation
+        {
+            capabilities.elicitation = None;
+        }
+        InitializeRequestParams::new(capabilities, self.resolved_client_info())
+            .with_protocol_version(
+                self.capabilities
+                    .protocol_version
+                    .clone()
+                    .unwrap_or_default(),
+            )
     }
 }
 
@@ -471,6 +486,8 @@ pub struct GooseMcpClientCapabilities {
     pub mcpui: bool,
     pub host_info: Option<GooseMcpHostInfo>,
     pub elicitation_handler: Option<ElicitationHandler>,
+    /// Route elicitation through the host action-required flow when no inline handler is set.
+    pub action_required_elicitation: bool,
     pub protocol_version: Option<ProtocolVersion>,
 }
 
@@ -481,21 +498,28 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
             .field("mcpui", &self.mcpui)
             .field("host_info", &self.host_info)
             .field("elicitation_handler", &self.elicitation_handler.is_some())
+            .field(
+                "action_required_elicitation",
+                &self.action_required_elicitation,
+            )
             .field("protocol_version", &self.protocol_version)
             .finish()
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct ConnectContext {
+pub struct ConnectContext {
     pub timeout: Duration,
     pub client_name: String,
+    pub client_version: &'static str,
     pub capabilities: GooseMcpClientCapabilities,
     pub working_dir: PathBuf,
-    pub docker_container: Option<String>,
     pub action_required: Arc<ActionRequiredManager>,
     pub tools_version: Arc<AtomicU64>,
+    pub trace_context: Option<TraceContextInjector>,
 }
+
+pub type TraceContextInjector = Arc<dyn Fn(&mut JsonObject) + Send + Sync>;
 
 /// The MCP client is the interface for MCP operations.
 pub struct McpClient {
@@ -503,11 +527,11 @@ pub struct McpClient {
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
     server_info: Option<InitializeResult>,
     timeout: std::time::Duration,
-    docker_container: Option<String>,
+    trace_context: Option<TraceContextInjector>,
 }
 
 impl McpClient {
-    pub(crate) async fn connect<T, E, A>(
+    pub async fn connect<T, E, A>(
         transport: T,
         ctx: ConnectContext,
     ) -> Result<Self, Box<ClientInitializeError>>
@@ -518,11 +542,12 @@ impl McpClient {
         let ConnectContext {
             timeout,
             client_name,
+            client_version,
             capabilities,
             working_dir,
-            docker_container,
             action_required,
             tools_version,
+            trace_context,
         } = ctx;
         let notification_subscribers =
             Arc::new(Mutex::new(Vec::<mpsc::Sender<ServerNotification>>::new()));
@@ -530,6 +555,7 @@ impl McpClient {
         let client = GooseClient::new(
             notification_subscribers.clone(),
             client_name.clone(),
+            client_version,
             capabilities.clone(),
             working_dir,
             action_required,
@@ -575,12 +601,8 @@ impl McpClient {
             notification_subscribers,
             server_info,
             timeout,
-            docker_container,
+            trace_context,
         })
-    }
-
-    pub fn docker_container(&self) -> Option<&str> {
-        self.docker_container.as_deref()
     }
 
     async fn send_request_with_context(
@@ -596,6 +618,7 @@ impl McpClient {
             Some(session_id),
             working_dir,
             tool_call_request_id,
+            self.trace_context.as_ref(),
         );
         let active_tool_call = tool_call_request_id.filter(|id| !id.is_empty());
         // The inner mutex is held only for the send; the actual response wait
@@ -761,13 +784,15 @@ impl McpClientTrait for McpClient {
             client.peer_info().map(|info| info.protocol_version.clone())
         };
         if protocol_version.as_ref() == Some(&ProtocolVersion::V_2026_07_28) {
-            let extensions =
-                inject_trace_context_into_extensions(inject_session_context_into_extensions(
+            let extensions = inject_trace_context_into_extensions(
+                inject_session_context_into_extensions(
                     Extensions::new(),
                     Some(&ctx.session_id),
                     ctx.working_dir_str(),
                     ctx.tool_call_request_id.as_deref(),
-                ));
+                ),
+                self.trace_context.as_ref(),
+            );
             if let Some(meta) = extensions.get::<MetaObject>() {
                 params.meta.get_or_insert_default().0 .0.extend(
                     meta.0
@@ -939,19 +964,18 @@ fn inject_session_context_into_extensions(
     extensions
 }
 
-#[cfg(feature = "otel")]
-fn inject_trace_context_into_extensions(mut extensions: Extensions) -> Extensions {
-    let mut meta_map = extensions
-        .get::<MetaObject>()
-        .map(|meta| meta.0.clone())
-        .unwrap_or_default();
-    crate::otel::trace_context::inject_current(&mut meta_map);
-    extensions.insert(MetaObject(meta_map));
-    extensions
-}
-
-#[cfg(not(feature = "otel"))]
-fn inject_trace_context_into_extensions(extensions: Extensions) -> Extensions {
+fn inject_trace_context_into_extensions(
+    mut extensions: Extensions,
+    inject: Option<&TraceContextInjector>,
+) -> Extensions {
+    if let Some(inject) = inject {
+        let mut meta_map = extensions
+            .get::<MetaObject>()
+            .map(|meta| meta.0.clone())
+            .unwrap_or_default();
+        inject(&mut meta_map);
+        extensions.insert(MetaObject(meta_map));
+    }
     extensions
 }
 
@@ -960,6 +984,7 @@ fn inject_session_context_into_request(
     session_id: Option<&str>,
     working_dir: Option<&str>,
     tool_call_request_id: Option<&str>,
+    trace_context: Option<&TraceContextInjector>,
 ) -> ClientRequest {
     match request {
         ClientRequest::ListResourcesRequest(mut req) => {
@@ -990,13 +1015,15 @@ fn inject_session_context_into_request(
             ClientRequest::ListToolsRequest(req)
         }
         ClientRequest::CallToolRequest(mut req) => {
-            req.extensions =
-                inject_trace_context_into_extensions(inject_session_context_into_extensions(
+            req.extensions = inject_trace_context_into_extensions(
+                inject_session_context_into_extensions(
                     req.extensions,
                     session_id,
                     working_dir,
                     tool_call_request_id,
-                ));
+                ),
+                trace_context,
+            );
             ClientRequest::CallToolRequest(req)
         }
         ClientRequest::ListPromptsRequest(mut req) => {
@@ -1025,7 +1052,18 @@ fn inject_session_context_into_request(
 mod tests {
     use super::*;
 
-    use crate::agents::GoosePlatform;
+    enum GoosePlatform {
+        GooseDesktop,
+        GooseCli,
+    }
+    impl std::fmt::Display for GoosePlatform {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                Self::GooseDesktop => "goose-desktop",
+                Self::GooseCli => "goose-cli",
+            })
+        }
+    }
     use serde_json::json;
     use test_case::test_case;
 
@@ -1035,12 +1073,14 @@ mod tests {
                 mcpui: true,
                 host_info: None,
                 elicitation_handler: None,
+                action_required_elicitation: true,
                 protocol_version: None,
             },
             GoosePlatform::GooseCli => GooseMcpClientCapabilities {
                 mcpui: false,
                 host_info: None,
                 elicitation_handler: None,
+                action_required_elicitation: true,
                 protocol_version: None,
             },
         };
@@ -1048,6 +1088,7 @@ mod tests {
         GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
             platform.to_string(),
+            env!("CARGO_PKG_VERSION"),
             capabilities,
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
@@ -1131,7 +1172,8 @@ mod tests {
         );
 
         let request = request_builder(extensions);
-        let request = inject_session_context_into_request(request, Some(session_id), None, None);
+        let request =
+            inject_session_context_into_request(request, Some(session_id), None, None, None);
         let extensions = request_extensions(&request).expect("request should have extensions");
         let meta = extensions
             .get::<MetaObject>()
@@ -1195,7 +1237,6 @@ mod tests {
         assert_eq!(&mcp_meta.0, expected_meta.as_object().unwrap());
     }
 
-    #[cfg(feature = "otel")]
     #[test_case(list_resources_request, false; "list_resources")]
     #[test_case(read_resource_request, false; "read_resource")]
     #[test_case(list_tools_request, false; "list_tools")]
@@ -1206,25 +1247,20 @@ mod tests {
         request_builder: fn(Extensions) -> ClientRequest,
         expect_trace_context: bool,
     ) {
-        use opentelemetry::trace::{
-            SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState,
-        };
-
-        let _guard = opentelemetry::Context::new()
-            .with_remote_span_context(SpanContext::new(
-                TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").unwrap(),
-                SpanId::from_hex("00f067aa0ba902b7").unwrap(),
-                TraceFlags::SAMPLED,
-                true,
-                "vendor=value".parse::<TraceState>().unwrap(),
-            ))
-            .attach();
+        let inject: TraceContextInjector = Arc::new(|meta| {
+            meta.insert(
+                "traceparent".into(),
+                json!("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+            );
+            meta.insert("tracestate".into(), json!("vendor=value"));
+        });
 
         let request = inject_session_context_into_request(
             request_builder(Extensions::new()),
             Some("test-session-id"),
             None,
             None,
+            Some(&inject),
         );
         let meta = request_extensions(&request)
             .and_then(|extensions| extensions.get::<MetaObject>())
@@ -1271,6 +1307,28 @@ mod tests {
     }
 
     #[test]
+    fn elicitation_is_advertised_only_when_the_host_can_answer() {
+        let mut client = new_client(GoosePlatform::GooseCli);
+        client.capabilities.action_required_elicitation = false;
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_none());
+        client.capabilities.elicitation_handler =
+            Some(Arc::new(|_| ElicitResult::new(ElicitationAction::Decline)));
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_some());
+        client.capabilities.elicitation_handler = None;
+        client.capabilities.action_required_elicitation = true;
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_some());
+    }
+
+    #[test]
     fn test_client_capabilities_advertise_roots() {
         let client = new_client(GoosePlatform::GooseCli);
         let info = ClientHandler::get_info(&client);
@@ -1300,10 +1358,20 @@ mod tests {
     }
 
     #[test]
+    fn client_info_uses_host_version_as_fallback() {
+        let mut client = new_client(GoosePlatform::GooseCli);
+        client.client_version = "1.55.0".to_string();
+        let expected =
+            std::env::var("GOOSE_MCP_CLIENT_VERSION").unwrap_or_else(|_| "1.55.0".to_string());
+        assert_eq!(client.resolved_client_info().version, expected);
+    }
+
+    #[test]
     fn test_explicit_host_info_passes_through_client_identity() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
             GoosePlatform::GooseDesktop.to_string(),
+            env!("CARGO_PKG_VERSION"),
             GooseMcpClientCapabilities {
                 mcpui: true,
                 host_info: Some(GooseMcpHostInfo {
@@ -1313,6 +1381,7 @@ mod tests {
                     client_version: Some("0.1.0".to_string()),
                 }),
                 elicitation_handler: None,
+                action_required_elicitation: true,
                 protocol_version: None,
             },
             std::env::current_dir().unwrap_or_default(),
@@ -1338,6 +1407,7 @@ mod tests {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
             GoosePlatform::GooseCli.to_string(),
+            env!("CARGO_PKG_VERSION"),
             GooseMcpClientCapabilities {
                 mcpui: false,
                 host_info: Some(GooseMcpHostInfo {
@@ -1347,6 +1417,7 @@ mod tests {
                     client_version: Some("0.1.0".to_string()),
                 }),
                 elicitation_handler: None,
+                action_required_elicitation: true,
                 protocol_version: None,
             },
             std::env::current_dir().unwrap_or_default(),
@@ -1369,6 +1440,7 @@ mod tests {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
             GoosePlatform::GooseDesktop.to_string(),
+            env!("CARGO_PKG_VERSION"),
             GooseMcpClientCapabilities {
                 mcpui: true,
                 host_info: Some(GooseMcpHostInfo {
@@ -1378,6 +1450,7 @@ mod tests {
                     client_version: Some("0.1.0".to_string()),
                 }),
                 elicitation_handler: None,
+                action_required_elicitation: true,
                 protocol_version: None,
             },
             std::env::current_dir().unwrap_or_default(),
