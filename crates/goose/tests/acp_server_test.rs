@@ -397,6 +397,164 @@ fn test_list_sessions_types_override_filters_results() {
     });
 }
 
+fn archived_meta(value: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "archived".to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
+    meta
+}
+
+async fn list_session_titles(
+    conn: &AcpServerConnection,
+    request: ListSessionsRequest,
+) -> Vec<String> {
+    let mut titles = list_sessions_request(conn, request)
+        .await
+        .unwrap()
+        .sessions
+        .into_iter()
+        .map(|session| session.title.unwrap_or_default())
+        .collect::<Vec<_>>();
+    titles.sort();
+    titles
+}
+
+#[test]
+fn test_list_sessions_archived_filter() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = Path::new("/tmp/acp-session-list-archived");
+        seed_list_session_with_message(
+            data_root.path(),
+            cwd,
+            "Active session",
+            SessionType::Acp,
+            "Still working on this",
+        )
+        .await;
+        seed_list_session_with_message(
+            data_root.path(),
+            cwd,
+            "Archived session",
+            SessionType::Acp,
+            "All done here",
+        )
+        .await;
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let archived = session_manager
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|session| session.name == "Archived session")
+            .unwrap();
+        session_manager
+            .update(&archived.id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await
+            .unwrap();
+        let conn = new_connection(data_root.path()).await;
+
+        let both = vec!["Active session".to_string(), "Archived session".to_string()];
+        assert_eq!(
+            list_session_titles(&conn, ListSessionsRequest::new()).await,
+            both
+        );
+        assert_eq!(
+            list_session_titles(
+                &conn,
+                ListSessionsRequest::new().meta(archived_meta("include"))
+            )
+            .await,
+            both
+        );
+        assert_eq!(
+            list_session_titles(
+                &conn,
+                ListSessionsRequest::new().meta(archived_meta("exclude"))
+            )
+            .await,
+            vec!["Active session".to_string()]
+        );
+        assert_eq!(
+            list_session_titles(
+                &conn,
+                ListSessionsRequest::new().meta(archived_meta("only"))
+            )
+            .await,
+            vec!["Archived session".to_string()]
+        );
+    });
+}
+
+#[test]
+fn test_list_sessions_archived_filter_rejects_invalid_values() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+
+        let error =
+            list_sessions_request(&conn, ListSessionsRequest::new().meta(archived_meta("yes")))
+                .await
+                .unwrap_err();
+        assert_invalid_params(error);
+
+        let mut meta = serde_json::Map::new();
+        meta.insert("archived".to_string(), serde_json::Value::Bool(true));
+        let error = list_sessions_request(&conn, ListSessionsRequest::new().meta(meta))
+            .await
+            .unwrap_err();
+        assert_invalid_params(error);
+    });
+}
+
+#[test]
+fn test_list_sessions_archived_cursor_is_bound_to_filter() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        seed_list_sessions(data_root.path(), cwd.path(), 51).await;
+        let conn = new_connection(data_root.path()).await;
+
+        let first = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(cwd.path())
+                .meta(archived_meta("exclude")),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.sessions.len(), 50);
+        let cursor = first.next_cursor.unwrap();
+
+        let second = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(cwd.path())
+                .cursor(cursor.clone())
+                .meta(archived_meta("exclude")),
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.sessions.len(), 1);
+        assert!(second.next_cursor.is_none());
+
+        let error = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(cwd.path())
+                .cursor(cursor)
+                .meta(archived_meta("only")),
+        )
+        .await
+        .unwrap_err();
+        assert_invalid_params(error);
+    });
+}
+
 #[test]
 fn test_list_sessions_types_rejects_internal_session_types() {
     run_test(async {
