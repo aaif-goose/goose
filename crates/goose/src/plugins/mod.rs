@@ -170,7 +170,7 @@ fn install_plugin_with_options_at_root(
         bail!("Plugin source URL must not be empty");
     }
 
-    let temp_dir = tempfile::tempdir()?;
+    let temp_dir = crate::utils::private_tempdir_builder().tempdir()?;
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(source, &checkout_dir)?;
 
@@ -262,7 +262,7 @@ fn update_plugin_at_root(
     }
 
     fs::create_dir_all(install_root)?;
-    let temp_dir = tempfile::tempdir_in(install_root)?;
+    let temp_dir = crate::utils::private_tempdir_builder().tempdir_in(install_root)?;
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(&metadata.source, &checkout_dir)?;
 
@@ -442,6 +442,34 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("No supported plugin format found"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_keeps_executable_files_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+        let script = repo.path().join("skills").join("audit").join("run.sh");
+        fs::write(&script, "#!/bin/sh\necho audit\n").unwrap();
+        fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        init_git_repo(repo.path());
+        commit_git_repo(repo.path(), "initial");
+
+        let installed = install_plugin_with_options_at_root(
+            repo.path().to_str().unwrap(),
+            PluginInstallOptions::default(),
+            install_root.path(),
+        )
+        .unwrap();
+
+        let mode = fs::metadata(installed.directory.join("skills/audit/run.sh"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_ne!(mode & 0o100, 0);
     }
 
     #[test]

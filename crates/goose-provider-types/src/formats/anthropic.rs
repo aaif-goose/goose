@@ -935,6 +935,13 @@ pub fn is_thinking_signature_error(message: &str) -> bool {
             || lower.contains("block_binding"))
 }
 
+pub fn is_unsupported_thinking_config_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("thinking")
+        && (lower.contains("is not supported for this model")
+            || lower.contains("to turn thinking off on this model"))
+}
+
 pub fn create_request(
     provider_name: &str,
     model_config: &ModelConfig,
@@ -1882,6 +1889,36 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_adaptive_thinking_for_minimax() -> Result<()> {
+        // MiniMax-M3.1-Flash rejects thinking.type=disabled and requires
+        // adaptive thinking, so the payload must carry thinking.type=adaptive
+        // plus output_config.effort even when the effort is "off".
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
+        ]);
+
+        let mut config = cfg_with_effort("MiniMax-M3.1-Flash", "off");
+        config.max_tokens = Some(4096);
+
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request_for_model(
+            "minimax",
+            &config,
+            "MiniMax-M3.1-Flash",
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions::default(),
+        )?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert!(payload["output_config"]["effort"].is_string());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_request_enabled_thinking_with_budget() -> Result<()> {
         let _guard = env_lock::lock_env([
             ("GOOSE_THINKING_EFFORT", None::<&str>),
@@ -2477,6 +2514,21 @@ mod tests {
             thinking_type(&cfg_with_effort("claude-fable-5", "high")),
             ThinkingType::Adaptive
         );
+    }
+
+    #[test]
+    fn test_thinking_type_fable_5_2_is_always_on_adaptive() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        for model in ["claude-fable-5-2", "system.ai.claude-fable-5-2"] {
+            for effort in ["off", "low", "high"] {
+                assert_eq!(
+                    thinking_type(&cfg_with_effort(model, effort)),
+                    ThinkingType::Adaptive,
+                    "{model} {effort}"
+                );
+            }
+        }
     }
 
     #[test]

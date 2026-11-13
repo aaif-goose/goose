@@ -3968,6 +3968,9 @@
   "settings.language.description": {
     "defaultMessage": "Выберите язык интерфейса goose"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "Нидерландский"
+  },
   "settings.language.english": {
     "defaultMessage": "Английский"
   },

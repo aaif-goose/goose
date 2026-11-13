@@ -273,6 +273,7 @@ pub async fn check_if_compaction_needed(
     }
 
     let messages = conversation.messages();
+
     let model_config = session
         .model_config
         .clone()

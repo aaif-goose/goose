@@ -1,4 +1,4 @@
-use crate::agents::extension::{Envs, ExtensionConfig};
+use crate::agents::extension_config::{Envs, ExtensionConfig};
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -77,6 +77,12 @@ enum RecipeExtensionConfigInternal {
     },
 }
 
+macro_rules! make_extension {
+    (Stdio { $($fields:tt)* }) => { ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio { $($fields)* }) };
+    (StreamableHttp { $($fields:tt)* }) => { ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp { $($fields)* }) };
+    ($variant:ident { $($fields:tt)* }) => { ExtensionConfig::$variant { $($fields)* } };
+}
+
 macro_rules! map_recipe_extensions {
     ($value:expr; $( $variant:ident { $( $field:ident ),* $(,)? } ),+ $(,)?) => {{
         match $value {
@@ -85,11 +91,7 @@ macro_rules! map_recipe_extensions {
                     name,
                     description,
                     $( $field ),*
-                } => ExtensionConfig::$variant {
-                    name,
-                    description: description.unwrap_or_default(),
-                    $( $field ),*
-                },
+                } => make_extension!($variant { name, description: description.unwrap_or_default(), $( $field ),* }),
             )+
         }
     }};
@@ -253,7 +255,10 @@ mod tests {
         assert_eq!(extensions.len(), 1);
 
         match &extensions[0] {
-            ExtensionConfig::Stdio { envs, .. } => {
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                envs,
+                ..
+            }) => {
                 let map = envs.get_env();
                 assert!(!map.contains_key("LD_PRELOAD"));
                 assert_eq!(map.get("SAFE_VAR"), Some(&"ok".to_string()));

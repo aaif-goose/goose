@@ -4160,6 +4160,9 @@
   "settings.language.description": {
     "defaultMessage": "Choose the display language for goose"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "Dutch"
+  },
   "settings.language.english": {
     "defaultMessage": "English"
   },

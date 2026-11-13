@@ -1865,23 +1865,27 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
 
     for config in configs {
         match config {
-            ExtensionConfig::StreamableHttp {
-                name,
-                socket: Some(_),
-                ..
-            } => {
+            ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                    name,
+                    socket: Some(_),
+                    ..
+                },
+            ) => {
                 tracing::debug!(
                     name,
                     "skipping socket-backed HTTP extension, unsupported by ACP"
                 );
             }
-            ExtensionConfig::StreamableHttp {
-                name,
-                uri,
-                headers,
-                socket: None,
-                ..
-            } => {
+            ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                    name,
+                    uri,
+                    headers,
+                    socket: None,
+                    ..
+                },
+            ) => {
                 let http_headers = headers
                     .iter()
                     .map(|(key, value)| HttpHeader::new(key, value))
@@ -1890,13 +1894,13 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
                     McpServerHttp::new(name, uri).headers(http_headers),
                 ));
             }
-            ExtensionConfig::Stdio {
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
                 name,
                 cmd,
                 args,
                 envs,
                 ..
-            } => {
+            }) => {
                 let env_vars = envs
                     .get_env()
                     .into_iter()
@@ -4261,7 +4265,7 @@ mod tests {
     }
 
     #[test_case(
-        ExtensionConfig::Stdio {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -4272,7 +4276,7 @@ mod tests {
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        },
+        }),
         vec![
             McpServer::Stdio(
                 McpServerStdio::new("github", "/path/to/github-mcp-server")
@@ -4283,7 +4287,7 @@ mod tests {
         ; "stdio_converts_to_mcpserver_stdio"
     )]
     #[test_case(
-        ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
@@ -4297,7 +4301,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        },
+        }),
         vec![
             McpServer::Http(
                 McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
@@ -4329,36 +4333,38 @@ mod tests {
 
     #[test]
     fn socket_backed_http_is_omitted_without_dropping_ordinary_http() {
-        let socket_backed = ExtensionConfig::StreamableHttp {
-            name: "socket-backed".into(),
-            description: String::new(),
-            uri: "http://127.0.0.1:4711/mcp".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer socket-secret".into())]),
-            timeout: None,
-            socket: Some("/run/private-mcp.sock".into()),
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
-        let ordinary_http = ExtensionConfig::StreamableHttp {
-            name: "ordinary-http".into(),
-            description: String::new(),
-            uri: "https://mcp.example.com/".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer network-secret".into())]),
-            timeout: None,
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
+        let socket_backed =
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "socket-backed".into(),
+                description: String::new(),
+                uri: "http://127.0.0.1:4711/mcp".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([("Authorization".into(), "Bearer socket-secret".into())]),
+                timeout: None,
+                socket: Some("/run/private-mcp.sock".into()),
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
+        let ordinary_http =
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "ordinary-http".into(),
+                description: String::new(),
+                uri: "https://mcp.example.com/".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([("Authorization".into(), "Bearer network-secret".into())]),
+                timeout: None,
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
 
         let result = extension_configs_to_mcp_servers(&[socket_backed, ordinary_http]);
 
@@ -4374,21 +4380,25 @@ mod tests {
 
     #[test]
     fn test_filter_supported_servers_skips_http_without_capability() {
-        let config = ExtensionConfig::StreamableHttp {
-            name: "github".into(),
-            description: String::new(),
-            uri: "https://api.githubcopilot.com/mcp/".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
-            timeout: None,
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
+        let config =
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "github".into(),
+                description: String::new(),
+                uri: "https://api.githubcopilot.com/mcp/".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([(
+                    "Authorization".into(),
+                    "Bearer ghp_xxxxxxxxxxxx".into(),
+                )]),
+                timeout: None,
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
 
         let servers = extension_configs_to_mcp_servers(&[config]);
         let filtered = filter_supported_servers(&servers, &McpCapabilities::default());

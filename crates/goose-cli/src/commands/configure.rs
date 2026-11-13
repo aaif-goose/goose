@@ -1292,7 +1292,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
 
     set_extension(ExtensionEntry {
         enabled: true,
-        config: ExtensionConfig::Stdio {
+        config: ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name: name.clone(),
             cmd,
             args,
@@ -1303,7 +1303,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-        },
+        }),
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
@@ -1336,21 +1336,23 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
 
     set_extension(ExtensionEntry {
         enabled: true,
-        config: ExtensionConfig::StreamableHttp {
-            name: name.clone(),
-            uri,
-            envs: Envs::new(envs),
-            env_keys,
-            headers,
-            description,
-            timeout: Some(timeout),
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: None,
-            available_tools: Vec::new(),
-        },
+        config: ExtensionConfig::External(
+            goose_agent::extension::ExtensionConfig::StreamableHttp {
+                name: name.clone(),
+                uri,
+                envs: Envs::new(envs),
+                env_keys,
+                headers,
+                description,
+                timeout: Some(timeout),
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        ),
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;

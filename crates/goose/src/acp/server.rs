@@ -515,40 +515,44 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     match mcp_server {
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
-            Ok(ExtensionConfig::Stdio {
-                name: stdio.name,
-                description: String::new(),
-                cmd: stdio.command.to_string_lossy().to_string(),
-                args: stdio.args,
-                envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
-                env_keys: vec![],
-                timeout,
-                cwd: None,
-                bundled: Some(false),
-                available_tools: vec![],
-            })
+            Ok(ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::Stdio {
+                    name: stdio.name,
+                    description: String::new(),
+                    cmd: stdio.command.to_string_lossy().to_string(),
+                    args: stdio.args,
+                    envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
+                    env_keys: vec![],
+                    timeout,
+                    cwd: None,
+                    bundled: Some(false),
+                    available_tools: vec![],
+                },
+            ))
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
-            Ok(ExtensionConfig::StreamableHttp {
-                name: http.name,
-                description: String::new(),
-                uri: http.url,
-                envs: Envs::default(),
-                env_keys: vec![],
-                headers: http
-                    .headers
-                    .into_iter()
-                    .map(|h| (h.name, h.value))
-                    .collect(),
-                timeout,
-                socket: None,
-                client_id: None,
-                client_secret_key: None,
-                scopes: vec![],
-                bundled: Some(false),
-                available_tools: vec![],
-            })
+            Ok(ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                    name: http.name,
+                    description: String::new(),
+                    uri: http.url,
+                    envs: Envs::default(),
+                    env_keys: vec![],
+                    headers: http
+                        .headers
+                        .into_iter()
+                        .map(|h| (h.name, h.value))
+                        .collect(),
+                    timeout,
+                    socket: None,
+                    client_id: None,
+                    client_secret_key: None,
+                    scopes: vec![],
+                    bundled: Some(false),
+                    available_tools: vec![],
+                },
+            ))
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
         _ => Err("Unknown MCP server type".to_string()),
@@ -2347,7 +2351,10 @@ impl AcpConnection {
 
         let message_id = format!("steer_{}", Uuid::new_v4());
         let message = message.with_id(message_id.clone());
-        self.services.steer(&req.session_id, message).await;
+        self.services
+            .steer(&req.session_id, message)
+            .await
+            .internal_err()?;
 
         if let Some(cx) = self.client_cx.get() {
             let _ = Self::send_queued_steer_update(
@@ -3047,7 +3054,9 @@ extensions:
 
         assert_eq!(extensions.len(), 1);
         match &extensions[0] {
-            ExtensionConfig::StreamableHttp { name, uri, .. } => {
+            ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp { name, uri, .. },
+            ) => {
                 assert_eq!(name, "zed-mcp");
                 assert_eq!(uri, "http://localhost/new");
             }
@@ -3129,7 +3138,7 @@ extensions:
                 .args(vec!["stdio".into()])
                 .env(vec![EnvVariable::new("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::Stdio {
+        Ok(ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -3146,14 +3155,14 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        })
+        }))
     )]
     #[test_case(
         McpServer::Http(
             McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
                 .headers(vec![HttpHeader::new("Authorization", "Bearer ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::StreamableHttp {
+        Ok(ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
@@ -3170,7 +3179,7 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        })
+        }))
     )]
     #[test_case(
         McpServer::Sse(McpServerSse::new("test-sse", "https://agent-fin.biodnd.com/sse")),

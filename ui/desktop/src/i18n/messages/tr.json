@@ -3968,6 +3968,9 @@
   "settings.language.description": {
     "defaultMessage": "goose için görüntüleme dilini seçin"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "Felemenkçe"
+  },
   "settings.language.english": {
     "defaultMessage": "İngilizce"
   },

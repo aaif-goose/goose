@@ -4,9 +4,9 @@ use goose::recipe::template_recipe::parse_recipe_content;
 use goose::recipe::RECIPE_FILE_EXTENSIONS;
 use serde::{Deserialize, Serialize};
 
+use goose::config::paths::Paths;
 use goose::recipe::read_recipe_file_content::RecipeFile;
 use goose::subprocess::{git_command, SubprocessExt};
-use std::env;
 use std::fs;
 
 use std::path::{Component, Path, PathBuf};
@@ -66,7 +66,7 @@ pub fn retrieve_recipe_from_github(
 }
 
 fn clean_cloned_dirs(recipe_repo_full_name: &str) -> anyhow::Result<()> {
-    let local_repo_path = get_local_repo_path(&env::temp_dir(), recipe_repo_full_name)?;
+    let local_repo_path = get_local_repo_path(&github_recipes_dir()?, recipe_repo_full_name)?;
     if local_repo_path.exists() {
         fs::remove_dir_all(&local_repo_path)?;
     }
@@ -188,11 +188,33 @@ fn get_local_repo_path(
     Ok(local_repo_path)
 }
 
-fn ensure_repo_cloned(recipe_repo_full_name: &str) -> Result<PathBuf> {
-    let local_repo_parent_path = env::temp_dir();
-    if !local_repo_parent_path.exists() {
-        std::fs::create_dir_all(local_repo_parent_path.clone())?;
+// Clone and download paths are fixed, so in a shared temporary directory another user could
+// create them first. Keep them in goose's own state directory, readable only by the owner.
+fn github_recipes_dir() -> Result<PathBuf> {
+    let dir = Paths::in_state_dir("github_recipes");
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
     }
+    builder.create(&dir)?;
+    // The directory may already exist with a wider mode or belong to another user. Only the owner
+    // can set the mode, so this also refuses a directory that is not ours.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if fs::symlink_metadata(&dir)?.file_type().is_symlink() {
+            return Err(anyhow!("{} is a symlink", dir.display()));
+        }
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(dir)
+}
+
+fn ensure_repo_cloned(recipe_repo_full_name: &str) -> Result<PathBuf> {
+    let local_repo_parent_path = github_recipes_dir()?;
     let local_repo_path = get_local_repo_path(&local_repo_parent_path, recipe_repo_full_name)?;
 
     if local_repo_path.join(".git").exists() {
@@ -233,7 +255,7 @@ fn fetch_origin(local_repo_path: &Path) -> Result<()> {
 
 fn get_folder_from_github(local_repo_path: &Path, recipe_name: &str) -> Result<PathBuf> {
     let ref_and_path = format!("origin/main:{}", recipe_name);
-    let output_dir = clean_temp_child_path(&env::temp_dir(), recipe_name)?;
+    let output_dir = clean_temp_child_path(&github_recipes_dir()?, recipe_name)?;
     fs::create_dir_all(&output_dir)?;
 
     let archive_output = git_command()
@@ -413,6 +435,42 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first, parent.join("owner-one__shared"));
         assert_eq!(second, parent.join("owner-two__shared"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn github_recipes_dir_is_owner_only_and_under_goose_state() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.path().to_str().unwrap()))]);
+
+        let dir = github_recipes_dir().unwrap();
+
+        assert!(dir.starts_with(root.path().join("state")));
+        let mode = fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn github_recipes_dir_narrows_an_existing_directory_and_refuses_a_symlink() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.path().to_str().unwrap()))]);
+        let dir = Paths::in_state_dir("github_recipes");
+        fs::create_dir_all(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o777)).unwrap();
+
+        github_recipes_dir().unwrap();
+        let mode = fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::remove_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), &dir).unwrap();
+        assert!(github_recipes_dir().is_err());
     }
 
     #[test]

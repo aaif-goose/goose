@@ -410,7 +410,11 @@ impl TestPipeline {
     }
 
     pub(super) async fn steer(&self, message: Message) {
-        self.services().await.steer(&self.session_id, message).await;
+        self.services()
+            .await
+            .steer(&self.session_id, message)
+            .await
+            .expect("steer the test session");
     }
 
     pub(super) async fn has_pending_steers(&self) -> bool {
@@ -503,11 +507,7 @@ impl TestPipeline {
         let mut events = Vec::new();
 
         for text in user_messages {
-            self.start_new_turn().await;
-            self.session_manager
-                .add_message(&self.session_id, &Message::user().with_text(text))
-                .await?;
-
+            self.send(&Message::user().with_text(text)).await?;
             events.extend(run_machine(self).await?);
         }
 
@@ -515,10 +515,7 @@ impl TestPipeline {
     }
 
     pub(super) async fn run_message(&self, message: Message) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &message)
-            .await?;
+        self.send(&message).await?;
         let events = run_machine(self).await?;
         Ok(TestRun::new(self.session().await?, events))
     }
@@ -527,17 +524,13 @@ impl TestPipeline {
         mut self,
         message: &str,
     ) -> Result<(Self, TestRun, usize)> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
 
         let cancel = CancellationToken::new();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -583,12 +576,15 @@ impl TestPipeline {
         Ok(())
     }
 
-    pub(super) async fn start_turn(&self) -> Result<()> {
-        crate::agents::state_machine::session::run_turn_start_hooks(
-            &self.services().await.hook_manager,
-            &self.session().await?,
-        )
-        .await
+    pub(super) async fn send(&self, message: &Message) -> Result<()> {
+        self.start_new_turn().await;
+        self.session_manager
+            .add_message(&self.session_id, message)
+            .await?;
+        self.services()
+            .await
+            .emit_hooks_for_saved_prompt(&self.session_id)
+            .await
     }
 
     pub(super) async fn resume(&self) -> Result<TestRun> {
@@ -664,10 +660,7 @@ impl TestPipeline {
         message: &str,
         cancel: CancellationToken,
     ) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         self.run_turn(cancel).await
     }
 
@@ -678,7 +671,6 @@ impl TestPipeline {
         let session = crate::agents::state_machine::session::run(
             &machine,
             self.session_manager.as_ref(),
-            &self.services().await.hook_manager,
             &self.session_id,
             &emit,
         )
@@ -697,17 +689,13 @@ impl TestPipeline {
         action: ElicitationAction,
         user_data: serde_json::Value,
     ) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         let cancel = CancellationToken::new();
         let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -1243,10 +1231,9 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 7] = [
+const TOOL_OPERATIONS: [&str; 6] = [
     "final_output",
     "tool_approval",
-    "pre_tool_call_hook",
     "skills",
     "tool_execution",
     "remaining_tool_calls",
@@ -1290,7 +1277,6 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
     let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
-    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let mut result = machine.step(&session, &emit).await?;

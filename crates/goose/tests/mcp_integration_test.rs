@@ -157,7 +157,7 @@ impl Fixture {
 fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
     let mut args = vec!["stdio".to_string()];
     args.extend(mode.map(str::to_string));
-    ExtensionConfig::Stdio {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
@@ -168,11 +168,11 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
-    }
+    })
 }
 
 fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
-    ExtensionConfig::StreamableHttp {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
         name: name.to_string(),
         description: "HTTP fixture".to_string(),
         uri: uri.to_string(),
@@ -186,7 +186,7 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
-    }
+    })
 }
 
 fn platform(name: &str) -> ExtensionConfig {
@@ -897,18 +897,19 @@ async fn test_replayed_session(
     }
 
     let envs = Envs::new(env);
-    let extension_config = ExtensionConfig::Stdio {
-        name: "test".to_string(),
-        description: "Test".to_string(),
-        cmd,
-        args,
-        envs,
-        env_keys: vec![],
-        timeout: Some(30),
-        cwd: None,
-        bundled: Some(false),
-        available_tools: vec![],
-    };
+    let extension_config =
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name: "test".to_string(),
+            description: "Test".to_string(),
+            cmd,
+            args,
+            envs,
+            env_keys: vec![],
+            timeout: Some(30),
+            cwd: None,
+            bundled: Some(false),
+            available_tools: vec![],
+        });
 
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(
