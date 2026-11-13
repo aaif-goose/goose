@@ -142,6 +142,73 @@ describe('ModelsBottomBar', () => {
     expect(screen.queryByTestId('model-loading-state')).not.toBeInTheDocument();
   });
 
+  it('shows the provider before the model on the model button', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+      />
+    );
+
+    const label = screen.getByTitle('session-provider/session-model');
+    expect(label).toHaveTextContent('session-provider/session-model');
+  });
+
+  it('keeps the provider and the model in separate isolated parts of the button', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+      />
+    );
+
+    const parts = screen.getByTitle('session-provider/session-model').querySelectorAll('bdi');
+    expect([...parts].map((part) => [part.textContent, part.getAttribute('dir')])).toEqual([
+      ['session-provider', 'auto'],
+      ['session-model', 'auto'],
+    ]);
+  });
+
+  it('shows the configured provider and model when there is no active session', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId={null}
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        onModelChanged={mockOnModelChanged}
+      />
+    );
+
+    expect(screen.getByTitle('config-provider/config-model')).toHaveTextContent(
+      'config-provider/config-model'
+    );
+  });
+
+  it('shows no provider before the select model placeholder', () => {
+    mockCurrentModel = null;
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId={null}
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        onModelChanged={mockOnModelChanged}
+      />
+    );
+
+    expect(screen.getAllByText('Select Model').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/config-provider\//)).not.toBeInTheDocument();
+  });
+
   it('opens model overlays after the menu closes with the appropriate focus behavior', () => {
     renderWithIntl(
       <ModelsBottomBar
