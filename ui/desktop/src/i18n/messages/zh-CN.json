@@ -3968,6 +3968,9 @@
   "settings.language.description": {
     "defaultMessage": "选择 goose 的显示语言"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "荷兰语"
+  },
   "settings.language.english": {
     "defaultMessage": "英语"
   },

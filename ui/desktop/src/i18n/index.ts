@@ -17,7 +17,7 @@ export { defineMessages, useIntl } from 'react-intl';
 /** The set of locales that have translation catalogs. */
 // prettier-ignore
 export const SUPPORTED_LOCALES = [
-  'en', 'es', 'fr', 'de', 'it', 'pt', 'id', 'ms', 'vi', 'hi', 'ja', 'ko', 'ru', 'tr', 'zh-CN', 'zh-TW',
+  'en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'id', 'ms', 'vi', 'hi', 'ja', 'ko', 'ru', 'tr', 'zh-CN', 'zh-TW',
 ] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 const SUPPORTED_LOCALE_SET = new Set<string>(SUPPORTED_LOCALES);

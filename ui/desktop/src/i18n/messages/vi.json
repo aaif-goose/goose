@@ -3968,6 +3968,9 @@
   "settings.language.description": {
     "defaultMessage": "Chọn ngôn ngữ hiển thị cho goose"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "Tiếng Hà Lan"
+  },
   "settings.language.english": {
     "defaultMessage": "English"
   },
