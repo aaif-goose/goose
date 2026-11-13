@@ -114,7 +114,7 @@ pub struct Registration {
 #[derive(Clone)]
 pub(super) enum Connection {
     Config {
-        config: ExtensionConfig,
+        config: Box<ExtensionConfig>,
         command: Option<Arc<dyn StdioCommand>>,
     },
     Custom(Arc<dyn Connector>),
@@ -183,7 +183,10 @@ impl Registration {
             key: config.key(),
             name: config.name(),
             identity: serde_json::to_value(&config).expect("config serializes"),
-            connection: Connection::Config { config, command },
+            connection: Connection::Config {
+                config: Box::new(config),
+                command,
+            },
             available_tools,
             unprefixed: false,
             trusted: false,

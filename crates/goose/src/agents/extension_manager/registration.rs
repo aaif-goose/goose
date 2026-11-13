@@ -37,7 +37,7 @@ pub(super) fn registration(
         ),
     }
     .with_identity(
-        serde_json::to_value(&(
+        serde_json::to_value((
             &config,
             if def.is_some() {
                 None

@@ -621,14 +621,14 @@ impl ExtensionManager {
                 let resolved = self
                     .services
                     .environment
-                    .resolve_config(config.clone())
+                    .resolve_config(config.as_ref().clone())
                     .await?;
                 let client =
                     registration::connect_config(&resolved, command.as_deref(), &request).await?;
                 (
                     client,
                     Some(ResolvedConfig {
-                        original: config.clone(),
+                        original: config.as_ref().clone(),
                         resolved,
                     }),
                 )
