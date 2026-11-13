@@ -6,12 +6,11 @@ use rmcp::ServiceError as Error;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::Semaphore;
 
-struct TestHost {
+struct TestSelectionStore {
     session: Mutex<ExtensionSession>,
-    action_required: Arc<ActionRequiredManager>,
 }
 
-impl TestHost {
+impl TestSelectionStore {
     fn new() -> Self {
         Self {
             session: Mutex::new(ExtensionSession {
@@ -19,13 +18,12 @@ impl TestHost {
                 working_dir: PathBuf::new(),
                 extensions: vec![],
             }),
-            action_required: Arc::new(ActionRequiredManager::new()),
         }
     }
 }
 
 #[async_trait]
-impl ExtensionHost for TestHost {
+impl ExtensionSelectionStore for TestSelectionStore {
     async fn session(&self, session_id: &str) -> Result<ExtensionSession> {
         let session = self.session.lock().await;
         anyhow::ensure!(session.id == session_id, "unknown session");
@@ -51,15 +49,15 @@ impl ExtensionHost for TestHost {
         session.extensions.retain(|config| config.key() != key);
         Ok(session.extensions.len() != selected)
     }
-
-    fn action_required(&self) -> Arc<ActionRequiredManager> {
-        Arc::clone(&self.action_required)
-    }
 }
 
 fn manager() -> Arc<ExtensionManager> {
-    Arc::new(ExtensionManager::with_host(
-        Arc::new(TestHost::new()),
+    Arc::new(ExtensionManager::with_services(
+        {
+            let mut services = host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
+            services.selections = Some(Arc::new(TestSelectionStore::new()));
+            services
+        },
         ClientContext {
             name: "test".to_string(),
             capabilities: GooseMcpClientCapabilities {
@@ -343,29 +341,24 @@ async fn host_backed_selection_keeps_held_leases_unchanged() {
     assert_ne!(result.is_error, Some(true));
 }
 
-/// A host that resolves its own extension sets needs only `action_required`.
-struct MinimalHost(Arc<ActionRequiredManager>);
-
-impl ExtensionHost for MinimalHost {
-    fn action_required(&self) -> Arc<ActionRequiredManager> {
-        Arc::clone(&self.0)
-    }
-}
-
 #[tokio::test]
 async fn explicit_sets_need_no_session_lookup() {
-    let host = Arc::new(MinimalHost(Arc::new(ActionRequiredManager::new())));
-    let manager = Arc::new(ExtensionManager::with_host(
-        host.clone(),
+    let manager = Arc::new(ExtensionManager::with_services(
+        host::ExtensionServices::new(Arc::new(ActionRequiredManager::new())),
         ClientContext {
             name: "minimal".to_string(),
             capabilities: Default::default(),
         },
     ));
+    let registration = Registration::new("custom", StaticConnector::new(Some(vec!["echo"])));
     let lease = manager
-        .resolve(&ExtensionSet::new("scope", None, vec![]).unwrap())
+        .resolve(&ExtensionSet::new("scope", None, vec![registration]).unwrap())
         .await;
-    assert!(lease.tools().await.is_empty());
+    assert_eq!(tool_names(lease.tools().await), ["custom__echo"]);
+    assert!(matches!(
+        manager.selection_store(),
+        Err(ExtensionError::ConfigError(_))
+    ));
 }
 
 /// Lists fixed tools, or fails discovery when `tools` is `None`.
@@ -581,16 +574,10 @@ fn reserved_result_metadata_is_removed_without_touching_other_keys() {
     assert!(result.meta.is_none());
 }
 
-struct ResourceVisibilityHost {
-    action_required: Arc<ActionRequiredManager>,
-}
+struct ResourceVisibilityPolicy;
 
 #[async_trait]
-impl ExtensionHost for ResourceVisibilityHost {
-    fn action_required(&self) -> Arc<ActionRequiredManager> {
-        Arc::clone(&self.action_required)
-    }
-
+impl host::ExtensionToolPolicy for ResourceVisibilityPolicy {
     fn exposes_tool(&self, _extension: &str, tool: &str, catalog_has_resources: bool) -> bool {
         tool != "read_resource" || catalog_has_resources
     }
@@ -604,10 +591,13 @@ async fn resource_visibility_is_independent_of_tool_discovery() {
         (Some(vec!["hidden"]), true),
         (None, false),
     ] {
-        let manager = ExtensionManager::with_host(
-            Arc::new(ResourceVisibilityHost {
-                action_required: Arc::new(ActionRequiredManager::new()),
-            }),
+        let manager = ExtensionManager::with_services(
+            {
+                let mut services =
+                    host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
+                services.tool_policy = Arc::new(ResourceVisibilityPolicy);
+                services
+            },
             ClientContext {
                 name: "test".to_string(),
                 capabilities: Default::default(),

@@ -1,7 +1,7 @@
 use super::goose_host::GooseExtensionHost;
 use crate::agents::container::Container;
 use crate::agents::extension_config::{name_to_key, ExtensionConfig, ExtensionResult};
-use crate::agents::extension_runtime::host::ExtensionHost;
+use crate::agents::extension_runtime::host::ExtensionEnvironment;
 use crate::agents::extension_runtime::{ConnectRequest, Connector, Registration};
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::PLATFORM_EXTENSIONS;
@@ -27,6 +27,7 @@ pub(super) fn registration(
         ExtensionConfig::External(transport) => Registration::from_config_with_command(
             transport.clone(),
             host.clone(),
+            Arc::new(super::goose_host::GooseExtensionAuth),
             Arc::new(GoosePlacement { container, host }),
         ),
         _ => Registration::new(

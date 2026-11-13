@@ -76,73 +76,34 @@ impl ExtensionAuth for NoExtensionAuth {
     }
 }
 
-/// Application services used by the extension runtime. The host owns persistence,
-/// configuration, extension registration, and authorization policy.
-///
-/// Only `action_required` is required. The defaults suit a host that resolves its
-/// own [`ExtensionSet`](super::ExtensionSet)s with [`super::ExtensionManager::resolve`] and
-/// does not change selections at runtime: session lookup and selection changes
-/// fail, configs are used as given, and authorization is unavailable.
+/// Optional persistence for hosts that manage selections by scope ID.
 #[async_trait]
-pub trait ExtensionHost: Send + Sync {
-    /// Needed by [`super::ExtensionManager::current_lease`], `enable`, and `disable`.
-    async fn session(&self, session_id: &str) -> Result<ExtensionSession> {
-        anyhow::bail!("this host does not look up extension sessions ({session_id})")
-    }
-
+pub trait ExtensionSelectionStore: Send + Sync {
+    async fn session(&self, scope_id: &str) -> Result<ExtensionSession>;
     async fn select(
         &self,
-        _session_id: &str,
+        scope_id: &str,
         registration: super::Registration,
-    ) -> ExtensionResult<()> {
-        Err(runtime_changes_unsupported(registration.name()))
-    }
+    ) -> ExtensionResult<()>;
+    async fn disable(&self, scope_id: &str, key: &str) -> ExtensionResult<bool>;
+}
 
-    async fn disable(&self, _session_id: &str, key: &str) -> ExtensionResult<bool> {
-        Err(runtime_changes_unsupported(key))
-    }
-
-    /// Resolve secrets and environment before connecting. Defaults to the config as given.
+/// Host-dependent configuration and process environment, evaluated when connecting.
+#[async_trait]
+pub trait ExtensionEnvironment: Send + Sync {
     async fn resolve_config(&self, config: ExtensionConfig) -> ExtensionResult<ExtensionConfig> {
         Ok(config)
-    }
-
-    /// Result `_meta` keys only trusted in-process connectors may set. They are
-    /// removed from other extensions' results, so an external server cannot trigger
-    /// host behavior keyed on them.
-    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    /// Whether a lease's catalog includes `tool` (its server name) from the extension
-    /// keyed `extension`. `catalog_has_resources` is whether any extension in the
-    /// lease supports MCP resources.
-    fn exposes_tool(&self, _extension: &str, _tool: &str, _catalog_has_resources: bool) -> bool {
-        true
-    }
-
-    /// Sanitize and decorate a tool result before it leaves the runtime. Applies to
-    /// all results, including in-process extensions; defaults to no decoration.
-    async fn process_result(&self, _context: ResultContext<'_>, _result: &mut CallToolResult) {}
-
-    fn action_required(&self) -> Arc<ActionRequiredManager>;
-
-    fn auth(&self) -> Arc<dyn ExtensionAuth> {
-        Arc::new(NoExtensionAuth)
     }
 
     fn config_generation(&self) -> u64 {
         0
     }
 
-    fn client_version(&self) -> &'static str {
-        env!("CARGO_PKG_VERSION")
-    }
-
+    // Goose's timeout can change with configuration without recreating the manager.
     fn default_timeout(&self) -> u64 {
         DEFAULT_EXTENSION_TIMEOUT
     }
-    /// Connection directory when a transport does not specify an explicit cwd.
+
     fn connection_working_dir(&self, directory: &std::path::Path) -> PathBuf {
         if directory.as_os_str().is_empty() {
             std::env::current_dir().unwrap_or_default()
@@ -154,16 +115,66 @@ pub trait ExtensionHost: Send + Sync {
     fn resolve_command(&self, cmd: &str) -> PathBuf {
         PathBuf::from(cmd)
     }
+
     fn search_path(&self) -> Result<OsString> {
         std::env::var_os("PATH").ok_or_else(|| anyhow::anyhow!("PATH is not set"))
     }
-    fn trace_context(&self) -> Option<TraceContextInjector> {
-        None
+}
+
+pub struct DefaultExtensionEnvironment;
+impl ExtensionEnvironment for DefaultExtensionEnvironment {}
+
+/// Catalog visibility and the result trust boundary belong to the same policy.
+#[async_trait]
+pub trait ExtensionToolPolicy: Send + Sync {
+    /// Keys removed from external results before host decoration.
+    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    fn exposes_tool(&self, _extension: &str, _tool: &str, _catalog_has_resources: bool) -> bool {
+        true
+    }
+
+    async fn process_result(&self, _context: ResultContext<'_>, _result: &mut CallToolResult) {}
+}
+
+pub struct DefaultExtensionToolPolicy;
+impl ExtensionToolPolicy for DefaultExtensionToolPolicy {}
+
+#[derive(Clone)]
+pub struct ExtensionRuntimeSettings {
+    pub client_version: &'static str,
+    pub action_required: Arc<ActionRequiredManager>,
+    pub trace_context: Option<TraceContextInjector>,
+}
+
+impl ExtensionRuntimeSettings {
+    pub fn new(action_required: Arc<ActionRequiredManager>) -> Self {
+        Self {
+            client_version: env!("CARGO_PKG_VERSION"),
+            action_required,
+            trace_context: None,
+        }
     }
 }
 
-fn runtime_changes_unsupported(name: &str) -> goose_agent::extension::ExtensionError {
-    goose_agent::extension::ExtensionError::ConfigError(format!(
-        "this host does not support changing extension '{name}' at runtime"
-    ))
+pub struct ExtensionServices {
+    pub selections: Option<Arc<dyn ExtensionSelectionStore>>,
+    pub environment: Arc<dyn ExtensionEnvironment>,
+    pub tool_policy: Arc<dyn ExtensionToolPolicy>,
+    pub auth: Arc<dyn ExtensionAuth>,
+    pub settings: ExtensionRuntimeSettings,
+}
+
+impl ExtensionServices {
+    pub fn new(action_required: Arc<ActionRequiredManager>) -> Self {
+        Self {
+            selections: None,
+            environment: Arc::new(DefaultExtensionEnvironment),
+            tool_policy: Arc::new(DefaultExtensionToolPolicy),
+            auth: Arc::new(NoExtensionAuth),
+            settings: ExtensionRuntimeSettings::new(action_required),
+        }
+    }
 }

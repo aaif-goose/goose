@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use super::host::ExtensionHost;
+use super::host::ExtensionEnvironment;
 use crate::agents::mcp_client::{ConnectContext, McpClient};
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use goose_agent::extension::{ExtensionError, ExtensionResult, ProcessExit};
@@ -14,27 +14,27 @@ pub(super) async fn connect(
     envs: HashMap<String, String>,
     placement: Option<&dyn super::registration::StdioCommand>,
     ctx: ConnectContext,
-    host: &dyn ExtensionHost,
+    environment: &dyn ExtensionEnvironment,
 ) -> ExtensionResult<McpClient> {
     crate::agents::extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
 
     let command = match placement {
         Some(placement) => placement.command(cmd, args, envs)?,
         None => {
-            let mut command = Command::new(host.resolve_command(cmd));
+            let mut command = Command::new(environment.resolve_command(cmd));
             command.args(args).envs(envs);
             command
         }
     };
-    spawn(command, ctx, host).await
+    spawn(command, ctx, environment).await
 }
 
 pub async fn spawn(
     mut command: Command,
     ctx: ConnectContext,
-    host: &dyn ExtensionHost,
+    environment: &dyn ExtensionEnvironment,
 ) -> ExtensionResult<McpClient> {
-    if let Ok(path) = host.search_path() {
+    if let Ok(path) = environment.search_path() {
         command.env("PATH", path);
     }
 

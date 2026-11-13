@@ -55,8 +55,12 @@ impl ExtensionManager {
         let host = Arc::new(goose_host::GooseExtensionHost {
             context: context.clone(),
         });
-        let manager =
-            Arc::new(crate::agents::extension_runtime::ExtensionManager::with_host(host, client));
+        let manager = Arc::new(
+            crate::agents::extension_runtime::ExtensionManager::with_services(
+                host.services(),
+                client,
+            ),
+        );
         Self { manager, context }
     }
 

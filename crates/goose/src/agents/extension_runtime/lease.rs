@@ -21,7 +21,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::host::ExtensionHost;
+use super::host::ExtensionToolPolicy;
 use super::{
     get_tool_owner, recover_mangled_tool_name, remove_reserved_meta, ActionRequiredStream,
     ClientContext, Extension, ExtensionLoadResult, ExtensionSlot, Registration,
@@ -121,7 +121,11 @@ struct ToolCatalog {
 }
 
 impl ToolCatalog {
-    async fn build(scope_id: &str, slots: &[Arc<ExtensionSlot>], host: &dyn ExtensionHost) -> Self {
+    async fn build(
+        scope_id: &str,
+        slots: &[Arc<ExtensionSlot>],
+        policy: &dyn ExtensionToolPolicy,
+    ) -> Self {
         let outcomes = futures::future::join_all(slots.iter().map(|slot| async move {
             let extension = match slot.outcome().await {
                 Ok(Some(extension)) => Arc::clone(extension),
@@ -175,7 +179,7 @@ impl ToolCatalog {
                     .strip_prefix(&format!("{}__", extension.key))
                     .unwrap_or(&tool.name)
                     .to_string();
-                if !host.exposes_tool(&extension.key, &server_name, supports_resources) {
+                if !policy.exposes_tool(&extension.key, &server_name, supports_resources) {
                     continue;
                 }
                 let mut tool = tool.clone();
@@ -222,7 +226,7 @@ pub struct ExtensionLease {
     slots: Vec<Arc<ExtensionSlot>>,
     tool_catalog: Arc<OnceCell<ToolCatalog>>,
     action_required: Arc<ActionRequiredManager>,
-    host: Arc<dyn ExtensionHost>,
+    policy: Arc<dyn ExtensionToolPolicy>,
     client_context: Arc<ClientContext>,
 }
 
@@ -237,7 +241,8 @@ impl ExtensionLease {
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
         slots: Vec<Arc<ExtensionSlot>>,
-        host: Arc<dyn ExtensionHost>,
+        policy: Arc<dyn ExtensionToolPolicy>,
+        action_required: Arc<ActionRequiredManager>,
         client_context: Arc<ClientContext>,
     ) -> Self {
         Self {
@@ -246,15 +251,15 @@ impl ExtensionLease {
             working_dir,
             slots,
             tool_catalog: Arc::new(OnceCell::new()),
-            action_required: host.action_required(),
-            host,
+            action_required,
+            policy,
             client_context,
         }
     }
 
     async fn tool_catalog(&self) -> &ToolCatalog {
         self.tool_catalog
-            .get_or_init(|| ToolCatalog::build(&self.scope_id, &self.slots, self.host.as_ref()))
+            .get_or_init(|| ToolCatalog::build(&self.scope_id, &self.slots, self.policy.as_ref()))
             .await
     }
 
@@ -745,12 +750,12 @@ impl ExtensionLease {
         let tool = resolved.tool.clone();
         let extension_key = resolved.extension.key.clone();
         let client_context = Arc::clone(&self.client_context);
-        let host = Arc::clone(&self.host);
+        let policy = Arc::clone(&self.policy);
         let server_name = resolved.server_name.to_string();
         let reserved_meta = if resolved.extension.is_trusted() {
             &[]
         } else {
-            self.host.reserved_result_meta_keys()
+            self.policy.reserved_result_meta_keys()
         };
         let session_id = self.scope_id.clone();
         let result = async move {
@@ -767,19 +772,20 @@ impl ExtensionLease {
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
             remove_reserved_meta(&mut result, reserved_meta);
-            host.process_result(
-                super::host::ResultContext {
-                    scope_id: &session_id,
-                    extension: &extension_key,
-                    server_tool_name: &server_name,
-                    tool: &tool,
-                    client_context: &client_context,
-                    client: &*client,
-                    cancellation_token,
-                },
-                &mut result,
-            )
-            .await;
+            policy
+                .process_result(
+                    super::host::ResultContext {
+                        scope_id: &session_id,
+                        extension: &extension_key,
+                        server_tool_name: &server_name,
+                        tool: &tool,
+                        client_context: &client_context,
+                        client: &*client,
+                        cancellation_token,
+                    },
+                    &mut result,
+                )
+                .await;
             Ok(result)
         };
 

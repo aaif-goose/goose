@@ -16,7 +16,7 @@ use tracing::warn;
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClientTrait};
 use goose_agent::extension::{name_to_key, ExtensionError, ExtensionResult};
-use host::{ExtensionHost, ExtensionSession};
+use host::{ExtensionSelectionStore, ExtensionServices, ExtensionSession};
 use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
@@ -167,7 +167,7 @@ impl ExtensionSlot {
                 .get()
                 .is_some_and(|runtime| matches!(runtime, Runtime::Running(_)));
         };
-        let generation = manager.host.config_generation();
+        let generation = manager.services.environment.config_generation();
         if self.config_generation.load(Ordering::SeqCst) == generation {
             return true;
         }
@@ -176,7 +176,8 @@ impl ExtensionSlot {
             Some(Runtime::Failed(_)) => false,
             Some(Runtime::Running(extension)) => match &extension.resolved_config {
                 Some(resolved) => manager
-                    .host
+                    .services
+                    .environment
                     .resolve_config(
                         extension
                             .registration
@@ -385,7 +386,7 @@ pub struct ExtensionManager {
     /// the old selection in the meantime must not lose them, or the next
     /// lease would start a second process.
     enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
-    host: Arc<dyn ExtensionHost>,
+    services: ExtensionServices,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
 }
@@ -517,11 +518,19 @@ fn remove_reserved_meta(result: &mut CallToolResult, keys: &[&str]) {
 }
 
 impl ExtensionManager {
-    pub fn with_host(host: Arc<dyn ExtensionHost>, default_client: ClientContext) -> Self {
+    fn selection_store(&self) -> ExtensionResult<&dyn ExtensionSelectionStore> {
+        self.services.selections.as_deref().ok_or_else(|| {
+            ExtensionError::ConfigError(
+                "this host does not provide extension selection storage".to_string(),
+            )
+        })
+    }
+
+    pub fn with_services(services: ExtensionServices, default_client: ClientContext) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
             enabling: Mutex::new(HashMap::new()),
-            host,
+            services,
             default_client: Arc::new(default_client),
             clients: std::sync::Mutex::new(HashMap::new()),
         }
@@ -556,14 +565,19 @@ impl ExtensionManager {
             scope_id,
             working_dir,
             slots,
-            Arc::clone(&self.host),
+            Arc::clone(&self.services.tool_policy),
+            Arc::clone(&self.services.settings.action_required),
             Arc::new(client.clone()),
         )
     }
 
     /// A registration for an external stdio or HTTP transport config.
     pub fn registration(&self, config: goose_agent::extension::ExtensionConfig) -> Registration {
-        Registration::from_config(config, Arc::clone(&self.host))
+        Registration::from_config(
+            config,
+            Arc::clone(&self.services.environment),
+            Arc::clone(&self.services.auth),
+        )
     }
 
     fn new_slot(
@@ -580,7 +594,7 @@ impl ExtensionManager {
             scope_id: scope_id.to_string(),
             manager: Arc::downgrade(self),
             client,
-            config_generation: AtomicU64::new(self.host.config_generation()),
+            config_generation: AtomicU64::new(self.services.environment.config_generation()),
             runtime: OnceCell::new(),
         }
     }
@@ -624,7 +638,7 @@ impl ExtensionManager {
     }
 
     pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
-        let session = self.host.session(session_id).await?;
+        let session = self.selection_store()?.session(session_id).await?;
         self.session_lease(&session).await
     }
 
@@ -685,14 +699,16 @@ impl ExtensionManager {
     }
 
     async fn session(&self, session_id: &str) -> ExtensionResult<ExtensionSession> {
-        self.host
+        self.selection_store()?
             .session(session_id)
             .await
             .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
 
     async fn select(&self, session_id: &str, registration: Registration) -> ExtensionResult<()> {
-        self.host.select(session_id, registration).await
+        self.selection_store()?
+            .select(session_id, registration)
+            .await
     }
 
     /// Start the extension and select it for the session. It is started here
@@ -762,7 +778,7 @@ impl ExtensionManager {
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
-        self.host.disable(session_id, key).await
+        self.selection_store()?.disable(session_id, key).await
     }
 
     async fn install(&self, session_id: &str, slot: ExtensionSlot) {
@@ -806,7 +822,7 @@ impl ExtensionManager {
                 scope_id: session_id.to_string(),
                 manager: Weak::new(),
                 client: negotiation,
-                config_generation: AtomicU64::new(self.host.config_generation()),
+                config_generation: AtomicU64::new(self.services.environment.config_generation()),
                 runtime: OnceCell::new_with(Some(Runtime::Running(Arc::new(Extension {
                     key,
                     registration,
@@ -834,7 +850,11 @@ impl ExtensionManager {
     }
 
     pub async fn get_registrations(&self, session_id: &str) -> Result<Vec<Registration>> {
-        Ok(self.host.session(session_id).await?.extensions)
+        Ok(self
+            .selection_store()?
+            .session(session_id)
+            .await?
+            .extensions)
     }
 
     pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {

@@ -12,7 +12,10 @@ use async_trait::async_trait;
 
 use super::stdio;
 use super::streamable_http;
-use super::{host::ExtensionHost, ClientContext, ExtensionManager};
+use super::{
+    host::{ExtensionAuth, ExtensionEnvironment, ExtensionRuntimeSettings},
+    ClientContext, ExtensionManager,
+};
 use crate::agents::mcp_client::{ConnectContext, McpClientTrait};
 use goose_agent::extension::{name_to_key, ExtensionConfig, ExtensionResult};
 
@@ -52,7 +55,8 @@ pub struct ConnectRequest {
     pub client: Arc<ClientContext>,
     tools_version: Arc<AtomicU64>,
     pub(super) resolved_config: OnceLock<ExtensionConfig>,
-    host: Arc<dyn ExtensionHost>,
+    environment: Arc<dyn ExtensionEnvironment>,
+    settings: ExtensionRuntimeSettings,
     pub manager: Weak<ExtensionManager>,
 }
 
@@ -69,7 +73,8 @@ impl ConnectRequest {
             client,
             tools_version: Arc::new(AtomicU64::new(0)),
             resolved_config: OnceLock::new(),
-            host: Arc::clone(&manager.host),
+            environment: Arc::clone(&manager.services.environment),
+            settings: manager.services.settings.clone(),
             manager: Arc::downgrade(manager),
         }
     }
@@ -82,15 +87,17 @@ impl ConnectRequest {
 
     pub fn connect_context(&self, timeout: Option<u64>, working_dir: PathBuf) -> ConnectContext {
         ConnectContext {
-            timeout: Duration::from_secs(timeout.unwrap_or_else(|| self.host.default_timeout())),
+            timeout: Duration::from_secs(
+                timeout.unwrap_or_else(|| self.environment.default_timeout()),
+            ),
             client_name: self.client.name.clone(),
-            client_version: self.host.client_version(),
+            client_version: self.settings.client_version,
             capabilities: self.client.capabilities.clone(),
             working_dir,
 
-            action_required: self.host.action_required(),
+            action_required: Arc::clone(&self.settings.action_required),
             tools_version: Arc::clone(&self.tools_version),
-            trace_context: self.host.trace_context(),
+            trace_context: self.settings.trace_context.clone(),
         }
     }
 }
@@ -174,7 +181,11 @@ impl Registration {
         &self.key
     }
 
-    pub fn from_config(config: ExtensionConfig, host: Arc<dyn ExtensionHost>) -> Self {
+    pub fn from_config(
+        config: ExtensionConfig,
+        environment: Arc<dyn ExtensionEnvironment>,
+        auth: Arc<dyn ExtensionAuth>,
+    ) -> Self {
         let available_tools = match &config {
             ExtensionConfig::StreamableHttp {
                 available_tools, ..
@@ -188,7 +199,8 @@ impl Registration {
             name: config.name(),
             connector: Arc::new(ConfigConnector {
                 config: config.clone(),
-                host,
+                environment,
+                auth,
                 command: None,
             }),
             revision: 0,
@@ -204,13 +216,16 @@ impl Registration {
     /// External transport registration with host-specific subprocess placement.
     pub fn from_config_with_command(
         config: ExtensionConfig,
-        host: Arc<dyn ExtensionHost>,
+        environment: Arc<dyn ExtensionEnvironment>,
+        auth: Arc<dyn ExtensionAuth>,
         command: Arc<dyn StdioCommand>,
     ) -> Self {
-        let mut registration = Self::from_config(config.clone(), Arc::clone(&host));
+        let mut registration =
+            Self::from_config(config.clone(), Arc::clone(&environment), Arc::clone(&auth));
         registration.connector = Arc::new(ConfigConnector {
             config,
-            host,
+            environment,
+            auth,
             command: Some(command),
         });
         registration
@@ -258,7 +273,8 @@ impl Registration {
 /// Connects an `ExtensionConfig` after the host resolves its secrets.
 struct ConfigConnector {
     config: ExtensionConfig,
-    host: Arc<dyn ExtensionHost>,
+    environment: Arc<dyn ExtensionEnvironment>,
+    auth: Arc<dyn ExtensionAuth>,
     command: Option<Arc<dyn StdioCommand>>,
 }
 
@@ -268,13 +284,14 @@ impl Connector for ConfigConnector {
         &self,
         request: &ConnectRequest,
     ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>> {
-        let _ = request;
-        let resolved = self.host.resolve_config(self.config.clone()).await?;
+        let resolved = self.environment.resolve_config(self.config.clone()).await?;
         let working_dir = match &resolved {
             ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
-            _ => self.host.connection_working_dir(&request.working_dir),
+            _ => self
+                .environment
+                .connection_working_dir(&request.working_dir),
         };
-        let host = self.host.as_ref();
+        let environment = self.environment.as_ref();
         let client: ExtensionResult<Option<Box<dyn McpClientTrait>>> = match &resolved {
             ExtensionConfig::StreamableHttp {
                 uri,
@@ -300,12 +317,12 @@ impl Connector for ConfigConnector {
                     headers: headers.clone(),
                     static_oauth_client,
                     ctx: request.connect_context(*timeout, working_dir),
-                    auth: host.auth(),
+                    auth: Arc::clone(&self.auth),
                 };
                 let client = streamable_http::connect(
                     params,
                     socket.as_deref(),
-                    host.auth().credential_store(name),
+                    self.auth.credential_store(name),
                 )
                 .await?;
                 Ok(Some(client))
@@ -326,7 +343,7 @@ impl Connector for ConfigConnector {
                         envs,
                         self.command.as_deref(),
                         request.connect_context(*timeout, working_dir),
-                        host,
+                        environment,
                     )
                     .await?,
                 );

@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::agents::extension_runtime::host::{
-    ExtensionAuth, ExtensionHost, ExtensionSession, StaticOAuthClientConfig,
+    ExtensionAuth, ExtensionEnvironment, ExtensionSelectionStore, ExtensionServices,
+    ExtensionSession, ExtensionToolPolicy, StaticOAuthClientConfig,
 };
 use crate::agents::extension_runtime::Registration;
 use anyhow::Result;
@@ -13,17 +14,29 @@ use rmcp::transport::AuthorizationManager;
 
 use super::{EnabledExtensionsState, PlatformExtensionContext, Session};
 use crate::agents::extension_config::{ExtensionConfig, ExtensionResult};
-use crate::agents::mcp_client::TraceContextInjector;
 use crate::agents::provider_manager::provider_name_for;
 use crate::config::search_path::SearchPaths;
 use crate::config::Config;
-use goose_agent::action_required_manager::ActionRequiredManager;
 
 pub(super) struct GooseExtensionHost {
     pub context: PlatformExtensionContext,
 }
 
 impl GooseExtensionHost {
+    pub(super) fn services(self: &Arc<Self>) -> ExtensionServices {
+        let mut services = ExtensionServices::new(self.context.session_manager.action_required());
+        services.selections = Some(self.clone());
+        services.environment = self.clone();
+        services.tool_policy = self.clone();
+        services.auth = Arc::new(GooseExtensionAuth);
+        #[cfg(feature = "otel")]
+        {
+            services.settings.trace_context =
+                Some(Arc::new(crate::otel::trace_context::inject_current));
+        }
+        services
+    }
+
     pub(super) fn stdio_command(
         &self,
         program: &str,
@@ -82,7 +95,7 @@ impl GooseExtensionHost {
 }
 
 #[async_trait]
-impl ExtensionHost for GooseExtensionHost {
+impl ExtensionSelectionStore for GooseExtensionHost {
     async fn session(&self, session_id: &str) -> Result<ExtensionSession> {
         let session = self
             .context
@@ -125,7 +138,10 @@ impl ExtensionHost for GooseExtensionHost {
                 crate::agents::extension_config::ExtensionError::SetupError(error.to_string())
             })
     }
+}
 
+#[async_trait]
+impl ExtensionEnvironment for GooseExtensionHost {
     async fn resolve_config(
         &self,
         config: goose_agent::extension::ExtensionConfig,
@@ -133,44 +149,8 @@ impl ExtensionHost for GooseExtensionHost {
         config.resolve(Config::global()).await
     }
 
-    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
-        &[
-            super::mutation::EXTENSION_MUTATION_META_KEY,
-            "subagent_session_id",
-        ]
-    }
-
-    fn exposes_tool(&self, extension: &str, tool: &str, catalog_has_resources: bool) -> bool {
-        use crate::agents::platform_extensions::ext_manager::{
-            LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
-        };
-        extension != "extensionmanager"
-            || catalog_has_resources
-            || !matches!(tool, LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME)
-    }
-
-    async fn process_result(
-        &self,
-        context: crate::agents::extension_runtime::host::ResultContext<'_>,
-        result: &mut rmcp::model::CallToolResult,
-    ) {
-        super::apps::process_result(context, result).await;
-    }
-
-    fn action_required(&self) -> Arc<ActionRequiredManager> {
-        self.context.session_manager.action_required()
-    }
-
-    fn auth(&self) -> Arc<dyn ExtensionAuth> {
-        Arc::new(GooseExtensionAuth)
-    }
-
     fn config_generation(&self) -> u64 {
         Config::global().generation()
-    }
-
-    fn client_version(&self) -> &'static str {
-        env!("CARGO_PKG_VERSION")
     }
 
     fn default_timeout(&self) -> u64 {
@@ -199,20 +179,36 @@ impl ExtensionHost for GooseExtensionHost {
     fn search_path(&self) -> Result<OsString> {
         SearchPaths::builder().path()
     }
+}
 
-    fn trace_context(&self) -> Option<TraceContextInjector> {
-        #[cfg(feature = "otel")]
-        {
-            Some(Arc::new(crate::otel::trace_context::inject_current))
-        }
-        #[cfg(not(feature = "otel"))]
-        {
-            None
-        }
+#[async_trait]
+impl ExtensionToolPolicy for GooseExtensionHost {
+    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
+        &[
+            super::mutation::EXTENSION_MUTATION_META_KEY,
+            "subagent_session_id",
+        ]
+    }
+
+    fn exposes_tool(&self, extension: &str, tool: &str, catalog_has_resources: bool) -> bool {
+        use crate::agents::platform_extensions::ext_manager::{
+            LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
+        };
+        extension != "extensionmanager"
+            || catalog_has_resources
+            || !matches!(tool, LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME)
+    }
+
+    async fn process_result(
+        &self,
+        context: crate::agents::extension_runtime::host::ResultContext<'_>,
+        result: &mut rmcp::model::CallToolResult,
+    ) {
+        super::apps::process_result(context, result).await;
     }
 }
 
-struct GooseExtensionAuth;
+pub(super) struct GooseExtensionAuth;
 
 #[async_trait]
 impl ExtensionAuth for GooseExtensionAuth {
