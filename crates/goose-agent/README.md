@@ -108,6 +108,35 @@ from operations that should only run without one. Put error recovery before it;
 operations after it will not see a trailing error. For example, put compaction
 before the boundary if it should recover from context-length errors.
 
+## Compaction
+
+`compaction::CompactionOperation` keeps the conversation inside the context
+window. Give it a `CompactionModel` (a one-shot completion), a `TokenEstimator`
+(sizes the context when the provider reports no usage), the context limit, and
+the threshold fraction at which to compact. `with_compact_command` makes it
+publish a `compact` command (alias `summarize`) through `commands`, which
+`SlashCommandOperation` dispatches. Your effect type implements `CompactionEffect`; override
+`compact` if replacing the conversation should update messages in place rather
+than rewrite them.
+
+By default compaction is in-band: once the threshold is crossed, the operation
+hides the prompt the model has not answered yet, appends an agent-only request,
+and the next inference writes the summary on the live prefix. The request
+carries `hide_response`, so inference stores the reply without emitting it to
+the user. On the following pass the operation harvests the reply into the
+compacted layout: the originals leave the agent's context but stay visible to
+the user, the summary and a continuation note become the agent's context, and
+the hidden prompt is re-issued. When the reply is
+unusable (a tool call, an empty reply, or a context-length error), it falls
+back to a standalone summarization request, which is also how it recovers from
+a context-length error during a turn (at most `MAX_CONTEXT_ERROR_COMPACTIONS`
+per turn). `CompactionMode::Standalone` uses the separate request always.
+
+Place it first among the operations: it must see the in-band reply before tool
+execution or turn-end logic does, and the error boundary must come after it.
+`MachineSession::reported_context_tokens` lets the host supply the provider's
+reported context size; without it the estimator counts the conversation.
+
 ## Turn limits
 
 `max_turns::MaxTurnsOperation::new(limit)` limits autonomous turns using the persisted conversation. Place it after tool execution, pending approvals, and normal completion, before inference. It counts consecutive assistant-message blocks since the latest kickoff; provider retries and history transformations can affect how closely that approximates inference calls. A new user prompt resets the budget, and a zero limit yields immediately. A completed assistant answer is preserved even at the limit.
@@ -196,6 +225,8 @@ from JavaScript. Some things differ from native:
   interrupt one that has started.
 - `ProviderRetry` waits between attempts on the host's `setTimeout` instead of
   tokio's timer, so retries work without a tokio runtime.
+- `compaction` is not available: `goose-context-management` does not build on
+  wasm32 yet.
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.

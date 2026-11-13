@@ -49,6 +49,7 @@ wasm-bindgen-test = "0.3.78"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 blake3 = { version = "1", default-features = false, features = ["std"] }
 indexmap = { version = "2.9", default-features = false, features = ["std"] }
+goose-context-management = { version = "0.1.0-alpha.13", path = "../goose-context-management", default-features = false }
 once_cell.workspace = true
 reqwest = { workspace = true, features = ["system-proxy", "json"] }
 rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "transport-streamable-http-client-unix-socket"] }

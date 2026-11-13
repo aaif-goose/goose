@@ -6,6 +6,7 @@ static PROMPTS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/prompts");
 
 pub const COMPACTION_TEMPLATE: &str = "compaction.md";
 pub const COMPACTION_SUMMARY_TEMPLATE: &str = "compaction_summary.md";
+pub const COMPACTION_REQUEST_TEMPLATE: &str = "compaction_request.md";
 
 pub fn builtin_template(name: &str) -> Option<String> {
     PROMPTS
@@ -17,8 +18,12 @@ pub fn builtin_template(name: &str) -> Option<String> {
 /// user-customized templates for the built-in ones.
 #[derive(Debug, Clone)]
 pub struct Templates {
+    /// System prompt of a standalone summarization request.
     pub compaction: String,
+    /// Renders the structured summary into the post-compaction context.
     pub summary: String,
+    /// User message that asks the model to summarize the conversation it is in.
+    pub request: String,
 }
 
 impl Default for Templates {
@@ -27,6 +32,8 @@ impl Default for Templates {
             compaction: builtin_template(COMPACTION_TEMPLATE).expect("builtin compaction template"),
             summary: builtin_template(COMPACTION_SUMMARY_TEMPLATE)
                 .expect("builtin compaction summary template"),
+            request: builtin_template(COMPACTION_REQUEST_TEMPLATE)
+                .expect("builtin compaction request template"),
         }
     }
 }

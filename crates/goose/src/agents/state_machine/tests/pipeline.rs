@@ -223,6 +223,7 @@ impl TestPipeline {
                 services.runtime.steer_queue(&self.session_id),
             )
             .await
+            .expect("state machine should build")
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
@@ -934,6 +935,7 @@ async fn build_test_pipeline(
             always_load_tools: Vec::new(),
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
+            standalone_compaction: false,
             tool_call_cutoff: None,
             auto_effort: None,
             context_relevance: None,
@@ -1119,9 +1121,8 @@ impl TestRun {
             .collect()
     }
 
-    pub(super) fn assert_emitted(&self, contains: &str) {
-        let emitted = self
-            .events
+    fn emitted_texts(&self) -> Vec<String> {
+        self.events
             .iter()
             .filter_map(|event| match event {
                 AgentEvent::Message(message) => Some(
@@ -1134,10 +1135,23 @@ impl TestRun {
                 ),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    pub(super) fn assert_emitted(&self, contains: &str) {
+        let emitted = self.emitted_texts();
         assert!(
             emitted.iter().any(|message| message.contains(contains)),
             "no emitted message contains {contains:?}:\n{}",
+            emitted.join("\n")
+        );
+    }
+
+    pub(super) fn assert_not_emitted(&self, contains: &str) {
+        let emitted = self.emitted_texts();
+        assert!(
+            !emitted.iter().any(|message| message.contains(contains)),
+            "an emitted message contains {contains:?}:\n{}",
             emitted.join("\n")
         );
     }

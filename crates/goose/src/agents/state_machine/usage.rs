@@ -21,28 +21,34 @@ fn attach_to_last_assistant(effects: &mut [GooseEffect], usage: &ProviderUsage) 
     message.metadata.usage = Some(Box::new(MessageUsage::from_provider_usage(usage, false)));
 }
 
-pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect]) {
+/// Usage spent on compaction: the standalone summary that comes with the
+/// replacement, or the in-band reply to a pending compaction request.
+pub(super) fn is_compaction(session: &Session, effects: &[GooseEffect]) -> bool {
+    effects
+        .iter()
+        .any(|effect| matches!(effect, GooseEffect::CompactConversation(_)))
+        || session
+            .conversation
+            .as_ref()
+            .is_some_and(goose_agent::compaction::awaits_compaction_reply)
+}
+
+pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect], compaction: bool) {
     for index in 0..effects.len() {
-        let (usage, replaces_conversation) = match &effects[index] {
-            GooseEffect::RecordUsage(usage) => (usage.clone(), false),
-            GooseEffect::CompactConversation {
-                usage: Some(usage), ..
-            } => (usage.clone(), true),
-            _ => continue,
+        let GooseEffect::RecordUsage(usage) = &effects[index] else {
+            continue;
         };
-        let (cost, cost_source) = resolve_usage_cost(session.provider_name.as_deref(), &usage);
+        let (cost, cost_source) = resolve_usage_cost(session.provider_name.as_deref(), usage);
 
         let mut enriched = usage.clone();
         enriched.cost = cost;
         enriched.cost_source = cost_source;
 
-        if !replaces_conversation {
+        if !compaction {
             attach_to_last_assistant(effects, &enriched);
         }
-        match &mut effects[index] {
-            GooseEffect::RecordUsage(usage) => *usage = enriched,
-            GooseEffect::CompactConversation { usage, .. } => *usage = Some(enriched),
-            _ => {}
+        if let GooseEffect::RecordUsage(usage) = &mut effects[index] {
+            *usage = enriched;
         }
     }
 }
@@ -51,9 +57,9 @@ pub(super) async fn record(
     session_manager: &SessionManager,
     session: &Session,
     usage: &ProviderUsage,
-    replaces_conversation: bool,
+    compaction: bool,
 ) -> Result<()> {
-    let ledger = MessageUsage::from_provider_usage(usage, replaces_conversation);
+    let ledger = MessageUsage::from_provider_usage(usage, compaction);
     session_manager
         .record_usage_metrics(
             &session.id,

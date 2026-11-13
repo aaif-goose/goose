@@ -9,11 +9,14 @@ use super::pipeline::{
     MessageKind::{Agent, Error},
 };
 use crate::agents::state_machine;
-use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
 use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
+use goose_agent::compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 
+/// The in-band request the model answers on the live conversation.
+const WRITE_WORKING_NOTES: &str = "write structured working notes from the conversation so far";
+/// The standalone summarization request used for recovery and fallback.
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
 
@@ -22,7 +25,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     let (pipeline, api) = test_pipeline().await?;
     api.on("fill the context").reply("filled");
     api.on("check the budget").reply("budget checked");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(WRITE_WORKING_NOTES).reply("inband-notes");
     api.on("Your context was compacted")
         .reply("continued after compaction");
     api.on("after manual compaction").reply("still working");
@@ -49,7 +52,16 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     let compacted = pipeline.run(["continue"]).await?;
     compacted.assert_message(-1, Agent, "continued after compaction");
     compacted.assert_emitted("Performing auto-compaction");
+    compacted.assert_not_emitted("inband-notes");
     assert_eq!(compacted.history_replacements(), 1);
+    let continuation = api
+        .calls()
+        .into_iter()
+        .last()
+        .expect("continuation request");
+    assert!(continuation.input_contains("inband-notes"));
+    assert!(continuation.input_contains("continue"));
+    assert!(!continuation.input_contains(WRITE_WORKING_NOTES));
     assert!(compacted
         .session
         .usage
@@ -166,7 +178,7 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
         .await?;
     assert!(pipeline.session().await?.usage.total_tokens.is_none());
 
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(WRITE_WORKING_NOTES).reply("summary");
     api.on("Your context was compacted")
         .reply("continued after estimated compaction");
 
@@ -182,7 +194,8 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
 async fn a_failed_compact_command_reports_the_error_and_keeps_working() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("do some work").reply("worked");
-    api.on(SUMMARIZE_HISTORY).server_error("summarizer offline");
+    api.on(WRITE_WORKING_NOTES)
+        .server_error("summarizer offline");
     pipeline.run(["do some work"]).await?;
 
     let failed = pipeline.run(["/compact"]).await?;
@@ -239,6 +252,62 @@ async fn text_that_looks_like_a_context_error_does_not_compact() -> Result<()> {
     let false_alarm = pipeline.run(["false alarm"]).await?;
     false_alarm.assert_message(-1, Agent, "context length exceeded");
     assert_eq!(false_alarm.history_replacements(), 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_in_band_request_that_overflows_falls_back_to_a_standalone_summary() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("fill the context").reply("filled");
+    api.on(WRITE_WORKING_NOTES).context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("Your context was compacted")
+        .reply("continued after the fallback");
+    pipeline.run(["fill the context"]).await?;
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i64)
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+    compacted.assert_message(-1, Agent, "continued after the fallback");
+    assert_eq!(compacted.history_replacements(), 1);
+    let calls = api.calls();
+    assert_eq!(calls.len(), 4);
+    assert!(!calls[3].input_contains(WRITE_WORKING_NOTES));
+    assert!(!calls[3].input_contains("fill the context"));
+    assert!(compacted.emitted_error_kinds().is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_in_band_request_reports_the_error_and_restores_the_prompt() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("fill the context").reply("filled");
+    api.on(WRITE_WORKING_NOTES)
+        .server_error("summarizer offline");
+    pipeline.run(["fill the context"]).await?;
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i64)
+        .await;
+
+    let failed = pipeline.run(["continue"]).await?;
+
+    assert_eq!(failed.history_replacements(), 0);
+    failed.assert_message(-1, Error, "summarizer offline");
+    assert_eq!(failed.emitted_error_kinds().len(), 1);
+    let conversation = failed.conversation();
+    let prompt = conversation
+        .messages()
+        .iter()
+        .find(|message| message.as_concat_text() == "continue")
+        .unwrap();
+    assert!(prompt.is_agent_visible() && prompt.is_user_visible());
+    assert!(conversation
+        .messages()
+        .iter()
+        .any(|message| message.error_kind().is_some() && !message.is_user_visible()));
 
     Ok(())
 }
@@ -553,7 +622,7 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
     let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i64;
     pipeline.set_total_tokens(filled_usage).await;
 
-    api.on(SUMMARIZE_HISTORY).reply("large work summarized");
+    api.on(WRITE_WORKING_NOTES).reply("large work summarized");
     api.on("Your context was compacted").reply("continued");
 
     let compacted = pipeline.run(["continue"]).await?;
@@ -568,9 +637,9 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
     let summarization = api
         .calls()
         .into_iter()
-        .find(|call| call.input_contains(SUMMARIZE_HISTORY))
+        .find(|call| call.input_contains(WRITE_WORKING_NOTES))
         .expect("summarization request");
-    assert!(summarization.system_contains(&large_result));
+    assert!(summarization.input_contains(&large_result));
     assert!(!api.calls().last().unwrap().input_contains(&large_result));
     assert!(!compacted
         .conversation()

@@ -54,10 +54,11 @@ impl Conversation {
         {
             if let Some(existing) = self.0.iter_mut().rev().find(|existing| {
                 existing.role == message.role
-                    && existing.is_user_visible()
-                    && (!output_token_limit_reached
-                        || (message.id.is_some()
-                            && existing.id.as_deref() == message.id.as_deref()))
+                    && if output_token_limit_reached {
+                        message.id.is_some() && existing.id.as_deref() == message.id.as_deref()
+                    } else {
+                        existing.is_user_visible()
+                    }
             }) {
                 if let Some(inference) = message.metadata.inference.clone() {
                     existing.metadata.inference = Some(inference);

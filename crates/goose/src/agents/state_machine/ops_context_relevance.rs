@@ -24,7 +24,6 @@ use serde_json::{json, Value};
 
 use super::{applied, not_applicable, GooseEffect, Operation, OperationResult};
 use crate::{
-    agents::state_machine::proactive_compaction::proactive_compaction_tokens,
     conversation::message::{Message, MessageContent},
     conversation::Conversation,
     session::Session,
@@ -404,9 +403,10 @@ impl Operation<Session, GooseEffect> for ContextRelevanceOperation {
         conversation: &Conversation,
         emit: &super::Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let Some(context_tokens) = proactive_compaction_tokens(
+        let Some(context_tokens) = goose_agent::compaction::proactive_compaction_tokens(
             session,
             conversation,
+            &crate::context_mgmt::GooseTokenEstimator,
             self.context_limit,
             self.compaction_threshold,
         )

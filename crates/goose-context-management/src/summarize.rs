@@ -1,8 +1,7 @@
 use anyhow::Result;
-use goose_provider_types::conversation::message::{Message, MessageContent};
+use goose_provider_types::conversation::message::{Message, MessageContent, MessageMetadata};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::errors::ProviderError;
-use rmcp::model::Role;
 use serde::Serialize;
 use tracing::warn;
 
@@ -74,22 +73,27 @@ fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Mess
         .collect()
 }
 
-/// When the model didn't follow the structured output format (schema-ignoring
-/// models, user-customized prompts), the raw response text is kept unchanged
-/// as the summary.
-fn apply_structured_summary(response: &mut Message, summary_template: &str) {
-    let Some(summary) = StructuredSummary::parse(&response.as_concat_text()) else {
-        return;
-    };
-    match summary.render_with(summary_template) {
-        Ok(rendered) if !rendered.trim().is_empty() => {
-            response.content = vec![MessageContent::text(rendered)];
+/// The summary message that replaces compacted history. When the model didn't
+/// follow the structured output format (schema-ignoring models, user-customized
+/// prompts), the raw response text is kept unchanged as the summary.
+pub fn summary_message(response_text: &str, summary_template: &str) -> Message {
+    let text = match StructuredSummary::parse(response_text)
+        .map(|summary| summary.render_with(summary_template))
+    {
+        Some(Ok(rendered)) if !rendered.trim().is_empty() => rendered,
+        Some(Ok(_)) => {
+            warn!("Structured compaction summary rendered empty (broken template override?), keeping raw output");
+            response_text.to_string()
         }
-        Ok(_) => warn!(
-            "Structured compaction summary rendered empty (broken template override?), keeping raw output"
-        ),
-        Err(e) => warn!("Failed to render structured compaction summary, keeping raw output: {e}"),
-    }
+        Some(Err(e)) => {
+            warn!("Failed to render structured compaction summary, keeping raw output: {e}");
+            response_text.to_string()
+        }
+        None => response_text.to_string(),
+    };
+    Message::user()
+        .with_text(text)
+        .with_metadata(MessageMetadata::agent_only().with_compaction_summary())
 }
 
 async fn ensure_usage_tokens(
@@ -118,9 +122,9 @@ async fn ensure_usage_tokens(
     }
 }
 
-/// Summarizes `messages` into a single user-role message, retrying with
-/// progressively more tool responses removed when the summarizer itself
-/// overflows its context window.
+/// Summarizes `messages` into a single summary message (see [`summary_message`])
+/// with a standalone request, retrying with progressively more tool responses
+/// removed when the summarizer itself overflows its context window.
 pub async fn summarize(
     model: &dyn CompactionModel,
     estimator: Option<&dyn TokenEstimator>,
@@ -142,21 +146,16 @@ pub async fn summarize(
         let system_prompt = render(&templates.compaction, &context)?;
 
         match model.complete(&system_prompt, &request).await {
-            Ok((mut response, mut usage)) => {
-                response.role = Role::User;
-
+            Ok((response, mut usage)) => {
                 // Usage must reflect the raw model output (billable tokens),
-                // so estimate before the response is rewritten to the smaller
-                // rendered summary.
+                // not the smaller rendered summary.
                 if let Some(estimator) = estimator {
                     ensure_usage_tokens(&mut usage, estimator, &system_prompt, &request, &response)
                         .await;
                 }
 
-                apply_structured_summary(&mut response, &templates.summary);
-
                 return Ok(Summary {
-                    message: response,
+                    message: summary_message(&response.as_concat_text(), &templates.summary),
                     usage,
                 });
             }

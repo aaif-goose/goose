@@ -129,6 +129,8 @@ pub struct TurnSettings {
     pub always_load_tools: Vec<String>,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
+    /// Summarize with a separate request instead of through the conversation.
+    pub standalone_compaction: bool,
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
@@ -174,6 +176,9 @@ impl TurnSettings {
             compaction_token_limit: config
                 .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
                 .unwrap_or(crate::context_mgmt::DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+            standalone_compaction: config
+                .get_param::<bool>("GOOSE_STANDALONE_COMPACTION")
+                .unwrap_or(false),
             tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
             auto_effort: auto_effort_from_config(provider, model_config),
             context_relevance: crate::agents::state_machine_builder::context_relevance_provider(
@@ -880,7 +885,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
         let tool_snapshot = self
             .runtime
             .confirmations
@@ -908,7 +913,7 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
         tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
@@ -928,6 +933,7 @@ impl StateMachineServices {
             model_config,
             context_limit,
             compaction_threshold,
+            standalone_compaction: settings.standalone_compaction,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
             defer_tools: settings.defer_tools,
@@ -1270,7 +1276,7 @@ impl StateMachineServices {
                 cancel.clone(),
                 steer_queue,
             )
-            .await;
+            .await?;
         let hook_manager = self.hook_manager.clone();
         let tool_snapshot = self
             .runtime

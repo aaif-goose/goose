@@ -342,18 +342,15 @@ async fn steered_goal_keeps_the_original_kickoff_and_protects_the_whole_turn() -
             .await?;
     }
     pipeline
-        .steer(Message::user().with_text("first use blue"))
-        .await;
-    pipeline
-        .steer(
+        .seed([
+            Message::user().with_text("first use blue").with_steer(),
             Message::user()
                 .with_text("HIDDEN_STEER_SENTINEL")
-                .user_only(),
-        )
-        .await;
-    pipeline
-        .steer(Message::user().with_text("then make it matte"))
-        .await;
+                .user_only()
+                .with_steer(),
+            Message::user().with_text("then make it matte").with_steer(),
+        ])
+        .await?;
 
     let run = pipeline.resume().await?;
 
@@ -400,7 +397,7 @@ async fn steering_shares_one_goal_budget_and_marks_omitted_media() -> Result<()>
         let (pipeline, _api) = shadow_pipeline(decisions.clone(), 4, &old_output(), 1.0).await?;
         pipeline.seed([opening]).await?;
         pipeline.seed(tool_pair("current", "recent output")).await?;
-        pipeline.steer(steer).await;
+        pipeline.seed([steer.with_steer()]).await?;
 
         pipeline.resume().await?;
 

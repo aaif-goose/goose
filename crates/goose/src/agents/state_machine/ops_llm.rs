@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use goose_agent::compaction::CompactionEffect;
 use goose_agent::inference::InferenceEffect;
 pub use goose_agent::inference::InferenceRunner;
 use goose_providers::base::{MessageStream, ModelInfo, Provider};
@@ -15,7 +16,7 @@ use goose_providers::model::ModelConfig;
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::GooseEffect;
 
-pub(super) use goose_agent::inference::{chat_span, record_chat_usage};
+pub(super) use goose_agent::inference::chat_span;
 
 pub struct GooseInferenceProvider {
     inner: Arc<dyn Provider>,
@@ -30,6 +31,12 @@ impl GooseInferenceProvider {
 impl InferenceEffect for GooseEffect {
     fn record_usage(usage: ProviderUsage) -> Self {
         GooseEffect::RecordUsage(usage)
+    }
+}
+
+impl CompactionEffect for GooseEffect {
+    fn compact(conversation: goose_providers::conversation::Conversation) -> Self {
+        GooseEffect::CompactConversation(conversation)
     }
 }
 

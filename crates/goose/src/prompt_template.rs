@@ -20,6 +20,10 @@ static TEMPLATE_REGISTRY: &[(&str, &str)] = &[
         "Renders the structured compaction output into the post-compaction context",
     ),
     (
+        "compaction_request.md",
+        "Asks the model to summarize the conversation it is in when context limits are reached",
+    ),
+    (
         "subagent_system.md",
         "System prompt for subagents spawned to handle specific tasks",
     ),

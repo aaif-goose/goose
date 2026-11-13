@@ -435,6 +435,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         err: &ProviderError,
         tools: &[rmcp::model::Tool],
         operation_logs: &mut Vec<String>,
+        hide_response: bool,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         self.answer_unadvertised_tool_calls(tools, emit);
@@ -442,7 +443,14 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         tracing::error!("LLM provider error: {err}");
         let mut message = Message::from_provider_error(err);
         attach_operation_logs(&mut message, operation_logs);
-        self.emit_message(message, emit);
+        if hide_response {
+            message.metadata.user_visible = false;
+            self.output()
+                .accumulator
+                .push(message.with_generated_id_if_missing());
+        } else {
+            self.emit_message(message, emit);
+        }
         applied(self.take_output())
     }
 }
@@ -495,6 +503,12 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
         }
         let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
+        let hide_response = conversation
+            .messages()
+            .iter()
+            .rev()
+            .find(|message| message.is_agent_visible())
+            .is_some_and(|message| message.metadata.hide_response);
 
         let model_config = session
             .thinking_effort()
@@ -548,7 +562,15 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
+                Err(err) => {
+                    return self.error_outcome(
+                        &err,
+                        &tools,
+                        &mut operation_logs,
+                        hide_response,
+                        emit,
+                    )
+                }
             };
 
             let requested_model = model_config.model_name.clone();
@@ -570,7 +592,15 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
+                    Err(err) => {
+                        return self.error_outcome(
+                            &err,
+                            &tools,
+                            &mut operation_logs,
+                            hide_response,
+                            emit,
+                        )
+                    }
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -591,6 +621,11 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     drop_repeated_tool_call_thinking(&self.output().accumulator, &mut chunk);
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
                         self.output().accumulator.push(chunk);
+                    } else if hide_response {
+                        chunk.metadata.user_visible = false;
+                        self.output()
+                            .accumulator
+                            .push(chunk.with_generated_id_if_missing());
                     } else {
                         attach_operation_logs(&mut chunk, &mut operation_logs);
                         self.emit_message(chunk, emit);

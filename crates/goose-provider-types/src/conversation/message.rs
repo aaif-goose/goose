@@ -849,6 +849,10 @@ pub struct MessageMetadata {
     /// the messages it removed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub compaction_summary: bool,
+    /// Whether the reply this message prompts is meant for the agent alone, so
+    /// inference stores it hidden from the user instead of streaming it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_response: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -870,6 +874,7 @@ impl Default for MessageMetadata {
             steer: false,
             turn_context: false,
             compaction_summary: false,
+            hide_response: false,
             usage: None,
             operation_logs: Vec::new(),
             operations: None,
