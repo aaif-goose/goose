@@ -119,7 +119,7 @@
     "@electron-forge/maker-zip": "^7.11.2",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
     "@electron-forge/plugin-fuses": "^7.11.2",
-    "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron-forge/plugin-vite": "^8.0.1",
     "@electron/fuses": "^2.1.3",
     "@eslint/js": "^10.0.1",
     "@formatjs/cli": "6.18.2",
