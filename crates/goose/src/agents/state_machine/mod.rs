@@ -28,14 +28,13 @@ mod ops_stop_hook;
 mod ops_subagent;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
-mod post_tool_hook;
-mod pre_tool_hook;
 mod proactive_compaction;
 mod session;
 pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
 mod tool_approval;
 mod tool_confirmation;
+mod tool_hooks;
 mod usage;
 
 #[cfg(test)]
@@ -80,7 +79,7 @@ pub(super) use ops_skills::SkillOperation;
 pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
-pub(crate) use ops_stop_hook::{StopHookOperation, DEFAULT_DENY_LIMIT};
+pub(super) use ops_stop_hook::{StopHookOperation, DEFAULT_BLOCK_CAP};
 pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;

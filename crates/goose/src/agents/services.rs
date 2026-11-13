@@ -17,7 +17,7 @@ use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, SteerQueue, DEFAULT_DENY_LIMIT,
+    Operation, StateMachine, SteerQueue, DEFAULT_BLOCK_CAP,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -146,7 +146,7 @@ impl TurnSettings {
             ),
             stop_hook_block_cap: config
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_DENY_LIMIT),
+                .unwrap_or(DEFAULT_BLOCK_CAP),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
             defer_tools: config
                 .get_param::<String>("GOOSE_TOOL_DEFERRAL")

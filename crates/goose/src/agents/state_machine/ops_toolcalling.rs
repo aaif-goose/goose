@@ -15,8 +15,7 @@ use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
-use crate::agents::state_machine::pre_tool_hook::emit_pre_tool_hooks;
+use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -31,7 +30,7 @@ use crate::conversation::message::{
 };
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
-use crate::hooks::{HookContext, HookEvent, HookManager};
+use crate::hooks::HookManager;
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
@@ -103,34 +102,6 @@ fn enabled_tools(conversation: &Conversation) -> HashSet<String> {
     enabled
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum ToolCategory {
-    Shell,
-    Read,
-    Write,
-    Other,
-}
-
-pub(super) fn categorize_tool(tool_name: &str) -> ToolCategory {
-    match tool_name.rsplit("__").next().unwrap_or(tool_name) {
-        "shell" | "bash" | "exec" | "run" => ToolCategory::Shell,
-        "read" | "view" | "cat" | "read_file" => ToolCategory::Read,
-        "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
-        _ => ToolCategory::Other,
-    }
-}
-
-pub(super) fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    let arguments = input.as_object()?;
-    keys.iter().find_map(|key| {
-        arguments
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
-}
-
 fn platform_notification(result: &CallToolResult) -> Option<rmcp::model::ServerNotification> {
     let notification = result.meta.as_ref()?.0.get("platform_notification")?;
     let method = notification.get("method")?.as_str()?;
@@ -155,25 +126,6 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
         "error.type" = tracing::field::Empty,
         session.id = %session_id,
     )
-}
-
-pub(super) async fn emit_with_matcher(
-    hook_manager: &HookManager,
-    event: HookEvent,
-    session_id: &str,
-    working_dir: &Path,
-    matcher: String,
-    tool_name: &str,
-    tool_input: Option<serde_json::Value>,
-) {
-    if !hook_manager.has_hooks(event) {
-        return;
-    }
-    let mut context = HookContext::new(event, session_id)
-        .with_tool(tool_name.to_string(), tool_input)
-        .with_working_dir(working_dir.to_string_lossy().to_string());
-    context.matcher_context = Some(matcher);
-    hook_manager.emit(event, context).await;
 }
 
 #[derive(Default)]
@@ -207,17 +159,19 @@ fn with_hooks_and_recording(
     result: ToolCallResult,
     span: tracing::Span,
     request: &ToolRequest,
-    hook_manager: HookManager,
-    session_id: String,
-    working_dir: PathBuf,
+    hook_manager: &HookManager,
+    session: &Session,
 ) -> ToolCallResult {
     let batch = Arc::clone(batch);
+    let hook_manager = hook_manager.clone();
+    let session_id = session.id.clone();
+    let working_dir = session.working_dir.clone();
     let request = request.clone();
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
     let future = async move {
         if let Some(denied) =
-            emit_pre_tool_hooks(&hook_manager, &session_id, &working_dir, &request).await
+            check_pre_tool_hooks(&hook_manager, &session_id, &working_dir, &request).await
         {
             let denied = Ok(denied);
             batch
@@ -424,9 +378,8 @@ impl ToolExecutionOperation {
                 result,
                 result_span,
                 request,
-                self.hook_manager.clone(),
-                session.id.clone(),
-                session.working_dir.clone(),
+                &self.hook_manager,
+                session,
             )
         }
         .instrument(span)

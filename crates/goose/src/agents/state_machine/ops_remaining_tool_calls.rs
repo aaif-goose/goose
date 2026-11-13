@@ -12,8 +12,7 @@ use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
     leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
 };
-use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
-use crate::agents::state_machine::pre_tool_hook::emit_pre_tool_hooks;
+use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -95,7 +94,7 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     match request.tool_call.as_ref() {
                         Ok(tool_call) => {
                             let working_dir = leased_working_dir(&self.extension_lease, session);
-                            if let Some(denied) = emit_pre_tool_hooks(
+                            if let Some(denied) = check_pre_tool_hooks(
                                 &self.hook_manager,
                                 &session.id,
                                 &working_dir,

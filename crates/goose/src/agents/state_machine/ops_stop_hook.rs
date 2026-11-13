@@ -13,7 +13,7 @@ use crate::hooks::{HookContext, HookDecision, HookEvent, HookManager};
 use crate::session::Session;
 
 const DENIED: &str = "denied";
-pub const DEFAULT_DENY_LIMIT: u32 = 8;
+pub const DEFAULT_BLOCK_CAP: u32 = 8;
 
 fn denial_reason(plugin: &str, reason: &str) -> String {
     format!(
@@ -30,11 +30,11 @@ fn denial_user_message(plugin: &str) -> Message {
     )
 }
 
-fn deny_limit_warning(limit: u32) -> Message {
+fn block_cap_warning(block_cap: u32) -> Message {
     Message::assistant().with_system_notification(
         SystemNotificationType::InlineMessage,
         format!(
-            "Stop hooks blocked the turn from ending more than {limit} consecutive times \
+            "Stop hooks blocked the turn from ending more than {block_cap} consecutive times \
              \u{2014} overriding and ending turn to avoid an infinite loop. Set \
              GOOSE_STOP_HOOK_BLOCK_CAP to raise this limit."
         ),
@@ -56,14 +56,14 @@ fn trailing_assistant_text(messages: &[Message]) -> String {
 
 pub struct StopHookOperation {
     hook_manager: HookManager,
-    deny_limit: u32,
+    block_cap: u32,
 }
 
 impl StopHookOperation {
-    pub fn new(hook_manager: HookManager, deny_limit: u32) -> Self {
+    pub fn new(hook_manager: HookManager, block_cap: u32) -> Self {
         Self {
             hook_manager,
-            deny_limit,
+            block_cap,
         }
     }
 }
@@ -100,8 +100,8 @@ impl Operation<Session, GooseEffect> for StopHookOperation {
             .filter(|message| self.message_meta(message, DENIED).is_some())
             .count() as u32
             + 1;
-        if denials > self.deny_limit {
-            let warning = emit.message(deny_limit_warning(self.deny_limit));
+        if denials > self.block_cap {
+            let warning = emit.message(block_cap_warning(self.block_cap));
             return yielded_with([warning.into()]);
         }
         let mut denial_message = Message::user()
