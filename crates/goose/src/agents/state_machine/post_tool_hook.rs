@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::procedure::{kickoff_id, ProcedureRuntime};
 use rmcp::model::{CallToolResult, ErrorData};
 
 use crate::agents::extension_manager::ExtensionLease;
@@ -18,6 +19,11 @@ use crate::session::Session;
 pub struct GoosePostToolHook {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    /// Procedure control runtime, shared with the pre-tool and stop
+    /// hooks. After a call finishes, the runtime advances the procedure
+    /// state when the call matches a defined transition. `None` preserves
+    /// the previous behavior exactly.
+    procedure: Option<Arc<Mutex<ProcedureRuntime>>>,
 }
 
 impl GoosePostToolHook {
@@ -28,7 +34,13 @@ impl GoosePostToolHook {
         Self {
             hook_manager,
             extension_lease,
+            procedure: None,
         }
+    }
+
+    pub fn with_procedure(mut self, runtime: Arc<Mutex<ProcedureRuntime>>) -> Self {
+        self.procedure = Some(runtime);
+        self
     }
 }
 
@@ -37,13 +49,27 @@ impl PostToolCallHook<Session> for GoosePostToolHook {
     async fn after_call(
         &self,
         session: &Session,
-        _conversation: &Conversation,
+        conversation: &Conversation,
         request: &ToolRequest,
         response: &ToolResponse,
     ) -> Result<()> {
         let Ok(tool_call) = &request.tool_call else {
             return Ok(());
         };
+        if let Some(runtime) = &self.procedure {
+            let kickoff = kickoff_id(conversation);
+            if let Some(new_state) = runtime.lock().unwrap().advance(
+                kickoff.as_deref(),
+                &tool_call.name,
+                &response.tool_result,
+            ) {
+                tracing::debug!(
+                    tool_call_id = %request.id,
+                    new_state = %new_state,
+                    "procedure control advanced state"
+                );
+            }
+        }
         let tool_input = tool_call
             .arguments
             .as_ref()

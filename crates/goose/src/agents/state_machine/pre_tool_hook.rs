@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
+use goose_agent::procedure::{kickoff_id, ProcedureRuntime};
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::messages_since_kickoff;
@@ -77,6 +78,13 @@ async fn pre_tool_use_denial(
 pub struct GoosePreToolHook {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    /// Procedure control: deterministic, no-model-call finite-state
+    /// enforcement of a procedure (SOP) loaded from a JSON file. When set,
+    /// every proposed call is checked against the current state before the
+    /// hook chain runs; a denial short-circuits with the refused tool and
+    /// the tools allowed in the current state. `None` preserves the
+    /// previous behavior exactly.
+    procedure: Option<Arc<Mutex<ProcedureRuntime>>>,
 }
 
 impl GoosePreToolHook {
@@ -87,7 +95,13 @@ impl GoosePreToolHook {
         Self {
             hook_manager,
             extension_lease,
+            procedure: None,
         }
+    }
+
+    pub fn with_procedure(mut self, runtime: Arc<Mutex<ProcedureRuntime>>) -> Self {
+        self.procedure = Some(runtime);
+        self
     }
 }
 
@@ -111,6 +125,16 @@ impl PreToolCallHook<Session> for GoosePreToolHook {
         let Ok(tool_call) = &request.tool_call else {
             return Ok(PreToolCallDecision::Allow);
         };
+        if let Some(runtime) = &self.procedure {
+            let kickoff = kickoff_id(conversation);
+            if let Err(reason) = runtime
+                .lock()
+                .unwrap()
+                .check_tool(kickoff.as_deref(), &tool_call.name)
+            {
+                return Ok(PreToolCallDecision::Deny { reason });
+            }
+        }
         let tool_input = tool_call
             .arguments
             .as_ref()

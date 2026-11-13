@@ -5,6 +5,7 @@ pub mod max_turns;
 pub mod operation;
 pub mod post_tool_call_hook;
 pub mod pre_tool_call_hook;
+pub mod procedure;
 pub mod skills;
 pub mod stop_hook;
 pub mod subagent;

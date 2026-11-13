@@ -1,9 +1,11 @@
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::max_turns::MaxTurnsOperation;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::procedure::{ProcedureConfig, ProcedureRuntime};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -92,6 +94,40 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
     Ok(Arc::new(TypeSafeProvider::new(client)))
 }
 
+/// Load the procedure-control config when `GOOSE_PROCEDURE_FILE` points
+/// at a JSON config file. Unset means no procedure control. A
+/// set-but-unloadable file installs a deny-all runtime instead of failing
+/// open, so a typo'd config is loud rather than silently ignored. The
+/// returned runtime is shared by the pre-tool, post-tool, and stop hooks,
+/// so all three enforcement points see the same procedure state.
+fn load_procedure() -> Option<Arc<StdMutex<ProcedureRuntime>>> {
+    let path = Config::global()
+        .get_param::<String>("GOOSE_PROCEDURE_FILE")
+        .ok()?;
+    match ProcedureConfig::load_from_file(Path::new(&path)) {
+        Ok(config) => {
+            tracing::info!(
+                "procedure control loaded from {path} ({} states, initial `{}`)",
+                config.states.len(),
+                config.initial
+            );
+            Some(Arc::new(StdMutex::new(ProcedureRuntime::new(Arc::new(
+                config,
+            )))))
+        }
+        Err(error) => {
+            tracing::error!(
+                "procedure config file {path} failed to load ({error}); denying all tool calls"
+            );
+            Some(Arc::new(StdMutex::new(ProcedureRuntime::new(Arc::new(
+                ProcedureConfig::unavailable(format!(
+                    "Procedure config file {path} failed to load: {error}. Fix or unset GOOSE_PROCEDURE_FILE."
+                )),
+            )))))
+        }
+    }
+}
+
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
 ) -> StateMachine<'_, Session, GooseEffect> {
@@ -121,19 +157,29 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let post_tool_call_hook: Arc<dyn PostToolCallHook<Session>> = Arc::new(GoosePostToolHook::new(
-        hook_manager.clone(),
-        Arc::clone(&extension_lease),
-    ));
+    let procedure = load_procedure();
+    let mut post_tool_hook =
+        GoosePostToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease));
+    if let Some(runtime) = &procedure {
+        post_tool_hook = post_tool_hook.with_procedure(Arc::clone(runtime));
+    }
+    let post_tool_call_hook: Arc<dyn PostToolCallHook<Session>> = Arc::new(post_tool_hook);
+    let mut pre_tool_hook =
+        GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease));
+    if let Some(runtime) = &procedure {
+        pre_tool_hook = pre_tool_hook.with_procedure(Arc::clone(runtime));
+    }
+    let mut stop_hook = GooseStopHook::new(hook_manager.clone());
+    if let Some(runtime) = &procedure {
+        stop_hook = stop_hook.with_procedure(Arc::clone(runtime));
+    }
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(Arc::new(
-            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
-        ))),
+        Arc::new(PreToolCallHookOperation::new(Arc::new(pre_tool_hook))),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
@@ -189,7 +235,7 @@ pub(crate) fn build_state_machine(
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
         Arc::new(
-            StopHookOperation::new(Arc::new(GooseStopHook::new(hook_manager)))
+            StopHookOperation::new(Arc::new(stop_hook))
                 .with_deny_limit_per_turn(stop_hook_block_cap)
                 .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
         ),
