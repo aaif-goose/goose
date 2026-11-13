@@ -12,7 +12,7 @@ use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::extension_manager::ClientContext;
 use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations, turn_failure,
+    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
 use crate::agents::{
     Attachment, ExtensionConfig, ExtensionLoadResult, GoosePlatform, SessionConfig,
@@ -2206,7 +2206,8 @@ impl AcpConnection {
                 if let Some(error) = session
                     .conversation
                     .as_ref()
-                    .and_then(turn_failure)
+                    .and_then(Conversation::last)
+                    .filter(|message| message.error_kind().is_some())
                     .and_then(|message| {
                         message
                             .content

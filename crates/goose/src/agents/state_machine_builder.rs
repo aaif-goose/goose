@@ -2,8 +2,11 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::max_turns::MaxTurnsOperation;
-use goose_agent::steer::{SteerOperation, SteerQueue};
+use goose_agent::{
+    exit_on_error::ExitOnErrorOperation,
+    max_turns::MaxTurnsOperation,
+    steer::{SteerOperation, SteerQueue},
+};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -14,10 +17,10 @@ use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner,
-    Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation,
-    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
+    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
     SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
     UnhandledToolCallsOperation,
 };

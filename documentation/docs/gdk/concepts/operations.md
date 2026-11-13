@@ -145,6 +145,7 @@ tools, provider, or subagent runner:
 | [`ToolOperation`](https://docs.rs/goose-agent/latest/goose_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
 | [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
 | [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
+| [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 | [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
 
@@ -172,7 +173,6 @@ your application.
 | `RetryOperation`              | Evaluate recipe success checks and goal/grind continuation or retry behavior.                     |
 | `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
-| `ExitOnErrorOperation`        | Yield when an error remains at the end of the conversation.                                       |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
 | `SlashCommandOperation`       | Route a recognized slash command to operations' command handlers.                                 |
 | `StatusOperation`             | Report the current session, model, and usage through `/status`.                                   |
