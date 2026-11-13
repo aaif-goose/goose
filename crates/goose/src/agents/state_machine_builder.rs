@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_agent::empty_response::EmptyResponseOperation;
 use goose_agent::max_turns::MaxTurnsOperation;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
@@ -13,12 +14,12 @@ use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner,
-    Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation,
-    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
-    SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    ExitOnErrorOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
+    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;

@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::inference::is_empty_response_marker;
 use std::time::Duration;
 
 use crate::agents::retry::{
@@ -24,6 +25,25 @@ fn retry_error(error: &str) -> Message {
         MessageErrorKind::Other,
         format!("Retry logic encountered an error: {error}"),
     )
+}
+
+fn hide_empty_response(messages: &[Message]) -> Result<Vec<GooseEffect>> {
+    let Some(fallback) = messages
+        .last()
+        .filter(|message| is_empty_response_marker(message) && message.is_user_visible())
+    else {
+        return Ok(Vec::new());
+    };
+    let message_id = fallback
+        .id
+        .clone()
+        .ok_or_else(|| anyhow!("Persisted empty-response fallback has no id"))?;
+    Ok(vec![ConversationEffect::SetMessageVisibility {
+        message_id,
+        user_visible: false,
+        agent_visible: false,
+    }
+    .into()])
 }
 
 pub struct RetryOperation {
@@ -179,6 +199,12 @@ impl Operation<Session, GooseEffect> for RetryOperation {
         if !ends_turn(messages) {
             return not_applicable();
         }
+        if messages
+            .last()
+            .is_some_and(|message| is_empty_response_marker(message) && !message.is_user_visible())
+        {
+            return not_applicable();
+        }
 
         let state = GoalState::of(session);
         if !self.goal_was_nudged(messages) {
@@ -196,7 +222,9 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                     SystemNotificationType::InlineMessage,
                     format!("Goal: {goal}"),
                 ));
-                return applied([message.into()]);
+                let mut effects = hide_empty_response(messages)?;
+                effects.push(message.into());
+                return applied(effects);
             }
         }
 
@@ -213,7 +241,9 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 SystemNotificationType::InlineMessage,
                 format!("Grind: {grind}"),
             ));
-            return applied([message.into()]);
+            let mut effects = hide_empty_response(messages)?;
+            effects.push(message.into());
+            return applied(effects);
         }
 
         if state.goal.is_some() {
@@ -234,10 +264,16 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             Ok(success) => success,
             Err(error) => {
                 let message = emit.message(retry_error(&error.to_string()));
-                return applied([message.into()]);
+                let mut effects = hide_empty_response(messages)?;
+                effects.push(message.into());
+                return applied(effects);
             }
         };
         if success {
+            let effects = hide_empty_response(messages)?;
+            if !effects.is_empty() {
+                return applied(effects);
+            }
             return not_applicable();
         }
 
@@ -256,7 +292,9 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 &format!("Max retries ({}) exceeded", retry_config.max_retries),
             );
             let message = emit.message(message);
-            return applied([message.into()]);
+            let mut effects = hide_empty_response(messages)?;
+            effects.push(message.into());
+            return applied(effects);
         }
 
         if let Some(command) = &retry_config.on_failure {
@@ -266,7 +304,9 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 .unwrap_or(self.on_failure_timeout);
             if let Err(error) = execute_on_failure_command_with_timeout(command, timeout).await {
                 let message = emit.message(retry_error(&error.to_string()));
-                return applied([message.into()]);
+                let mut effects = hide_empty_response(messages)?;
+                effects.push(message.into());
+                return applied(effects);
             }
         }
 

@@ -75,13 +75,9 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
 
 pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
-const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
 const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
 const EMPTY_RESPONSE_NOTE: &str = "empty_response";
 
-/// The model's response stayed empty after retries. The fallback message is stored
-/// hidden so that operations owning the end of a turn (recipe retries, final output)
-/// can take over; when none does, it is revealed to the user.
 pub fn is_empty_response_marker(message: &Message) -> bool {
     message
         .metadata
@@ -329,6 +325,9 @@ fn ends_with_provider_turn(messages: &[Message]) -> bool {
 }
 
 fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
+    if turn.last().is_some_and(is_empty_response_marker) {
+        return false;
+    }
     let projected = messages_for_provider(conversation, turn, true);
     if projected
         .last()
@@ -506,8 +505,6 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             );
             let successful_tool_response =
                 ends_with_successful_tool_response(conversation.messages());
-            let mut empty_responses = 0;
-            let empty_output = loop {
             let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
@@ -579,29 +576,20 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     .any(|message| message.metadata.output_token_limit_reached)
                     && output.accumulator.iter().all(is_empty_response)
             };
-            if !empty_output || successful_tool_response || emit.cancel_token().is_cancelled() {
-                break empty_output;
-            }
-            self.output().accumulator.clear();
-            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
-                empty_responses += 1;
-                tracing::warn!(
-                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
+            if empty_output && !successful_tool_response && !emit.cancel_token().is_cancelled() {
+                self.output().accumulator.clear();
+                let mut marker = Message::assistant()
+                    .with_text(EMPTY_RESPONSE_MESSAGE)
+                    .with_visibility(true, false);
+                attach_operation_logs(&mut marker, &mut operation_logs);
+                marker.metadata.set_operation_note(
+                    EMPTY_RESPONSE_NOTE_SCOPE,
+                    EMPTY_RESPONSE_NOTE,
+                    serde_json::Value::Bool(true),
                 );
-                continue;
+                self.output().accumulator.push(marker);
+                return applied(self.take_output());
             }
-            let mut marker = Message::assistant()
-                .with_text(EMPTY_RESPONSE_MESSAGE)
-                .with_visibility(false, false);
-            attach_operation_logs(&mut marker, &mut operation_logs);
-            marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
-                EMPTY_RESPONSE_NOTE,
-                serde_json::Value::Bool(true),
-            );
-            self.output().accumulator.push(marker);
-            return applied(self.take_output());
-            };
 
             if empty_output && successful_tool_response {
                 let message = {

@@ -146,6 +146,7 @@ tools, provider, or subagent runner:
 | [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
 | [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
+| [`EmptyResponseOperation`](https://docs.rs/goose-agent/latest/goose_agent/empty_response/struct.EmptyResponseOperation.html) | Retry empty provider responses before exposing the failure. |
 
 ### Operations in goose
 
@@ -170,7 +171,6 @@ your application.
 | `DoctorOperation`             | Run session diagnostics and provide repair context through `/doctor`.                             |
 | `ProjectOperation`            | Contribute the selected project's instructions to the model request.                              |
 | `RetryOperation`              | Evaluate recipe success checks and goal/grind continuation or retry behavior.                     |
-| `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
 | `ExitOnErrorOperation`        | Yield when an error remains at the end of the conversation.                                       |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
