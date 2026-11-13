@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
+use goose_agent::tool_policy::{denial_reason, evaluate_request, ToolPolicy};
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::messages_since_kickoff;
@@ -77,6 +78,11 @@ async fn pre_tool_use_denial(
 pub struct GoosePreToolHook {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    /// Declarative tool-call policy (LEANGUARD-style guardrails). When set,
+    /// every proposed call is checked against it before the hook chain runs;
+    /// a denial short-circuits with the violated rule, its hint, and any
+    /// repaired call. `None` preserves the previous behavior exactly.
+    tool_policy: Option<Arc<ToolPolicy>>,
 }
 
 impl GoosePreToolHook {
@@ -87,7 +93,13 @@ impl GoosePreToolHook {
         Self {
             hook_manager,
             extension_lease,
+            tool_policy: None,
         }
+    }
+
+    pub fn with_tool_policy(mut self, policy: Arc<ToolPolicy>) -> Self {
+        self.tool_policy = Some(policy);
+        self
     }
 }
 
@@ -107,6 +119,12 @@ impl PreToolCallHook<Session> for GoosePreToolHook {
             )
         {
             return Ok(PreToolCallDecision::Allow);
+        }
+        if let Some(policy) = &self.tool_policy {
+            let verdict = evaluate_request(policy, conversation, request);
+            if let Some(reason) = denial_reason(&verdict) {
+                return Ok(PreToolCallDecision::Deny { reason });
+            }
         }
         let Ok(tool_call) = &request.tool_call else {
             return Ok(PreToolCallDecision::Allow);
