@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
@@ -17,7 +16,7 @@ use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionMan
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -240,7 +239,7 @@ fn recording_result(
     span: tracing::Span,
     request: &ToolRequest,
     session: Arc<Session>,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    post_tool_call_hook: Arc<GoosePostToolHook>,
 ) -> ToolCallResult {
     let batch = Arc::clone(batch);
     let request = request.clone();
@@ -263,21 +262,14 @@ fn recording_result(
             }
             _ => {}
         }
-        if let Some(conversation) = &session.conversation {
-            let response = ToolResponse {
-                id: tool_call_id,
-                tool_result: result.clone(),
-                metadata,
-            };
-            run_post_tool_call_hook(
-                post_tool_call_hook.as_ref(),
-                session.as_ref(),
-                conversation,
-                &request,
-                &response,
-            )
+        let response = ToolResponse {
+            id: tool_call_id,
+            tool_result: result.clone(),
+            metadata,
+        };
+        post_tool_call_hook
+            .after_call(session.as_ref(), &request, &response)
             .await;
-        }
         result
     }
     .instrument(span);
@@ -312,7 +304,7 @@ fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
 pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    post_tool_call_hook: Arc<GoosePostToolHook>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
@@ -323,7 +315,7 @@ impl ToolExecutionOperation {
     pub fn new(
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+        post_tool_call_hook: Arc<GoosePostToolHook>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         defer_tools: bool,
         always_load_tools: Vec<String>,

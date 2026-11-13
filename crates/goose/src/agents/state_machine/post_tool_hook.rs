@@ -1,9 +1,6 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
-use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ErrorData};
 
 use crate::agents::extension_manager::ExtensionLease;
@@ -11,7 +8,6 @@ use crate::agents::state_machine::ops_toolcalling::{
     categorize_tool, emit_with_matcher, leased_working_dir, string_argument, ToolCategory,
 };
 use crate::conversation::message::{ToolRequest, ToolResponse};
-use crate::conversation::Conversation;
 use crate::hooks::{HookContext, HookEvent, HookManager};
 use crate::session::Session;
 
@@ -30,19 +26,15 @@ impl GoosePostToolHook {
             extension_lease,
         }
     }
-}
 
-#[async_trait]
-impl PostToolCallHook<Session> for GoosePostToolHook {
-    async fn after_call(
+    pub async fn after_call(
         &self,
         session: &Session,
-        _conversation: &Conversation,
         request: &ToolRequest,
         response: &ToolResponse,
-    ) -> Result<()> {
+    ) {
         let Ok(tool_call) = &request.tool_call else {
-            return Ok(());
+            return;
         };
         let tool_input = tool_call
             .arguments
@@ -69,7 +61,6 @@ impl PostToolCallHook<Session> for GoosePostToolHook {
             )
             .await;
         }
-        Ok(())
     }
 }
 
@@ -130,19 +121,4 @@ async fn emit_post_tool_use(
         hook_manager.emit(event, context).await;
     }
     event
-}
-
-pub(super) async fn run_post_tool_call_hook(
-    hook: &dyn PostToolCallHook<Session>,
-    session: &Session,
-    conversation: &Conversation,
-    request: &ToolRequest,
-    response: &ToolResponse,
-) {
-    if let Err(error) = hook
-        .after_call(session, conversation, request, response)
-        .await
-    {
-        tracing::warn!(%error, tool_call_id = %request.id, "post tool call hook failed");
-    }
 }

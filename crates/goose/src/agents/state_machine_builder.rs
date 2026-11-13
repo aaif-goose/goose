@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::max_turns::MaxTurnsOperation;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -13,14 +12,14 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    deny_limit_warning, BangShellOperation, CompactionOperation, ContextRelevanceOperation,
-    DoctorOperation, EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook,
-    GoosePreToolHook, GooseStopHook, GooseToolApproval, InferenceRunner, Operation,
-    PreToolCallHookOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
+    EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook, GooseToolApproval,
+    InferenceRunner, Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -121,7 +120,7 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let post_tool_call_hook: Arc<dyn PostToolCallHook<Session>> = Arc::new(GoosePostToolHook::new(
+    let post_tool_call_hook = Arc::new(GoosePostToolHook::new(
         hook_manager.clone(),
         Arc::clone(&extension_lease),
     ));
@@ -131,9 +130,10 @@ pub(crate) fn build_state_machine(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(Arc::new(
-            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
-        ))),
+        Arc::new(PreToolCallHookOperation::new(
+            hook_manager.clone(),
+            Arc::clone(&extension_lease),
+        )),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
@@ -188,11 +188,7 @@ pub(crate) fn build_state_machine(
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
-        Arc::new(
-            StopHookOperation::new(Arc::new(GooseStopHook::new(hook_manager)))
-                .with_deny_limit_per_turn(stop_hook_block_cap)
-                .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
-        ),
+        Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
         Arc::new(StatusOperation::new(provider.clone(), model_config.clone())),

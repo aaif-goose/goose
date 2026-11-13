@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
@@ -13,7 +12,7 @@ use crate::agents::state_machine::ops_toolcalling::{
     emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
     ToolDisposition,
 };
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -28,14 +27,11 @@ pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    post_tool_call_hook: Arc<GoosePostToolHook>,
 }
 
 impl RemainingToolCallsOperation {
-    pub fn new(
-        hook_manager: HookManager,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-    ) -> Self {
+    pub fn new(hook_manager: HookManager, post_tool_call_hook: Arc<GoosePostToolHook>) -> Self {
         Self {
             hook_manager,
             post_tool_call_hook,
@@ -115,14 +111,9 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                                 tool_result: output.clone(),
                                 metadata: request.metadata.clone(),
                             };
-                            run_post_tool_call_hook(
-                                self.post_tool_call_hook.as_ref(),
-                                session,
-                                conversation,
-                                &request,
-                                &tool_response,
-                            )
-                            .instrument(span.clone())
+                            self.post_tool_call_hook
+                                .after_call(session, &request, &tool_response)
+                                .instrument(span.clone())
                             .await;
                             (output, true)
                         }
@@ -153,42 +144,69 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
 mod tests {
     use super::*;
     use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-    use crate::conversation::message::ToolRequest;
+    use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
-    use std::sync::Mutex;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
-    #[derive(Default)]
-    struct RecordingHook(Mutex<Vec<(String, bool)>>);
+    struct PostFailureLog {
+        _temp_dir: tempfile::TempDir,
+        plugin_dir: std::path::PathBuf,
+    }
 
-    #[async_trait]
-    impl PostToolCallHook<Session> for RecordingHook {
-        async fn after_call(
-            &self,
-            _session: &Session,
-            _conversation: &Conversation,
-            request: &ToolRequest,
-            response: &ToolResponse,
-        ) -> Result<()> {
-            let failed = response
-                .tool_result
-                .as_ref()
-                .map_or(true, |result| result.is_error == Some(true));
-            self.0.lock().unwrap().push((request.id.clone(), failed));
-            Ok(())
+    impl PostFailureLog {
+        fn new() -> Self {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let plugin_dir = temp_dir.path().join("test-plugin");
+            std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
+            std::fs::write(
+                plugin_dir.join("hooks/hooks.json"),
+                r#"{"hooks": {"PostToolUseFailure": [{"hooks": [{"type": "command", "command": "sh ${PLUGIN_ROOT}/hook.sh"}]}]}}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                plugin_dir.join("hook.sh"),
+                "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/hook.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n",
+            )
+            .unwrap();
+            Self {
+                _temp_dir: temp_dir,
+                plugin_dir,
+            }
+        }
+
+        fn hook_manager(&self) -> HookManager {
+            HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
+                name: "test-plugin".into(),
+                root: self.plugin_dir.clone(),
+                scope: PluginScope::Project,
+            }])
+        }
+
+        fn tool_call_ids(&self) -> Vec<String> {
+            std::fs::read_to_string(self.plugin_dir.join("hook.log"))
+                .unwrap_or_default()
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| {
+                    let payload: serde_json::Value = serde_json::from_str(line).unwrap();
+                    payload["tool_call_id"].as_str().unwrap().to_string()
+                })
+                .collect()
         }
     }
 
-    async fn run_with_hook(
+    async fn run_with_hooks(
         session: &Session,
         messages: Vec<Message>,
-        hook: Arc<RecordingHook>,
+        hook_manager: HookManager,
     ) -> Result<OperationResult<GooseEffect>> {
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
-        RemainingToolCallsOperation::new(HookManager::default(), hook)
+        let post_tool_call_hook =
+            Arc::new(GoosePostToolHook::new(hook_manager.clone(), Arc::default()));
+        RemainingToolCallsOperation::new(hook_manager, post_tool_call_hook)
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
     }
@@ -197,7 +215,7 @@ mod tests {
         session: &Session,
         messages: Vec<Message>,
     ) -> Result<OperationResult<GooseEffect>> {
-        run_with_hook(session, messages, Arc::default()).await
+        run_with_hooks(session, messages, HookManager::default()).await
     }
 
     fn executable_calls(calls: &[(&str, &str)]) -> Message {
@@ -225,20 +243,17 @@ mod tests {
             ]
         };
 
-        let hook = Arc::new(RecordingHook::default());
-        run_with_hook(&Session::default(), messages(), hook.clone()).await?;
-        assert_eq!(
-            *hook.0.lock().unwrap(),
-            [("missing".to_string(), true), ("final".to_string(), true)]
-        );
+        let log = PostFailureLog::new();
+        run_with_hooks(&Session::default(), messages(), log.hook_manager()).await?;
+        assert_eq!(log.tool_call_ids(), ["missing", "final"]);
 
         let chat = Session {
             goose_mode: GooseMode::Chat,
             ..Session::default()
         };
-        let hook = Arc::new(RecordingHook::default());
-        run_with_hook(&chat, messages(), hook.clone()).await?;
-        assert!(hook.0.lock().unwrap().is_empty());
+        let log = PostFailureLog::new();
+        run_with_hooks(&chat, messages(), log.hook_manager()).await?;
+        assert!(log.tool_call_ids().is_empty());
         Ok(())
     }
 

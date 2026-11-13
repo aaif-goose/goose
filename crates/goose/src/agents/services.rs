@@ -17,7 +17,7 @@ use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, SteerQueue,
+    Operation, StateMachine, SteerQueue, DEFAULT_DENY_LIMIT,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -38,7 +38,6 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
-use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};

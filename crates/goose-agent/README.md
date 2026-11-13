@@ -29,8 +29,6 @@ is a function of the persisted conversation, not of in-memory loop state.
   execution, so their tool names and handlers must remain stable between those
   boundaries. Their schemas are sent to inference and matching calls are
   dispatched against the current session.
-- **`StopHookOperation<S>`** — runs a `StopHook` when the model gives its final
-  answer; see [Hooks](#hooks).
 - **`StateMachine<'a, S, E>`** — holds `Vec<Step<..>>` and a `CancellationToken`.
   `step()` runs one pass and returns a `StepResult` whose `applied_step` names
   the step that applied (`None` if none did) and whose `status` says whether the
@@ -46,48 +44,15 @@ is a function of the persisted conversation, not of in-memory loop state.
   your runtime implements so the machine can load a session by id and persist
   effects. The machine reloads the session between passes; it never caches it.
 
-## Hooks
+## Tool approval
 
-A stop hook looks at the model's final answer and can send the model back to
-work, for example when tests still fail. The final answer is a reply with no
-tool calls.
+`ToolApprovalOperation` decides whether each tool call may run and can ask the
+user first. Put it before every step that runs tools. Implement
+`ToolApproval<S>`. Its `check` gets every new call from the model's reply at
+once, so it can check them together, and returns one decision per call, in the
+same order. Each decision is one of:
 
-To add one, implement `StopHook<S>` and give it to `StopHookOperation`. Its
-`on_stop` returns one of:
-
-- `Allow` — the model stops.
-- `Deny` — the model keeps working. It gets `reason` as a new message, which
-  the user doesn't see. If you set `user_message`, it's sent to the client to
-  show the user. It isn't added to the conversation.
-- An error — the run ends with that error. If you'd rather allow or deny when
-  something goes wrong, handle the error inside `on_stop`.
-
-Good to know:
-
-- `StopHookOperation` takes one hook. To run several, write one hook that calls
-  the others.
-- Put `StopHookOperation` after any other step that also looks at the final
-  answer. When the model stops, the steps after it don't run.
-- A hook can send the model back at most 8 times per user message, so it can't
-  keep the model working forever. Change the limit with
-  `with_deny_limit_per_turn`. To tell the user why the model stopped at the
-  limit, set a message with `with_deny_limit_message`; it is shown and saved.
-
-Two operations decide whether each tool call may run. Put them before every
-step that runs tools, with approval first:
-
-```rust
-ToolApprovalOperation::new(approval)
-PreToolCallHookOperation::new(hook)
-```
-
-`ToolApprovalOperation` decides whether a call may run and can ask the user
-first. Implement `ToolApproval<S>`. Its `check` gets every new call from the
-model's reply at once, so it can check them together, and returns one decision
-per call, in the same order. Each decision is one of:
-
-- `Allow` — the call may run. If there is a pre-tool hook, it checks the call
-  first.
+- `Allow` — the call may run.
 - `Deny` — the call doesn't run. The model gets `reason` as the call's error
   result.
 - `Ask` — the user is asked to confirm first. The confirmation request shows
@@ -102,45 +67,22 @@ the declined message as its error result; change that text with
 call run without asking, register a `ToolApproval` whose `check` always returns
 `Allow`. Without `ToolApprovalOperation`, no call runs.
 
-`PreToolCallHookOperation` is optional. It runs the pre-tool hook on every call
-approval allowed. It never runs for a call that is denied, declined, or waiting
-for the user, so it is the place for checks with side effects, such as running
-user scripts. Implement `PreToolCallHook<S>`. Its `before_call` returns one of:
-
-- `Allow` — the call runs.
-- `Deny` — the call doesn't run. The model gets `reason` as its error result.
-- An error — the run ends with that error.
-
-It handles one call per pass, so each result is saved before the next hook
-runs.
-
 Good to know:
 
-- Put `PreToolCallHookOperation` after `ToolApprovalOperation`. Otherwise the
-  hook can check a call before approval decides on it.
 - Put `UnhandledToolCallsOperation` after every step that runs tools. Allowed
   calls run while others wait for the user.
 - Show the confirmation request to the user only after it is saved, so the
   user can't choose before it exists. The operation saves it but doesn't send it.
 - When the user chooses, save `confirmation_response_message(call_id,
   permission)`. It is hidden, so it isn't mistaken for a new user message.
-- Calls with arguments that can't be read skip approval and the hook; the tool
-  step responds to them with the error.
+- Calls with arguments that can't be read skip approval; the tool step responds
+  to them with the error.
 - If you write your own step that runs tools, run only calls that have no
   response yet and where `request_executable(request)` is `Some(true)`, and
   respond to calls with arguments that can't be read with the error.
   `ToolOperation` already does this.
-- Each operation takes one approval or one hook. To run several, write one
-  that calls the others.
-
-A post-tool hook sees each tool call's result right after the call. It can't
-change the result. To add one, implement `PostToolCallHook<S>` and give it to the
-step that runs the tools: `ToolOperation::new().with_post_tool_call_hook(..)`.
-Its `after_call` is called once per call that ran, right after that call and
-before the next one starts. `ToolOperation` logs an error and the run goes on, so
-the result is still saved. If you write your own step that runs tools, call
-`after_call` after each call yourself and decide what an error means; otherwise
-its calls get no post-tool hook.
+- `ToolApprovalOperation` takes one approval. To run several, write one that
+  calls the others.
 
 `UnhandledToolCallsOperation` is needed with `ToolApprovalOperation`. Put it
 after every step that runs tools, right before inference. It gives calls no
@@ -199,7 +141,7 @@ The crate builds for `wasm32-unknown-unknown` and runs without a tokio runtime,
 so it can be embedded in a JavaScript host. There, the clock and randomness come
 from JavaScript. Some things differ from native:
 
-- The traits you implement (`Provider`, `Operation`, `ToolProvider`, `StopHook`,
+- The traits you implement (`Provider`, `Operation`, `ToolProvider`,
   `SessionLoader`, `EffectHandler`, and the rest) do not require `Send` or
   `Sync`, and neither does `MessageStream`. So you can await JavaScript promises
   and hold host handles directly. Implement the traits with

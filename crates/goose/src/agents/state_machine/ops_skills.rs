@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
@@ -17,7 +16,7 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::state_machine::post_tool_hook::GoosePostToolHook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -32,7 +31,7 @@ pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    post_tool_call_hook: Arc<GoosePostToolHook>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -197,7 +196,7 @@ fn load_supporting_file(
 impl SkillOperation {
     pub fn new(
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+        post_tool_call_hook: Arc<GoosePostToolHook>,
     ) -> Self {
         Self {
             extension_lease,
@@ -374,14 +373,9 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         tool_result: Ok(result),
                         metadata: request.metadata.clone(),
                     };
-                    run_post_tool_call_hook(
-                        self.post_tool_call_hook.as_ref(),
-                        session,
-                        conversation,
-                        &request,
-                        &response,
-                    )
-                    .instrument(span)
+                    self.post_tool_call_hook
+                        .after_call(session, &request, &response)
+                        .instrument(span)
                     .await;
                     response.tool_result
                 }
