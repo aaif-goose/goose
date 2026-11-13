@@ -129,29 +129,15 @@ fn load_hints_from_directory(
     let import_boundary = git_root.unwrap_or(working_dir);
     let gitignore = Gitignore::empty();
 
-    let mut directories: Vec<PathBuf> = directory
-        .ancestors()
-        .take_while(|d| d.starts_with(working_dir) && *d != working_dir)
-        .map(|d| d.to_path_buf())
-        .collect();
-    directories.reverse();
-
     let mut contents = Vec::new();
-    for dir in &directories {
-        for hints_filename in hints_filenames {
-            let hints_path = dir.join(hints_filename);
-            if hints_path.is_file() {
-                let mut visited = HashSet::new();
-                let expanded = read_referenced_files(
-                    &hints_path,
-                    import_boundary,
-                    &mut visited,
-                    0,
-                    &gitignore,
-                );
-                if !expanded.is_empty() {
-                    contents.push(expanded);
-                }
+    for hints_filename in hints_filenames {
+        let hints_path = directory.join(hints_filename);
+        if hints_path.is_file() {
+            let mut visited = HashSet::new();
+            let expanded =
+                read_referenced_files(&hints_path, import_boundary, &mut visited, 0, &gitignore);
+            if !expanded.is_empty() {
+                contents.push(expanded);
             }
         }
     }
@@ -835,6 +821,35 @@ End of hints"#;
         assert_eq!(hints.len(), 1);
         assert!(hints[0].0.contains("nested"));
         assert!(hints[0].1.contains("nested subdirectory hints"));
+    }
+
+    #[test]
+    fn tracker_does_not_reload_shared_parent_hints_for_siblings() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        let parent = project_root.join("parent");
+        let first = parent.join("first");
+        let second = parent.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(parent.join(GOOSE_HINTS_FILENAME), "shared parent hints").unwrap();
+        fs::write(first.join(GOOSE_HINTS_FILENAME), "first hints").unwrap();
+        fs::write(second.join(GOOSE_HINTS_FILENAME), "second hints").unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for path in ["parent/first/file.rs", "parent/second/file.rs"] {
+            let args: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_value(serde_json::json!({ "path": path })).unwrap();
+            tracker.record_tool_arguments(&Some(args), &project_root);
+        }
+
+        let hints = tracker.load_new_hints(&project_root);
+        assert_eq!(hints.len(), 2);
+        assert!(hints[0].1.contains("first hints"));
+        assert!(hints[1].1.contains("second hints"));
+        assert!(hints
+            .iter()
+            .all(|(_, content)| !content.contains("shared parent hints")));
     }
 
     #[test]
