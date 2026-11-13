@@ -1416,7 +1416,7 @@ impl ExtensionOperationHost<()> for OverrideHost {
     }
 
     async fn execution_tools(&self, _: &(), lease: &ExtensionLease) -> Result<Vec<Tool>> {
-        let mut tools = lease.tools().await?;
+        let mut tools = lease.tools().await;
         tools.push(Tool::new("enable_tools", "", Arc::new(JsonObject::new())));
         Ok(tools)
     }
