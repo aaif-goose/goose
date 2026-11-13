@@ -1,8 +1,5 @@
 use super::api_client::TlsConfig;
-use super::base::{
-    find_declared_model, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata,
-    ProviderType,
-};
+use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -78,14 +75,11 @@ impl ProviderEntry {
         if self.toolshim_enabled(model.toolshim) {
             model = model.with_toolshim(true);
         }
-        // Declared model metadata is authoritative over canonical detection, which
-        // may already have populated supports_vision earlier in materialization.
-        if let Some(supports_vision) =
-            find_declared_model(&self.metadata.known_models, &model.model_name)
-                .and_then(|m| m.supports_vision)
-        {
-            model.supports_vision = Some(supports_vision);
-        }
+        // Canonical detection may already have populated supports_vision earlier
+        // in materialization, so declared metadata has to overwrite it here.
+        model = model.with_declared_vision_support(&self.metadata.known_models);
+        // Without a catalog id the name lookup is left to materialization, which
+        // skips it for providers such as Azure Foundry.
         if let Some(catalog_provider_id) = self.catalog_provider_id.as_deref() {
             model =
                 model.with_provider_vision_support(&self.metadata.name, Some(catalog_provider_id));

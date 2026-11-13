@@ -1,3 +1,4 @@
+use crate::base::{find_declared_model, ModelInfo};
 use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, is_xai_reasoning_model,
     supports_xai_reasoning_effort,
@@ -145,12 +146,19 @@ impl ModelConfig {
         self
     }
 
-    /// Resolves vision support the same way for every provider path (the goose
-    /// provider registry and the SDK). An explicit `supports_vision` is kept.
-    /// Otherwise the catalog identity is tried first, so a custom provider with
-    /// a non-canonical name that mirrors a catalogued service (e.g.
-    /// `fireworks-live` → `fireworks-ai`) keeps the catalog model's vision
-    /// support, and the provider's own name is the fallback.
+    /// Declared model metadata is authoritative over canonical detection.
+    pub fn with_declared_vision_support(mut self, declared_models: &[ModelInfo]) -> Self {
+        if let Some(supports_vision) =
+            find_declared_model(declared_models, &self.model_name).and_then(|m| m.supports_vision)
+        {
+            self.supports_vision = Some(supports_vision);
+        }
+        self
+    }
+
+    /// The catalog identity is tried before the provider name so that a custom
+    /// provider mirroring a catalogued service under another name
+    /// (`fireworks-live` → `fireworks-ai`) keeps that service's vision support.
     pub fn with_provider_vision_support(
         self,
         provider_name: &str,
@@ -1011,6 +1019,24 @@ mod tests {
             let catalog_miss = ModelConfig::new("gpt-4o")
                 .with_provider_vision_support("openai", Some("fireworks-ai"));
             assert_eq!(catalog_miss.supports_vision, Some(true));
+        }
+
+        #[test]
+        fn declared_vision_wins_over_catalog() {
+            let declared = [ModelInfo::new(KIMI).with_vision_support(false)];
+            let config = ModelConfig::new(KIMI)
+                .with_declared_vision_support(&declared)
+                .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));
+            assert_eq!(config.supports_vision, Some(false));
+        }
+
+        #[test]
+        fn undeclared_vision_leaves_lookup_to_catalog() {
+            let declared = [ModelInfo::new(KIMI)];
+            let config = ModelConfig::new(KIMI)
+                .with_declared_vision_support(&declared)
+                .with_provider_vision_support("fireworks-live", Some("fireworks-ai"));
+            assert_eq!(config.supports_vision, Some(true));
         }
 
         #[test]

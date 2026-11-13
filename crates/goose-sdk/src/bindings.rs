@@ -520,10 +520,11 @@ impl ProviderModelConfig {
     fn to_goose_model_config(
         &self,
         provider_name: &str,
-        catalog_provider_id: Option<&str>,
+        declared: &DeclaredVision,
     ) -> Result<ModelConfig, GooseError> {
         let mut config = ModelConfig::new(&self.model_name)
-            .with_provider_vision_support(provider_name, catalog_provider_id)
+            .with_declared_vision_support(&declared.models)
+            .with_provider_vision_support(provider_name, declared.catalog_provider_id.as_deref())
             .with_temperature(self.temperature)
             .with_max_tokens(self.max_tokens)
             .with_toolshim(self.toolshim)
@@ -756,16 +757,22 @@ where
     })
 }
 
+#[derive(Default)]
+struct DeclaredVision {
+    catalog_provider_id: Option<String>,
+    models: Vec<ModelInfo>,
+}
+
 struct ProviderHandle {
     provider: Arc<dyn GooseProvider>,
-    catalog_provider_id: Option<String>,
+    declared: DeclaredVision,
 }
 
 impl ProviderHandle {
-    fn new(provider: Box<dyn GooseProvider>, catalog_provider_id: Option<String>) -> Self {
+    fn new(provider: Box<dyn GooseProvider>, declared: DeclaredVision) -> Self {
         Self {
             provider: Arc::from(provider),
-            catalog_provider_id,
+            declared,
         }
     }
 
@@ -802,10 +809,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<Arc<ProviderStream>, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(
-            self.provider.get_name(),
-            self.catalog_provider_id.as_deref(),
-        )?;
+        let model = model.to_goose_model_config(self.provider.get_name(), &self.declared)?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = Arc::new(RequestObserver::start(RequestDescriptor {
@@ -848,10 +852,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<ProviderCompletion, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(
-            self.provider.get_name(),
-            self.catalog_provider_id.as_deref(),
-        )?;
+        let model = model.to_goose_model_config(self.provider.get_name(), &self.declared)?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = RequestObserver::start(RequestDescriptor {
@@ -1111,15 +1112,12 @@ pub struct Provider {
 
 impl Provider {
     fn new(provider: Box<dyn GooseProvider>) -> Arc<Self> {
-        Self::with_catalog_id(provider, None)
+        Self::new_declarative(provider, DeclaredVision::default())
     }
 
-    fn with_catalog_id(
-        provider: Box<dyn GooseProvider>,
-        catalog_provider_id: Option<String>,
-    ) -> Arc<Self> {
+    fn new_declarative(provider: Box<dyn GooseProvider>, declared: DeclaredVision) -> Arc<Self> {
         Arc::new(Self {
-            handle: ProviderHandle::new(provider, catalog_provider_id),
+            handle: ProviderHandle::new(provider, declared),
         })
     }
 }
@@ -1279,9 +1277,12 @@ pub fn default_compaction_templates() -> CompactionTemplates {
 #[uniffi::export]
 pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, GooseError> {
     let provider = goose_providers::declarative::from_json(&json, None, EnvKeyResolver {})?;
-    let catalog_provider_id =
-        goose_providers::declarative::deserialize_provider_config(&json)?.catalog_provider_id;
-    Ok(Provider::with_catalog_id(provider, catalog_provider_id))
+    let config = goose_providers::declarative::deserialize_provider_config(&json)?;
+    let declared = DeclaredVision {
+        catalog_provider_id: config.catalog_provider_id,
+        models: config.models,
+    };
+    Ok(Provider::new_declarative(provider, declared))
 }
 
 fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<DecisionProvider> {
@@ -1769,65 +1770,66 @@ mod tests {
             ..base_model_config()
         };
 
-        assert!(config.to_goose_model_config("openai", None).is_err());
+        assert!(config
+            .to_goose_model_config("openai", &DeclaredVision::default())
+            .is_err());
+    }
+
+    const KIMI: &str = "accounts/fireworks/models/kimi-k3";
+
+    fn kimi_vision(declared: &DeclaredVision) -> Option<bool> {
+        let config = ProviderModelConfig {
+            model_name: KIMI.to_string(),
+            ..base_model_config()
+        };
+        config
+            .to_goose_model_config("fireworks-live", declared)
+            .unwrap()
+            .supports_vision
     }
 
     #[test]
     fn model_config_uses_catalog_provider_id_for_vision() {
-        let config = ProviderModelConfig {
-            model_name: "accounts/fireworks/models/kimi-k3".to_string(),
-            ..base_model_config()
+        let declared = DeclaredVision {
+            catalog_provider_id: Some("fireworks-ai".to_string()),
+            models: vec![],
         };
-
-        let model = config
-            .to_goose_model_config("fireworks-live", Some("fireworks-ai"))
-            .unwrap();
-
-        assert_eq!(model.supports_vision, Some(true));
+        assert_eq!(kimi_vision(&declared), Some(true));
     }
 
     #[test]
     fn model_config_without_catalog_provider_id_has_no_vision_for_renamed_provider() {
-        let config = ProviderModelConfig {
-            model_name: "accounts/fireworks/models/kimi-k3".to_string(),
-            ..base_model_config()
-        };
-
-        let model = config
-            .to_goose_model_config("fireworks-live", None)
-            .unwrap();
-
-        assert_eq!(model.supports_vision, None);
+        assert_eq!(kimi_vision(&DeclaredVision::default()), None);
     }
 
     #[test]
-    fn declarative_provider_carries_catalog_provider_id() {
-        let json = |catalog: Option<&str>| {
-            serde_json::json!({
-                "name": "fireworks-live",
-                "engine": "openai",
-                "display_name": "Fireworks Live",
-                "description": null,
-                "api_key_env": "",
-                "base_url": "https://api.fireworks.ai/inference/v1",
-                "models": [],
-                "headers": null,
-                "timeout_seconds": null,
-                "supports_streaming": true,
-                "requires_auth": false,
-                "catalog_provider_id": catalog,
-            })
-            .to_string()
+    fn model_config_declared_vision_wins_over_catalog() {
+        let declared = DeclaredVision {
+            catalog_provider_id: Some("fireworks-ai".to_string()),
+            models: vec![ModelInfo::new(KIMI).with_vision_support(false)],
         };
+        assert_eq!(kimi_vision(&declared), Some(false));
+    }
 
-        let provider = declarative_provider_from_json(json(Some("fireworks-ai"))).unwrap();
+    #[test]
+    fn declarative_provider_keeps_declared_vision_metadata() {
+        let json = serde_json::json!({
+            "name": "fireworks-live",
+            "engine": "openai",
+            "display_name": "Fireworks Live",
+            "base_url": "https://api.fireworks.ai/inference/v1",
+            "models": [{ "name": KIMI, "context_limit": 128000, "supports_vision": false }],
+            "requires_auth": false,
+            "catalog_provider_id": "fireworks-ai",
+        })
+        .to_string();
+
+        let provider = declarative_provider_from_json(json).unwrap();
+        assert_eq!(kimi_vision(&provider.handle.declared), Some(false));
         assert_eq!(
-            provider.handle.catalog_provider_id.as_deref(),
+            provider.handle.declared.catalog_provider_id.as_deref(),
             Some("fireworks-ai")
         );
-
-        let provider = declarative_provider_from_json(json(None)).unwrap();
-        assert_eq!(provider.handle.catalog_provider_id, None);
     }
 
     #[test]
