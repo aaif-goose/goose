@@ -3,17 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::agents::extension_runtime::host::{
-    ExtensionAuth, ExtensionEnvironment, ExtensionSelectionStore, ExtensionServices,
-    ExtensionSession, ExtensionToolPolicy, StaticOAuthClientConfig,
+    ExtensionAuth, ExtensionEnvironment, ExtensionServices, ExtensionToolPolicy,
+    StaticOAuthClientConfig,
 };
-use crate::agents::extension_runtime::Registration;
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::transport::auth::CredentialStore;
 use rmcp::transport::AuthorizationManager;
 
 use super::{EnabledExtensionsState, PlatformExtensionContext, Session};
-use crate::agents::extension_config::{ExtensionConfig, ExtensionResult};
+use crate::agents::extension_config::ExtensionResult;
 use crate::agents::provider_manager::provider_name_for;
 use crate::config::search_path::SearchPaths;
 use crate::config::Config;
@@ -25,7 +24,6 @@ pub(super) struct GooseExtensionHost {
 impl GooseExtensionHost {
     pub(super) fn services(self: &Arc<Self>) -> ExtensionServices {
         let mut services = ExtensionServices::new(self.context.session_manager.action_required());
-        services.selections = Some(self.clone());
         services.environment = self.clone();
         services.tool_policy = self.clone();
         services.auth = Arc::new(GooseExtensionAuth);
@@ -63,7 +61,7 @@ impl GooseExtensionHost {
         Ok(command)
     }
 
-    pub(super) async fn session_selection(&self, session: &Session) -> ExtensionSession {
+    pub(super) async fn session_selection(&self, session: &Session) -> Result<super::ExtensionSet> {
         let provider_runs_tool_loop = match self.context.providers.pinned(session).await {
             Some(provider) => provider.manages_own_context(),
             None => match provider_name_for(session) {
@@ -86,57 +84,11 @@ impl GooseExtensionHost {
                 super::registration::registration(config, session.container.clone(), host.clone())
             })
             .collect();
-        ExtensionSession {
-            id: session.id.clone(),
-            working_dir: session.working_dir.clone(),
+        Ok(super::ExtensionSet::new(
+            &session.id,
+            Some(session.working_dir.clone()),
             extensions,
-        }
-    }
-}
-
-#[async_trait]
-impl ExtensionSelectionStore for GooseExtensionHost {
-    async fn session(&self, session_id: &str) -> Result<ExtensionSession> {
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
-        Ok(self.session_selection(&session).await)
-    }
-
-    async fn select(&self, session_id: &str, registration: Registration) -> ExtensionResult<()> {
-        let config: ExtensionConfig = serde_json::from_value(registration.metadata().clone())
-            .map_err(|e| {
-                crate::agents::extension_config::ExtensionError::ConfigError(e.to_string())
-            })?;
-        self.context
-            .session_manager
-            .update_enabled_extensions(session_id, |extensions| {
-                let key = config.key();
-                match extensions.iter_mut().find(|selected| selected.key() == key) {
-                    Some(selected) => *selected = config,
-                    None => extensions.push(config),
-                }
-            })
-            .await
-            .map_err(|error| {
-                crate::agents::extension_config::ExtensionError::SetupError(error.to_string())
-            })
-    }
-
-    async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
-        self.context
-            .session_manager
-            .update_enabled_extensions(session_id, |extensions| {
-                let selected = extensions.len();
-                extensions.retain(|config| config.key() != key);
-                extensions.len() != selected
-            })
-            .await
-            .map_err(|error| {
-                crate::agents::extension_config::ExtensionError::SetupError(error.to_string())
-            })
+        )?)
     }
 }
 

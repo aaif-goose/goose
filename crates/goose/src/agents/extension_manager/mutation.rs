@@ -39,24 +39,19 @@ async fn apply(
     session_id: &str,
     context: &crate::agents::platform_extensions::PlatformExtensionContext,
 ) -> ExtensionResult<()> {
+    let adapter = super::ExtensionManager {
+        manager: Arc::clone(manager),
+        context: context.clone(),
+    };
     match mutation {
         ExtensionMutation::Enable { name } => {
             let config = crate::config::get_extension_by_name(&name).ok_or_else(|| {
                 ExtensionError::ConfigError(format!("Extension '{}' not found", name))
             })?;
-            let session = context
-                .session_manager
-                .get_session(session_id, false)
-                .await
-                .map_err(|e| ExtensionError::SetupError(e.to_string()))?;
-            let host = Arc::new(super::goose_host::GooseExtensionHost {
-                context: context.clone(),
-            });
-            let registration = super::registration::registration(config, session.container, host);
-            manager.enable(session_id, registration).await
+            adapter.enable(session_id, config).await
         }
         ExtensionMutation::Disable { name } => {
-            manager.disable(session_id, &name_to_key(&name)).await?;
+            adapter.disable(session_id, &name_to_key(&name)).await?;
             Ok(())
         }
     }

@@ -9,7 +9,9 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::provider_manager::ProviderManager;
-use crate::agents::extension_config::name_to_key;
+use crate::agents::extension_config::{
+    name_to_key, ExtensionConfig, ExtensionError, ExtensionResult,
+};
 use crate::agents::platform_extensions::{PlatformExtensionContext, PLATFORM_EXTENSIONS};
 use crate::session::{EnabledExtensionsState, Session};
 
@@ -98,15 +100,73 @@ impl ExtensionManager {
             .session_manager
             .get_session(scope, false)
             .await
-            .map_err(|e| {
-                crate::agents::extension_config::ExtensionError::SetupError(e.to_string())
-            })?;
+            .map_err(|e| ExtensionError::SetupError(e.to_string()))?;
         self.manager
             .enable(
                 scope,
-                registration::registration(config, session.container, self.host()),
+                registration::registration(config.clone(), session.container, self.host()),
+                &session.working_dir,
+                self.select(scope, config),
             )
             .await
+    }
+
+    async fn select(&self, scope: &str, config: ExtensionConfig) -> ExtensionResult<()> {
+        self.context
+            .session_manager
+            .update_enabled_extensions(scope, |extensions| {
+                let key = config.key();
+                match extensions.iter_mut().find(|selected| selected.key() == key) {
+                    Some(selected) => *selected = config,
+                    None => extensions.push(config),
+                }
+            })
+            .await
+            .map_err(|e| ExtensionError::SetupError(e.to_string()))
+    }
+
+    pub async fn disable(&self, scope: &str, key: &str) -> ExtensionResult<bool> {
+        self.context
+            .session_manager
+            .update_enabled_extensions(scope, |extensions| {
+                let selected = extensions.len();
+                extensions.retain(|config| config.key() != key);
+                extensions.len() != selected
+            })
+            .await
+            .map_err(|e| ExtensionError::SetupError(e.to_string()))
+    }
+
+    pub async fn list_extensions(&self, scope: &str) -> Result<Vec<String>> {
+        Ok(self
+            .get_extension_configs(scope)
+            .await?
+            .iter()
+            .map(ExtensionConfig::key)
+            .collect())
+    }
+
+    pub async fn is_extension_enabled(&self, scope: &str, name: &str) -> Result<bool> {
+        Ok(self
+            .list_extensions(scope)
+            .await?
+            .contains(&name_to_key(name)))
+    }
+
+    pub async fn current_lease(&self, scope: &str) -> Result<ExtensionLease> {
+        let session = self
+            .context
+            .session_manager
+            .get_session(scope, false)
+            .await?;
+        self.session_lease(&session).await
+    }
+
+    async fn session_lease(&self, session: &Session) -> Result<ExtensionLease> {
+        Ok(self
+            .manager
+            .resolve(&self.host().session_selection(session).await?)
+            .await)
     }
 
     pub async fn get_extension_configs(
@@ -123,39 +183,6 @@ impl ExtensionManager {
                 .map(|state| state.extensions)
                 .unwrap_or_default(),
         )
-    }
-
-    pub async fn add_client(
-        &self,
-        scope: &str,
-        config: crate::agents::extension_config::ExtensionConfig,
-        client: Arc<dyn crate::agents::mcp_client::McpClientTrait>,
-        info: Option<rmcp::model::ServerConfig>,
-    ) {
-        self.manager
-            .add_client(
-                scope,
-                registration::registration(config, None, self.host()),
-                client,
-                info,
-            )
-            .await;
-    }
-    pub async fn install_client(
-        &self,
-        scope: &str,
-        config: crate::agents::extension_config::ExtensionConfig,
-        client: Arc<dyn crate::agents::mcp_client::McpClientTrait>,
-        info: Option<rmcp::model::ServerConfig>,
-    ) {
-        self.manager
-            .install_client(
-                scope,
-                registration::registration(config, None, self.host()),
-                client,
-                info,
-            )
-            .await;
     }
 
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
@@ -185,12 +212,7 @@ impl ExtensionManager {
             .session_manager
             .get_session(&session.id, session.conversation.is_some())
             .await?;
-        let selection = goose_host::GooseExtensionHost {
-            context: self.context.clone(),
-        }
-        .session_selection(&session)
-        .await;
-        let lease = self.manager.session_lease(&selection).await?;
+        let lease = self.session_lease(&session).await?;
         Ok((session, lease))
     }
 }

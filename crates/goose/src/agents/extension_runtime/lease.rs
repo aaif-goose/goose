@@ -81,16 +81,6 @@ impl ExtensionSet {
             extensions,
         })
     }
-    pub fn with_registration(mut self, registration: Registration) -> Result<Self, ExtensionError> {
-        if self.extensions.iter().any(|r| r.key == registration.key) {
-            return Err(ExtensionError::ConfigError(format!(
-                "duplicate extension key: {}",
-                registration.key
-            )));
-        }
-        self.extensions.push(registration);
-        Ok(self)
-    }
     pub fn scope_id(&self) -> &str {
         &self.scope_id
     }
@@ -123,47 +113,29 @@ struct ToolCatalog {
 impl ToolCatalog {
     async fn build(
         scope_id: &str,
-        slots: &[Arc<ExtensionSlot>],
+        extensions: &[Arc<Extension>],
         policy: &dyn ExtensionToolPolicy,
     ) -> Self {
-        let outcomes = futures::future::join_all(slots.iter().map(|slot| async move {
-            let extension = match slot.outcome().await {
-                Ok(Some(extension)) => Arc::clone(extension),
-                Ok(None) => return None,
-                Err(error) => {
-                    return Some((
-                        false,
-                        Err(format!(
-                            "extension {} failed to start: {error}",
-                            slot.registration.name
-                        )),
-                    ))
-                }
-            };
-            let supports_resources = extension.supports_resources();
-            let tools = extension.public_tools(scope_id).await.map_err(|error| {
-                format!("extension {} failed to list tools: {error}", extension.key)
-            });
-            Some((supports_resources, tools.map(|tools| (extension, tools))))
-        }))
+        let supports_resources = extensions
+            .iter()
+            .any(|extension| extension.supports_resources());
+        let lists = futures::future::join_all(
+            extensions
+                .iter()
+                .map(|extension| extension.public_tools(scope_id)),
+        )
         .await;
 
-        // Resource support is independent of tool discovery: a resource-only
-        // server whose tool listing fails still serves resources.
-        let mut supports_resources = false;
-        let mut lists = Vec::new();
-        for (extension_supports_resources, outcome) in outcomes.into_iter().flatten() {
-            supports_resources |= extension_supports_resources;
-            match outcome {
-                Ok(list) => lists.push(list),
-                // Start failures are reported by `ExtensionLease::start`; discovery
-                // failures only here.
-                Err(error) => warn!(%error, "omitting extension from the tool catalog"),
-            }
-        }
         let mut entries: Vec<CatalogEntry> = Vec::new();
         let mut by_name = HashMap::new();
-        for (extension, tools) in &lists {
+        for (extension, tools) in extensions.iter().zip(lists) {
+            let tools = match tools {
+                Ok(tools) => tools,
+                Err(error) => {
+                    warn!(extension = %extension.key, %error, "failed to list tools");
+                    continue;
+                }
+            };
             for tool in tools.iter() {
                 let name = provider_safe_tool_name(&tool.name);
                 if by_name.contains_key(&name) {
@@ -259,7 +231,14 @@ impl ExtensionLease {
 
     async fn tool_catalog(&self) -> &ToolCatalog {
         self.tool_catalog
-            .get_or_init(|| ToolCatalog::build(&self.scope_id, &self.slots, self.policy.as_ref()))
+            .get_or_init(|| async {
+                ToolCatalog::build(
+                    &self.scope_id,
+                    &self.start_extensions().await,
+                    self.policy.as_ref(),
+                )
+                .await
+            })
             .await
     }
 
@@ -279,16 +258,9 @@ impl ExtensionLease {
     }
 
     /// Start every extension and report each one's outcome. Does not build the
-    /// tool catalog; see [`Self::ready`].
+    /// tool catalog.
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
         futures::future::join_all(self.slots.iter().map(|slot| slot.load_result())).await
-    }
-
-    /// Start every extension and build its best-effort tool catalog.
-    pub async fn ready(&self) -> Vec<ExtensionLoadResult> {
-        let results = self.start().await;
-        self.tool_catalog().await;
-        results
     }
 
     pub fn id(&self) -> LeaseId {

@@ -6,64 +6,12 @@ use rmcp::ServiceError as Error;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::Semaphore;
 
-struct TestSelectionStore {
-    session: Mutex<ExtensionSession>,
-}
-
-impl TestSelectionStore {
-    fn new() -> Self {
-        Self {
-            session: Mutex::new(ExtensionSession {
-                id: "session".to_string(),
-                working_dir: PathBuf::new(),
-                extensions: vec![],
-            }),
-        }
-    }
-}
-
-#[async_trait]
-impl ExtensionSelectionStore for TestSelectionStore {
-    async fn session(&self, session_id: &str) -> Result<ExtensionSession> {
-        let session = self.session.lock().await;
-        anyhow::ensure!(session.id == session_id, "unknown session");
-        Ok(session.clone())
-    }
-
-    async fn select(&self, _session_id: &str, config: Registration) -> ExtensionResult<()> {
-        let mut session = self.session.lock().await;
-        match session
-            .extensions
-            .iter_mut()
-            .find(|selected| selected.key() == config.key())
-        {
-            Some(selected) => *selected = config,
-            None => session.extensions.push(config),
-        }
-        Ok(())
-    }
-
-    async fn disable(&self, _session_id: &str, key: &str) -> ExtensionResult<bool> {
-        let mut session = self.session.lock().await;
-        let selected = session.extensions.len();
-        session.extensions.retain(|config| config.key() != key);
-        Ok(session.extensions.len() != selected)
-    }
-}
-
 fn manager() -> Arc<ExtensionManager> {
     Arc::new(ExtensionManager::with_services(
-        {
-            let mut services = host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
-            services.selections = Some(Arc::new(TestSelectionStore::new()));
-            services
-        },
+        host::ExtensionServices::new(Arc::new(ActionRequiredManager::new())),
         ClientContext {
             name: "test".to_string(),
-            capabilities: GooseMcpClientCapabilities {
-                action_required_elicitation: true,
-                ..Default::default()
-            },
+            capabilities: Default::default(),
         },
     ))
 }
@@ -147,7 +95,7 @@ async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         release_first_fetch: Semaphore::new(0),
     });
     extension_manager
-        .add_client(
+        .install_client(
             "session",
             builtin_config("dynamic"),
             tools_client.clone(),
@@ -272,7 +220,7 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
     let external = builtin_config("external");
     let builtin = builtin_config("builtin");
     manager
-        .add_client(
+        .install_client(
             "session",
             external.clone(),
             Arc::new(StaticToolsClient {
@@ -305,43 +253,6 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
 }
 
 #[tokio::test]
-async fn host_backed_selection_keeps_held_leases_unchanged() {
-    let manager = manager();
-    manager
-        .add_client(
-            "session",
-            builtin_config("dynamic"),
-            Arc::new(StaticToolsClient {
-                tools: Some(vec!["new"]),
-            }),
-            None,
-        )
-        .await;
-    let before = manager.current_lease("session").await.unwrap();
-    assert_eq!(
-        manager.list_extensions("session").await.unwrap(),
-        vec!["dynamic"]
-    );
-
-    assert!(manager.disable("session", "dynamic").await.unwrap());
-    let after = manager.current_lease("session").await.unwrap();
-    assert!(after.tools().await.is_empty());
-    assert_eq!(before.tools().await[0].name, "dynamic__new");
-    let result = before
-        .call(
-            rmcp::model::CallToolRequestParams::new("dynamic__new"),
-            CallRequest::default(),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap()
-        .result
-        .await
-        .unwrap();
-    assert_ne!(result.is_error, Some(true));
-}
-
-#[tokio::test]
 async fn explicit_sets_need_no_session_lookup() {
     let manager = Arc::new(ExtensionManager::with_services(
         host::ExtensionServices::new(Arc::new(ActionRequiredManager::new())),
@@ -355,10 +266,6 @@ async fn explicit_sets_need_no_session_lookup() {
         .resolve(&ExtensionSet::new("scope", None, vec![registration]).unwrap())
         .await;
     assert_eq!(tool_names(lease.tools().await), ["custom__echo"]);
-    assert!(matches!(
-        manager.selection_store(),
-        Err(ExtensionError::ConfigError(_))
-    ));
 }
 
 /// Lists fixed tools, or fails discovery when `tools` is `None`.
@@ -403,7 +310,7 @@ impl McpClientTrait for StaticToolsClient {
 
 async fn add_static(manager: &ExtensionManager, name: &str, tools: Option<Vec<&'static str>>) {
     manager
-        .add_client(
+        .install_client(
             "session",
             builtin_config(name),
             Arc::new(StaticToolsClient { tools }),
@@ -427,7 +334,7 @@ async fn failed_discovery_omits_only_the_failed_extension() {
     let lease = manager.scope_lease("session").await;
 
     assert_eq!(tool_names(lease.tools().await), ["good__tool"]);
-    assert_eq!(lease.ready().await.len(), 2);
+    assert_eq!(lease.start().await.len(), 2);
 }
 
 #[tokio::test]
@@ -506,14 +413,21 @@ async fn host_registrations_connect_through_their_connector() {
         .unwrap();
     assert_ne!(result.is_error, Some(true));
 
-    // The same revision reuses the connection; a new one reconnects.
+    // The same identity reuses the connection; a new one reconnects.
     let same = manager
         .resolve(&ExtensionSet::new("scope", None, vec![registration.clone()]).unwrap())
         .await;
     same.tools().await;
     assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
     let bumped = manager
-        .resolve(&ExtensionSet::new("scope", None, vec![registration.with_revision(1)]).unwrap())
+        .resolve(
+            &ExtensionSet::new(
+                "scope",
+                None,
+                vec![registration.with_identity(serde_json::json!("changed"))],
+            )
+            .unwrap(),
+        )
         .await;
     bumped.tools().await;
     assert_eq!(connector.connects.load(Ordering::SeqCst), 2);
@@ -538,14 +452,6 @@ async fn declining_connectors_contribute_no_tools_without_failing() {
         .await;
     assert_eq!(tool_names(lease.tools().await), ["tool"]);
     assert!(lease.start().await.iter().all(|result| result.success));
-}
-
-#[test]
-fn registration_keys_must_be_unique_within_a_set() {
-    let set = ExtensionSet::new("scope", None, vec![builtin_config("dup")]).unwrap();
-    assert!(set
-        .with_registration(Registration::new("dup", StaticConnector::new(None)))
-        .is_err());
 }
 
 #[test]
@@ -574,74 +480,261 @@ fn reserved_result_metadata_is_removed_without_touching_other_keys() {
     assert!(result.meta.is_none());
 }
 
-struct ResourceVisibilityPolicy;
+struct ChangingEnvironment {
+    generation: AtomicU64,
+    resolutions: AtomicUsize,
+}
 
 #[async_trait]
-impl host::ExtensionToolPolicy for ResourceVisibilityPolicy {
-    fn exposes_tool(&self, _extension: &str, tool: &str, catalog_has_resources: bool) -> bool {
-        tool != "read_resource" || catalog_has_resources
+impl host::ExtensionEnvironment for ChangingEnvironment {
+    fn config_generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    async fn resolve_config(
+        &self,
+        mut config: goose_agent::extension::ExtensionConfig,
+    ) -> ExtensionResult<goose_agent::extension::ExtensionConfig> {
+        self.resolutions.fetch_add(1, Ordering::SeqCst);
+        if let goose_agent::extension::ExtensionConfig::Stdio { cmd, .. } = &mut config {
+            *cmd = format!("resolved-{}", self.config_generation());
+        }
+        Ok(config)
     }
 }
 
 #[tokio::test]
-async fn resource_visibility_is_independent_of_tool_discovery() {
-    for (resource_tools, has_resources) in [
-        (None, true),
-        (Some(vec![]), true),
-        (Some(vec!["hidden"]), true),
-        (None, false),
-    ] {
-        let manager = ExtensionManager::with_services(
-            {
-                let mut services =
-                    host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
-                services.tool_policy = Arc::new(ResourceVisibilityPolicy);
-                services
+async fn manager_environment_owns_resolution_and_connection_freshness() {
+    let environment = Arc::new(ChangingEnvironment {
+        generation: AtomicU64::new(0),
+        resolutions: AtomicUsize::new(0),
+    });
+    let mut services = host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
+    services.environment = environment.clone();
+    let manager = Arc::new(ExtensionManager::with_services(
+        services,
+        ClientContext {
+            name: "test".into(),
+            capabilities: Default::default(),
+        },
+    ));
+    let config = serde_json::from_value(serde_json::json!({
+        "type": "stdio", "name": "external", "cmd": "unresolved", "args": [], "timeout": 30
+    }))
+    .unwrap();
+    let connector = StaticConnector::new(Some(vec!["echo"]));
+    let mut registration = manager.registration(config);
+    registration.connector = connector.clone();
+    let set = ExtensionSet::new("scope", None, vec![registration]).unwrap();
+    let held = manager.resolve(&set).await;
+    held.tools().await;
+    manager.resolve(&set).await.tools().await;
+    assert_eq!(environment.resolutions.load(Ordering::SeqCst), 1);
+    assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
+
+    environment.generation.store(1, Ordering::SeqCst);
+    manager.resolve(&set).await.tools().await;
+    assert_eq!(environment.resolutions.load(Ordering::SeqCst), 3);
+    assert_eq!(connector.connects.load(Ordering::SeqCst), 2);
+    let slot = manager.scopes.lock().await["scope"]["external"].clone();
+    let extension = slot.start().await.unwrap();
+    let Some(goose_agent::extension::ExtensionConfig::Stdio { cmd, .. }) =
+        &extension.resolved_config
+    else {
+        panic!("expected a resolved stdio config");
+    };
+    assert_eq!(cmd, "resolved-1");
+    assert_eq!(tool_names(held.tools().await), ["external__echo"]);
+}
+
+#[tokio::test]
+async fn held_lease_survives_release_until_its_last_owner_drops() {
+    let manager = manager();
+    let set = ExtensionSet::new(
+        "scope",
+        None,
+        vec![Registration::new(
+            "custom",
+            StaticConnector::new(Some(vec!["echo"])),
+        )],
+    )
+    .unwrap();
+    let held = manager.resolve(&set).await;
+    held.tools().await;
+    let before = Arc::downgrade(&manager.scopes.lock().await["scope"]["custom"]);
+    manager.release("scope").await;
+    assert!(!manager.scopes.lock().await.contains_key("scope"));
+    let result = held
+        .call(
+            rmcp::model::CallToolRequestParams::new("custom__echo"),
+            CallRequest::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+        .result
+        .await
+        .unwrap();
+    assert_ne!(result.is_error, Some(true));
+    let current = manager.resolve(&set).await;
+    assert!(!Weak::ptr_eq(
+        &before,
+        &Arc::downgrade(&manager.scopes.lock().await["scope"]["custom"])
+    ));
+    current.tools().await;
+    drop(held);
+    assert!(before.upgrade().is_none());
+}
+
+#[tokio::test]
+async fn client_changes_restart_only_connections_that_negotiate_capabilities() {
+    let manager = manager();
+    let set = ExtensionSet::new(
+        "scope",
+        None,
+        vec![
+            Registration::new("process", StaticConnector::new(Some(vec!["echo"]))),
+            Registration::new("platform", StaticConnector::new(Some(vec!["echo"])))
+                .trusted()
+                .location_independent(),
+        ],
+    )
+    .unwrap();
+    let mut client = (*manager.client("scope")).clone();
+    manager.attach_client("scope", client.clone());
+    let held = manager.resolve(&set).await;
+    held.tools().await;
+    let before = manager.scopes.lock().await["scope"].clone();
+    let scopes = manager.scopes.lock().await;
+    let mut resolving = std::pin::pin!(manager.resolve(&set));
+    assert!(futures::poll!(resolving.as_mut()).is_pending());
+    client.capabilities.mcpui = true;
+    manager.attach_client("scope", client);
+    drop(scopes);
+    let _reattached = resolving.await;
+    let snapshot = manager.scopes.lock().await["scope"].clone();
+    for key in ["process", "platform"] {
+        assert!(Arc::ptr_eq(&before[key], &snapshot[key]));
+    }
+    let _current = manager.resolve(&set).await;
+    let after = manager.scopes.lock().await["scope"].clone();
+    assert!(!Arc::ptr_eq(&snapshot["process"], &after["process"]));
+    assert!(Arc::ptr_eq(&snapshot["platform"], &after["platform"]));
+}
+
+#[tokio::test]
+async fn failed_host_commit_does_not_install_the_started_connection() {
+    let manager = manager();
+    let result = manager
+        .enable(
+            "scope",
+            Registration::new("custom", StaticConnector::new(Some(vec!["echo"]))),
+            Path::new(""),
+            async { Err(ExtensionError::SetupError("selection failed".into())) },
+        )
+        .await;
+    assert!(result.is_err());
+    assert!(manager.enabling.lock().await.is_empty());
+    assert!(manager.scope_lease("scope").await.tools().await.is_empty());
+}
+
+struct PaginatedToolsClient(AtomicUsize);
+
+#[async_trait]
+impl McpClientTrait for PaginatedToolsClient {
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        cursor: Option<String>,
+        _cancel_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        let call = self.0.fetch_add(1, Ordering::SeqCst);
+        if call == 1 {
+            return Err(Error::UnexpectedResponse);
+        }
+        Ok(ListToolsResult {
+            tools: if cursor.is_none() {
+                vec![Tool::new("echo", "", Arc::new(JsonObject::new()))]
+            } else {
+                vec![]
             },
-            ClientContext {
-                name: "test".to_string(),
-                capabilities: Default::default(),
-            },
-        );
+            next_cursor: cursor.is_none().then(|| "next".into()),
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancel_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        Ok(CallToolResult::success(vec![]))
+    }
+
+    fn get_info(&self) -> Option<&InitializeResult> {
+        None
+    }
+}
+
+#[tokio::test]
+async fn incomplete_discovery_is_omitted_and_retried_on_the_next_lease() {
+    let manager = manager();
+    let client = Arc::new(PaginatedToolsClient(AtomicUsize::new(0)));
+    manager
+        .install_client("session", builtin_config("paged"), client.clone(), None)
+        .await;
+    add_static(&manager, "good", Some(vec!["tool"])).await;
+    let held = manager.scope_lease("session").await;
+    assert_eq!(tool_names(held.tools().await), ["good__tool"]);
+    assert_eq!(client.0.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        tool_names(manager.scope_lease("session").await.tools().await),
+        ["paged__echo", "good__tool"]
+    );
+    assert_eq!(client.0.load(Ordering::SeqCst), 4);
+    assert_eq!(tool_names(held.tools().await), ["good__tool"]);
+    manager.scope_lease("session").await.tools().await;
+    assert_eq!(client.0.load(Ordering::SeqCst), 4);
+}
+
+struct ResourceVisibilityPolicy;
+
+#[async_trait]
+impl host::ExtensionToolPolicy for ResourceVisibilityPolicy {
+    fn exposes_tool(&self, _extension: &str, tool: &str, has_resources: bool) -> bool {
+        tool != "read_resource" || has_resources
+    }
+}
+
+#[tokio::test]
+async fn resource_visibility_does_not_depend_on_tool_discovery() {
+    let mut services = host::ExtensionServices::new(Arc::new(ActionRequiredManager::new()));
+    services.tool_policy = Arc::new(ResourceVisibilityPolicy);
+    let manager = ExtensionManager::with_services(services, (*manager().client("session")).clone());
+    add_static(&manager, "reader", Some(vec!["read_resource"])).await;
+    let client = Arc::new(PaginatedToolsClient(AtomicUsize::new(0)));
+    for advertises_tools in [false, true] {
+        let mut capabilities = rmcp::model::ServerCapabilities::builder()
+            .enable_resources()
+            .build();
+        if advertises_tools {
+            capabilities.tools = Some(Default::default());
+        }
         manager
             .install_client(
                 "session",
-                builtin_config("reader"),
-                Arc::new(StaticToolsClient {
-                    tools: Some(vec!["read_resource"]),
-                }),
-                None,
+                builtin_config("resources"),
+                client.clone(),
+                Some(InitializeResult::new(capabilities)),
             )
             .await;
-        let info = has_resources.then(|| {
-            InitializeResult::new(
-                rmcp::model::ServerCapabilities::builder()
-                    .enable_resources()
-                    .enable_tools()
-                    .build(),
-            )
-        });
-        let resource_config =
-            builtin_config("resources").with_available_tools(vec!["not_advertised".into()]);
-        manager
-            .install_client(
-                "session",
-                resource_config,
-                Arc::new(StaticToolsClient {
-                    tools: resource_tools,
-                }),
-                info,
-            )
-            .await;
-        let tools = manager.scope_lease("session").await.tools().await;
+        let tools = tool_names(manager.scope_lease("session").await.tools().await);
+        assert_eq!(tools, ["reader__read_resource"]);
         assert_eq!(
-            tools
-                .iter()
-                .any(|tool| tool.name == "reader__read_resource"),
-            has_resources
+            client.0.load(Ordering::SeqCst),
+            if advertises_tools { 2 } else { 0 }
         );
-        assert!(tools
-            .iter()
-            .all(|tool| !tool.name.starts_with("resources__")));
     }
 }

@@ -395,7 +395,6 @@ impl ClientHandler for GooseClient {
                 None,
             ));
         }
-
         let session_id = self
             .resolve_session_id(&context.meta)
             .await
@@ -464,10 +463,12 @@ impl ClientHandler for GooseClient {
                 ElicitationCapability::new().with_form(FormElicitationCapability::new()),
             )
             .build();
-        if !self.capabilities.supports_elicitation() {
+
+        if self.capabilities.elicitation_handler.is_none()
+            && !self.capabilities.action_required_elicitation
+        {
             capabilities.elicitation = None;
         }
-
         InitializeRequestParams::new(capabilities, self.resolved_client_info())
             .with_protocol_version(
                 self.capabilities
@@ -484,20 +485,10 @@ pub type ElicitationHandler = Arc<dyn Fn(&ElicitRequestParams) -> ElicitResult +
 pub struct GooseMcpClientCapabilities {
     pub mcpui: bool,
     pub host_info: Option<GooseMcpHostInfo>,
-    /// Answers elicitation requests inline. Takes precedence over
-    /// `action_required_elicitation`.
     pub elicitation_handler: Option<ElicitationHandler>,
-    /// Route elicitation requests to the host as action-required messages on the
-    /// originating tool call, answered through `ActionRequiredManager`. Elicitation
-    /// is advertised only when this is set or `elicitation_handler` is installed.
+    /// Route elicitation through the host action-required flow when no inline handler is set.
     pub action_required_elicitation: bool,
     pub protocol_version: Option<ProtocolVersion>,
-}
-
-impl GooseMcpClientCapabilities {
-    pub fn supports_elicitation(&self) -> bool {
-        self.elicitation_handler.is_some() || self.action_required_elicitation
-    }
 }
 
 impl std::fmt::Debug for GooseMcpClientCapabilities {
@@ -1315,37 +1306,26 @@ mod tests {
         assert_eq!(mime_types, &json!(["text/html;profile=mcp-app"]));
     }
 
-    fn client_with(capabilities: GooseMcpClientCapabilities) -> GooseClient {
-        GooseClient::new(
-            Arc::new(Mutex::new(Vec::new())),
-            "test-client".to_string(),
-            env!("CARGO_PKG_VERSION"),
-            capabilities,
-            PathBuf::new(),
-            Arc::new(ActionRequiredManager::new()),
-            Arc::new(AtomicU64::new(0)),
-        )
-    }
-
     #[test]
     fn elicitation_is_advertised_only_when_the_host_can_answer() {
-        let advertised = |capabilities| {
-            ClientHandler::get_info(&client_with(capabilities))
-                .capabilities
-                .elicitation
-                .is_some()
-        };
-        assert!(!advertised(GooseMcpClientCapabilities::default()));
-        assert!(advertised(GooseMcpClientCapabilities {
-            action_required_elicitation: true,
-            ..Default::default()
-        }));
-        assert!(advertised(GooseMcpClientCapabilities {
-            elicitation_handler: Some(Arc::new(|_| {
-                ElicitResult::new(ElicitationAction::Decline)
-            })),
-            ..Default::default()
-        }));
+        let mut client = new_client(GoosePlatform::GooseCli);
+        client.capabilities.action_required_elicitation = false;
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_none());
+        client.capabilities.elicitation_handler =
+            Some(Arc::new(|_| ElicitResult::new(ElicitationAction::Decline)));
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_some());
+        client.capabilities.elicitation_handler = None;
+        client.capabilities.action_required_elicitation = true;
+        assert!(ClientHandler::get_info(&client)
+            .capabilities
+            .elicitation
+            .is_some());
     }
 
     #[test]

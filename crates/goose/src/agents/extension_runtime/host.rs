@@ -26,13 +26,6 @@ use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{McpClientTrait, TraceContextInjector};
 use goose_agent::extension::{ExtensionConfig, ExtensionResult, DEFAULT_EXTENSION_TIMEOUT};
 
-#[derive(Clone)]
-pub struct ExtensionSession {
-    pub id: String,
-    pub working_dir: PathBuf,
-    pub extensions: Vec<super::Registration>,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticOAuthClientConfig {
     pub client_id: String,
@@ -74,18 +67,6 @@ impl ExtensionAuth for NoExtensionAuth {
             "extension '{name}' at {uri} requires authorization, which this host does not support"
         )
     }
-}
-
-/// Optional persistence for hosts that manage selections by scope ID.
-#[async_trait]
-pub trait ExtensionSelectionStore: Send + Sync {
-    async fn session(&self, scope_id: &str) -> Result<ExtensionSession>;
-    async fn select(
-        &self,
-        scope_id: &str,
-        registration: super::Registration,
-    ) -> ExtensionResult<()>;
-    async fn disable(&self, scope_id: &str, key: &str) -> ExtensionResult<bool>;
 }
 
 /// Host-dependent configuration and process environment, evaluated when connecting.
@@ -160,7 +141,6 @@ impl ExtensionRuntimeSettings {
 }
 
 pub struct ExtensionServices {
-    pub selections: Option<Arc<dyn ExtensionSelectionStore>>,
     pub environment: Arc<dyn ExtensionEnvironment>,
     pub tool_policy: Arc<dyn ExtensionToolPolicy>,
     pub auth: Arc<dyn ExtensionAuth>,
@@ -170,7 +150,6 @@ pub struct ExtensionServices {
 impl ExtensionServices {
     pub fn new(action_required: Arc<ActionRequiredManager>) -> Self {
         Self {
-            selections: None,
             environment: Arc::new(DefaultExtensionEnvironment),
             tool_policy: Arc::new(DefaultExtensionToolPolicy),
             auth: Arc::new(NoExtensionAuth),

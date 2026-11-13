@@ -43,7 +43,8 @@ impl ExtensionManager {
             bundled: None,
             available_tools,
         };
-        self.add_client("session", config, client, None).await;
+        self.install_test_client("session", config, client, None)
+            .await;
     }
 }
 
@@ -1247,24 +1248,42 @@ async fn successful_mutation_is_persisted_when_another_mutation_fails() {
 }
 
 impl ExtensionManager {
-    pub(crate) async fn add_test_client(
+    async fn add_client(
         &self,
-        session_id: &str,
+        scope: &str,
         config: ExtensionConfig,
         client: Arc<dyn McpClientTrait>,
         info: Option<rmcp::model::ServerConfig>,
     ) {
-        self.add_client(session_id, config, client, info).await;
+        self.install_test_client(scope, config.clone(), client, info)
+            .await;
+        self.select(scope, config).await.unwrap();
     }
 
-    #[cfg(feature = "code-mode")]
-    pub(crate) async fn install_test_client(
+    pub(crate) async fn add_test_client(
         &self,
-        session_id: &str,
+        scope: &str,
         config: ExtensionConfig,
         client: Arc<dyn McpClientTrait>,
         info: Option<rmcp::model::ServerConfig>,
     ) {
-        self.install_client(session_id, config, client, info).await;
+        self.add_client(scope, config, client, info).await;
+    }
+
+    pub(crate) async fn install_test_client(
+        &self,
+        scope: &str,
+        config: ExtensionConfig,
+        client: Arc<dyn McpClientTrait>,
+        info: Option<rmcp::model::ServerConfig>,
+    ) {
+        self.manager
+            .install_client(
+                scope,
+                registration::registration(config, None, self.host()),
+                client,
+                info,
+            )
+            .await;
     }
 }
