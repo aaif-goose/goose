@@ -10,7 +10,6 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
@@ -25,6 +24,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
+use goose_agent::extension_manager::TurnLease;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -172,10 +172,7 @@ impl TestPipeline {
             .await
     }
 
-    fn extension_lease(
-        &self,
-        services: &StateMachineServices,
-    ) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
+    fn extension_lease(&self, services: &StateMachineServices) -> TurnLease {
         services
             .runtime
             .confirmations
@@ -185,7 +182,7 @@ impl TestPipeline {
 
     async fn start_new_turn(&self) {
         let services = self.services().await;
-        *self.extension_lease(services).lock().unwrap() = None;
+        self.extension_lease(services).clear();
     }
 
     pub(super) async fn machine(
@@ -454,15 +451,14 @@ impl TestPipeline {
         pipeline.hook_manager = self.hook_manager.clone();
         pipeline.turn_settings = self.turn_settings.clone();
         pipeline.max_turns = self.max_turns;
-        let lease = self
-            .extension_lease(self.services().await)
-            .lock()
-            .unwrap()
-            .clone();
-        *pipeline
-            .extension_lease(pipeline.services().await)
-            .lock()
-            .unwrap() = lease;
+        let lease = self.extension_lease(self.services().await).get();
+        let target = pipeline.extension_lease(pipeline.services().await);
+        match lease {
+            Some(lease) => {
+                target.set(lease);
+            }
+            None => target.clear(),
+        }
         Ok(pipeline)
     }
 

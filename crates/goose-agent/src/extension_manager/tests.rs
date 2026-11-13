@@ -1,6 +1,7 @@
 use super::*;
 use crate::tool_execution::ToolCallContext;
 use async_trait::async_trait;
+use futures::FutureExt;
 use rmcp::model::{InitializeResult, JsonObject, ListToolsResult};
 use rmcp::ServiceError as Error;
 use std::sync::atomic::AtomicUsize;
@@ -452,6 +453,234 @@ async fn declining_connectors_contribute_no_tools_without_failing() {
         .await;
     assert_eq!(tool_names(lease.tools().await), ["tool"]);
     assert!(lease.start().await.iter().all(|result| result.success));
+}
+
+#[test]
+fn registration_keys_must_be_unique_within_a_set() {
+    assert!(ExtensionSet::new(
+        "scope",
+        None,
+        vec![builtin_config("dup"), builtin_config("dup")]
+    )
+    .is_err());
+}
+
+struct ScopeResolver(Arc<ExtensionManager>);
+
+#[async_trait]
+impl LeaseResolver<()> for ScopeResolver {
+    async fn resolve(&self, _session: &()) -> Result<ExtensionLease> {
+        Ok(self.0.scope_lease("session").await)
+    }
+}
+
+fn emitter() -> (
+    crate::operation::Emitter,
+    tokio::sync::mpsc::UnboundedReceiver<crate::events::AgentEvent>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    (
+        crate::operation::Emitter::new(tx, CancellationToken::new()),
+        rx,
+    )
+}
+
+fn turn_requesting(names: &[&str]) -> goose_provider_types::conversation::Conversation {
+    use goose_provider_types::conversation::message::Message;
+    let request = names.iter().fold(Message::assistant(), |message, name| {
+        message.with_tool_request_with_metadata(
+            format!("call-{name}"),
+            Ok(rmcp::model::CallToolRequestParams::new(name.to_string())),
+            None,
+            Some(serde_json::json!({crate::tool_call_state::EXECUTABLE_KEY: true})),
+        )
+    });
+    goose_provider_types::conversation::Conversation::new_unvalidated([
+        Message::user().with_text("go"),
+        request,
+    ])
+}
+
+fn response_texts(
+    result: crate::operation::OperationResult<goose_provider_types::conversation::message::Message>,
+) -> Vec<(String, String)> {
+    let crate::operation::OperationResult::Applied(step) = result else {
+        panic!("operation did not apply");
+    };
+    step.effects
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(|content| content.as_tool_response())
+        .map(|response| {
+            let text = response
+                .tool_result
+                .as_ref()
+                .unwrap()
+                .content
+                .first()
+                .and_then(|content| content.as_text())
+                .map(|text| text.text.clone())
+                .unwrap_or_default();
+            (response.id.clone(), text)
+        })
+        .collect()
+}
+
+use crate::operation::Operation;
+use std::time::Duration;
+
+type Op = ExtensionOperation<()>;
+type Msg = goose_provider_types::conversation::message::Message;
+
+#[tokio::test]
+async fn extension_operation_runs_calls_to_tools_its_inference_advertised() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    add_static(&manager, "second", Some(vec!["b"])).await;
+    let operation = Op::new(Arc::new(ScopeResolver(manager)));
+    let (emit, _events) = emitter();
+
+    let tools = Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    assert_eq!(tool_names(tools), ["first__a", "second__b"]);
+    let result = Operation::<(), Msg>::run(
+        &operation,
+        &(),
+        &turn_requesting(&["first__a", "second__b", "shell"]),
+        &emit,
+    )
+    .await
+    .unwrap();
+    // `shell` belongs to another operation.
+    let responses = response_texts(result);
+    let ids: Vec<_> = responses.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["call-first__a", "call-second__b"]);
+    assert!(responses
+        .iter()
+        .all(|(_, text)| text != EXPIRED_TOOL_REQUEST));
+}
+
+#[tokio::test]
+async fn extension_operation_expires_requests_no_inference_advertised() {
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let operation = Op::new(Arc::new(ScopeResolver(manager)));
+    let (emit, _events) = emitter();
+
+    let result = Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+        .await
+        .unwrap();
+    assert_eq!(
+        response_texts(result),
+        [(
+            "call-first__a".to_string(),
+            EXPIRED_TOOL_REQUEST.to_string()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn extension_operation_does_not_run_unapproved_requests() {
+    use goose_provider_types::conversation::message::MessageContent;
+    let manager = manager();
+    add_static(&manager, "first", Some(vec!["a"])).await;
+    let operation = Op::new(Arc::new(ScopeResolver(manager)));
+    let (emit, _events) = emitter();
+    Operation::<(), Msg>::inference_tools(&operation, &())
+        .await
+        .unwrap();
+    for executable in [None, Some(false)] {
+        let mut conversation = turn_requesting(&["first__a"]);
+        for content in conversation
+            .messages_mut()
+            .iter_mut()
+            .flat_map(|m| &mut m.content)
+        {
+            if let MessageContent::ToolRequest(request) = content {
+                request.tool_meta = executable.map(|flag| {
+                    serde_json::json!({
+                        crate::tool_call_state::EXECUTABLE_KEY: flag
+                    })
+                });
+            }
+        }
+        assert!(matches!(
+            Operation::<(), Msg>::run(&operation, &(), &conversation, &emit)
+                .await
+                .unwrap(),
+            crate::operation::OperationResult::NotApplicable
+        ));
+    }
+}
+
+fn notification() -> rmcp::model::ServerNotification {
+    use rmcp::model::{Notification, NumberOrString, ProgressNotificationParam, ProgressToken};
+    rmcp::model::ServerNotification::ProgressNotification(Notification::new(
+        ProgressNotificationParam::new(ProgressToken(NumberOrString::String(Arc::from("t"))), 1.0),
+    ))
+}
+
+#[tokio::test]
+async fn tool_call_batches_run_concurrently_and_keep_notifications_sent_with_results() {
+    for _ in 0..20 {
+        let batch = ToolCallBatch::default();
+        let (emit, mut events) = emitter();
+        let (release_first, released) = tokio::sync::oneshot::channel::<()>();
+        let (notify, notifications) = tokio::sync::mpsc::channel(4);
+        // The notification is queued before the result is ready, as when a client
+        // delivers it on its own task.
+        notify.try_send(notification()).unwrap();
+        let first = crate::tool_execution::ToolCallResult {
+            result: Box::new(
+                async move {
+                    released.await.unwrap();
+                    Ok(CallToolResult::success(vec![]))
+                }
+                .boxed(),
+            ),
+            notification_stream: Some(Box::new(tokio_stream::wrappers::ReceiverStream::new(
+                notifications,
+            ))),
+            action_required_stream: None,
+        };
+        let second = crate::tool_execution::ToolCallResult {
+            result: Box::new(
+                async move {
+                    release_first.send(()).unwrap();
+                    Ok(CallToolResult::success(vec![]))
+                }
+                .boxed(),
+            ),
+            notification_stream: None,
+            action_required_stream: None,
+        };
+        let calls = ["first", "second"].into_iter().zip([first, second]);
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            batch.run(
+                calls
+                    .map(|(id, call)| PendingCall {
+                        request_id: id.to_string(),
+                        metadata: None,
+                        call,
+                    })
+                    .collect(),
+                &emit,
+                &|_, _| {},
+            ),
+        )
+        .await
+        .expect("calls run concurrently");
+
+        let (_, response) = batch.take();
+        assert_eq!(response.unwrap().get_tool_response_ids().len(), 2);
+        assert!(matches!(
+            events.try_recv(),
+            Ok(crate::events::AgentEvent::McpNotification((id, _))) if id == "first"
+        ));
+        drop(notify);
+    }
 }
 
 #[test]

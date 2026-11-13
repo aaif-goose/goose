@@ -124,7 +124,8 @@ impl StateMachineServices {
                 false
             }
         };
-        let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
+        let extension_lease = goose_agent::extension_manager::TurnLease::default();
+        extension_lease.set(lease);
 
         let mut next_messages = session
             .conversation
