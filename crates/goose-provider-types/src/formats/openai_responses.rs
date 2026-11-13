@@ -29,7 +29,7 @@ pub struct ResponsesApiResponse {
     // Not every OpenAI-compatible provider echoes created_at back; the value
     // is carried but never used, so tolerate its absence.
     #[serde(default)]
-    pub created_at: i64,
+    pub created_at: f64,
     pub status: String,
     pub model: String,
     pub output: Vec<ResponseOutputItem>,
@@ -422,7 +422,7 @@ pub struct ResponseMetadata {
     pub id: String,
     pub object: String,
     #[serde(default)]
-    pub created_at: i64,
+    pub created_at: f64,
     pub status: String,
     pub model: String,
     #[serde(default)]
@@ -1597,7 +1597,7 @@ mod tests {
     }
 
     // OpenAI-compatible providers do not all echo `created_at` back on
-    // `response.*` events; a strict i64 there terminates the whole session on
+    // `response.*` events; a required field there terminates the whole session on
     // the first event. The timestamp is carried but never used, so a missing
     // field must degrade to the default instead of killing the stream.
     #[tokio::test]
@@ -1627,6 +1627,87 @@ mod tests {
         }
 
         assert_eq!(text_parts.concat(), "Hello world");
+
+        Ok(())
+    }
+
+    fn created_at_cases() -> Vec<(Option<Value>, f64)> {
+        vec![
+            (Some(json!(1741476542)), 1741476542.0),
+            (Some(json!(1741476542.0)), 1741476542.0),
+            (Some(json!(1741476542.25)), 1741476542.25),
+            (None, 0.0),
+        ]
+    }
+
+    fn response_json(created_at: Option<Value>) -> Value {
+        let mut response = json!({
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "gpt-5",
+            "output": [],
+        });
+        if let Some(created_at) = created_at {
+            response["created_at"] = created_at;
+        }
+        response
+    }
+
+    #[test]
+    fn test_responses_api_response_decodes_numeric_created_at() -> anyhow::Result<()> {
+        for (created_at, expected) in created_at_cases() {
+            let response: ResponsesApiResponse =
+                serde_json::from_value(response_json(created_at.clone()))?;
+            assert_eq!(
+                serde_json::to_value(&response)?["created_at"].as_f64(),
+                Some(expected),
+                "created_at: {created_at:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_metadata_decodes_numeric_created_at() -> anyhow::Result<()> {
+        for (created_at, expected) in created_at_cases() {
+            let metadata: ResponseMetadata =
+                serde_json::from_value(response_json(created_at.clone()))?;
+            assert_eq!(
+                serde_json::to_value(&metadata)?["created_at"].as_f64(),
+                Some(expected),
+                "created_at: {created_at:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_responses_stream_continues_after_decimal_created_at() -> anyhow::Result<()> {
+        let lines = vec![
+            r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1741476542.25,"status":"in_progress","model":"gpt-5.2-pro","output":[]}}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#.to_string(),
+            r#"data: {"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1741476542.0,"status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}"#.to_string(),
+            "data: [DONE]".to_string(),
+        ];
+
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let messages = responses_api_to_streaming_message(response_stream);
+        futures::pin_mut!(messages);
+
+        let mut text_parts = Vec::new();
+        while let Some(item) = messages.next().await {
+            let (message, _) = item?;
+            if let Some(msg) = message {
+                for content in msg.content {
+                    if let MessageContentBlock::Text(text) = content {
+                        text_parts.push(text.text.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text_parts.concat(), "Hello");
 
         Ok(())
     }
@@ -1989,7 +2070,7 @@ mod tests {
         let response = ResponsesApiResponse {
             id: "resp_1".to_string(),
             object: "response".to_string(),
-            created_at: 0,
+            created_at: 0.0,
             status: "completed".to_string(),
             model: "gpt-5.3-codex".to_string(),
             output: vec![ResponseOutputItem::FunctionCall {
@@ -2016,7 +2097,7 @@ mod tests {
         let response = ResponsesApiResponse {
             id: "resp_1".to_string(),
             object: "response".to_string(),
-            created_at: 0,
+            created_at: 0.0,
             status: "completed".to_string(),
             model: "gpt-5.3-codex".to_string(),
             output: vec![
@@ -2068,7 +2149,7 @@ mod tests {
         let response = ResponsesApiResponse {
             id: "resp_1".to_string(),
             object: "response".to_string(),
-            created_at: 0,
+            created_at: 0.0,
             status: "completed".to_string(),
             model: "gpt-5.3-codex".to_string(),
             output: vec![
@@ -2113,7 +2194,7 @@ mod tests {
             ResponsesApiResponse {
                 id: "resp_1".to_string(),
                 object: "response".to_string(),
-                created_at: 0,
+                created_at: 0.0,
                 status: "completed".to_string(),
                 model: "gpt-5.3-codex".to_string(),
                 output: vec![ResponseOutputItem::Message {
@@ -2132,7 +2213,7 @@ mod tests {
             ResponsesApiResponse {
                 id: "resp_2".to_string(),
                 object: "response".to_string(),
-                created_at: 0,
+                created_at: 0.0,
                 status: "completed".to_string(),
                 model: "gpt-5.3-codex".to_string(),
                 output: vec![ResponseOutputItem::FunctionCall {
