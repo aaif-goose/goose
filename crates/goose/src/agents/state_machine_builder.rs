@@ -6,6 +6,7 @@ use std::time::Duration;
 use goose_agent::{
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
+    steer::{SteerOperation, SteerQueue},
     write_integrity::{WriteIntegrityChecker, WritePolicyConfig},
 };
 use goose_providers::api_client::{ApiClient, AuthMethod};
@@ -21,9 +22,9 @@ use crate::agents::state_machine::{
     EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
     RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;

@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use goose_agent::steer::SteerQueue;
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
 use super::active_run::ActiveRunRegistry;
 use super::extension_manager::ClientContext;
-use super::state_machine::SteerQueue;
 use super::tool_confirmation_coordinator::ToolConfirmationCoordinator;
 use crate::conversation::message::Message;
 use crate::session::SessionNameUpdate;
