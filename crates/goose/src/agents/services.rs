@@ -15,7 +15,7 @@ use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionM
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, is_session_start_message, pending_tool_confirmations,
+    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
     Operation, StateMachine, SteerQueue, DEFAULT_BLOCK_CAP,
 };
@@ -358,6 +358,30 @@ fn is_user_prompt(message: &Message) -> bool {
     message.role == rmcp::model::Role::User && !message.is_tool_response()
 }
 
+const ENTRY_HOOK_NOTE_SCOPE: &str = "entry_hook";
+const SESSION_START_NOTE: &str = "session_start";
+
+/// Records that a client fired `SessionStart` when it opened the session, so the first
+/// prompt does not fire it again. Hidden from the user when the hooks printed no banner.
+pub(crate) fn session_start_message(banners: &[String]) -> Message {
+    let mut message = Message::assistant();
+    if !banners.is_empty() {
+        message = message.with_text(banners.join("\n"));
+    }
+    let mut message = message.with_visibility(!banners.is_empty(), false);
+    message
+        .metadata
+        .set_operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE, true.into());
+    message
+}
+
+fn is_session_start_message(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE)
+        .is_some()
+}
+
 impl StateMachineServices {
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
         let mut default_client = ClientContext::new(&config.goose_platform, None);
@@ -399,36 +423,33 @@ impl StateMachineServices {
 
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
-    pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
+    pub async fn emit_hook(&self, event: HookEvent, session_id: &str) {
         if !self.hook_manager.has_hooks(event) {
             return;
         }
         self.hook_manager
-            .emit(event, crate::hooks::HookContext::new(event, session_id))
+            .emit(event, HookContext::new(event, session_id))
             .await;
     }
 
     /// Fires `SessionStart` for a client opening the session and returns the hooks'
     /// banners, which the client shows before the first prompt.
     pub async fn emit_session_start(&self, session_id: &str) -> Result<Vec<String>> {
-        let event = crate::hooks::HookEvent::SessionStart;
+        let event = HookEvent::SessionStart;
         if !self.hook_manager.has_hooks(event) {
             return Ok(Vec::new());
         }
         let banners = self
             .hook_manager
-            .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
+            .emit_collecting_banners(event, HookContext::new(event, session_id))
             .await;
         self.session_manager
-            .add_message(
-                session_id,
-                &crate::agents::state_machine::session_start_message(&banners),
-            )
+            .add_message(session_id, &session_start_message(&banners))
             .await?;
         Ok(banners)
     }
 
-    pub(crate) async fn emit_prompt_hooks(&self, session_id: &str) -> Result<()> {
+    pub(crate) async fn emit_hooks_for_saved_prompt(&self, session_id: &str) -> Result<()> {
         if !self.hook_manager.has_hooks(HookEvent::SessionStart)
             && !self.hook_manager.has_hooks(HookEvent::UserPromptSubmit)
         {
@@ -972,7 +993,7 @@ impl StateMachineServices {
         session_manager
             .add_message(&session_config.id, &user_message)
             .await?;
-        self.emit_prompt_hooks(&session_config.id).await?;
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
 
         if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
@@ -1010,7 +1031,7 @@ impl StateMachineServices {
             .session(&session_config.id)
             .try_start_turn()?;
         turn_guard.state().start_new_turn();
-        self.emit_prompt_hooks(&session_config.id).await?;
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
         Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 

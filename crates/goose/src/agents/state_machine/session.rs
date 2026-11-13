@@ -249,30 +249,6 @@ impl EffectUsage<GooseEffect> for SessionManager {
     }
 }
 
-const ENTRY_HOOK_NOTE_SCOPE: &str = "entry_hook";
-const SESSION_START_NOTE: &str = "session_start";
-
-/// Records that a client fired `SessionStart` when it opened the session, so the first
-/// turn does not fire it again. Hidden from the user when the hooks printed no banner.
-pub(crate) fn session_start_message(banners: &[String]) -> Message {
-    let mut message = Message::assistant();
-    if !banners.is_empty() {
-        message = message.with_text(banners.join("\n"));
-    }
-    let mut message = message.with_visibility(!banners.is_empty(), false);
-    message
-        .metadata
-        .set_operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE, true.into());
-    message
-}
-
-pub(crate) fn is_session_start_message(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE)
-        .is_some()
-}
-
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,

@@ -31,7 +31,6 @@ mod ops_toolcalling;
 mod proactive_compaction;
 mod session;
 pub(crate) use session::run as run_goose;
-pub(crate) use session::{is_session_start_message, session_start_message};
 mod tool_approval;
 mod tool_confirmation;
 mod tool_hooks;

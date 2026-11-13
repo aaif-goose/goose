@@ -583,7 +583,7 @@ impl TestPipeline {
             .await?;
         self.services()
             .await
-            .emit_prompt_hooks(&self.session_id)
+            .emit_hooks_for_saved_prompt(&self.session_id)
             .await
     }
 

@@ -1014,27 +1014,9 @@ async fn bang_shell_visibility_is_enforced_when_state_machine_is_enabled() -> Re
 async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() -> Result<()> {
     let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse", "SessionEnd"], 0)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand this off").call(
         "delegate",
@@ -1123,33 +1105,16 @@ async fn reply_and_steer_fire_the_prompt_hook_when_they_accept_input() -> Result
         .working_dir
         .to_string_lossy()
         .into_owned();
-    let payloads = hook_payloads(&hook_log_path);
-    assert!(payloads
+    assert!(hook_payloads(&hook_log_path)
         .iter()
         .all(|payload| payload["working_dir"] == working_dir.as_str()));
     assert_eq!(
-        hook_events(&payloads),
+        hook_events(&hook_log_path, &session_id),
         [
-            (
-                session_id.clone(),
-                "SessionStart".to_string(),
-                String::new()
-            ),
-            (
-                session_id.clone(),
-                "UserPromptSubmit".to_string(),
-                "add one".to_string()
-            ),
-            (
-                session_id.clone(),
-                "UserPromptSubmit".to_string(),
-                "say hi".to_string()
-            ),
-            (
-                session_id,
-                "UserPromptSubmit".to_string(),
-                "then wave".to_string()
-            ),
+            "SessionStart",
+            "UserPromptSubmit: add one",
+            "UserPromptSubmit: say hi",
+            "UserPromptSubmit: then wave",
         ]
     );
     Ok(())
@@ -1159,26 +1124,8 @@ async fn reply_and_steer_fire_the_prompt_hook_when_they_accept_input() -> Result
 async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Result<()> {
     let (hooks, _hook_dir, hook_log_path) = hook_log(&["SessionStart", "UserPromptSubmit"], 0)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    let _guard = openai_env_for(&api);
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand this off").call(
         "delegate",
@@ -1216,23 +1163,12 @@ async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Res
     )
     .await?;
 
-    let subagent_events: Vec<_> = hook_events(&hook_payloads(&hook_log_path))
-        .into_iter()
-        .filter(|(id, _, _)| id == &subagent_id)
-        .map(|(_, event, message)| (event, message))
-        .collect();
     assert_eq!(
-        subagent_events,
+        hook_events(&hook_log_path, &subagent_id),
         [
-            ("SessionStart".to_string(), String::new()),
-            (
-                "UserPromptSubmit".to_string(),
-                format!("Subagent ID: {subagent_id}\n\nname the planets")
-            ),
-            (
-                "UserPromptSubmit".to_string(),
-                "now list the colors".to_string()
-            ),
+            "SessionStart".to_string(),
+            format!("UserPromptSubmit: Subagent ID: {subagent_id}\n\nname the planets"),
+            "UserPromptSubmit: now list the colors".to_string(),
         ]
     );
     Ok(())
@@ -1241,13 +1177,7 @@ async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Res
 #[tokio::test]
 async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1255,19 +1185,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         .apply()
         .await?;
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand this off").call(
         "delegate",
@@ -1335,13 +1253,7 @@ fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexS
 #[tokio::test]
 async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     crate::builtin_extension::register_builtin_extension("asks_a_name", serve_elicit_fixture);
     for config in [
         ExtensionConfig::Builtin {
@@ -1424,13 +1336,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
 #[tokio::test]
 async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1438,19 +1344,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         .apply()
         .await?;
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand both off").calls([
         (
@@ -1578,32 +1472,28 @@ fn hook_payloads(log: &std::path::Path) -> Vec<serde_json::Value> {
     std::fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
-        .map(|line| serde_json::from_str(line).expect("hook payload should be JSON"))
+        .filter_map(|line| serde_json::from_str(line).ok())
         .collect()
 }
 
-fn hook_events(payloads: &[serde_json::Value]) -> Vec<(String, String, String)> {
-    let field = |payload: &serde_json::Value, key: &str| {
-        payload[key].as_str().unwrap_or_default().to_string()
-    };
-    payloads
+fn hook_events(log: &std::path::Path, session_id: &str) -> Vec<String> {
+    hook_payloads(log)
         .iter()
+        .filter(|payload| payload["session_id"] == session_id)
         .map(|payload| {
-            (
-                field(payload, "session_id"),
-                field(payload, "event"),
-                field(payload, "message"),
-            )
+            let event = payload["event"].as_str().unwrap_or_default();
+            match payload["message"].as_str() {
+                Some(message) => format!("{event}: {message}"),
+                None => event.to_string(),
+            }
         })
         .collect()
 }
 
 fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
-    std::fs::read_to_string(log)
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|payload| payload["event"].as_str() == Some(event))
+    hook_payloads(log)
+        .iter()
+        .filter(|payload| payload["event"] == event)
         .filter_map(|payload| payload["session_id"].as_str().map(str::to_string))
         .collect()
 }
@@ -1612,13 +1502,7 @@ fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
 async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     let (hooks, _hook_dir, hook_log) = hook_log(&["SessionEnd"], 0)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1656,6 +1540,15 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     .await?;
     assert_ne!(subagent_id, session_id);
     Ok(())
+}
+
+fn openai_env_for(api: &DummyApi) -> env_lock::EnvGuard<'static> {
+    env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring".to_string())),
+        ("OPENAI_HOST", Some(api.uri())),
+        ("OPENAI_BASE_PATH", Some("chat/completions".to_string())),
+        ("OPENAI_CUSTOM_HEADERS", Some(String::new())),
+    ])
 }
 
 async fn enable_summon(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
@@ -1797,13 +1690,7 @@ async fn resume_until_completed(
 #[tokio::test]
 async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     enable_developer(&services, &session_id).await?;
     enable_summon(&services, &session_id).await?;
     api.on("hand this off").call(
@@ -1834,13 +1721,7 @@ async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> 
 async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resumes() -> Result<()> {
     let (hooks, _hook_dir, hook_log) = hook_log(&["SessionEnd"], 2)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)

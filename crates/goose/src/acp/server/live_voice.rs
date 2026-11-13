@@ -13,6 +13,8 @@ const LIVE_DELEGATION_INSTRUCTION: &str = concat!(
     "failures, and any required user action. Do not include raw tool output."
 );
 
+const STEER_FAILED_MESSAGE: &str = "The task could not receive the latest instruction.";
+
 impl AcpConnection {
     async fn load_live_voice_session(
         &self,
@@ -364,12 +366,12 @@ impl AcpConnection {
         input: String,
     ) -> Result<String, String> {
         if self.runs().agent_run_id(session_id).is_none() {
-            return Err("The task could not receive the latest instruction.".into());
+            return Err(STEER_FAILED_MESSAGE.into());
         }
         self.services
             .steer(session_id, Message::user().with_text(input).agent_only())
             .await
-            .map_err(|_| "The task could not receive the latest instruction.".to_string())?;
+            .map_err(|_| STEER_FAILED_MESSAGE.to_string())?;
         Ok(
             "The latest instruction was added to the work in progress. Wait for its updated result."
                 .into(),
