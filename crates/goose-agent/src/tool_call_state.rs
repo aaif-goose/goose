@@ -76,16 +76,12 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
         .collect()
 }
 
-pub(crate) fn tool_meta_flag(request: &ToolRequest, key: &str) -> Option<bool> {
+pub fn request_executable(request: &ToolRequest) -> Option<bool> {
     request
         .tool_meta
         .as_ref()
-        .and_then(|meta| meta.get(key))
+        .and_then(|meta| meta.get(EXECUTABLE_KEY))
         .and_then(serde_json::Value::as_bool)
-}
-
-pub fn request_executable(request: &ToolRequest) -> Option<bool> {
-    tool_meta_flag(request, EXECUTABLE_KEY)
 }
 
 pub(crate) fn mark_executable(tool_call_id: &str, executable: bool) -> ConversationEffect {
