@@ -1,3 +1,5 @@
+//! Ends the turn when an error remains at the end of the conversation.
+
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::Conversation;
