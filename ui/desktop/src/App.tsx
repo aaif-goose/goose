@@ -15,17 +15,25 @@ import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
+import { formatAcpError } from './acp/errors';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
 import { acpChatSessionStore } from './acp/chatSessionStore';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
+import PendingChatView from './components/PendingChatView';
+import { toastError } from './toasts';
 import { UserInput } from './types/message';
+import type { ExtensionConfig } from './types/extensions';
+import { getEffectiveWorkingDir } from './utils/workingDir';
 
 interface PairRouteState {
   resumeSessionId?: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  workingDir?: string;
+  extensionConfigs?: ExtensionConfig[];
+  fromHub?: boolean;
 }
 import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
@@ -47,7 +55,7 @@ import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
-import { View, ViewOptions } from './utils/navigationUtils';
+import { takeHubSubmit, View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
@@ -88,6 +96,7 @@ export function resolveSessionInitialMessage(
 
 export const PairRouteWrapper = ({
   activeSessions,
+  draftRef,
 }: {
   activeSessions: Array<{
     sessionId: string;
@@ -97,6 +106,7 @@ export const PairRouteWrapper = ({
   setActiveSessions: (
     sessions: Array<{ sessionId: string; initialMessage?: UserInput; noAutoSubmit?: boolean }>
   ) => void;
+  draftRef?: RefObject<string>;
 }) => {
   const { extensionsList } = useConfig();
   const location = useLocation();
@@ -104,6 +114,7 @@ export const PairRouteWrapper = ({
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreatingSessionRef = useRef(false);
+  const requestGenerationRef = useRef(0);
   const navigate = useNavigate();
 
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
@@ -111,68 +122,113 @@ export const PairRouteWrapper = ({
   const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
+  const requestedWorkingDir = routeState.workingDir;
+  const fromHub = routeState.fromHub === true;
+  const isPendingSession =
+    !resumeSessionId && Boolean(initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig);
 
-  // Create session if we have an initialMessage, recipeDeeplink, or recipeId but no sessionId
+  // Create session if we have an initialMessage, recipeDeeplink, or recipeId but no sessionId.
+  // Each run has its own generation. Cleanup invalidates that run only, so a StrictMode
+  // remount or an extensionsList refresh cannot let the stale request publish too.
+  // Leaving /pair before the run finishes drops it: no session, and no prompt in a
+  // chat the user is no longer looking at.
   useEffect(() => {
-    if (
-      (initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig) &&
-      !resumeSessionId &&
-      !isCreatingSessionRef.current
-    ) {
-      isCreatingSessionRef.current = true;
+    if (!isPendingSession || isCreatingSessionRef.current) {
+      return;
+    }
 
-      (async () => {
-        try {
-          const newSession = await createSession(getInitialWorkingDir(), {
-            recipeDeeplink: recipeDeeplinkFromConfig,
-            recipeId: recipeIdFromConfig,
-            allExtensions: extensionsList,
-          });
-          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
+    const generation = ++requestGenerationRef.current;
+    isCreatingSessionRef.current = true;
+    // Snapshot of the draft this Hub submit owns. A newer one typed after returning
+    // to Hub must survive both settle paths below. Launcher and recipe launches do
+    // not own the Hub draft, so they must not clear it.
+    const draftAtSubmit = fromHub ? draftRef?.current : undefined;
 
-          window.dispatchEvent(
-            new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-              detail: {
-                sessionId: newSession.id,
-                initialMessage: sessionInitialMessage,
-                noAutoSubmit,
-              },
-            })
-          );
+    (async () => {
+      const stale = () => requestGenerationRef.current !== generation;
+      try {
+        const sessionWorkingDir = await getEffectiveWorkingDir(requestedWorkingDir);
+        if (stale()) return;
 
-          setSearchParams((prev) => {
+        const sessionOptions =
+          routeState.extensionConfigs !== undefined
+            ? { extensionConfigs: routeState.extensionConfigs }
+            : { allExtensions: extensionsList };
+
+        const newSession = await createSession(sessionWorkingDir, {
+          recipeDeeplink: recipeDeeplinkFromConfig,
+          recipeId: recipeIdFromConfig,
+          ...sessionOptions,
+        });
+        if (stale()) return;
+
+        if (fromHub && draftRef && draftRef.current === draftAtSubmit) {
+          draftRef.current = '';
+          takeHubSubmit(draftRef);
+        }
+        const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
+
+        window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+            detail: {
+              sessionId: newSession.id,
+              initialMessage: sessionInitialMessage,
+              noAutoSubmit,
+            },
+          })
+        );
+
+        setSearchParams(
+          (prev) => {
             prev.set('resumeSessionId', newSession.id);
             return prev;
-          });
-        } catch (error) {
-          if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) {
-            navigate('/');
-            return;
-          }
-          if (isRecipeParameterScopesUnsupported(error)) {
-            toast.error(error.message);
-            navigate('/');
-            return;
-          }
-          console.error('Failed to create session:', error);
-          trackErrorWithContext(error, {
-            component: 'PairRouteWrapper',
-            action: 'create_session',
-            recoverable: true,
-          });
-        } finally {
+          },
+          { replace: true, state: location.state }
+        );
+      } catch (error) {
+        if (stale()) return;
+        if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) {
+          navigate('/');
+          return;
+        }
+        if (isRecipeParameterScopesUnsupported(error)) {
+          toast.error(error.message);
+          navigate('/');
+          return;
+        }
+        console.error('Failed to create session:', error);
+        trackErrorWithContext(error, {
+          component: 'PairRouteWrapper',
+          action: 'create_session',
+          recoverable: true,
+        });
+        toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
+        navigate('/');
+      } finally {
+        if (!stale()) {
           isCreatingSessionRef.current = false;
         }
-      })();
-    }
+      }
+    })();
+
+    return () => {
+      if (requestGenerationRef.current === generation) {
+        requestGenerationRef.current += 1;
+      }
+      isCreatingSessionRef.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    isPendingSession,
     initialMessage,
     recipeDeeplinkFromConfig,
     recipeIdFromConfig,
     resumeSessionId,
     setSearchParams,
     extensionsList,
+    requestedWorkingDir,
+    draftRef,
   ]);
 
   // Add resumed session to active sessions if not already there
@@ -189,6 +245,10 @@ export const PairRouteWrapper = ({
       );
     }
   }, [resumeSessionId, activeSessions, initialMessage, noAutoSubmit]);
+
+  if (isPendingSession) {
+    return <PendingChatView initialMessage={initialMessage} />;
+  }
 
   return null;
 };
@@ -659,6 +719,7 @@ export function AppInner() {
                   <PairRouteWrapper
                     activeSessions={activeSessions}
                     setActiveSessions={setActiveSessions}
+                    draftRef={hubDraftRef}
                   />
                 }
               />
