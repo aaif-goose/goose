@@ -10,10 +10,10 @@ use tracing_futures::Instrument;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_extended_pre_hooks, leased_working_dir, pending_tool_requests, request_was_advertised,
-    tool_span, ToolDisposition,
+    leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
 };
 use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
+use crate::agents::state_machine::pre_tool_hook::emit_pre_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -94,37 +94,38 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                 ToolDisposition::Execute => {
                     match request.tool_call.as_ref() {
                         Ok(tool_call) => {
-                            let tool_input = tool_call
-                                .arguments
-                                .as_ref()
-                                .map(|arguments| serde_json::Value::Object(arguments.clone()));
-                            emit_extended_pre_hooks(
-                                &self.hook_manager,
-                                &tool_call.name,
-                                tool_input.as_ref(),
-                                session,
-                            )
-                            .instrument(span.clone())
-                            .await;
-                            span.record("error.type", "tool_not_available");
-                            let output = Ok(CallToolResult::error(vec![ContentBlock::text(
-                                format!("Tool '{}' is not available.", tool_call.name),
-                            )]));
-                            let tool_response = ToolResponse {
-                                id: request.id.clone(),
-                                tool_result: output.clone(),
-                                metadata: request.metadata.clone(),
-                            };
-                            emit_post_tool_hooks(
+                            let working_dir = leased_working_dir(&self.extension_lease, session);
+                            if let Some(denied) = emit_pre_tool_hooks(
                                 &self.hook_manager,
                                 &session.id,
-                                &leased_working_dir(&self.extension_lease, session),
+                                &working_dir,
                                 &request,
-                                &tool_response,
                             )
                             .instrument(span.clone())
-                            .await;
-                            (output, true)
+                            .await
+                            {
+                                (Ok(denied), false)
+                            } else {
+                                span.record("error.type", "tool_not_available");
+                                let output = Ok(CallToolResult::error(vec![ContentBlock::text(
+                                    format!("Tool '{}' is not available.", tool_call.name),
+                                )]));
+                                let tool_response = ToolResponse {
+                                    id: request.id.clone(),
+                                    tool_result: output.clone(),
+                                    metadata: request.metadata.clone(),
+                                };
+                                emit_post_tool_hooks(
+                                    &self.hook_manager,
+                                    &session.id,
+                                    &working_dir,
+                                    &request,
+                                    &tool_response,
+                                )
+                                .instrument(span.clone())
+                                .await;
+                                (output, true)
+                            }
                         }
                         Err(error) => (
                             Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -154,8 +155,10 @@ mod tests {
     use super::*;
     use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
     use crate::agents::state_machine::tests::hooks_lifecycle::{
-        HookTestEnv, RECORD_AND_ALLOW_SCRIPT,
+        HookTestEnv, LOG_AND_BLOCK_SCRIPT, RECORD_AND_ALLOW_SCRIPT,
     };
+    use crate::agents::state_machine::ConversationEffect;
+    use crate::conversation::message::MessageContent;
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
     use tokio::sync::mpsc;
@@ -214,6 +217,41 @@ mod tests {
         let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
         run(&chat, messages(), env.hook_manager()).await?;
         assert!(env.payloads().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_pre_tool_hook_denial_answers_the_call_with_the_hook_reason() -> Result<()> {
+        let messages = vec![
+            Message::user().with_text("go"),
+            executable_calls(&[("missing", "missing_tool")]),
+        ];
+        let env = HookTestEnv::new("PreToolUse", LOG_AND_BLOCK_SCRIPT);
+
+        let OperationResult::Applied(step) =
+            run(&Session::default(), messages, env.hook_manager()).await?
+        else {
+            panic!("expected the call to be answered");
+        };
+        let [GooseEffect::Conversation(ConversationEffect::AppendMessage(message))] =
+            step.effects.as_slice()
+        else {
+            panic!("expected one response message");
+        };
+        let MessageContent::ToolResponse(response) = &message.content[0] else {
+            panic!("expected a tool response");
+        };
+        let result = response.tool_result.as_ref().unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("not done yet"));
+        assert!(response
+            .metadata
+            .as_ref()
+            .is_none_or(|metadata| !metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
         Ok(())
     }
 

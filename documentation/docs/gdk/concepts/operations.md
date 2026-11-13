@@ -159,7 +159,6 @@ your application.
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | `FinalOutputOperation`        | Offer the structured final output tool to the model and collect the answer.                       |
 | `ToolApprovalOperation`       | Inspect pending tool requests and record whether they can execute or need approval.               |
-| `PreToolCallHookOperation`    | Let configured pre-tool hooks allow or block each approved tool call before it runs.              |
 | `ToolExecutionOperation`      | Execute eligible extension tool calls, including tool hooks and streamed output.                  |
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |
 | `SkillOperation`              | Discover and load skills, contribute their context, and handle skill commands.                    |

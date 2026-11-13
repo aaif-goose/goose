@@ -17,6 +17,7 @@ use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
 use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
+use crate::agents::state_machine::pre_tool_hook::emit_pre_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -362,6 +363,22 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
+                    if let Some(denied) = emit_pre_tool_hooks(
+                        &self.hook_manager,
+                        &session.id,
+                        &session.working_dir,
+                        &request,
+                    )
+                    .instrument(span.clone())
+                    .await
+                    {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(denied),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    }
                     let result = {
                         let _entered = span.enter();
                         execute_skill(&session.working_dir, tool_call.arguments.clone())

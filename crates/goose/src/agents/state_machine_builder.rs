@@ -15,11 +15,10 @@ use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
     EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation, GooseEffect,
     GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner,
-    Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnhandledToolCallsOperation,
+    Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -126,10 +125,6 @@ pub(crate) fn build_state_machine(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(
-            hook_manager.clone(),
-            Arc::clone(&extension_lease),
-        )),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             hook_manager.clone(),

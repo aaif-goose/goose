@@ -15,8 +15,8 @@ use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
 use crate::agents::state_machine::post_tool_hook::emit_post_tool_hooks;
+use crate::agents::state_machine::pre_tool_hook::emit_pre_tool_hooks;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -176,37 +176,6 @@ pub(super) async fn emit_with_matcher(
     hook_manager.emit(event, context).await;
 }
 
-pub(super) async fn emit_extended_pre_hooks(
-    hook_manager: &HookManager,
-    tool_name: &str,
-    tool_input: Option<&serde_json::Value>,
-    session: &Session,
-) {
-    let (event, matcher) = match categorize_tool(tool_name) {
-        ToolCategory::Shell => (
-            HookEvent::BeforeShellExecution,
-            tool_input.and_then(|input| string_argument(input, &["command"])),
-        ),
-        ToolCategory::Read => (
-            HookEvent::BeforeReadFile,
-            tool_input.and_then(|input| string_argument(input, &["path", "file", "file_path"])),
-        ),
-        ToolCategory::Write | ToolCategory::Other => return,
-    };
-    if let Some(matcher) = matcher {
-        emit_with_matcher(
-            hook_manager,
-            event,
-            &session.id,
-            &session.working_dir,
-            matcher,
-            tool_name,
-            tool_input.cloned(),
-        )
-        .await;
-    }
-}
-
 #[derive(Default)]
 struct ToolBatch {
     actions: Vec<Message>,
@@ -233,7 +202,7 @@ impl ToolBatch {
     }
 }
 
-fn recording_result(
+fn with_hooks_and_recording(
     batch: &Arc<StdMutex<ToolBatch>>,
     result: ToolCallResult,
     span: tracing::Span,
@@ -247,6 +216,16 @@ fn recording_result(
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
     let future = async move {
+        if let Some(denied) =
+            emit_pre_tool_hooks(&hook_manager, &session_id, &working_dir, &request).await
+        {
+            let denied = Ok(denied);
+            batch
+                .lock()
+                .unwrap()
+                .record(&tool_call_id, denied.clone(), metadata.as_ref());
+            return denied;
+        }
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
         batch
@@ -417,18 +396,6 @@ impl ToolExecutionOperation {
         let result_span = span.clone();
 
         async {
-            let tool_input = tool_call
-                .arguments
-                .as_ref()
-                .map(|arguments| serde_json::Value::Object(arguments.clone()));
-            emit_extended_pre_hooks(
-                &self.hook_manager,
-                &tool_call.name,
-                tool_input.as_ref(),
-                session,
-            )
-            .await;
-
             let result = if self.defers_tools(&lease) && tool_call.name == ENABLE_TOOLS {
                 ToolCallResult::from(Ok(self.enable_tools(&lease, &tool_call).await))
             } else {
@@ -452,7 +419,7 @@ impl ToolExecutionOperation {
             let result = self
                 .extension_manager
                 .applying_mutation(result, &session.id);
-            recording_result(
+            with_hooks_and_recording(
                 &self.batch,
                 result,
                 result_span,
@@ -730,43 +697,6 @@ pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest
                 .iter()
                 .any(|tool| tool.as_str() == Some(tool_call.name.as_ref()))
         })
-}
-
-pub(super) fn approval_expired(
-    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
-    messages: &[Message],
-    request: &ToolRequest,
-) -> bool {
-    if extension_lease
-        .lock()
-        .expect("extension lease unavailable")
-        .is_some()
-    {
-        return false;
-    }
-    match request
-        .tool_call
-        .as_ref()
-        .map(|tool_call| tool_call.name.as_ref())
-    {
-        Ok(LOAD_SKILL_TOOL_NAME) => true,
-        _ => {
-            let pending = pending_advertised_tool_requests(messages);
-            !requests_can_resolve_a_lease(
-                messages,
-                pending
-                    .iter()
-                    .filter(|(request, disposition)| {
-                        *disposition == ToolDisposition::Execute
-                            && !request
-                                .tool_call
-                                .as_ref()
-                                .is_ok_and(|tool_call| tool_call.name == LOAD_SKILL_TOOL_NAME)
-                    })
-                    .map(|(request, _)| request),
-            )
-        }
-    }
 }
 
 fn requests_can_resolve_a_lease<'a>(

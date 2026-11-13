@@ -324,7 +324,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<serde_json::Result<Vec<_>>>()?;
-    assert_eq!(hook_payloads.len(), 1);
+    assert_eq!(hook_payloads.len(), 2);
     assert!(hook_payloads.iter().all(|payload| {
         payload["working_dir"].as_str() == Some(temp_dir.path().to_string_lossy().as_ref())
     }));

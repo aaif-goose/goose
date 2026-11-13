@@ -1,25 +1,14 @@
 use anyhow::Result;
-use goose_agent::tool_call_state::EXECUTABLE_KEY;
-use rmcp::model::{Annotations, CallToolRequestParams, CallToolResult, Role, TextContent};
-use serde_json::{json, Value};
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
+use rmcp::model::{Annotations, Role, TextContent};
+use serde_json::Value;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
-use crate::agents::state_machine::{
-    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, PreToolCallHookOperation,
-};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
-use crate::conversation::message::{
-    Message, MessageContent, SystemNotificationType, TOOL_META_EXTERNAL_DISPATCH_KEY,
-};
-use crate::conversation::Conversation;
-use crate::hooks::HookManager;
-use crate::session::Session;
+use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 
 pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
@@ -78,7 +67,7 @@ impl HookTestEnv {
 }
 
 const LOG_AND_ALLOW_SCRIPT: &str = "#!/bin/sh\necho ran >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
-const LOG_AND_BLOCK_SCRIPT: &str =
+pub(in crate::agents::state_machine) const LOG_AND_BLOCK_SCRIPT: &str =
     "#!/bin/sh\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
 const LOG_CONTEXT_AND_BLOCK_SCRIPT: &str = "#!/bin/sh\ncat > \"$PLUGIN_ROOT/context.json\"\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
 pub(in crate::agents::state_machine) const RECORD_AND_ALLOW_SCRIPT: &str =
@@ -900,51 +889,6 @@ async fn load_skill_denied_by_hook_does_not_execute() -> Result<()> {
 }
 
 #[tokio::test]
-async fn unadvertised_unknown_tool_skips_pre_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn unadvertised_unknown_tool_skips_post_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn unadvertised_inactive_final_output_skips_hooks() -> Result<()> {
     let env = RecordingHookEnv::new(&[(
         "PostToolUseFailure",
@@ -1372,87 +1316,6 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
     assert!(
         tool_error.ends_with(HOOK_FAILURE_REFUSAL),
         "expected the shared refusal, got {tool_error}"
-    );
-    Ok(())
-}
-
-async fn allowed_ids(calls: &[(&str, Value)], answered: &[&str]) -> Result<Option<Vec<String>>> {
-    let reply = calls
-        .iter()
-        .fold(Message::assistant(), |message, (id, meta)| {
-            message.with_tool_request_with_metadata(
-                *id,
-                Ok(CallToolRequestParams::new("shell")),
-                None,
-                Some(meta.clone()),
-            )
-        });
-    let mut messages = vec![Message::user().with_text("go"), reply];
-    if !answered.is_empty() {
-        messages.push(answered.iter().fold(Message::user(), |message, id| {
-            message.with_tool_response(*id, Ok(CallToolResult::success(vec![])))
-        }));
-    }
-    let conversation = Conversation::new_unvalidated(messages);
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, CancellationToken::new());
-    let result = PreToolCallHookOperation::new(HookManager::default(), Default::default())
-        .run(&Session::default(), &conversation, &emit)
-        .await?;
-    let OperationResult::Applied(step) = result else {
-        return Ok(None);
-    };
-    Ok(Some(
-        step.effects
-            .into_iter()
-            .map(|effect| match effect {
-                GooseEffect::Conversation(ConversationEffect::PatchToolRequestMeta {
-                    tool_call_id,
-                    patch,
-                }) => {
-                    assert_eq!(patch, json!({ "goose.pre_hook_allowed": true }));
-                    tool_call_id
-                }
-                _ => panic!("expected a pre-hook allowed patch"),
-            })
-            .collect(),
-    ))
-}
-
-#[tokio::test]
-async fn pre_tool_hook_allows_one_call_per_pass_and_skips_calls_that_cannot_run_or_were_already_allowed(
-) -> Result<()> {
-    let ready = json!({ EXECUTABLE_KEY: true });
-    let allowed = json!({ EXECUTABLE_KEY: true, "goose.pre_hook_allowed": true });
-
-    assert_eq!(
-        allowed_ids(&[("first", ready.clone()), ("second", ready.clone())], &[]).await?,
-        Some(vec!["first".to_string()])
-    );
-    assert_eq!(
-        allowed_ids(
-            &[("first", allowed.clone()), ("second", ready.clone())],
-            &[]
-        )
-        .await?,
-        Some(vec!["second".to_string()])
-    );
-    assert_eq!(
-        allowed_ids(
-            &[
-                ("allowed", allowed),
-                ("unchecked", json!({})),
-                ("awaiting", json!({ EXECUTABLE_KEY: false })),
-                (
-                    "external",
-                    json!({ EXECUTABLE_KEY: true, TOOL_META_EXTERNAL_DISPATCH_KEY: true }),
-                ),
-                ("answered", ready),
-            ],
-            &["answered"],
-        )
-        .await?,
-        None
     );
     Ok(())
 }
