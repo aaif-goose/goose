@@ -1400,7 +1400,13 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         crate::session::CliSession::parse_stdio_extension(&extension_command)?
     };
     match &mut extension {
-        ExtensionConfig::Stdio { name, .. } | ExtensionConfig::StreamableHttp { name, .. } => {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name, ..
+        })
+        | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            name,
+            ..
+        }) => {
             *name = "probe".to_string();
         }
         _ => unreachable!("MCP probe only creates stdio or streamable HTTP extensions"),

@@ -860,7 +860,11 @@ impl ExtensionManager {
                 !(provider_runs_tool_loop
                     && matches!(
                         config,
-                        ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
+                        ExtensionConfig::External(
+                            goose_agent::extension::ExtensionConfig::Stdio { .. }
+                        ) | ExtensionConfig::External(
+                            goose_agent::extension::ExtensionConfig::StreamableHttp { .. }
+                        )
                     ))
             })
             .collect();
@@ -878,7 +882,10 @@ impl ExtensionManager {
     ) -> ExtensionResult<Option<Extension>> {
         let resolved_config = config.clone().resolve(Config::global()).await?;
         let client_working_dir = match &resolved_config {
-            ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                cwd: Some(cwd),
+                ..
+            }) => PathBuf::from(cwd),
             _ => placement
                 .map(|placement| placement.working_dir.clone())
                 .unwrap_or_default(),
@@ -897,18 +904,20 @@ impl ExtensionManager {
         };
 
         let mcp_client: Box<dyn McpClientTrait> = match &resolved_config {
-            ExtensionConfig::StreamableHttp {
-                uri,
-                timeout,
-                headers,
-                name,
-                envs,
-                socket,
-                client_id,
-                client_secret_key,
-                scopes,
-                ..
-            } => {
+            ExtensionConfig::External(
+                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                    uri,
+                    timeout,
+                    headers,
+                    name,
+                    envs,
+                    socket,
+                    client_id,
+                    client_secret_key,
+                    scopes,
+                    ..
+                },
+            ) => {
                 let static_oauth_client = streamable_http::resolve_static_oauth_client(
                     client_id.as_deref(),
                     client_secret_key.as_deref(),
@@ -946,13 +955,13 @@ impl ExtensionManager {
             ExtensionConfig::Platform { name, .. } => {
                 builtin::connect(name, container, ctx(None, client_working_dir)).await?
             }
-            ExtensionConfig::Stdio {
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
                 cmd,
                 args,
                 envs,
                 timeout,
                 ..
-            } => {
+            }) => {
                 let mut envs = envs.get_env();
                 envs.insert("AGENT_SESSION_ID".to_string(), session_id.to_string());
                 Box::new(

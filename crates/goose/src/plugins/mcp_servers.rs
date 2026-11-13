@@ -146,7 +146,7 @@ fn server_to_extension_config(
             .map(|(key, value)| (key, expand_plugin_root(&value, &root))),
     );
 
-    ExtensionConfig::Stdio {
+    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
         name: format!("{plugin_name}:{server_name}"),
         description: DEFAULT_EXTENSION_DESCRIPTION.to_string(),
         cmd: expand_plugin_root(&server.command, &root),
@@ -161,7 +161,7 @@ fn server_to_extension_config(
         cwd: server.cwd.map(|cwd| expand_plugin_root(&cwd, &root)),
         bundled: Some(false),
         available_tools: Vec::new(),
-    }
+    })
 }
 
 fn expand_plugin_root(value: &str, plugin_root: &str) -> String {
@@ -220,14 +220,14 @@ mod tests {
 
         let configs = plugin_mcp_servers("test-plugin", plugin.path()).unwrap();
         assert_eq!(configs.len(), 1);
-        let ExtensionConfig::Stdio {
+        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name,
             cmd,
             args,
             envs,
             cwd,
             ..
-        } = &configs[0]
+        }) = &configs[0]
         else {
             panic!("expected stdio config");
         };

@@ -1482,6 +1482,12 @@ pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
     parse_yaml_content(&init_content)
 }
 
+impl crate::agents::extension_config::ExtensionConfigResolver for Config {
+    fn get_secret(&self, key: &str) -> anyhow::Result<String> {
+        Ok(self.get_secret::<String>(key)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

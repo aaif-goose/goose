@@ -64,9 +64,12 @@ fn disambiguate_stdio_extension_names(
         if !renameable.contains(&idx) || counts.get(&config.key()).copied().unwrap_or(0) < 2 {
             continue;
         }
-        let ExtensionConfig::Stdio {
-            name, cmd, args, ..
-        } = config
+        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name,
+            cmd,
+            args,
+            ..
+        }) = config
         else {
             continue;
         };

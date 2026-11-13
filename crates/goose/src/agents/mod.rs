@@ -3,6 +3,7 @@ pub mod container;
 pub mod context_report;
 pub mod execute_commands;
 pub mod extension;
+pub mod extension_config;
 pub mod extension_malware_check;
 pub mod extension_manager;
 pub mod final_output_tool;
