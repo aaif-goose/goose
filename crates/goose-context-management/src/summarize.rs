@@ -12,6 +12,9 @@ use crate::structured::StructuredSummary;
 use crate::templates::{render, Templates};
 
 const REMOVAL_PERCENTAGES: [u32; 5] = [0, 10, 20, 50, 100];
+// Claude refuses some compactions intermittently, so the same request often
+// succeeds when sent again.
+const REFUSAL_RETRIES: usize = 2;
 
 const SUMMARIZE_REQUEST_TEXT: &str =
     "Please summarize the conversation history provided in the system prompt.";
@@ -130,6 +133,7 @@ pub async fn summarize(
     let request = vec![Message::user().with_text(SUMMARIZE_REQUEST_TEXT)];
     let has_tool_responses = messages.iter().any(has_tool_response);
 
+    let mut refusal_retries = REFUSAL_RETRIES;
     for (attempt, &remove_percent) in REMOVAL_PERCENTAGES.iter().enumerate() {
         let filtered = filter_tool_responses(messages, remove_percent);
         let context = SummarizeContext {
@@ -141,7 +145,14 @@ pub async fn summarize(
         };
         let system_prompt = render(&templates.compaction, &context)?;
 
-        match model.complete(&system_prompt, &request).await {
+        let mut result = model.complete(&system_prompt, &request).await;
+        while refusal_retries > 0 && matches!(result, Err(ProviderError::Refusal { .. })) {
+            refusal_retries -= 1;
+            warn!("Compaction request was refused, retrying");
+            result = model.complete(&system_prompt, &request).await;
+        }
+
+        match result {
             Ok((mut response, mut usage)) => {
                 response.role = Role::User;
 
@@ -218,6 +229,69 @@ mod tests {
                 "Prompt exceeds context limit".to_string(),
             ))
         }
+    }
+
+    struct RefusingModel {
+        refusals: usize,
+        request_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl CompactionModel for RefusingModel {
+        async fn complete(
+            &self,
+            _system: &str,
+            _messages: &[Message],
+        ) -> Result<(Message, ProviderUsage), ProviderError> {
+            if self.request_count.fetch_add(1, Ordering::Relaxed) < self.refusals {
+                return Err(ProviderError::Refusal {
+                    details: "duplicating model outputs".to_string(),
+                    category: None,
+                });
+            }
+            Ok((
+                Message::assistant().with_text("summary"),
+                ProviderUsage::new("model".to_string(), Default::default()),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn summarize_retries_refusals() {
+        let model = RefusingModel {
+            refusals: REFUSAL_RETRIES,
+            request_count: AtomicUsize::new(0),
+        };
+        let messages = vec![Message::user().with_text("long session")];
+
+        let summary = summarize(&model, None, &Templates::default(), &messages)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            model.request_count.load(Ordering::Relaxed),
+            REFUSAL_RETRIES + 1
+        );
+        assert_eq!(summary.message.as_concat_text(), "summary");
+    }
+
+    #[tokio::test]
+    async fn summarize_gives_up_after_refusal_retries() {
+        let model = RefusingModel {
+            refusals: usize::MAX,
+            request_count: AtomicUsize::new(0),
+        };
+        let messages = vec![Message::user().with_text("long session")];
+
+        let error = summarize(&model, None, &Templates::default(), &messages)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            model.request_count.load(Ordering::Relaxed),
+            REFUSAL_RETRIES + 1
+        );
+        assert!(error.to_string().starts_with("Provider refused request"));
     }
 
     #[tokio::test]
