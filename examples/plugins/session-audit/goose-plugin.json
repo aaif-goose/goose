@@ -1,0 +1,34 @@
+{
+  "id": "session-audit",
+  "name": "Session Audit",
+  "version": "0.1.0",
+  "description": "Logs tool calls and session events to an audit trail file",
+  "engines": { "goose": ">=1.0.0" },
+  "binary": "session-audit",
+  "mcp": { "tools": true, "resources": false, "prompts": false },
+  "provides": ["audit.v1"],
+  "config": {
+    "log_file": {
+      "type": "string",
+      "description": "Path to the audit log file",
+      "default": "~/.goose/audit.log"
+    },
+    "log_level": {
+      "type": "string",
+      "description": "Log verbosity: minimal, standard, verbose",
+      "default": "standard"
+    }
+  },
+  "events": {
+    "SessionStart": [
+      { "command": "sh $PLUGIN_ROOT/hooks/session-event.sh SessionStart" }
+    ],
+    "SessionEnd": [
+      { "command": "sh $PLUGIN_ROOT/hooks/session-event.sh SessionEnd" }
+    ],
+    "PostToolUse": [
+      { "command": "sh $PLUGIN_ROOT/hooks/session-event.sh PostToolUse" }
+    ]
+  },
+  "permissions": []
+}

@@ -1,3 +1,4 @@
+pub mod client_extension;
 pub mod configure;
 pub mod doctor;
 pub mod gateway;

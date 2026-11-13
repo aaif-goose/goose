@@ -1,0 +1,21 @@
+{
+  "id": "github-tools",
+  "name": "GitHub Tools",
+  "version": "0.1.0",
+  "description": "Real GitHub operations: list PRs, post comments, check CI status",
+  "engines": { "goose": ">=1.54.0" },
+  "binary": "github-tools",
+  "mcp": { "tools": true },
+  "provides": ["github.v1"],
+  "config": {
+    "token": {
+      "type": "string",
+      "description": "GitHub personal access token"
+    },
+    "default_owner": {
+      "type": "string",
+      "description": "Default GitHub owner/org (e.g. aaif-goose)"
+    }
+  },
+  "permissions": ["net:fetch"]
+}

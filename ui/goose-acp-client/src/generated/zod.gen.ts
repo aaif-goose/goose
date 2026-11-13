@@ -1172,6 +1172,98 @@ export const zDefaultsSaveRequest_unstable = z.object({
  */
 export const zDefaultsClearRequest_unstable = z.record(z.string(), z.unknown());
 
+export const zClientExtensionsListRequest_unstable = z.record(z.string(), z.unknown());
+
+export const zClientExtensionSourceKind = z.enum(['installed', 'dev']);
+
+export const zClientExtensionInfo = z.object({
+    id: z.string(),
+    version: z.string(),
+    directory: z.string(),
+    source: zClientExtensionSourceKind,
+    enabled: z.boolean(),
+    manifest: z.unknown()
+});
+
+export const zClientExtensionsListResponse_unstable = z.object({
+    installDir: z.string(),
+    extensions: z.array(zClientExtensionInfo)
+});
+
+export const zClientExtensionsInstallRequest_unstable = z.object({
+    sourcePath: z.string()
+});
+
+export const zClientExtensionsInstallResponse_unstable = z.object({
+    installedId: z.string(),
+    installDir: z.string(),
+    extensions: z.array(zClientExtensionInfo)
+});
+
+export const zClientExtensionsSetEnabledRequest_unstable = z.object({
+    id: z.string(),
+    enabled: z.boolean()
+});
+
+export const zClientExtensionsUninstallRequest_unstable = z.object({
+    id: z.string()
+});
+
+export const zClientExtensionsReadMainRequest_unstable = z.object({
+    id: z.string()
+});
+
+export const zClientExtensionsReadMainResponse_unstable = z.object({
+    html: z.string()
+});
+
+export const zClientExtensionsStorageGetRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string()
+});
+
+export const zClientExtensionsStorageGetResponse_unstable = z.object({
+    value: z.unknown().optional()
+});
+
+export const zClientExtensionsStorageSetRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string(),
+    value: z.unknown()
+});
+
+export const zClientExtensionsStorageDeleteRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string()
+});
+
+export const zClientExtensionsStorageDeleteResponse_unstable = z.object({
+    existed: z.boolean()
+});
+
+export const zClientExtensionsStorageKeysRequest_unstable = z.object({
+    extensionId: z.string()
+});
+
+export const zClientExtensionsStorageKeysResponse_unstable = z.object({
+    keys: z.array(z.string())
+});
+
+export const zClientExtensionsNetFetchRequest_unstable = z.object({
+    extensionId: z.string(),
+    url: z.string(),
+    method: z.string().nullish(),
+    headers: z.record(z.string(), z.string()).nullish(),
+    body: z.string().nullish()
+});
+
+export const zClientExtensionsNetFetchResponse_unstable = z.object({
+    ok: z.boolean(),
+    status: z.int().gte(0).lte(65535),
+    headers: z.record(z.string(), z.string()).optional().default({}),
+    text: z.string()
+});
+
 /**
  * Sources that onboarding knows how to discover and import.
  */
@@ -2416,6 +2508,16 @@ export const zExtRequest = z.object({
             zDefaultsReadRequest_unstable,
             zDefaultsSaveRequest_unstable,
             zDefaultsClearRequest_unstable,
+            zClientExtensionsListRequest_unstable,
+            zClientExtensionsInstallRequest_unstable,
+            zClientExtensionsSetEnabledRequest_unstable,
+            zClientExtensionsUninstallRequest_unstable,
+            zClientExtensionsReadMainRequest_unstable,
+            zClientExtensionsStorageGetRequest_unstable,
+            zClientExtensionsStorageSetRequest_unstable,
+            zClientExtensionsStorageDeleteRequest_unstable,
+            zClientExtensionsStorageKeysRequest_unstable,
+            zClientExtensionsNetFetchRequest_unstable,
             zOnboardingImportScanRequest_unstable,
             zOnboardingImportApplyRequest_unstable,
             zExportSessionRequest_unstable,
@@ -2521,6 +2623,13 @@ export const zExtResponse = z.union([
                 zConfigReadResponse_unstable,
                 zConfigReadAllResponse_unstable,
                 zDefaultsReadResponse_unstable,
+                zClientExtensionsListResponse_unstable,
+                zClientExtensionsInstallResponse_unstable,
+                zClientExtensionsReadMainResponse_unstable,
+                zClientExtensionsStorageGetResponse_unstable,
+                zClientExtensionsStorageDeleteResponse_unstable,
+                zClientExtensionsStorageKeysResponse_unstable,
+                zClientExtensionsNetFetchResponse_unstable,
                 zOnboardingImportScanResponse_unstable,
                 zOnboardingImportApplyResponse_unstable,
                 zExportSessionResponse_unstable,

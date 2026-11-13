@@ -66,6 +66,7 @@ import {
   readSelectedRecipe,
 } from './desktopFileAccess';
 import { getWindowIconFilename } from './utils/windowIcon';
+import { findDevClientExtensionsDir } from './main/clientExtensionsDevDir';
 
 const windowIconPath = path.join(__dirname, '../images', getWindowIconFilename(process.platform));
 
@@ -1168,6 +1169,7 @@ const createChat = async (
         tls: true,
         env: {
           GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
+          GOOSE_CLIENT_EXTENSIONS_DEV_DIR: findDevClientExtensionsDir(app.isPackaged),
         },
         loginShellPath,
         isPackaged: app.isPackaged,

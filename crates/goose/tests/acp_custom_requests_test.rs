@@ -20,6 +20,8 @@ use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use common_tests::fixtures::OpenAiFixture;
 
@@ -981,6 +983,243 @@ fn test_custom_defaults_save_allows_unlisted_model() {
                 "modelId": "custom-unlisted-model",
             })
         );
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_client_extensions_lifecycle() {
+    let scratch = tempfile::tempdir().unwrap();
+    let source = scratch.path().join("demo-ext");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("client-extension.json"),
+        r#"{"id":"demo-ext","version":"0.1.0","main":"index.html","permissions":["sessions:read"]}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join("index.html"), "<html>demo</html>").unwrap();
+    let source_path = source.to_str().unwrap().to_string();
+    let missing_dev_dir = scratch.path().join("no-dev-extensions");
+    let _env = env_lock::lock_env([(
+        "GOOSE_CLIENT_EXTENSIONS_DEV_DIR",
+        Some(missing_dev_dir.to_str().unwrap()),
+    )]);
+    let config_dir = write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    let install_dir = goose::config::paths::Paths::in_agents_home_dir("client-extensions")
+        .display()
+        .to_string();
+
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: config_dir,
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
+        let listed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/list",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("list should succeed");
+        assert_eq!(listed["installDir"], install_dir);
+        assert_eq!(listed["extensions"], serde_json::json!([]));
+
+        let installed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/install",
+            serde_json::json!({ "sourcePath": source_path }),
+        )
+        .await
+        .expect("install should succeed");
+        assert_eq!(installed["installedId"], "demo-ext");
+        assert_eq!(installed["extensions"][0]["source"], "installed");
+        assert_eq!(installed["extensions"][0]["enabled"], true);
+        assert_eq!(
+            installed["extensions"][0]["manifest"]["permissions"][0],
+            "sessions:read"
+        );
+
+        let main = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/read_main",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect("read_main should succeed for an enabled extension");
+        assert_eq!(main["html"], "<html>demo</html>");
+
+        let disabled = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/set_enabled",
+            serde_json::json!({ "id": "demo-ext", "enabled": false }),
+        )
+        .await
+        .expect("disable should succeed");
+        assert_eq!(disabled["extensions"][0]["enabled"], false);
+
+        let error = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/read_main",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect_err("read_main should be rejected for a disabled extension");
+        assert_eq!(error.code, agent_client_protocol::ErrorCode::InvalidParams);
+        assert!(error.to_string().contains("disabled"));
+
+        let removed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/uninstall",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect("uninstall should succeed");
+        assert_eq!(removed["extensions"], serde_json::json!([]));
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_client_extensions_storage_and_net_fetch() {
+    let scratch = tempfile::tempdir().unwrap();
+    let source = scratch.path().join("demo-ext");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("index.html"), "<html>demo</html>").unwrap();
+    let source_path = source.to_str().unwrap().to_string();
+    let missing_dev_dir = scratch.path().join("no-dev-extensions");
+    let _env = env_lock::lock_env([(
+        "GOOSE_CLIENT_EXTENSIONS_DEV_DIR",
+        Some(missing_dev_dir.to_str().unwrap()),
+    )]);
+    let config_dir = write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+
+    run_test(async move {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("pong"))
+            .mount(&mock_server)
+            .await;
+
+        std::fs::write(
+            source.join("client-extension.json"),
+            serde_json::json!({
+                "id": "demo-ext",
+                "version": "0.1.0",
+                "main": "index.html",
+                "network": [mock_server.uri()],
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: config_dir,
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
+        send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/install",
+            serde_json::json!({ "sourcePath": source_path }),
+        )
+        .await
+        .expect("install should succeed");
+
+        let empty = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/get",
+            serde_json::json!({ "extensionId": "demo-ext", "key": "theme" }),
+        )
+        .await
+        .expect("get should succeed on an empty store");
+        assert_eq!(empty["value"], serde_json::Value::Null);
+
+        send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/set",
+            serde_json::json!({ "extensionId": "demo-ext", "key": "theme", "value": "dark" }),
+        )
+        .await
+        .expect("set should succeed");
+
+        let stored = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/get",
+            serde_json::json!({ "extensionId": "demo-ext", "key": "theme" }),
+        )
+        .await
+        .expect("get should return the stored value");
+        assert_eq!(stored["value"], "dark");
+
+        let keys = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/keys",
+            serde_json::json!({ "extensionId": "demo-ext" }),
+        )
+        .await
+        .expect("keys should succeed");
+        assert_eq!(keys["keys"], serde_json::json!(["theme"]));
+
+        let deleted = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/delete",
+            serde_json::json!({ "extensionId": "demo-ext", "key": "theme" }),
+        )
+        .await
+        .expect("delete should succeed");
+        assert_eq!(deleted["existed"], true);
+
+        let fetched = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/net/fetch",
+            serde_json::json!({
+                "extensionId": "demo-ext",
+                "url": format!("{}/ping", mock_server.uri()),
+            }),
+        )
+        .await
+        .expect("fetch to an allow-listed origin should succeed");
+        assert_eq!(fetched["ok"], true);
+        assert_eq!(fetched["status"], 200);
+        assert_eq!(fetched["text"], "pong");
+
+        let blocked = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/net/fetch",
+            serde_json::json!({
+                "extensionId": "demo-ext",
+                "url": "http://127.0.0.1:1/not-allowed",
+            }),
+        )
+        .await
+        .expect_err("fetch to a non-allow-listed origin should be rejected");
+        assert_eq!(
+            blocked.code,
+            agent_client_protocol::ErrorCode::InvalidParams
+        );
+        assert!(blocked.to_string().contains("has not allow-listed origin"));
+
+        send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/uninstall",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect("uninstall should succeed");
+
+        let cleared = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/storage/keys",
+            serde_json::json!({ "extensionId": "demo-ext" }),
+        )
+        .await
+        .expect("keys should succeed even after uninstall");
+        assert_eq!(cleared["keys"], serde_json::json!([]));
     });
 }
 

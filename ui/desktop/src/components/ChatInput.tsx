@@ -43,6 +43,7 @@ import type { NextChatExtensionDraft } from '../utils/nextChatExtensions';
 import { LiveVoiceButton } from './LiveVoiceButton';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
 import { isLiveVoiceActive, type LiveVoiceController } from '../liveVoice/useLiveVoice';
+import { ClientExtensionChatActions } from '../clientExtensions/ClientExtensionChatActions';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -708,6 +709,13 @@ export default function ChatInput({
   }, []);
 
   const maxHeight = 10 * 24;
+
+
+  const handleExtensionSetInput = useCallback((text: string) => {
+    setDisplayValue(text);
+    setValue(text);
+  }, []);
+
 
   const minTextareaHeight = 38;
 
@@ -1754,6 +1762,11 @@ export default function ChatInput({
                 <TooltipContent>Generate diagnostics bundle</TooltipContent>
               </Tooltip>
             )}
+
+            <ClientExtensionChatActions
+              sessionId={sessionId}
+              onSetInput={handleExtensionSetInput}
+            />
 
             {/* Right: attach */}
             <Tooltip>

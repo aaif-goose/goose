@@ -16,11 +16,19 @@ use goose_mcp::mcp_server_runner::{serve, McpCommand};
 #[cfg(feature = "bundled-mcp")]
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
+use crate::commands::client_extension::{
+    handle_client_extension_disable, handle_client_extension_enable,
+    handle_client_extension_install, handle_client_extension_list,
+    handle_client_extension_uninstall,
+};
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::{configure_provider_dialog, handle_configure};
 use crate::commands::info::handle_info;
-use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
+use crate::commands::plugin::{
+    handle_plugin_config, handle_plugin_disable, handle_plugin_enable, handle_plugin_install,
+    handle_plugin_list, handle_plugin_uninstall, handle_plugin_update,
+};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
 #[cfg(feature = "roaming")]
 use crate::commands::roam::{handle_roam_command, RoamCommand};
@@ -708,6 +716,41 @@ enum GatewayCommand {
 }
 
 #[derive(Subcommand)]
+enum ClientExtensionCommand {
+    /// Install a client extension from a local directory
+    #[command(about = "Install a client extension from a local directory")]
+    Install {
+        #[arg(help = "Path to a directory containing client-extension.json")]
+        path: PathBuf,
+    },
+
+    /// List installed client extensions
+    #[command(about = "List installed client extensions")]
+    List,
+
+    /// Enable a client extension
+    #[command(about = "Enable a client extension")]
+    Enable {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+
+    /// Disable a client extension
+    #[command(about = "Disable a client extension")]
+    Disable {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+
+    /// Uninstall a client extension from the install directory
+    #[command(about = "Uninstall a client extension from the install directory")]
+    Uninstall {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum PluginCommand {
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
@@ -726,6 +769,44 @@ enum PluginCommand {
     #[command(about = "Update an installed git-backed plugin")]
     Update {
         #[arg(help = "Name of the installed plugin to update")]
+        name: String,
+    },
+
+    /// List all installed plugins
+    #[command(about = "List all installed plugins")]
+    List {},
+
+    /// Get or set a plugin configuration value
+    #[command(about = "Get or set a plugin config value")]
+    Config {
+        #[arg(help = "Plugin name")]
+        name: String,
+        #[arg(help = "Config key")]
+        key: Option<String>,
+        #[arg(help = "Config value to set")]
+        value: Option<String>,
+        #[arg(long, help = "Store value as a secret in the system keyring")]
+        secret: bool,
+    },
+
+    /// Enable an installed plugin
+    #[command(about = "Enable an installed plugin")]
+    Enable {
+        #[arg(help = "Plugin name")]
+        name: String,
+    },
+
+    /// Disable an installed plugin without uninstalling it
+    #[command(about = "Disable an installed plugin")]
+    Disable {
+        #[arg(help = "Plugin name")]
+        name: String,
+    },
+
+    /// Uninstall a plugin
+    #[command(about = "Uninstall a plugin")]
+    Uninstall {
+        #[arg(help = "Name of the installed plugin to remove")]
         name: String,
     },
 }
@@ -1025,6 +1106,17 @@ enum Command {
         command: PluginCommand,
     },
 
+    /// Manage client extensions for goose Desktop
+    #[command(
+        name = "client-extension",
+        about = "Manage client extensions for goose Desktop",
+        visible_alias = "client-ext"
+    )]
+    ClientExtension {
+        #[command(subcommand)]
+        command: ClientExtensionCommand,
+    },
+
     /// Manage scheduled jobs
     #[cfg(feature = "scheduler")]
     #[command(about = "Manage scheduled jobs", visible_alias = "sched")]
@@ -1317,6 +1409,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Recipe { .. }) => "recipe",
         Some(Command::Skills { .. }) => "skills",
         Some(Command::Plugin { .. }) => "plugin",
+        Some(Command::ClientExtension { .. }) => "client-extension",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
@@ -1752,8 +1845,12 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
     let secret_key = env_secret.unwrap_or_else(generate_serve_secret_key);
+    std::env::set_var("GOOSE_ACP_URL", format!("http://{}:{}", host, port));
+    std::env::set_var("GOOSE_PLUGIN_TOKEN", &secret_key);
     if let Err(error) = server.start_scheduler().await {
-        warn!("Scheduler failed to start; scheduled jobs will not run until a client connects: {error}");
+        warn!(
+            "Scheduler failed to start; scheduled jobs will not run until a client connects: {error}"
+        );
     }
     #[cfg(feature = "roaming")]
     let roam_share = if roam {
@@ -2318,6 +2415,26 @@ fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
         PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
         PluginCommand::Update { name } => handle_plugin_update(&name),
+        PluginCommand::Uninstall { name } => handle_plugin_uninstall(&name),
+        PluginCommand::List {} => handle_plugin_list(),
+        PluginCommand::Config {
+            name,
+            key,
+            value,
+            secret,
+        } => handle_plugin_config(&name, key.as_deref(), value.as_deref(), secret),
+        PluginCommand::Enable { name } => handle_plugin_enable(&name),
+        PluginCommand::Disable { name } => handle_plugin_disable(&name),
+    }
+}
+
+fn handle_client_extension_subcommand(command: ClientExtensionCommand) -> Result<()> {
+    match command {
+        ClientExtensionCommand::Install { path } => handle_client_extension_install(path),
+        ClientExtensionCommand::List => handle_client_extension_list(),
+        ClientExtensionCommand::Enable { id } => handle_client_extension_enable(&id),
+        ClientExtensionCommand::Disable { id } => handle_client_extension_disable(&id),
+        ClientExtensionCommand::Uninstall { id } => handle_client_extension_uninstall(&id),
     }
 }
 
@@ -2850,6 +2967,7 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
         Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
         Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
+        Some(Command::ClientExtension { command }) => handle_client_extension_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,

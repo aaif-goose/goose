@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>hello-chat-action</title>
+  </head>
+  <body>
+    <script>
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'grc/action') {
+          return;
+        }
+
+        const reply = (payload) => {
+          if (event.source) {
+            event.source.postMessage(payload, '*');
+          }
+        };
+
+        if (data.actionId === 'hello') {
+          reply({
+            type: 'grc/ui/showMessage',
+            text: 'Hello from an installed GRC client extension.',
+          });
+          return;
+        }
+
+        if (data.actionId === 'fill-input') {
+          reply({
+            type: 'grc/chat/setInput',
+            text: 'Text inserted by hello-chat-action extension',
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -470,6 +470,86 @@ impl AcpConnection {
         self.on_defaults_clear(req).await
     }
 
+    #[custom_method(ClientExtensionsListRequest)]
+    async fn dispatch_client_extensions_list(
+        &self,
+        req: ClientExtensionsListRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_list(req).await
+    }
+
+    #[custom_method(ClientExtensionsInstallRequest)]
+    async fn dispatch_client_extensions_install(
+        &self,
+        req: ClientExtensionsInstallRequest,
+    ) -> Result<ClientExtensionsInstallResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_install(req).await
+    }
+
+    #[custom_method(ClientExtensionsSetEnabledRequest)]
+    async fn dispatch_client_extensions_set_enabled(
+        &self,
+        req: ClientExtensionsSetEnabledRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_set_enabled(req).await
+    }
+
+    #[custom_method(ClientExtensionsUninstallRequest)]
+    async fn dispatch_client_extensions_uninstall(
+        &self,
+        req: ClientExtensionsUninstallRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_uninstall(req).await
+    }
+
+    #[custom_method(ClientExtensionsReadMainRequest)]
+    async fn dispatch_client_extensions_read_main(
+        &self,
+        req: ClientExtensionsReadMainRequest,
+    ) -> Result<ClientExtensionsReadMainResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_read_main(req).await
+    }
+
+    #[custom_method(ClientExtensionsStorageGetRequest)]
+    async fn dispatch_client_extensions_storage_get(
+        &self,
+        req: ClientExtensionsStorageGetRequest,
+    ) -> Result<ClientExtensionsStorageGetResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_storage_get(req).await
+    }
+
+    #[custom_method(ClientExtensionsStorageSetRequest)]
+    async fn dispatch_client_extensions_storage_set(
+        &self,
+        req: ClientExtensionsStorageSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_storage_set(req).await
+    }
+
+    #[custom_method(ClientExtensionsStorageDeleteRequest)]
+    async fn dispatch_client_extensions_storage_delete(
+        &self,
+        req: ClientExtensionsStorageDeleteRequest,
+    ) -> Result<ClientExtensionsStorageDeleteResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_storage_delete(req).await
+    }
+
+    #[custom_method(ClientExtensionsStorageKeysRequest)]
+    async fn dispatch_client_extensions_storage_keys(
+        &self,
+        req: ClientExtensionsStorageKeysRequest,
+    ) -> Result<ClientExtensionsStorageKeysResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_storage_keys(req).await
+    }
+
+    #[custom_method(ClientExtensionsNetFetchRequest)]
+    async fn dispatch_client_extensions_net_fetch(
+        &self,
+        req: ClientExtensionsNetFetchRequest,
+    ) -> Result<ClientExtensionsNetFetchResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_net_fetch(req).await
+    }
+
     #[custom_method(OnboardingImportScanRequest)]
     async fn dispatch_onboarding_import_scan(
         &self,
