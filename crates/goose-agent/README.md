@@ -98,6 +98,14 @@ predicates they need: `messages_since_kickoff`, `last_effective_role`,
 remember that it already did something, it records that on the message itself via
 `Operation::set_message_meta` / `message_meta` rather than in memory.
 
+## Error boundary
+
+`exit_on_error::ExitOnErrorOperation` yields when the conversation ends in an
+error. Its position divides operations that may inspect or recover from an error
+from operations that should only run without one. Put error recovery before it;
+operations after it will not see a trailing error. For example, put compaction
+before the boundary if it should recover from context-length errors.
+
 ## Turn limits
 
 `max_turns::MaxTurnsOperation::new(limit)` limits autonomous turns using the persisted conversation. Place it after tool execution, pending approvals, and normal completion, before inference. It counts consecutive assistant-message blocks since the latest kickoff; provider retries and history transformations can affect how closely that approximates inference calls. A new user prompt resets the budget, and a zero limit yields immediately. A completed assistant answer is preserved even at the limit.
