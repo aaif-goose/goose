@@ -1,19 +1,19 @@
 //! Retries empty provider responses before exposing the failure.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use rmcp::model::Role;
 
-use crate::inference::is_empty_response_marker;
-use crate::operation::{
-    applied, not_applicable, ConversationEffect, Emitter, Operation, OperationResult,
-};
+use crate::inference::{ends_with_successful_tool_response, is_empty_response};
+use crate::operation::{applied, not_applicable, Emitter, Operation, OperationResult};
 
 const MAX_RETRIES: usize = 3;
 const RETRY_MESSAGE: &str = "The model returned an empty response. Try again.";
+pub const EMPTY_RESPONSE_MESSAGE: &str =
+    "The model returned an empty response. Please resend your message to continue.";
 
 pub struct EmptyResponseOperation;
 
@@ -22,7 +22,7 @@ pub struct EmptyResponseOperation;
 impl<S, E> Operation<S, E> for EmptyResponseOperation
 where
     S: MaybeSend + MaybeSync + 'static,
-    E: From<Message> + From<ConversationEffect> + MaybeSend + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         "empty_response"
@@ -35,48 +35,34 @@ where
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let messages = conversation.messages();
-        let Some(fallback) = messages.last().filter(|message| {
-            is_empty_response_marker(message)
-                && message.is_user_visible()
-                && !message.is_agent_visible()
-        }) else {
+        if !messages
+            .last()
+            .is_some_and(|message| message.role == Role::Assistant && is_empty_response(message))
+        {
             return not_applicable();
-        };
-        let message_id = fallback
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Persisted empty-response fallback has no id"))?;
+        }
+        if ends_with_successful_tool_response(&messages[..messages.len() - 1]) {
+            return not_applicable();
+        }
+
         let empty_responses = messages
             .iter()
             .rev()
             .take_while(|message| {
-                is_empty_response_marker(message)
+                (message.role == Role::Assistant && is_empty_response(message))
                     || (message.role == Role::User && message.as_concat_text() == RETRY_MESSAGE)
             })
-            .filter(|message| is_empty_response_marker(message))
+            .filter(|message| message.role == Role::Assistant && is_empty_response(message))
             .count();
 
         if empty_responses <= MAX_RETRIES {
-            return applied([
-                ConversationEffect::SetMessageVisibility {
-                    message_id,
-                    user_visible: false,
-                    agent_visible: false,
-                }
-                .into(),
-                Message::user()
-                    .with_text(RETRY_MESSAGE)
-                    .with_visibility(false, true)
-                    .into(),
-            ]);
+            let retry = Message::user()
+                .with_text(RETRY_MESSAGE)
+                .with_visibility(false, true);
+            return applied([retry.into()]);
         }
 
-        emit.message(fallback.clone().with_visibility(true, true));
-        applied([ConversationEffect::SetMessageVisibility {
-            message_id,
-            user_visible: true,
-            agent_visible: true,
-        }
-        .into()])
+        let fallback = emit.message(Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE));
+        applied([fallback.into()])
     }
 }

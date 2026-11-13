@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::empty_response::EmptyResponseOperation;
-use goose_agent::inference::{is_empty_response_marker, InferenceEffect, InferenceRunner};
+use goose_agent::empty_response::{EmptyResponseOperation, EMPTY_RESPONSE_MESSAGE};
+use goose_agent::inference::{InferenceEffect, InferenceRunner};
 use goose_agent::machine::{MachineSession, StateMachine, Step};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
+use goose_agent::operation::{Emitter, MachineEffect, RunStatus};
 use goose_provider_types::base::{MessageStream, Provider};
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::token_usage::ProviderUsage;
@@ -29,26 +29,20 @@ impl MachineSession for Session {
 }
 
 enum Effect {
-    Conversation(ConversationEffect),
+    Message(Message),
     Usage,
 }
 
 impl From<Message> for Effect {
     fn from(message: Message) -> Self {
-        ConversationEffect::from(message).into()
-    }
-}
-
-impl From<ConversationEffect> for Effect {
-    fn from(effect: ConversationEffect) -> Self {
-        Self::Conversation(effect)
+        Self::Message(message)
     }
 }
 
 impl MachineEffect for Effect {
     fn ensure_message_ids(&mut self) {
-        if let Self::Conversation(effect) = self {
-            effect.ensure_message_ids();
+        if let Self::Message(message) = self {
+            message.id.get_or_insert_with(|| "test-message".to_string());
         }
     }
 }
@@ -102,26 +96,8 @@ impl Provider for ScriptedProvider {
 
 fn apply(session: &mut Session, effects: Vec<Effect>) {
     for effect in effects {
-        let Effect::Conversation(effect) = effect else {
-            continue;
-        };
-        match effect {
-            ConversationEffect::AppendMessage(message) => session.0.push(message),
-            ConversationEffect::SetMessageVisibility {
-                message_id,
-                user_visible,
-                agent_visible,
-            } => {
-                let message = session
-                    .0
-                    .messages_mut()
-                    .iter_mut()
-                    .find(|message| message.id.as_deref() == Some(&message_id))
-                    .unwrap();
-                message.metadata.user_visible = user_visible;
-                message.metadata.agent_visible = agent_visible;
-            }
-            _ => panic!("unexpected effect"),
+        if let Effect::Message(message) = effect {
+            session.0.push(message);
         }
     }
 }
@@ -162,10 +138,9 @@ async fn empty_response_ends_a_pipeline_without_recovery() -> Result<()> {
     let (session, provider) = run([None], false).await?;
 
     assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
-    let fallback = session.0.last().unwrap();
-    assert!(is_empty_response_marker(fallback));
-    assert!(fallback.is_user_visible());
-    assert!(!fallback.is_agent_visible());
+    let empty = session.0.last().unwrap();
+    assert_eq!(empty.role, rmcp::model::Role::Assistant);
+    assert!(empty.content.is_empty());
     Ok(())
 }
 
@@ -173,27 +148,31 @@ async fn empty_response_ends_a_pipeline_without_recovery() -> Result<()> {
 async fn recovery_retries_three_times_and_can_finish_early() -> Result<()> {
     let (exhausted, provider) = run([None, None, None, None], true).await?;
     assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
-    let markers = exhausted
+    let empty_responses = exhausted
         .0
         .iter()
-        .filter(|message| is_empty_response_marker(message))
-        .collect::<Vec<_>>();
-    assert_eq!(markers.len(), 4);
+        .filter(|message| {
+            message.role == rmcp::model::Role::Assistant && message.content.is_empty()
+        })
+        .count();
+    assert_eq!(empty_responses, 4);
     assert_eq!(
-        markers
-            .iter()
-            .filter(|message| message.is_user_visible())
-            .count(),
-        1
+        exhausted.0.last().unwrap().as_concat_text(),
+        EMPTY_RESPONSE_MESSAGE
     );
 
     let (recovered, provider) = run([None, None, Some("done")], true).await?;
     assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
     assert_eq!(recovered.0.last().unwrap().as_concat_text(), "done");
-    assert!(!recovered
-        .0
-        .iter()
-        .filter(|message| is_empty_response_marker(message))
-        .any(Message::is_user_visible));
+    assert_eq!(
+        recovered
+            .0
+            .iter()
+            .filter(|message| {
+                message.role == rmcp::model::Role::Assistant && message.content.is_empty()
+            })
+            .count(),
+        2
+    );
     Ok(())
 }

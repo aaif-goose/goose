@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::inference::is_empty_response_marker;
 use rmcp::model::{ErrorCode, ErrorData, Role, Tool};
 use tracing_futures::Instrument;
 
@@ -14,8 +13,8 @@ use crate::agents::final_output_tool::{
 use crate::agents::state_machine::ops_recipe::command_error;
 use crate::agents::state_machine::ops_toolcalling::{request_was_advertised, tool_span};
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult,
+    applied, ends_turn, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
+    OperationResult,
 };
 use crate::conversation::message::{Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
@@ -188,30 +187,11 @@ impl Operation<Session, GooseEffect> for FinalOutputOperation {
         }
 
         if ends_turn(messages) {
-            let mut effects = Vec::new();
-            if let Some(fallback) = messages
-                .last()
-                .filter(|message| is_empty_response_marker(message) && message.is_user_visible())
-            {
-                let message_id = fallback
-                    .id
-                    .clone()
-                    .ok_or_else(|| anyhow!("Persisted empty-response fallback has no id"))?;
-                effects.push(
-                    ConversationEffect::SetMessageVisibility {
-                        message_id,
-                        user_visible: false,
-                        agent_visible: false,
-                    }
-                    .into(),
-                );
-            }
             let message = Message::user()
                 .with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE)
                 .agent_only();
             let message = emit.message(message);
-            effects.push(message.into());
-            return applied(effects);
+            return applied([message.into()]);
         }
 
         not_applicable()

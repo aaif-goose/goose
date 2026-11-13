@@ -73,18 +73,6 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-pub const EMPTY_RESPONSE_MESSAGE: &str =
-    "The model returned an empty response. Please resend your message to continue.";
-const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
-const EMPTY_RESPONSE_NOTE: &str = "empty_response";
-
-pub fn is_empty_response_marker(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
-        .is_some()
-}
-
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
         content,
@@ -172,7 +160,7 @@ pub fn chat_span(
     span
 }
 
-fn is_empty_response(message: &Message) -> bool {
+pub(crate) fn is_empty_response(message: &Message) -> bool {
     message.content.iter().all(|content| match content {
         MessageContent::Text(text) => text.text.trim().is_empty(),
         MessageContent::Thinking(thinking) => {
@@ -325,9 +313,6 @@ fn ends_with_provider_turn(messages: &[Message]) -> bool {
 }
 
 fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
-    if turn.last().is_some_and(is_empty_response_marker) {
-        return false;
-    }
     let projected = messages_for_provider(conversation, turn, true);
     if projected
         .last()
@@ -578,16 +563,9 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             };
             if empty_output && !successful_tool_response && !emit.cancel_token().is_cancelled() {
                 self.output().accumulator.clear();
-                let mut marker = Message::assistant()
-                    .with_text(EMPTY_RESPONSE_MESSAGE)
-                    .with_visibility(true, false);
-                attach_operation_logs(&mut marker, &mut operation_logs);
-                marker.metadata.set_operation_note(
-                    EMPTY_RESPONSE_NOTE_SCOPE,
-                    EMPTY_RESPONSE_NOTE,
-                    serde_json::Value::Bool(true),
-                );
-                self.output().accumulator.push(marker);
+                let mut message = Message::assistant();
+                attach_operation_logs(&mut message, &mut operation_logs);
+                self.output().accumulator.push(message);
                 return applied(self.take_output());
             }
 
