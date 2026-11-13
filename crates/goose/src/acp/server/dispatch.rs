@@ -124,9 +124,13 @@ impl HandleDispatchFrom<Client> for AcpConnectionHandler {
                 .if_request(
                     |req: PromptRequest, responder: Responder<PromptResponse>| async {
                         let connection = connection.clone();
+                        let run = match connection.reserve_prompt_run(&req.session_id.0).await {
+                            Ok(run) => run,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
                         let cx_clone = cx.clone();
                         cx.spawn(async move {
-                            match connection.on_prompt(&cx_clone, req).await {
+                            match connection.on_prompt(&cx_clone, req, run).await {
                                 Ok(response) => {
                                     responder.respond(response)?;
                                 }

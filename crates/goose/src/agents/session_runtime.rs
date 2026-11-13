@@ -100,6 +100,7 @@ impl SessionRuntime {
         let connections = attachments.entry(session_id.to_string()).or_default();
         connections.shift_remove(&connection);
         connections.insert(connection, attachment);
+        self.runs.attach_prompt_run(session_id, connection);
     }
 
     pub fn is_attached(&self, session_id: &str, connection: u64) -> bool {
@@ -172,6 +173,21 @@ impl SessionRuntime {
             .remove(session_id);
     }
 
+    pub(super) fn admit_release(&self, session_id: &str, closing_connection: Option<u64>) -> bool {
+        let mut queues = self.steer_queues.lock().expect("session runtime poisoned");
+        if !self.runs.cancel_for_release(session_id, closing_connection) {
+            return false;
+        }
+        queues.remove(session_id);
+        true
+    }
+
+    pub(super) fn admit_forced_release(&self, session_id: &str) {
+        let mut queues = self.steer_queues.lock().expect("session runtime poisoned");
+        self.runs.cancel_agent_run(session_id);
+        queues.remove(session_id);
+    }
+
     /// Whether an eviction candidate must stay: touched again since it was chosen, or busy
     /// (then it goes back to the resident set).
     pub(super) fn keep_resident(&self, session_id: &str) -> bool {
@@ -193,7 +209,7 @@ impl SessionRuntime {
         self.confirmations.has_active_turn(session_id) || self.runs.is_active(session_id)
     }
 
-    /// Drops everything kept for the session and cancels its run.
+    /// Drops everything kept for the session after its release was admitted.
     pub(super) fn forget(&self, session_id: &str) {
         self.resident
             .lock()
@@ -203,9 +219,7 @@ impl SessionRuntime {
             .lock()
             .expect("session runtime poisoned")
             .remove(session_id);
-        self.discard_pending_steers(session_id);
         self.confirmations.release(session_id);
-        self.runs.cancel_agent_run(session_id);
     }
 }
 

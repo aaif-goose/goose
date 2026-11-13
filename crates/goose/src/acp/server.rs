@@ -112,6 +112,8 @@ mod list_sessions;
 mod live_voice;
 mod load_session;
 mod local_inference;
+#[cfg(test)]
+mod prompt_tests;
 pub use crate::live_voice::LiveVoiceService;
 mod manage_sessions;
 mod message_meta;
@@ -1882,6 +1884,43 @@ impl AcpConnection {
         Ok(())
     }
 
+    async fn reserve_prompt_run(
+        &self,
+        session_id: &str,
+    ) -> Result<ActiveRunDropGuard, agent_client_protocol::Error> {
+        let run = ActiveRunDropGuard {
+            services: Arc::clone(&self.services),
+            session_id: session_id.to_string(),
+            run_id: format!("run_{}", Uuid::new_v4()),
+            cancel_token: CancellationToken::new(),
+        };
+        self.services
+            .reserve_prompt_run(
+                session_id,
+                self.connection_id,
+                run.run_id.clone(),
+                run.cancel_token.clone(),
+            )
+            .map_err(|error| match error {
+                StartRunError::AgentRunExists { run_id } => {
+                    let message = format!(
+                        "session already has active run `{run_id}`; use _goose/unstable/session/steer"
+                    );
+                    agent_client_protocol::Error::invalid_params().data(message)
+                }
+                StartRunError::LiveVoiceInteractionExists => agent_client_protocol::Error::invalid_params()
+                    .data("session already has an active Live run"),
+                StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
+            })?;
+        if self.closed_session_ids.lock().await.contains(session_id) {
+            return Err(agent_client_protocol::Error::resource_not_found(Some(
+                session_id.to_string(),
+            ))
+            .data(format!("Session not found: {}", session_id)));
+        }
+        Ok(run)
+    }
+
     async fn clear_active_run(&self, session_id: &str, run_id: &str) {
         if self.runs().remove_agent_run(session_id, run_id) {
             self.services.discard_pending_steers(session_id);
@@ -2236,31 +2275,35 @@ impl AcpConnection {
         &self,
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
+        run: ActiveRunDropGuard,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
-        // The ACP session_id IS the thread ID.
         let session_id = args.session_id.0.to_string();
-
-        let run_id = format!("run_{}", Uuid::new_v4());
-        let cancel_token = CancellationToken::new();
-
-        self.open_session(&session_id).await?;
-        self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
-            .await?;
-
-        // Frees the run if this future is dropped mid-prompt (e.g. the roaming
-        // connection carrying it is revoked or lost); a normal completion's
-        // explicit clear wins and makes the guard's cleanup a no-op.
-        let _run_guard = ActiveRunDropGuard {
-            services: Arc::clone(&self.services),
-            session_id: session_id.clone(),
-            run_id: run_id.clone(),
-            cancel_token: cancel_token.clone(),
-        };
+        let run_id = run.run_id.clone();
+        let cancel_token = run.cancel_token.clone();
 
         if cancel_token.is_cancelled() {
             self.clear_active_run(&session_id, &run_id).await;
             Self::send_active_run_update(cx, &args.session_id, None)?;
             return Ok(PromptResponse::new(StopReason::Cancelled));
+        }
+
+        if let Err(error) = self.open_session(&session_id).await {
+            self.clear_active_run(&session_id, &run_id).await;
+            return Err(error);
+        }
+
+        if cancel_token.is_cancelled() {
+            self.clear_active_run(&session_id, &run_id).await;
+            Self::send_active_run_update(cx, &args.session_id, None)?;
+            return Ok(PromptResponse::new(StopReason::Cancelled));
+        }
+
+        if self.closed_session_ids.lock().await.contains(&session_id) {
+            self.clear_active_run(&session_id, &run_id).await;
+            return Err(
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {}", session_id)),
+            );
         }
 
         if let Err(error) = Self::send_active_run_update(cx, &args.session_id, Some(&run_id)) {

@@ -455,7 +455,7 @@ impl StateMachineServices {
     }
 
     /// Closes the session for one connection; the session is released when that was the
-    /// last one. Returns whether it was.
+    /// last one and no other connection has a pending prompt. Returns whether it was released.
     pub async fn detach_session(&self, session_id: &str, connection: u64) -> bool {
         let _lifetime = self.runtime.lock_lifetime(session_id).await;
         match self.runtime.detach(session_id, connection) {
@@ -465,8 +465,12 @@ impl StateMachineServices {
                 false
             }
             None => {
-                self.release(session_id).await;
-                true
+                if self.runtime.admit_release(session_id, Some(connection)) {
+                    self.release_resources(session_id).await;
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -504,6 +508,18 @@ impl StateMachineServices {
         Ok(())
     }
 
+    pub(crate) fn reserve_prompt_run(
+        &self,
+        session_id: &str,
+        connection: u64,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> std::result::Result<(), super::active_run::StartRunError> {
+        self.runtime
+            .runs
+            .reserve_prompt_run(session_id, connection, run_id, cancel_token)
+    }
+
     pub async fn touch_session(&self, session_id: &str) {
         let evicted = {
             let _lifetime = self.runtime.lock_lifetime(session_id).await;
@@ -539,7 +555,8 @@ impl StateMachineServices {
     /// their next request.
     pub async fn release_session(&self, session_id: &str) {
         let _lifetime = self.runtime.lock_lifetime(session_id).await;
-        self.release(session_id).await;
+        self.runtime.admit_forced_release(session_id);
+        self.release_resources(session_id).await;
     }
 
     /// Releases the session unless a connection has it open.
@@ -551,6 +568,12 @@ impl StateMachineServices {
     }
 
     async fn release(&self, session_id: &str) {
+        if self.runtime.admit_release(session_id, None) {
+            self.release_resources(session_id).await;
+        }
+    }
+
+    async fn release_resources(&self, session_id: &str) {
         self.runtime.forget(session_id);
         self.session_manager
             .action_required()
@@ -1404,11 +1427,13 @@ mod tests {
         use goose_test_support::mcp::McpFixtureServer;
         use rmcp::ServiceExt;
         use tokio::sync::Barrier;
+        use tokio_util::sync::CancellationToken;
 
         use crate::agents::extension::ExtensionConfig;
         use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
         use crate::config::permission::PermissionManager;
         use crate::config::GooseMode;
+        use crate::conversation::message::Message;
         use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
 
         fn test_services(temp_dir: &TempDir, max_sessions: usize) -> Arc<StateMachineServices> {
@@ -1533,6 +1558,88 @@ mod tests {
                 client,
                 session_names: None,
             }
+        }
+
+        #[tokio::test]
+        async fn release_cleanup_preserves_a_later_pending_prompt_and_steer() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            let _lifetime = services.runtime.lock_lifetime("s").await;
+            services
+                .steer("s", Message::user().with_text("discard previous input"))
+                .await;
+            assert!(services.runtime.admit_release("s", Some(1)));
+            let token = CancellationToken::new();
+            assert!(services
+                .reserve_prompt_run("s", 2, "pending".into(), token.clone())
+                .is_ok());
+            let duplicate =
+                services.reserve_prompt_run("s", 2, "duplicate".into(), CancellationToken::new());
+            let run_id = match duplicate {
+                Err(crate::agents::active_run::StartRunError::AgentRunExists { run_id }) => run_id,
+                _ => panic!("duplicate prompt did not disclose the pending run"),
+            };
+            assert_eq!(services.runtime.runs.agent_run_id("s"), Some(run_id));
+            services
+                .steer("s", Message::user().with_text("keep acknowledged input"))
+                .await;
+            services.runtime.forget("s");
+            assert!(!token.is_cancelled());
+            let turn_queue = services.runtime.steer_queue("s");
+            let mut queued = turn_queue.lock().await;
+            assert_eq!(queued.len(), 1);
+            assert_eq!(
+                queued.pop_front().unwrap().as_concat_text(),
+                "keep acknowledged input"
+            );
+            assert!(services.runtime.runs.remove_agent_run("s", "pending"));
+        }
+
+        #[tokio::test]
+        async fn close_and_explicit_release_discard_the_old_generations_steers() {
+            for explicit_release in [false, true] {
+                let temp_dir = TempDir::new().unwrap();
+                let services = test_services(&temp_dir, 100);
+                services.attach_session("s", 1, attachment("first")).await;
+                let token = CancellationToken::new();
+                assert!(services
+                    .reserve_prompt_run("s", 1, "old".into(), token.clone())
+                    .is_ok());
+                services
+                    .steer("s", Message::user().with_text("discard old generation"))
+                    .await;
+                if explicit_release {
+                    services.release_session("s").await;
+                } else {
+                    assert!(services.detach_session("s", 1).await);
+                }
+                assert!(token.is_cancelled());
+                assert!(services.runtime.steer_queue("s").lock().await.is_empty());
+                assert!(services.runtime.runs.remove_agent_run("s", "old"));
+            }
+        }
+
+        #[tokio::test]
+        async fn deferred_release_preserves_the_pending_owners_steers() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services.attach_session("s", 1, attachment("first")).await;
+            let token = CancellationToken::new();
+            assert!(services
+                .reserve_prompt_run("s", 2, "pending".into(), token.clone())
+                .is_ok());
+            services
+                .steer("s", Message::user().with_text("keep pending generation"))
+                .await;
+            assert!(!services.detach_session("s", 1).await);
+            assert!(!token.is_cancelled());
+            let queue = services.runtime.steer_queue("s");
+            assert_eq!(
+                queue.lock().await.pop_front().unwrap().as_concat_text(),
+                "keep pending generation"
+            );
+            services.release_session("s").await;
+            assert!(services.runtime.runs.remove_agent_run("s", "pending"));
         }
 
         #[tokio::test]
