@@ -218,8 +218,8 @@ pub struct ShellOutput {
     /// Error reported by output collection after process exit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_collection_error: Option<String>,
-    /// Bytes dropped between the retained beginning and end of the output because
-    /// the capture limit was exceeded. Non-zero means `stdout` and `stderr` are fragments.
+    /// Bytes of output dropped because the capture limit was exceeded. Non-zero means
+    /// `stdout` and `stderr` are incomplete.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
     pub capture_dropped_bytes: usize,
@@ -988,8 +988,8 @@ fn truncation_notice(info: &TruncationInfo) -> String {
     };
     let saved = if info.is_fragment {
         format!(
-            "Captured fragment (beginning and end) saved to {path}; \
-             the dropped middle is unrecoverable."
+            "Captured portion saved to {path}; \
+             output beyond the capture limit was dropped and is unrecoverable."
         )
     } else {
         format!("Full output saved to {path}.")
@@ -1435,6 +1435,19 @@ mod tests {
 
         assert_eq!(buffer.dropped_stdout_bytes, 0);
         assert_eq!(buffer.head.len() + buffer.tail.len(), 6);
+    }
+
+    #[test]
+    fn fragment_notice_does_not_promise_any_part_of_the_output() {
+        let notice = truncation_notice(&TruncationInfo {
+            path: PathBuf::from("stdout-0"),
+            reason: "Output exceeded the limit.".to_string(),
+            is_fragment: true,
+        });
+
+        assert!(notice.contains("unrecoverable"));
+        assert!(!notice.contains("beginning"));
+        assert!(!notice.contains("Full output"));
     }
 
     #[test]
