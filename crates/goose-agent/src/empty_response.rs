@@ -1,5 +1,3 @@
-//! Retries empty provider responses before exposing the failure.
-
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::Message;
@@ -8,7 +6,9 @@ use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use rmcp::model::Role;
 
 use crate::inference::{ends_with_successful_tool_response, is_empty_response};
-use crate::operation::{applied, not_applicable, Emitter, Operation, OperationResult};
+use crate::operation::{
+    applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
+};
 
 const MAX_RETRIES: usize = 3;
 const RETRY_MESSAGE: &str = "The model returned an empty response. Try again.";
@@ -34,7 +34,7 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let messages = conversation.messages();
+        let messages = messages_since_kickoff(conversation)?;
         if !messages
             .last()
             .is_some_and(|message| message.role == Role::Assistant && is_empty_response(message))
@@ -50,7 +50,9 @@ where
             .rev()
             .take_while(|message| {
                 (message.role == Role::Assistant && is_empty_response(message))
-                    || (message.role == Role::User && message.as_concat_text() == RETRY_MESSAGE)
+                    || (message.role == Role::User
+                        && !message.is_user_visible()
+                        && !message.is_tool_response())
             })
             .filter(|message| message.role == Role::Assistant && is_empty_response(message))
             .count();

@@ -427,7 +427,7 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
 }
 
 #[tokio::test]
-async fn recipe_operations_can_handle_empty_responses_before_recovery() -> Result<()> {
+async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
     let shows_empty_fallback = |conversation: &crate::conversation::Conversation| {
         conversation.iter().any(|message| {
             message.is_user_visible() && message.as_concat_text().contains("empty response")
@@ -476,9 +476,9 @@ async fn recipe_operations_can_handle_empty_responses_before_recovery() -> Resul
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
     let calls_before = api.call_count();
-    let exhausted = pipeline.run(["check the work"]).await?;
-    assert_eq!(api.call_count() - calls_before, 4);
-    assert!(shows_empty_fallback(exhausted.conversation()));
+    let passed = pipeline.run(["check the work"]).await?;
+    assert_eq!(api.call_count() - calls_before, 1);
+    assert!(!shows_empty_fallback(passed.conversation()));
 
     let (pipeline, api) = test_pipeline().await?;
     api.on("never succeed").reply("");

@@ -8,8 +8,8 @@ use crate::agents::retry::{
     execute_on_failure_command_with_timeout, execute_success_checks_with_timeout,
 };
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect,
-    Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, ends_turn, messages_since_kickoff, not_applicable, yielded, yielded_with,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
@@ -238,6 +238,12 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             }
         };
         if success {
+            if messages
+                .last()
+                .is_some_and(|message| message.content.is_empty())
+            {
+                return yielded();
+            }
             return not_applicable();
         }
 
