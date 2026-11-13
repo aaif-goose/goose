@@ -125,6 +125,9 @@ export default function ModelsBottomBar({
   );
   const loadingModelLabel = intl.formatMessage(i18n.loadingModel);
   const triggerLabel = isModelLoading ? loadingModelLabel : displayModel;
+  const triggerProvider =
+    currentProvider && (currentModel || providerDefaultModel) ? currentProvider : null;
+  const triggerTitle = triggerProvider ? `${triggerProvider}/${triggerLabel}` : triggerLabel;
   const menuModelLabel = isModelLoading ? loadingModelLabel : displayModelName;
 
   useEffect(() => {
@@ -234,7 +237,19 @@ export default function ModelsBottomBar({
                 <span className="truncate">{triggerLabel}</span>
               </span>
             ) : (
-              <span className="truncate text-xs">{triggerLabel}</span>
+              <span className="flex min-w-0 text-xs" title={triggerTitle}>
+                {triggerProvider && (
+                  <>
+                    <bdi dir="auto" className="max-w-[50%] flex-shrink-0 truncate">
+                      {triggerProvider}
+                    </bdi>
+                    <span className="flex-shrink-0">/</span>
+                  </>
+                )}
+                <bdi dir="auto" className="min-w-0 truncate">
+                  {triggerLabel}
+                </bdi>
+              </span>
             )}
           </div>
         </DropdownMenuTrigger>
