@@ -197,6 +197,37 @@ export function useNavigationSessions() {
     };
   }, []);
 
+  useEffect(() => {
+    const streamStates = new Map<string, string>();
+    let refreshVersion = 0;
+
+    const handleStatusUpdate = (event: Event) => {
+      const { sessionId, streamState } = (
+        event as CustomEvent<{ sessionId: string; streamState: string }>
+      ).detail;
+      const previousStreamState = streamStates.get(sessionId);
+      streamStates.set(sessionId, streamState);
+
+      // A rename by another process, such as `goose session rename`, sends no
+      // notification, so reload the names when a turn ends or a session loads again.
+      const turnOrLoadFinished =
+        streamState === 'idle' &&
+        (previousStreamState === 'streaming' || previousStreamState === 'loading');
+      if (!turnOrLoadFinished) return;
+
+      const version = ++refreshVersion;
+      acpListRecentSessions(MAX_RECENT_SESSIONS)
+        .then((listed) => {
+          if (version !== refreshVersion) return;
+          setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
+        })
+        .catch((error) => console.error('Failed to refresh sessions:', error));
+    };
+
+    window.addEventListener(AppEvents.SESSION_STATUS_UPDATE, handleStatusUpdate);
+    return () => window.removeEventListener(AppEvents.SESSION_STATUS_UPDATE, handleStatusUpdate);
+  }, []);
+
   const handleNavClick = useCallback(
     (path: string) => {
       if (path === '/pair') {
