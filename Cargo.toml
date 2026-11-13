@@ -88,7 +88,7 @@ opentelemetry-http = { version = "0.32", default-features = false, features = ["
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "internal-logs", "logs", "metrics", "reqwest-client", "trace"] }
 opentelemetry-appender-tracing = { version = "0.32", default-features = false, features = ["experimental_span_attributes"] }
 opentelemetry-stdout = { version = "0.32", default-features = false, features = ["trace", "metrics", "logs"] }
-tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
+tracing-opentelemetry = { version = "0.34", default-features = false, features = ["metrics"] }
 
 rayon = { version = "1.10", default-features = false }
 tree-sitter = { version = "0.26", default-features = false, features = ["std"] }
