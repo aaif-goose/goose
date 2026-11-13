@@ -367,7 +367,7 @@ mod tests {
         // Fill up to one byte before the cap with "x\n" lines, then place a
         // two-byte character so the cap cuts it in half.
         let mut data = Vec::with_capacity(cap + 2);
-        while data.len() + 2 <= cap - 1 {
+        while data.len() + 2 < cap {
             data.extend_from_slice(b"x\n");
         }
         while data.len() < cap - 1 {
