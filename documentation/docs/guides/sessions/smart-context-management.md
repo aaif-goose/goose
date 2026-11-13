@@ -314,7 +314,7 @@ goose resolves context limits with the following precedence (highest to lowest):
 
 1. Global environment variable (`GOOSE_CONTEXT_LIMIT`)
 2. Explicit declarative or custom provider model configuration
-3. Provider runtime discovery
+3. Provider runtime discovery, when the provider's models endpoint reports a context window for the model
 4. Canonical model metadata
 5. Global default (128,000 tokens)
 
