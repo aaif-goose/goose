@@ -446,7 +446,7 @@ impl PlatformTools {
                 meta.insert("goose_extension".to_string(), entry.key.clone().into());
                 tool.meta = Some(MetaObject(meta));
                 let mut schema = (*tool.input_schema).clone();
-                if crate::agents::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                if goose_agent::tool_schema_normalize::normalize_input_schema(&mut schema) {
                     tool.input_schema = Arc::new(schema);
                 }
                 if names.insert(tool.name.to_string()) {

@@ -163,7 +163,7 @@ goose-context-management = { path = "../goose-context-management" }
 goose-providers = { path = "../goose-providers", default-features = false }
 goose-download-manager = { path = "../goose-download-manager" }
 goose-sdk-types = { path = "../goose-sdk-types" }
-goose-agent = { path = "../goose-agent" }
+goose-agent = { path = "../goose-agent", features = ["mcp-stdio", "mcp-http", "extension-malware-check"] }
 rand = { workspace = true }
 tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }
 urlencoding = { workspace = true }
@@ -283,6 +283,7 @@ insta = { version = "1", default-features = false }
 dtor = { version = "1.0.5", default-features = false, features = ["proc_macro"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"] }
+goose-agent = { version = "0.1.0-alpha.13", path = "../goose-agent", default-features = false, features = ["test-support"] }
 
 [[example]]
 name = "agent"

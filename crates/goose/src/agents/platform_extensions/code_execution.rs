@@ -371,7 +371,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _: &crate::agents::extension_runtime::tool_execution::ToolCallContext,
+            _: &goose_agent::tool_execution::ToolCallContext,
             _: &str,
             _: Option<JsonObject>,
             _: CancellationToken,
@@ -499,7 +499,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _ctx: &crate::agents::extension_runtime::tool_execution::ToolCallContext,
+            _ctx: &goose_agent::tool_execution::ToolCallContext,
             _name: &str,
             arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,

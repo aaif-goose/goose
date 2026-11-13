@@ -1,4 +1,4 @@
-pub use crate::agents::extension_runtime::{
+pub use goose_agent::extension_manager::{
     get_parameter_names, get_tool_owner, get_tool_resource_uri, is_tool_owned_by_extension,
     recover_mangled_tool_name, CallRequest, ClientContext, ExtensionLoadResult, ResourceItem,
 };
@@ -12,7 +12,7 @@ use crate::agents::extension_config::{
 };
 use crate::session::EnabledExtensionsState;
 
-pub use crate::agents::extension_runtime::ExtensionLease as McpLease;
+pub use goose_agent::extension_manager::ExtensionLease as McpLease;
 
 mod apps;
 mod builtin;
@@ -21,13 +21,13 @@ mod registration;
 pub use apps::TRUSTED_TOOL_UPDATE_META_KEY;
 mod mutation;
 use super::GoosePlatform;
-use crate::agents::mcp_client::{GooseMcpClientCapabilities, GooseMcpHostInfo};
+use goose_agent::mcp_client::{GooseMcpClientCapabilities, GooseMcpHostInfo};
 pub use mutation::ExtensionMutation;
 
 /// Wires the extension runtime to Goose's application services.
 #[derive(Clone)]
 pub struct ExtensionManager {
-    manager: Arc<crate::agents::extension_runtime::ExtensionManager>,
+    manager: Arc<goose_agent::extension_manager::ExtensionManager>,
     host: Arc<goose_host::GooseExtensionHost>,
 }
 
@@ -38,7 +38,7 @@ impl ExtensionManager {
     ) -> Self {
         let host = Arc::new(goose_host::GooseExtensionHost { session_manager });
         let manager = Arc::new(
-            crate::agents::extension_runtime::ExtensionManager::with_services(
+            goose_agent::extension_manager::ExtensionManager::with_services(
                 host.services(),
                 client,
             ),
@@ -54,7 +54,7 @@ impl ExtensionManager {
         container: Option<crate::agents::container::Container>,
     ) -> Result<ExtensionSet> {
         crate::agents::extension_config::check_unique_keys(&configs)?;
-        let runtime = crate::agents::extension_runtime::ExtensionSet::new(
+        let runtime = goose_agent::extension_manager::ExtensionSet::new(
             scope,
             cwd,
             configs
@@ -200,6 +200,6 @@ pub fn client_context(
 }
 
 pub struct ExtensionSet {
-    pub(crate) runtime: crate::agents::extension_runtime::ExtensionSet,
+    pub(crate) runtime: goose_agent::extension_manager::ExtensionSet,
     pub(crate) configs: Vec<ExtensionConfig>,
 }

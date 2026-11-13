@@ -1,10 +1,10 @@
 use super::goose_host::GooseExtensionHost;
 use crate::agents::container::Container;
 use crate::agents::extension_config::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_runtime::host::ExtensionEnvironment;
-use crate::agents::extension_runtime::{ConnectRequest, Connector, Registration};
-use crate::agents::mcp_client::McpClientTrait;
 use async_trait::async_trait;
+use goose_agent::extension_manager::host::ExtensionEnvironment;
+use goose_agent::extension_manager::{ConnectRequest, Connector, Registration};
+use goose_agent::mcp_client::McpClientTrait;
 use std::sync::Arc;
 
 pub(super) fn registration(
@@ -85,7 +85,7 @@ impl PartialEq for GoosePlacement {
     }
 }
 
-impl crate::agents::extension_runtime::StdioCommand for GoosePlacement {
+impl goose_agent::extension_manager::StdioCommand for GoosePlacement {
     fn command(
         &self,
         program: &str,

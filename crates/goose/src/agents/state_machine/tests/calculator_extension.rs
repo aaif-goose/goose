@@ -14,8 +14,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::extension_runtime::tool_execution::ToolCallContext;
 use crate::agents::mcp_client::{Error as McpError, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 
 pub(super) const ADD: &str = "calculator__add";
 pub(super) const APP_ONLY: &str = "calculator__app_only";

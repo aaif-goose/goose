@@ -10,9 +10,7 @@ use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use rmcp::model::ServerNotification;
 
-pub use crate::agents::extension_runtime::tool_execution::{
-    ToolCallNotificationEmitter, ToolCallResult,
-};
+pub use goose_agent::tool_execution::{ToolCallNotificationEmitter, ToolCallResult};
 
 #[cfg(feature = "code-mode")]
 #[async_trait::async_trait]
@@ -162,7 +160,7 @@ impl ToolAccess for ToolCallContext {
     }
 }
 
-impl From<&ToolCallContext> for crate::agents::extension_runtime::CallRequest {
+impl From<&ToolCallContext> for goose_agent::extension_manager::CallRequest {
     fn from(context: &ToolCallContext) -> Self {
         Self {
             tool_call_id: context.tool_call_request_id.clone(),

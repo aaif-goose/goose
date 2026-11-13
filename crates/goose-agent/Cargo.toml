@@ -11,6 +11,24 @@ description = "The GDK's Agent Loop"
 [lints]
 workspace = true
 
+[features]
+# MCP transports and their dependencies are opt-in (native only). Without them,
+# extension configs of that kind fail to start with a configuration error.
+default = []
+test-support = []
+mcp-stdio = ["rmcp/transport-child-process"]
+# Streamable HTTP, including Unix sockets and OAuth (`ExtensionHost::auth`).
+mcp-http = [
+    "dep:http",
+    "dep:reqwest",
+    "rmcp/auth",
+    "rmcp/transport-streamable-http-client",
+    "rmcp/transport-streamable-http-client-reqwest",
+    "rmcp/transport-streamable-http-client-unix-socket",
+]
+# OSV lookup for packages launched by stdio `npx`/`uvx` commands.
+extension-malware-check = ["dep:reqwest"]
+
 [dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
@@ -39,16 +57,27 @@ wasm-bindgen-futures = "0.4.78"
 wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-once_cell.workspace = true
-rmcp = { workspace = true, features = ["client", "transport-child-process"] }
 serde_yaml.workspace = true
+chrono.workspace = true
+http = { workspace = true, optional = true }
+indexmap = "2.0"
+once_cell.workspace = true
+regex.workspace = true
+reqwest = { workspace = true, features = ["json"], optional = true }
+rmcp = { workspace = true, features = ["client"] }
+serde.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["process", "io-util", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["process", "net", "io-util", "rt-multi-thread"] }
+tokio-stream.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+url.workspace = true
+blake3 = "1.8.7"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
 test-case.workspace = true
+wiremock.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.189"

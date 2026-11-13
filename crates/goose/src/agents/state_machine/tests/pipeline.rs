@@ -451,9 +451,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(
-        &self,
-    ) -> Vec<crate::agents::extension_runtime::tool_execution::ToolCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<goose_agent::tool_execution::ToolCallContext> {
         self.calculator.contexts()
     }
 

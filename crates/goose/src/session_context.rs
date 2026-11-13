@@ -2,7 +2,7 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 
-pub use crate::agents::mcp_client::SESSION_ID_HEADER;
+pub use goose_agent::mcp_client::SESSION_ID_HEADER;
 
 tokio::task_local! {
     pub static SESSION_ID: Option<String>;

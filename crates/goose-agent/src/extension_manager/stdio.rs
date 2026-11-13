@@ -4,9 +4,9 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use super::host::ExtensionEnvironment;
-use crate::agents::mcp_client::{ConnectContext, McpClient};
+use crate::extension::{ExtensionError, ExtensionResult, ProcessExit};
+use crate::mcp_client::{ConnectContext, McpClient};
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
-use goose_agent::extension::{ExtensionError, ExtensionResult, ProcessExit};
 
 pub(super) async fn connect(
     cmd: &str,
@@ -16,7 +16,8 @@ pub(super) async fn connect(
     ctx: ConnectContext,
     environment: &dyn ExtensionEnvironment,
 ) -> ExtensionResult<McpClient> {
-    crate::agents::extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
+    #[cfg(feature = "extension-malware-check")]
+    crate::extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
 
     let command = match placement {
         Some(placement) => placement.command(cmd, args, envs)?,

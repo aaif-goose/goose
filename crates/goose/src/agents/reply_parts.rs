@@ -188,14 +188,14 @@ pub(crate) fn prepare_inference_tools(
     #[cfg(feature = "code-mode")]
     if code_execution_active {
         tools.retain(|tool| {
-            let owner = crate::agents::extension_runtime::get_tool_owner(tool);
+            let owner = goose_agent::extension_manager::get_tool_owner(tool);
             (owner.is_none()
                 && (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
                     || tool.name == goose_agent::skills::LOAD_SKILL_TOOL_NAME))
                 || owner.is_some_and(|owner| {
                     crate::agents::platform_extensions::is_unprefixed_extension(&owner)
                 })
-                || crate::agents::extension_runtime::get_tool_resource_uri(tool).is_some()
+                || goose_agent::extension_manager::get_tool_resource_uri(tool).is_some()
         });
     }
 

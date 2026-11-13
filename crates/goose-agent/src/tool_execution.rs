@@ -3,7 +3,7 @@ use std::future::Future;
 
 use std::path::PathBuf;
 
-use crate::conversation::message::Message;
+use goose_provider_types::conversation::message::Message;
 use rmcp::model::ServerNotification;
 
 type ToolResult<T> = Result<T, rmcp::model::ErrorData>;
