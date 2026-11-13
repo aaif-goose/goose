@@ -713,7 +713,7 @@ async fn extension_protocol_traffic_through_a_lease() {
                 .unwrap()
         }
     };
-    let answer = |call: goose::agents::tool_execution::ToolCallResult, name: &'static str| {
+    let answer = |call: goose_agent::tool_execution::ToolCallResult, name: &'static str| {
         let session_manager = fx.session_manager.clone();
         let session_id = user.id.clone();
         async move {

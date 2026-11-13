@@ -143,17 +143,83 @@ paths, built-in skills, and tool registration remain host responsibilities;
 these helpers do not automatically change the agent pipeline. Filesystem
 discovery is not a secure file-open API.
 
-## Extension configuration and shared MCP types
+## Extension runtime
 
-On native targets, `extension` provides stdio/HTTP transport configuration,
-environment filtering, and secret resolution through `ExtensionConfigResolver`.
-Goose composes these transport configs with its own builtin/platform variants,
-keeping the persisted application schema unchanged.
+On native targets, `extension_manager` owns extension slots, leases, tool
+catalogs, dispatch, and MCP transports. Its supporting transport configuration,
+MCP client, tool-call, elicitation, malware-checking, and subprocess types live in
+this crate too. Consumers import the moved types directly from `goose_agent`.
 
-`action_required_manager`, `subprocess`, and `tool_visibility` provide shared MCP
-support without application persistence, builtin factories, or container policy.
-The extension manager itself still lives in Goose; the next extraction moves it
-behind an application adapter without adding Goose-only config variants to GDK.
+The extraction preserves the runtime's behavior, with these necessary boundaries:
+
+- `ExtensionServices` composes an optional `ExtensionSelectionStore`, an
+  `ExtensionEnvironment` for config resolution and process setup, an
+  `ExtensionToolPolicy`, authorization, and `ExtensionRuntimeSettings` for identity,
+  action-required handling, and tracing. Goose implements the interfaces using its
+  application services. Connectors receive environment/auth services; leases receive
+  tool policy and the action-required manager, not the whole service collection.
+  Per-session client negotiation and config-generation invalidation remain in the runtime.
+- `ExtensionConfigResolver` supplies secret lookup. Environment filtering and
+  substitution remain with `ExtensionConfig`; global config and secret storage
+  remain in `goose`.
+- `ExtensionAuth` supplies credential stores and authorization flows. HTTP
+  connection/retry/step-up handling stays here; keyring, browser, and callback
+  handling stay in `goose`.
+- A trace-context callback preserves application telemetry without making this
+  crate depend on Goose's OpenTelemetry setup. The host also supplies its version
+  so MCP identity and HTTP user-agent headers retain the application's version.
+- `ExtensionSet` and session selection contain `Registration`s, not application
+  configs. Goose owns its persisted `ExtensionConfig` (including builtin/platform
+  variants), container placement, registry lookup, and config-to-registration
+  conversion. Its `External` variant wraps the GDK transport config directly,
+  sharing serialization, environment filtering, and secret resolution rather than
+  copying them. The GDK's transport `ExtensionConfig` accepts only stdio and HTTP;
+  `manager.registration(config)` constructs a registration for those transports.
+- Registrations carry connector revisions, tool filters, and optional opaque host
+  metadata. Goose uses that metadata to persist its unchanged config schema.
+  Trusted in-process registrations can preserve host-reserved result metadata and
+  opt out of working-directory restarts; external registrations cannot.
+
+Goose's mutation commands, private MCP App result attachments, and resource-tool
+visibility rules live in its adapter. `ExtensionToolPolicy::exposes_tool` filters the
+catalog, `reserved_result_meta_keys` prevents external servers from claiming
+host-only result metadata, and `process_result` sanitizes/decorates results using
+the exact advertised tool and client. These hooks default to no application policy.
+
+Transports are opt-in Cargo features (native only):
+
+- `mcp-stdio` — stdio extensions and `spawn_stdio` for host-built commands.
+- `mcp-http` — streamable HTTP, including Unix sockets and OAuth (`ExtensionAuth`).
+- `extension-malware-check` — OSV lookup for packages run by stdio `npx`/`uvx`.
+
+A config whose transport is not enabled fails to start with a configuration error.
+In-process extensions need no transport feature. Builtin registries and Docker
+command construction live in goose's connectors. The runtime has no container
+placement or builtin/platform callback API. For external configs,
+`Registration::from_config_with_command` accepts a `StdioCommand` that only builds
+the host's local/container command; GDK still owns secret resolution and refresh,
+working-directory/timeout setup, malware checks, MCP negotiation, and supervision.
+`ExtensionEnvironment::connection_working_dir` supplies a host-specific fallback without
+changing the lease's tool-call working-directory metadata. `spawn_stdio`,
+`ConnectContext`, and `McpClient::connect` support custom connectors without a
+second runtime.
+
+`ExtensionServices::new` requires only an action-required manager; no host-service
+trait implementation is required. Hosts resolving explicit `ExtensionSet`s can omit
+selection storage. Default environment and tool policy use configs as given and
+expose all tools without result decoration. Authorization is unavailable unless
+supplied; session-ID lookup and selection changes require a selection store. MCP elicitation is advertised only when the client
+capabilities install an `elicitation_handler` or set `action_required_elicitation`.
+
+A lease builds a best-effort tool catalog, omitting extensions that fail to start
+or list tools. `start` and `ready` report startup outcomes. When two extensions
+expose the same tool name, the extension selected first keeps it. The catalog is
+pinned to its lease; resolve a new lease to retry discovery.
+
+The native transports and their additional dependencies are target-gated; the
+existing WebAssembly agent loop does not acquire native process/network runtime
+requirements. Runtime-private cache/placement tests move with the implementation;
+application-backed session and platform-extension tests remain in `goose`.
 
 ## WebAssembly
 

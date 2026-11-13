@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderName};
+use http::{HeaderMap, HeaderName};
 use rmcp::model::{
     CallToolResult, ErrorCode, ErrorData, GetPromptResult, ProtocolVersion, ServerConfig,
     ServerNotification,
@@ -21,9 +21,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::host::{ExtensionAuth, StaticOAuthClientConfig};
-use crate::agents::extension_runtime::tool_execution::ToolCallContext;
-use crate::agents::mcp_client::{ConnectContext, McpClient, McpClientTrait};
-use goose_agent::extension::{ExtensionError, ExtensionResult};
+use crate::extension::{ExtensionError, ExtensionResult};
+use crate::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use crate::tool_execution::ToolCallContext;
 
 /// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
 fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
@@ -241,7 +241,7 @@ fn http_client(
 
 fn should_retry_legacy_after_empty_discover(
     result: &Result<McpClient, Box<ClientInitializeError>>,
-    capabilities: &crate::agents::mcp_client::GooseMcpClientCapabilities,
+    capabilities: &crate::mcp_client::GooseMcpClientCapabilities,
 ) -> bool {
     capabilities.protocol_version.is_none()
         && result.as_ref().is_err_and(|error| {
@@ -346,10 +346,7 @@ impl OAuthStepUpClient {
         });
     }
 
-    async fn step_up_reconnect(
-        &self,
-        challenge: String,
-    ) -> Result<(), crate::agents::mcp_client::Error> {
+    async fn step_up_reconnect(&self, challenge: String) -> Result<(), crate::mcp_client::Error> {
         let params = self.params.read().await;
         let auth_manager = params
             .auth
@@ -361,7 +358,7 @@ impl OAuthStepUpClient {
             )
             .await
             .map_err(|e| {
-                crate::agents::mcp_client::Error::McpError(ErrorData::new(
+                crate::mcp_client::Error::McpError(ErrorData::new(
                     ErrorCode::INTERNAL_ERROR,
                     format!("step-up authorization failed: {e}"),
                     None,
@@ -375,7 +372,7 @@ impl OAuthStepUpClient {
         )
         .await
         .map_err(|e| {
-            crate::agents::mcp_client::Error::McpError(ErrorData::new(
+            crate::mcp_client::Error::McpError(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 format!("reconnect after step-up authorization failed: {e}"),
                 None,
@@ -388,16 +385,12 @@ impl OAuthStepUpClient {
 
     /// Run `op` against the current client; on an auth challenge, re-authorize
     /// and retry once.
-    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::agents::mcp_client::Error>
+    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::mcp_client::Error>
     where
         F: for<'a> Fn(
             &'a McpClient,
         ) -> Pin<
-            Box<
-                dyn std::future::Future<Output = Result<T, crate::agents::mcp_client::Error>>
-                    + Send
-                    + 'a,
-            >,
+            Box<dyn std::future::Future<Output = Result<T, crate::mcp_client::Error>> + Send + 'a>,
         >,
     {
         let first = {
@@ -439,7 +432,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListToolsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListToolsResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -460,7 +453,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Option<rmcp::model::JsonObject>,
         cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, crate::agents::mcp_client::Error> {
+    ) -> Result<CallToolResult, crate::mcp_client::Error> {
         let ctx = ctx.clone();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -482,7 +475,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListResourcesResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListResourcesResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -502,7 +495,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         uri: &str,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ReadResourceResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ReadResourceResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         let uri = uri.to_string();
         self.with_step_up_retry(move |client| {
@@ -519,7 +512,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListPromptsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListPromptsResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -540,7 +533,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Value,
         cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, crate::agents::mcp_client::Error> {
+    ) -> Result<GetPromptResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -674,7 +667,7 @@ async fn connect_over_unix_socket(
     use rmcp::transport::UnixSocketHttpClient;
 
     let unix_client = UnixSocketHttpClient::new(socket_path, &params.uri);
-    let custom_headers: HashMap<HeaderName, reqwest::header::HeaderValue> =
+    let custom_headers: HashMap<HeaderName, http::HeaderValue> =
         header_map(&params.headers, params.ctx.client_version)?
             .into_iter()
             .filter_map(|(name, value)| name.map(|name| (name, value)))
@@ -706,7 +699,7 @@ async fn connect_over_unix_socket(
 mod tests {
     use super::*;
     use crate::action_required_manager::ActionRequiredManager;
-    use crate::agents::mcp_client::GooseMcpClientCapabilities;
+    use crate::mcp_client::GooseMcpClientCapabilities;
     use rmcp::transport::auth::InMemoryCredentialStore;
     use tempfile::tempdir;
 

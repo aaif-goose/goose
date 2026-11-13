@@ -28,14 +28,12 @@ use super::{
     TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::extension_runtime::tool_execution::{
-    ToolCallContext, ToolCallNotificationEmitter, ToolCallResult,
-};
-use crate::agents::mcp_client::McpClientTrait;
-use crate::conversation::message::Message;
-use goose_agent::extension::name_to_key;
-use goose_agent::extension::{ExtensionError, ExtensionInfo};
-use goose_agent::tool_visibility::is_tool_visible_to_app;
+use crate::extension::name_to_key;
+use crate::extension::{ExtensionError, ExtensionInfo};
+use crate::mcp_client::McpClientTrait;
+use crate::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
+use crate::tool_visibility::is_tool_visible_to_app;
+use goose_provider_types::conversation::message::Message;
 
 fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
     let value = value.get(name).ok_or_else(|| {

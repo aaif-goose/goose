@@ -2,7 +2,7 @@ use super::goose_host::GooseExtensionHost;
 use crate::agents::container::Container;
 use crate::agents::extension_config::name_to_key;
 use crate::agents::extension_config::{ExtensionError, ExtensionResult};
-use crate::agents::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use goose_agent::mcp_client::{ConnectContext, McpClient, McpClientTrait};
 
 pub(super) async fn connect(
     name: &str,
@@ -24,7 +24,7 @@ pub(super) async fn connect(
         let args = vec!["mcp".to_string(), key];
         let command = host.stdio_command("goose", &args, Default::default(), Some(container))?;
         return Ok(Box::new(
-            crate::agents::extension_runtime::spawn_stdio(command, ctx, host).await?,
+            goose_agent::extension_manager::spawn_stdio(command, ctx, host).await?,
         ));
     }
 

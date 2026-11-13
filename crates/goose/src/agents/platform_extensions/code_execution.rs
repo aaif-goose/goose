@@ -174,7 +174,7 @@ fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::extension_runtime::ExtensionManager>,
+    manager: Arc<goose_agent::extension_manager::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
     context: PlatformExtensionContext,

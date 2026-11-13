@@ -14,8 +14,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClientTrait};
-use goose_agent::extension::{name_to_key, ExtensionError, ExtensionResult};
+use crate::extension::{name_to_key, ExtensionError, ExtensionResult};
+use crate::mcp_client::{GooseMcpClientCapabilities, McpClientTrait};
 use host::ExtensionServices;
 use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
@@ -23,9 +23,11 @@ use serde_json::Value;
 pub mod host;
 mod lease;
 mod registration;
+#[cfg(feature = "mcp-stdio")]
 mod stdio;
-pub mod tool_execution;
+#[cfg(feature = "mcp-stdio")]
 pub use stdio::spawn as spawn_stdio;
+#[cfg(feature = "mcp-http")]
 mod streamable_http;
 
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
@@ -37,7 +39,7 @@ type McpClientBox = Arc<dyn McpClientTrait>;
 const TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY: usize = 32;
 
 struct ActionRequiredStream {
-    inner: ReceiverStream<crate::conversation::message::Message>,
+    inner: ReceiverStream<goose_provider_types::conversation::message::Message>,
     manager: Arc<ActionRequiredManager>,
     session_id: String,
     tool_call_request_id: String,
@@ -45,7 +47,7 @@ struct ActionRequiredStream {
 
 impl ActionRequiredStream {
     fn new(
-        receiver: tokio::sync::mpsc::Receiver<crate::conversation::message::Message>,
+        receiver: tokio::sync::mpsc::Receiver<goose_provider_types::conversation::message::Message>,
         manager: Arc<ActionRequiredManager>,
         session_id: String,
         tool_call_request_id: String,
@@ -60,7 +62,7 @@ impl ActionRequiredStream {
 }
 
 impl Stream for ActionRequiredStream {
-    type Item = crate::conversation::message::Message;
+    type Item = goose_provider_types::conversation::message::Message;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.inner).poll_next(cx)
@@ -99,8 +101,8 @@ pub(super) struct Extension {
 }
 
 struct ResolvedConfig {
-    original: goose_agent::extension::ExtensionConfig,
-    resolved: goose_agent::extension::ExtensionConfig,
+    original: crate::extension::ExtensionConfig,
+    resolved: crate::extension::ExtensionConfig,
 }
 
 struct CachedTools {
@@ -304,7 +306,7 @@ impl Extension {
                 );
                 tool.meta = Some(MetaObject(meta));
                 let mut schema = (*tool.input_schema).clone();
-                if crate::agents::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                if crate::tool_schema_normalize::normalize_input_schema(&mut schema) {
                     tool.input_schema = Arc::new(schema);
                 }
                 tools.push(tool);
@@ -526,7 +528,7 @@ impl ExtensionManager {
     }
 
     /// A registration for an external stdio or HTTP transport config.
-    pub fn registration(&self, config: goose_agent::extension::ExtensionConfig) -> Registration {
+    pub fn registration(&self, config: crate::extension::ExtensionConfig) -> Registration {
         Registration::from_config(config, None)
     }
 
@@ -712,8 +714,8 @@ impl ExtensionManager {
         result
     }
 
-    #[cfg(test)]
-    pub(super) async fn install_client(
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn install_client(
         &self,
         session_id: &str,
         registration: Registration,

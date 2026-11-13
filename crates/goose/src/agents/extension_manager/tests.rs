@@ -1,12 +1,10 @@
 use super::ExtensionMutation;
 use super::*;
 use crate::agents::extension_config::ExtensionConfig;
-use crate::agents::extension_runtime::tool_execution::{
-    ToolCallContext, ToolCallNotificationEmitter,
-};
-use crate::agents::extension_runtime::{get_tool_owner, is_tool_owned_by_extension, CallRequest};
-use crate::agents::mcp_client::McpClientTrait;
 use futures::StreamExt;
+use goose_agent::extension_manager::{get_tool_owner, is_tool_owned_by_extension, CallRequest};
+use goose_agent::mcp_client::McpClientTrait;
+use goose_agent::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
 use goose_test_support::mcp::McpFixtureServer;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, CustomNotification, ErrorCode, GetPromptResult,

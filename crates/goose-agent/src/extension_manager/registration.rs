@@ -2,6 +2,8 @@
 //! MCP client. `ExtensionConfig` selections become registrations with a built-in
 //! connector; hosts can register their own transports the same way.
 
+#[cfg(feature = "mcp-http")]
+use super::host::ExtensionAuth;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -10,14 +12,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+#[cfg(feature = "mcp-stdio")]
 use super::stdio;
+#[cfg(feature = "mcp-http")]
 use super::streamable_http;
 use super::{
-    host::{ExtensionAuth, ExtensionEnvironment, ExtensionRuntimeSettings},
+    host::{ExtensionEnvironment, ExtensionRuntimeSettings},
     ClientContext, ExtensionManager,
 };
-use crate::agents::mcp_client::{ConnectContext, McpClientTrait};
-use goose_agent::extension::{name_to_key, ExtensionConfig, ExtensionResult};
+use crate::extension::{name_to_key, ExtensionConfig, ExtensionResult};
+use crate::mcp_client::{ConnectContext, McpClientTrait};
 
 /// Host-specific process placement; transport setup and supervision stay shared.
 pub trait StdioCommand: Send + Sync {
@@ -42,6 +46,7 @@ pub trait Connector: Send + Sync {
 
 /// Where and for whom a registration connects.
 pub struct ConnectRequest {
+    #[cfg(feature = "mcp-http")]
     auth: Arc<dyn ExtensionAuth>,
     pub scope_id: String,
     /// The scope's working directory (or the process's, if it has none).
@@ -61,6 +66,7 @@ impl ConnectRequest {
         manager: &Arc<ExtensionManager>,
     ) -> Self {
         Self {
+            #[cfg(feature = "mcp-http")]
             auth: Arc::clone(&manager.services.auth),
             scope_id: scope_id.to_string(),
             working_dir,
@@ -227,14 +233,18 @@ pub(super) async fn connect_config(
     command: Option<&dyn StdioCommand>,
     request: &ConnectRequest,
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    let _ = (command, request);
+    #[cfg(any(feature = "mcp-stdio", feature = "mcp-http"))]
     let working_dir = match resolved {
         ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
         _ => request
             .environment
             .connection_working_dir(&request.working_dir),
     };
+    #[cfg(feature = "mcp-stdio")]
     let environment = request.environment.as_ref();
     match resolved {
+        #[cfg(feature = "mcp-http")]
         ExtensionConfig::StreamableHttp {
             uri,
             timeout,
@@ -269,6 +279,7 @@ pub(super) async fn connect_config(
             .await?;
             Ok(client)
         }
+        #[cfg(feature = "mcp-stdio")]
         ExtensionConfig::Stdio {
             cmd,
             args,
@@ -291,5 +302,18 @@ pub(super) async fn connect_config(
             );
             Ok(client as Box<dyn McpClientTrait>)
         }
+        #[cfg(not(feature = "mcp-http"))]
+        ExtensionConfig::StreamableHttp { .. } => {
+            Err(transport_disabled("streamable_http", "mcp-http"))
+        }
+        #[cfg(not(feature = "mcp-stdio"))]
+        ExtensionConfig::Stdio { .. } => Err(transport_disabled("stdio", "mcp-stdio")),
     }
+}
+
+#[cfg(not(all(feature = "mcp-stdio", feature = "mcp-http")))]
+fn transport_disabled(kind: &str, feature: &str) -> crate::extension::ExtensionError {
+    crate::extension::ExtensionError::ConfigError(format!(
+        "{kind} extensions require goose-agent's `{feature}` feature"
+    ))
 }

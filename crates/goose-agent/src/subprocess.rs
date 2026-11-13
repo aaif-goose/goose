@@ -1,7 +1,10 @@
+#[cfg(feature = "mcp-stdio")]
 use rmcp::transport::TokioChildProcess;
+#[cfg(feature = "mcp-stdio")]
 use std::io;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "mcp-stdio"))]
 use std::sync::{mpsc, OnceLock};
+#[cfg(feature = "mcp-stdio")]
 use tokio::process::ChildStderr;
 use tokio::process::Command;
 
@@ -80,14 +83,14 @@ pub fn configure_subprocess(command: &mut Command) {
     configure_parent_death_signal(command);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "mcp-stdio"))]
 struct LongLivedSpawnRequest {
     command: Command,
     runtime: tokio::runtime::Handle,
     response: tokio::sync::oneshot::Sender<io::Result<(TokioChildProcess, Option<ChildStderr>)>>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "mcp-stdio"))]
 fn long_lived_spawn_sender() -> io::Result<mpsc::Sender<LongLivedSpawnRequest>> {
     static SENDER: OnceLock<io::Result<mpsc::Sender<LongLivedSpawnRequest>>> = OnceLock::new();
 
@@ -114,6 +117,7 @@ fn long_lived_spawn_sender() -> io::Result<mpsc::Sender<LongLivedSpawnRequest>> 
 
 /// Spawn a long-lived MCP subprocess without tying Linux parent-death cleanup
 /// to the Tokio worker that happened to request it.
+#[cfg(feature = "mcp-stdio")]
 pub async fn spawn_long_lived_mcp_subprocess(
     command: Command,
 ) -> io::Result<(TokioChildProcess, Option<ChildStderr>)> {

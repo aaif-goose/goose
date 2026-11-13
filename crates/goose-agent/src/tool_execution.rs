@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 
 use std::path::PathBuf;
 
-use crate::agents::extension_runtime::ExtensionLease;
-use crate::conversation::message::Message;
+use crate::extension_manager::ExtensionLease;
+use goose_provider_types::conversation::message::Message;
 use rmcp::model::ServerNotification;
 
 type ToolResult<T> = Result<T, rmcp::model::ErrorData>;

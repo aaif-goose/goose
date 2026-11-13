@@ -1,6 +1,6 @@
 use crate::agents::extension_config::{name_to_key, ExtensionError, ExtensionResult};
-use crate::agents::extension_runtime::tool_execution::ToolCallResult;
 use futures::FutureExt;
+use goose_agent::tool_execution::ToolCallResult;
 use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject};
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ impl ExtensionMutation {
 }
 
 async fn apply(
-    manager: &Arc<crate::agents::extension_runtime::ExtensionManager>,
+    manager: &Arc<goose_agent::extension_manager::ExtensionManager>,
     mutation: ExtensionMutation,
     session_id: &str,
     context: &crate::agents::platform_extensions::PlatformExtensionContext,
@@ -58,7 +58,7 @@ async fn apply(
 }
 
 pub(crate) fn applying_mutation(
-    manager: &Arc<crate::agents::extension_runtime::ExtensionManager>,
+    manager: &Arc<goose_agent::extension_manager::ExtensionManager>,
     result: ToolCallResult,
     session_id: &str,
     context: &crate::agents::platform_extensions::PlatformExtensionContext,
