@@ -147,6 +147,7 @@ tools, provider, or subagent runner:
 | [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
 | [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
+| [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
 
 ### Operations in goose
 
@@ -164,7 +165,6 @@ your application.
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |
 | `SkillOperation`              | Discover and load skills, contribute their context, and handle skill commands.                    |
 | `RecipeOperation`             | Apply recipe instructions and handle recipe commands.                                             |
-| `SteerOperation`              | Incorporate queued user guidance between model and tool turns.                                    |
 | `BangShellOperation`          | Turn a user message beginning with `!` into a direct shell tool request.                          |
 | `CompactionOperation`         | Compact conversation history automatically or through a command.                                  |
 | `ToolPairCompactionOperation` | Summarize older tool request/response pairs to reduce context size.                               |

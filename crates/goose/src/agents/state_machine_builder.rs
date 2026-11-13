@@ -2,7 +2,11 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::{exit_on_error::ExitOnErrorOperation, max_turns::MaxTurnsOperation};
+use goose_agent::{
+    exit_on_error::ExitOnErrorOperation,
+    max_turns::MaxTurnsOperation,
+    steer::{SteerOperation, SteerQueue},
+};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -16,9 +20,9 @@ use crate::agents::state_machine::{
     EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
     RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
