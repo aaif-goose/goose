@@ -104,25 +104,6 @@ struct CachedTools {
     tools: Arc<Vec<Tool>>,
 }
 
-struct Placement {
-    working_dir: PathBuf,
-}
-
-impl Placement {
-    fn for_registration(registration: &Registration, working_dir: Option<&Path>) -> Option<Self> {
-        if !registration.placed {
-            return None;
-        }
-        Some(Self {
-            working_dir: Self::working_dir(working_dir),
-        })
-    }
-
-    fn working_dir(working_dir: Option<&Path>) -> PathBuf {
-        working_dir.map(Path::to_path_buf).unwrap_or_default()
-    }
-}
-
 enum Runtime {
     Running(Arc<Extension>),
     /// A connector can decline rather than register with no tools.
@@ -134,7 +115,7 @@ pub(super) struct ExtensionSlot {
     key: String,
     pub(super) registration: Registration,
     /// Trusted in-process connectors take the directory from each call.
-    placement: Option<Placement>,
+    working_dir: Option<PathBuf>,
     scope_id: String,
     manager: Weak<ExtensionManager>,
     client: Arc<ClientContext>,
@@ -152,8 +133,8 @@ impl ExtensionSlot {
         if !self.registration.is_equivalent(registration) {
             return false;
         }
-        self.placement.as_ref().is_none_or(|placement| {
-            working_dir.is_none_or(|working_dir| placement.working_dir == working_dir)
+        self.working_dir.as_ref().is_none_or(|directory| {
+            working_dir.is_none_or(|working_dir| directory == working_dir)
                 && self.client.negotiates_like(client)
         })
     }
@@ -205,7 +186,7 @@ impl ExtensionSlot {
                 match manager
                     .start(
                         &self.registration,
-                        self.placement.as_ref(),
+                        self.working_dir.as_deref(),
                         &self.scope_id,
                         &self.client,
                     )
@@ -559,7 +540,9 @@ impl ExtensionManager {
     ) -> ExtensionSlot {
         ExtensionSlot {
             key: registration.key.clone(),
-            placement: Placement::for_registration(&registration, working_dir),
+            working_dir: registration
+                .placed
+                .then(|| working_dir.map(Path::to_path_buf).unwrap_or_default()),
             registration,
             scope_id: scope_id.to_string(),
             manager: Arc::downgrade(self),
@@ -624,7 +607,7 @@ impl ExtensionManager {
     async fn start(
         self: &Arc<Self>,
         registration: &Registration,
-        placement: Option<&Placement>,
+        working_dir: Option<&Path>,
         scope_id: &str,
         client: &Arc<ClientContext>,
     ) -> ExtensionResult<Option<Extension>> {
@@ -639,9 +622,7 @@ impl ExtensionManager {
         };
         let request = ConnectRequest::new(
             scope_id,
-            placement
-                .map(|placement| placement.working_dir.clone())
-                .unwrap_or_default(),
+            working_dir.map(Path::to_path_buf).unwrap_or_default(),
             Arc::clone(client),
             self,
             resolved_config.clone(),
@@ -734,7 +715,7 @@ impl ExtensionManager {
         let slot = ExtensionSlot {
             key: key.clone(),
             registration: registration.clone(),
-            placement: None,
+            working_dir: None,
             scope_id: session_id.to_string(),
             manager: Weak::new(),
             client: negotiation,

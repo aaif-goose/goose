@@ -80,12 +80,15 @@ impl ExtensionManager {
         container: Option<crate::agents::container::Container>,
     ) -> Result<crate::agents::extension_runtime::ExtensionSet> {
         crate::agents::extension_config::check_unique_keys(&configs)?;
+        let host = self.host();
         Ok(crate::agents::extension_runtime::ExtensionSet::new(
             scope,
             cwd,
             configs
                 .into_iter()
-                .map(|config| registration::registration(config, container.clone(), self.host()))
+                .map(|config| {
+                    registration::registration(config, container.clone(), Arc::clone(&host))
+                })
                 .collect(),
         )?)
     }

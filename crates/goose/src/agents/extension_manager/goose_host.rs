@@ -61,7 +61,10 @@ impl GooseExtensionHost {
         Ok(command)
     }
 
-    pub(super) async fn session_selection(&self, session: &Session) -> Result<super::ExtensionSet> {
+    pub(super) async fn session_selection(
+        self: &Arc<Self>,
+        session: &Session,
+    ) -> Result<super::ExtensionSet> {
         let provider_runs_tool_loop = match self.context.providers.pinned(session).await {
             Some(provider) => provider.manages_own_context(),
             None => match provider_name_for(session) {
@@ -74,14 +77,15 @@ impl GooseExtensionHost {
         let configs = EnabledExtensionsState::from_extension_data(&session.extension_data)
             .map(|state| state.extensions)
             .unwrap_or_default();
-        let host = Arc::new(Self {
-            context: self.context.clone(),
-        });
         let extensions = configs
             .into_iter()
             .filter(|config| !provider_runs_tool_loop || config.external().is_none())
             .map(|config| {
-                super::registration::registration(config, session.container.clone(), host.clone())
+                super::registration::registration(
+                    config,
+                    session.container.clone(),
+                    Arc::clone(self),
+                )
             })
             .collect();
         Ok(super::ExtensionSet::new(
