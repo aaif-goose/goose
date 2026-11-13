@@ -1,15 +1,18 @@
+use std::collections::VecDeque;
 #[cfg(windows)]
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures::Stream;
 use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio_stream::{wrappers::SplitStream, StreamExt};
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -164,6 +167,13 @@ const OUTPUT_PREVIEW_LINES: usize = 50;
 const OUTPUT_PREVIEW_BYTES: usize = 10_000;
 
 const OUTPUT_SLOTS: usize = 8;
+const DEFAULT_CAPTURE_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+/// Large enough that the biggest possible record always fits in half the budget.
+const MIN_CAPTURE_LIMIT_BYTES: usize = 1024;
+const MAX_SEGMENT_BYTES: usize = 64 * 1024;
+/// Counted against the capture limit so output made of many tiny lines is bounded too.
+const RECORD_OVERHEAD_BYTES: usize = 32;
+const REPLACEMENT_CHAR_LEN_UTF8: usize = '\u{FFFD}'.len_utf8();
 
 /// Result of truncating command output.
 struct TruncateResult {
@@ -177,6 +187,7 @@ struct TruncateResult {
 struct TruncationInfo {
     path: PathBuf,
     reason: String,
+    is_fragment: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -207,6 +218,15 @@ pub struct ShellOutput {
     /// Error reported by output collection after process exit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_collection_error: Option<String>,
+    /// Bytes of output dropped because the capture limit was exceeded. Non-zero means
+    /// `stdout` and `stderr` are incomplete.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub capture_dropped_bytes: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 pub struct ShellTool {
@@ -280,8 +300,13 @@ impl ShellTool {
             Err(error) => return Self::error_result(&error, None),
         };
 
-        // Derive stdout, stderr, and interleaved display from the single tagged-line buffer
-        let (raw_stdout, raw_stderr, interleaved) = split_lines(&execution.lines);
+        let capture_dropped_bytes = execution.capture_dropped_bytes();
+        let (raw_stdout, raw_stderr, interleaved) = split_records(
+            &execution.records,
+            execution.head_record_count,
+            execution.dropped_stdout_bytes,
+            execution.dropped_stderr_bytes,
+        );
 
         let output_dir = self.output_dir.path();
         let slot = self.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS;
@@ -291,7 +316,12 @@ impl ShellTool {
                 truncation: None,
             }
         } else {
-            match truncate_output(&raw_stdout, &format!("stdout-{slot}"), output_dir) {
+            match truncate_output(
+                &raw_stdout,
+                &format!("stdout-{slot}"),
+                output_dir,
+                execution.dropped_stdout_bytes > 0,
+            ) {
                 Ok(r) => r,
                 Err(error) => return Self::error_result(&error, None),
             }
@@ -302,7 +332,12 @@ impl ShellTool {
                 truncation: None,
             }
         } else {
-            match truncate_output(&raw_stderr, &format!("stderr-{slot}"), output_dir) {
+            match truncate_output(
+                &raw_stderr,
+                &format!("stderr-{slot}"),
+                output_dir,
+                execution.dropped_stderr_bytes > 0,
+            ) {
                 Ok(r) => r,
                 Err(error) => return Self::error_result(&error, None),
             }
@@ -315,18 +350,20 @@ impl ShellTool {
             timed_out: execution.timed_out,
             output_truncated: execution.output_truncated,
             output_collection_error: execution.output_collection_error.clone(),
+            capture_dropped_bytes,
         };
         let structured_content = serde_json::to_value(&shell_output).ok();
-        let render_result = match render_output(&interleaved, &format!("output-{slot}"), output_dir)
-        {
+        let render_result = match render_output(
+            &interleaved,
+            &format!("output-{slot}"),
+            output_dir,
+            capture_dropped_bytes > 0,
+        ) {
             Ok(r) => r,
             Err(error) => return Self::error_result(&error, None),
         };
         let mut rendered = render_result.text;
 
-        // Collect truncation notices from stdout, stderr, and interleaved output.
-        // These are delivered as a separate Content block so the model sees them as
-        // instructions rather than part of the command's data output.
         let truncation_notices: Vec<String> = [
             &stdout_result.truncation,
             &stderr_result.truncation,
@@ -346,6 +383,12 @@ impl ShellTool {
             execution.exit_code.unwrap_or(1) != 0
         };
 
+        if capture_dropped_bytes > 0 {
+            rendered.push_str(&format!(
+                "\n\n[Capture limit: {capture_dropped_bytes} bytes of output were not captured. \
+                 The beginning and end of the output are preserved.]"
+            ));
+        }
         if execution.output_truncated {
             rendered.push_str(
                 "\n\nOutput may be incomplete because stream draining timed out after process exit.",
@@ -389,6 +432,7 @@ impl ShellTool {
             timed_out: false,
             output_truncated: false,
             output_collection_error: None,
+            capture_dropped_bytes: 0,
         };
         let mut result = CallToolResult::error(vec![Self::visible_text(message)]);
         result.structured_content = serde_json::to_value(&shell_output).ok();
@@ -396,13 +440,98 @@ impl ShellTool {
     }
 }
 
+/// A piece of captured output. A line longer than the segment limit is split
+/// into several records; every record except the last one of such a line has
+/// `ends_line == false`, so the pieces can be rejoined without inserting newlines.
+struct CaptureRecord {
+    is_stderr: bool,
+    text: String,
+    ends_line: bool,
+}
+
+impl CaptureRecord {
+    fn output_bytes(&self) -> usize {
+        self.text.len() + usize::from(self.ends_line)
+    }
+
+    fn budget_cost(&self) -> usize {
+        self.output_bytes() + RECORD_OVERHEAD_BYTES
+    }
+}
+
 struct ExecutionOutput {
-    /// Lines in arrival order, tagged by source: (is_stderr, text)
-    lines: Vec<(bool, String)>,
+    records: Vec<CaptureRecord>,
+    head_record_count: usize,
+    dropped_stdout_bytes: usize,
+    dropped_stderr_bytes: usize,
     exit_code: Option<i32>,
     timed_out: bool,
     output_truncated: bool,
     output_collection_error: Option<String>,
+}
+
+impl ExecutionOutput {
+    fn capture_dropped_bytes(&self) -> usize {
+        self.dropped_stdout_bytes + self.dropped_stderr_bytes
+    }
+}
+
+#[derive(Default)]
+struct CaptureBuffer {
+    limit: usize,
+    head: Vec<CaptureRecord>,
+    tail: VecDeque<CaptureRecord>,
+    head_cost: usize,
+    tail_cost: usize,
+    dropped_stdout_bytes: usize,
+    dropped_stderr_bytes: usize,
+}
+
+impl CaptureBuffer {
+    fn new(capture_limit: usize) -> Self {
+        Self {
+            limit: capture_limit,
+            ..Self::default()
+        }
+    }
+
+    fn push(&mut self, record: CaptureRecord) {
+        let cost = record.budget_cost();
+        if self.tail.is_empty() && self.head_cost + cost <= self.limit / 2 {
+            self.head_cost += cost;
+            self.head.push(record);
+            return;
+        }
+        while self.head_cost + self.tail_cost + cost > self.limit {
+            let Some(evicted) = self.tail.pop_front() else {
+                break;
+            };
+            self.tail_cost -= evicted.budget_cost();
+            let dropped = if evicted.is_stderr {
+                &mut self.dropped_stderr_bytes
+            } else {
+                &mut self.dropped_stdout_bytes
+            };
+            *dropped += evicted.output_bytes();
+        }
+        self.tail_cost += cost;
+        self.tail.push_back(record);
+    }
+}
+
+fn capture_limit_bytes() -> usize {
+    std::env::var("GOOSE_SHELL_CAPTURE_LIMIT_BYTES")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_CAPTURE_LIMIT_BYTES)
+        .max(MIN_CAPTURE_LIMIT_BYTES)
+}
+
+/// Each invalid byte decodes to a 3-byte replacement character, so a segment must
+/// be a third of the budget it is allowed to occupy once decoded.
+fn max_segment_bytes(capture_limit: usize) -> usize {
+    ((capture_limit / 2).saturating_sub(RECORD_OVERHEAD_BYTES + 1) / REPLACEMENT_CHAR_LEN_UTF8)
+        .clamp(1, MAX_SEGMENT_BYTES)
 }
 
 fn resolve_shell_timeout(timeout_secs: Option<u64>) -> u64 {
@@ -421,11 +550,15 @@ async fn run_command(
     notification_emitter: Option<ToolCallNotificationEmitter>,
     cancellation_token: CancellationToken,
 ) -> Result<ExecutionOutput, String> {
+    let capture_limit = capture_limit_bytes();
     let deadline = Some(resolve_shell_timeout(timeout_secs))
         .filter(|secs| *secs > 0)
         .map(|secs| tokio::time::Instant::now() + Duration::from_secs(secs));
     let not_started = |timed_out| ExecutionOutput {
-        lines: Vec::new(),
+        records: Vec::new(),
+        head_record_count: 0,
+        dropped_stdout_bytes: 0,
+        dropped_stderr_bytes: 0,
         exit_code: None,
         timed_out,
         output_truncated: false,
@@ -457,12 +590,13 @@ async fn run_command(
         .take()
         .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let capture = Arc::new(Mutex::new(CaptureBuffer::new(capture_limit)));
     let output_task = AbortOnDropHandle::new(tokio::spawn(collect_tagged_lines(
         child_stdout,
         child_stderr,
-        tx,
+        capture.clone(),
         notification_emitter,
+        max_segment_bytes(capture_limit),
     )));
     let abort_handle = output_task.abort_handle();
 
@@ -510,14 +644,16 @@ async fn run_command(
         }
     };
 
-    rx.close();
-    let mut lines = Vec::new();
-    while let Some(item) = rx.recv().await {
-        lines.push(item);
-    }
+    let captured = std::mem::take(&mut *capture.lock().unwrap());
+    let head_record_count = captured.head.len();
+    let mut records = captured.head;
+    records.extend(captured.tail);
 
     Ok(ExecutionOutput {
-        lines,
+        records,
+        head_record_count,
+        dropped_stdout_bytes: captured.dropped_stdout_bytes,
+        dropped_stderr_bytes: captured.dropped_stderr_bytes,
         exit_code,
         timed_out,
         output_truncated,
@@ -633,42 +769,165 @@ fn apply_flatpak_session_environment(
     }
 }
 
-/// Split tagged lines into (stdout, stderr, interleaved) strings.
-fn split_lines(lines: &[(bool, String)]) -> (String, String, String) {
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    let mut interleaved = String::new();
-    let mut stdout_started = false;
-    let mut stderr_started = false;
-    for (i, (is_stderr, text)) in lines.iter().enumerate() {
-        if i > 0 {
-            interleaved.push('\n');
-        }
-        interleaved.push_str(text);
-        let (target, started) = if *is_stderr {
-            (&mut stderr, &mut stderr_started)
-        } else {
-            (&mut stdout, &mut stdout_started)
-        };
-        if *started {
-            target.push('\n');
-        }
-        *started = true;
-        target.push_str(text);
-    }
-    (stdout, stderr, interleaved)
+#[derive(Default)]
+struct JoinedText {
+    text: String,
+    wrote_any: bool,
+    open_line: bool,
 }
 
-/// Collect lines from stdout and stderr and send `(is_stderr, line)` tuples to `tx`.
+impl JoinedText {
+    fn push(&mut self, record: &CaptureRecord) {
+        if self.wrote_any && !self.open_line {
+            self.text.push('\n');
+        }
+        self.text.push_str(&record.text);
+        self.wrote_any = true;
+        self.open_line = !record.ends_line;
+    }
+
+    fn mark_gap(&mut self) {
+        self.open_line = false;
+    }
+}
+
+fn split_records(
+    records: &[CaptureRecord],
+    head_record_count: usize,
+    dropped_stdout_bytes: usize,
+    dropped_stderr_bytes: usize,
+) -> (String, String, String) {
+    let dropped_bytes = dropped_stdout_bytes + dropped_stderr_bytes;
+    let notice = format!(
+        "[Capture limit reached: {dropped_bytes} bytes dropped. \
+         Showing the beginning and end of the output.]"
+    );
+    let mut stdout = JoinedText::default();
+    let mut stderr = JoinedText::default();
+    let mut interleaved = JoinedText::default();
+    let mut open_stream: Option<bool> = None;
+
+    let push_notice = |interleaved: &mut JoinedText, open_stream: &mut Option<bool>| {
+        if interleaved.wrote_any {
+            interleaved.text.push('\n');
+        }
+        interleaved.text.push_str(&notice);
+        interleaved.wrote_any = true;
+        interleaved.open_line = false;
+        *open_stream = None;
+    };
+
+    for (index, record) in records.iter().enumerate() {
+        if dropped_bytes > 0 && index == head_record_count {
+            push_notice(&mut interleaved, &mut open_stream);
+            if dropped_stdout_bytes > 0 {
+                stdout.mark_gap();
+            }
+            if dropped_stderr_bytes > 0 {
+                stderr.mark_gap();
+            }
+        }
+
+        interleaved.open_line = open_stream == Some(record.is_stderr);
+        interleaved.push(record);
+        open_stream = (!record.ends_line).then_some(record.is_stderr);
+
+        if record.is_stderr {
+            stderr.push(record);
+        } else {
+            stdout.push(record);
+        }
+    }
+    if dropped_bytes > 0 && head_record_count >= records.len() {
+        push_notice(&mut interleaved, &mut open_stream);
+    }
+
+    (stdout.text, stderr.text, interleaved.text)
+}
+
+struct RawSegment {
+    bytes: Vec<u8>,
+    ends_line: bool,
+}
+
+fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
+    for back in 1..=bytes.len().min(3) {
+        let byte = bytes[bytes.len() - back];
+        if byte & 0xC0 == 0x80 {
+            continue;
+        }
+        let sequence_len = match byte {
+            0xF0.. => 4,
+            0xE0.. => 3,
+            0xC0.. => 2,
+            _ => 1,
+        };
+        return if sequence_len > back { back } else { 0 };
+    }
+    0
+}
+
+/// A trailing `\r` stays pending so a CRLF split across segments is still seen as one line ending.
+fn take_splittable_prefix(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let mut cut = pending.len() - incomplete_utf8_suffix_len(pending);
+    if cut > 0 && pending[cut - 1] == b'\r' {
+        cut -= 1;
+    }
+    if cut == 0 {
+        return None;
+    }
+    let rest = pending.split_off(cut);
+    Some(std::mem::replace(pending, rest))
+}
+
+fn bounded_segments<R: AsyncRead + Unpin + Send + 'static>(
+    mut reader: R,
+    max_segment: usize,
+) -> std::pin::Pin<Box<dyn Stream<Item = std::io::Result<RawSegment>> + Send>> {
+    Box::pin(async_stream::stream! {
+        let mut pending: Vec<u8> = Vec::new();
+        let mut buf = vec![0u8; 4096];
+        loop {
+            match reader.read(&mut buf).await {
+                Err(e) => { yield Err(e); break; }
+                Ok(0) => {
+                    if !pending.is_empty() {
+                        yield Ok(RawSegment { bytes: std::mem::take(&mut pending), ends_line: false });
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    for &byte in &buf[..n] {
+                        if byte == b'\n' {
+                            if pending.last() == Some(&b'\r') {
+                                pending.pop();
+                            }
+                            yield Ok(RawSegment { bytes: std::mem::take(&mut pending), ends_line: true });
+                        } else {
+                            pending.push(byte);
+                            if pending.len() >= max_segment {
+                                if let Some(bytes) = take_splittable_prefix(&mut pending) {
+                                    yield Ok(RawSegment { bytes, ends_line: false });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
 async fn collect_tagged_lines(
     stdout: tokio::process::ChildStdout,
     stderr: tokio::process::ChildStderr,
-    tx: tokio::sync::mpsc::UnboundedSender<(bool, String)>,
+    capture: Arc<Mutex<CaptureBuffer>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
+    max_segment: usize,
 ) -> Result<(), std::io::Error> {
-    let stdout_lines = SplitStream::new(BufReader::new(stdout).split(b'\n')).map(|l| (false, l));
-    let stderr_lines = SplitStream::new(BufReader::new(stderr).split(b'\n')).map(|l| (true, l));
-    let mut merged = stdout_lines.merge(stderr_lines);
+    let stdout_segments = bounded_segments(stdout, max_segment).map(|s| (false, s));
+    let stderr_segments = bounded_segments(stderr, max_segment).map(|s| (true, s));
+    let mut merged = stdout_segments.merge(stderr_segments);
     let mut output_batcher = notification_emitter.map(ShellOutputBatcher::new);
     let mut flush_interval = tokio::time::interval_at(
         tokio::time::Instant::now() + SHELL_LIVE_OUTPUT_FLUSH_INTERVAL,
@@ -678,12 +937,12 @@ async fn collect_tagged_lines(
 
     loop {
         tokio::select! {
-            tagged_line = merged.next() => {
-                let Some((is_stderr, line)) = tagged_line else {
+            tagged_segment = merged.next() => {
+                let Some((is_stderr, segment)) = tagged_segment else {
                     break;
                 };
-                let line = match line {
-                    Ok(line) => String::from_utf8_lossy(&line).into_owned(),
+                let segment = match segment {
+                    Ok(segment) => segment,
                     Err(error) => {
                         if let Some(output_batcher) = output_batcher.as_mut() {
                             output_batcher.flush();
@@ -691,13 +950,18 @@ async fn collect_tagged_lines(
                         return Err(error);
                     }
                 };
+                let record = CaptureRecord {
+                    is_stderr,
+                    text: String::from_utf8_lossy(&segment.bytes).into_owned(),
+                    ends_line: segment.ends_line,
+                };
 
                 if let Some(output_batcher) = output_batcher.as_mut() {
-                    if output_batcher.push_line(is_stderr, &line) {
+                    if output_batcher.push_segment(is_stderr, &record.text, record.ends_line) {
                         flush_interval.reset();
                     }
                 }
-                let _ = tx.send((is_stderr, line));
+                capture.lock().unwrap().push(record);
             }
             _ = flush_interval.tick(), if output_batcher.is_some() => {
                 if let Some(output_batcher) = output_batcher.as_mut() {
@@ -722,8 +986,16 @@ fn truncation_notice(info: &TruncationInfo) -> String {
     } else {
         "shell commands like `head`, `tail`, or `sed -n '100,200p'`"
     };
+    let saved = if info.is_fragment {
+        format!(
+            "Captured portion saved to {path}; \
+             output beyond the capture limit was dropped and is unrecoverable."
+        )
+    } else {
+        format!("Full output saved to {path}.")
+    };
     format!(
-        "[{reason} Full output saved to {path}. \
+        "[{reason} {saved} \
          Read it with {commands} up to {limit} lines at a time.]",
         reason = info.reason,
         limit = OUTPUT_LIMIT_LINES,
@@ -734,6 +1006,7 @@ fn render_output(
     full_output: &str,
     label: &str,
     output_dir: &std::path::Path,
+    is_fragment: bool,
 ) -> Result<TruncateResult, String> {
     if full_output.is_empty() {
         return Ok(TruncateResult {
@@ -741,13 +1014,14 @@ fn render_output(
             truncation: None,
         });
     }
-    truncate_output(full_output, label, output_dir)
+    truncate_output(full_output, label, output_dir, is_fragment)
 }
 
 fn truncate_output(
     full_output: &str,
     label: &str,
     output_dir: &std::path::Path,
+    is_fragment: bool,
 ) -> Result<TruncateResult, String> {
     let lines: Vec<&str> = full_output.split('\n').collect();
     let total_lines = lines.len();
@@ -782,6 +1056,7 @@ fn truncate_output(
         truncation: Some(TruncationInfo {
             path: output_path,
             reason,
+            is_fragment,
         }),
     })
 }
@@ -814,7 +1089,7 @@ fn save_full_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::ContentBlock;
+    use rmcp::model::{ContentBlock, ServerNotification};
 
     fn extract_text(result: &CallToolResult) -> &str {
         match &result.content[0] {
@@ -1004,6 +1279,226 @@ mod tests {
         );
     }
 
+    async fn capture_stdout(input: Vec<u8>, capture_limit: usize) -> (String, usize) {
+        let mut buffer = CaptureBuffer::new(capture_limit);
+        let mut segments = bounded_segments(
+            std::io::Cursor::new(input),
+            max_segment_bytes(capture_limit),
+        );
+        while let Some(segment) = segments.next().await {
+            let segment = segment.unwrap();
+            buffer.push(CaptureRecord {
+                is_stderr: false,
+                text: String::from_utf8_lossy(&segment.bytes).into_owned(),
+                ends_line: segment.ends_line,
+            });
+        }
+        let dropped = buffer.dropped_stdout_bytes;
+        let head_count = buffer.head.len();
+        let mut records = buffer.head;
+        records.extend(buffer.tail);
+        (split_records(&records, head_count, dropped, 0).0, dropped)
+    }
+
+    #[tokio::test]
+    async fn line_longer_than_a_segment_is_rejoined_exactly() {
+        let input = vec![b'x'; 200_000];
+        let (stdout, dropped) = capture_stdout(input.clone(), 1024 * 1024).await;
+
+        assert_eq!(dropped, 0);
+        assert_eq!(stdout.as_bytes(), input);
+    }
+
+    #[tokio::test]
+    async fn segments_of_invalid_utf8_decode_within_half_the_capture_limit() {
+        for capture_limit in [MIN_CAPTURE_LIMIT_BYTES, 1500, 4096] {
+            let segments: Vec<_> = bounded_segments(
+                std::io::Cursor::new(vec![0xFF; 10_000]),
+                max_segment_bytes(capture_limit),
+            )
+            .map(|segment| segment.unwrap())
+            .collect()
+            .await;
+
+            assert!(segments.len() > 1);
+            for segment in segments {
+                let record = CaptureRecord {
+                    is_stderr: false,
+                    text: String::from_utf8_lossy(&segment.bytes).into_owned(),
+                    ends_line: segment.ends_line,
+                };
+                assert!(record.budget_cost() <= capture_limit / 2);
+            }
+        }
+    }
+
+    fn record(is_stderr: bool, text: &str, ends_line: bool) -> CaptureRecord {
+        CaptureRecord {
+            is_stderr,
+            text: text.to_string(),
+            ends_line,
+        }
+    }
+
+    #[test]
+    fn split_records_joins_continuations_without_newlines() {
+        let records = [
+            record(false, "abc", false),
+            record(true, "err", true),
+            record(false, "def", false),
+            record(false, "ghi", true),
+            record(false, "next", true),
+        ];
+        let (stdout, stderr, interleaved) = split_records(&records, records.len(), 0, 0);
+
+        assert_eq!(stdout, "abcdefghi\nnext");
+        assert_eq!(stderr, "err");
+        assert_eq!(interleaved, "abc\nerr\ndefghi\nnext");
+    }
+
+    #[test]
+    fn split_records_keeps_continuations_of_streams_that_lost_nothing() {
+        let records = [
+            record(true, "err-start-", false),
+            record(false, "out-head", true),
+            record(false, "out-tail", true),
+            record(true, "err-end", true),
+        ];
+        let (stdout, stderr, _) = split_records(&records, 2, 100, 0);
+
+        assert_eq!(stdout, "out-head\nout-tail");
+        assert_eq!(stderr, "err-start-err-end");
+    }
+
+    #[tokio::test]
+    async fn bounded_segments_split_long_lines_on_character_boundaries() {
+        let input = "a\u{20ac}\u{20ac}\u{20ac}b\ncd".as_bytes();
+        let segments: Vec<_> = bounded_segments(input, 4)
+            .map(|segment| segment.unwrap())
+            .collect()
+            .await;
+
+        let rebuilt: Vec<(String, bool)> = segments
+            .iter()
+            .map(|s| (String::from_utf8(s.bytes.clone()).unwrap(), s.ends_line))
+            .collect();
+        assert_eq!(
+            rebuilt,
+            [
+                ("a\u{20ac}".to_string(), false),
+                ("\u{20ac}".to_string(), false),
+                ("\u{20ac}b".to_string(), false),
+                (String::new(), true),
+                ("cd".to_string(), false),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn crlf_split_across_segment_boundary_is_not_left_as_trailing_cr() {
+        let mut input = vec![b'x'; MAX_SEGMENT_BYTES - 1];
+        input.extend_from_slice(b"\r\nafter\n");
+        let segments: Vec<_> = bounded_segments(std::io::Cursor::new(input), MAX_SEGMENT_BYTES)
+            .map(|s| s.unwrap())
+            .collect()
+            .await;
+        let texts: Vec<(String, bool)> = segments
+            .iter()
+            .map(|s| (String::from_utf8(s.bytes.clone()).unwrap(), s.ends_line))
+            .collect();
+
+        for (text, _) in &texts {
+            assert!(!text.ends_with('\r'), "trailing CR in segment: {text:?}");
+        }
+        let all_text: String = texts
+            .iter()
+            .map(|(t, ends_line)| {
+                if *ends_line {
+                    format!("{t}\n")
+                } else {
+                    t.clone()
+                }
+            })
+            .collect();
+        assert!(all_text.contains("after\n"));
+    }
+
+    #[test]
+    fn buffer_charges_per_record_overhead_and_tracks_dropped_per_stream() {
+        let mut buffer = CaptureBuffer::new(2 * 10 * (RECORD_OVERHEAD_BYTES + 1));
+        for index in 0..100 {
+            buffer.push(record(index % 2 == 0, "", true));
+        }
+
+        let retained = buffer.head.len() + buffer.tail.len();
+        assert!(retained <= 20, "retained {retained} empty records");
+        assert_eq!(
+            buffer.dropped_stdout_bytes + buffer.dropped_stderr_bytes,
+            100 - retained
+        );
+        assert!(buffer.dropped_stdout_bytes > 0 && buffer.dropped_stderr_bytes > 0);
+    }
+
+    #[test]
+    fn buffer_spends_unused_head_budget_on_the_tail() {
+        let mut buffer = CaptureBuffer::new(MIN_CAPTURE_LIMIT_BYTES);
+        for _ in 0..5 {
+            buffer.push(record(false, &"x".repeat(159), false));
+        }
+        buffer.push(record(false, "xxxxx", false));
+
+        assert_eq!(buffer.dropped_stdout_bytes, 0);
+        assert_eq!(buffer.head.len() + buffer.tail.len(), 6);
+    }
+
+    #[test]
+    fn fragment_notice_does_not_promise_any_part_of_the_output() {
+        let notice = truncation_notice(&TruncationInfo {
+            path: PathBuf::from("stdout-0"),
+            reason: "Output exceeded the limit.".to_string(),
+            is_fragment: true,
+        });
+
+        assert!(notice.contains("unrecoverable"));
+        assert!(!notice.contains("beginning"));
+        assert!(!notice.contains("Full output"));
+    }
+
+    #[test]
+    fn capture_limit_below_the_minimum_is_raised() {
+        for value in ["0", "1", "1023"] {
+            let _env = env_lock::lock_env([("GOOSE_SHELL_CAPTURE_LIMIT_BYTES", Some(value))]);
+            assert_eq!(capture_limit_bytes(), MIN_CAPTURE_LIMIT_BYTES);
+        }
+    }
+
+    #[tokio::test]
+    async fn crlf_split_across_segments_is_normalized_in_live_output() {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
+        let mut segments = bounded_segments(std::io::Cursor::new(b"abc\r\ndef\n".to_vec()), 4);
+        while let Some(segment) = segments.next().await {
+            let segment = segment.unwrap();
+            batcher.push_segment(
+                false,
+                &String::from_utf8(segment.bytes).unwrap(),
+                segment.ends_line,
+            );
+        }
+        batcher.flush();
+
+        let mut output = String::new();
+        while let Ok(ServerNotification::CustomNotification(notification)) = receiver.try_recv() {
+            for chunk in parse_shell_output_notification(&notification)
+                .unwrap()
+                .chunks
+            {
+                output.push_str(&chunk.output);
+            }
+        }
+        assert_eq!(output, "abc\ndef\n");
+    }
+
     #[cfg(not(windows))]
     #[tokio::test]
     async fn flatpak_commands_carry_the_host_accounts_login_path() {
@@ -1065,7 +1560,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let result = render_output(&input, "test", dir.path()).unwrap();
+        let result = render_output(&input, "test", dir.path(), false).unwrap();
         assert_eq!(result.text, input);
         assert!(result.truncation.is_none());
     }
@@ -1073,7 +1568,7 @@ mod tests {
     #[test]
     fn render_output_shows_empty_message() {
         let dir = tempfile::tempdir().unwrap();
-        let result = render_output("", "test", dir.path()).unwrap();
+        let result = render_output("", "test", dir.path(), false).unwrap();
         assert_eq!(result.text, "(no output)");
         assert!(result.truncation.is_none());
     }
@@ -1086,7 +1581,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let result = render_output(&input, "test_lines", dir.path()).unwrap();
+        let result = render_output(&input, "test_lines", dir.path(), false).unwrap();
         let preview = &result.text;
 
         assert_eq!(preview.lines().count(), OUTPUT_PREVIEW_LINES);
@@ -1115,7 +1610,7 @@ mod tests {
         assert!(input.len() > OUTPUT_LIMIT_BYTES);
         assert!(input.lines().count() <= OUTPUT_LIMIT_LINES);
 
-        let result = render_output(&input, "test_bytes", dir.path()).unwrap();
+        let result = render_output(&input, "test_bytes", dir.path(), false).unwrap();
         let info = result
             .truncation
             .as_ref()
@@ -1132,7 +1627,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let input = "x".repeat(200_000);
 
-        let result = render_output(&input, "test_giant_line", dir.path()).unwrap();
+        let result = render_output(&input, "test_giant_line", dir.path(), false).unwrap();
 
         assert!(result.text.len() <= OUTPUT_PREVIEW_BYTES);
         let info = result
