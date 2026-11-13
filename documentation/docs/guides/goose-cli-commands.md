@@ -487,51 +487,6 @@ goose run --recipe recipe.yaml --max-turns 10
 
 ---
 
-#### review [options] [range]
-Review the current git diff using goose. By default, `goose review` reviews the working tree against `HEAD`; pass a range such as `main...HEAD` to review a specific diff.
-
-`goose review` can discover review checks from `.agents/checks/*.md` and scoped review instructions from `.agents/REVIEW.md`.
-
-**Options:**
-- **`--prompt <FILE>`**: Use a custom base review prompt
-- **`--model <MODEL>`**: Set the default model for the main review agent and checks that do not declare their own model
-- **`--provider <PROVIDER>`**: Set the provider for the main review agent
-- **`--override-model <MODEL>`**: Force every discovered check to use this model
-- **`--turn-limit <N>`**: Set the default turn limit for orchestrated review subprocesses and checks
-- **`--dry-run`**: Print the assembled review prompt and discovered checks without running the review
-- **`-q, --quiet`**: Suppress non-result output from the underlying agent
-- **`--no-orchestrate`**: Disable the default Rust-driven parallel orchestrator and use the single-prompt path. Checks that declare `tools` are rejected because this path cannot enforce per-check tool allowlists.
-- **`-i, --instructions <TEXT>`**: Add free-form review instructions
-- **`-f, --files <FILE>...`**: Restrict the review to specific files
-- **`-c, --check-filter <NAME>...`**: Run only checks with matching names
-- **`-s, --check-scope <DIR>`**: Search a specific directory for `.agents/checks/*.md`
-- **`--checks-only`**: Skip the main correctness pass and run only check subagents
-- **`--summary-only`**: Print only the diff summary
-- **`--severity <LEVEL>`**: Minimum severity to display. Defaults to `medium`; use `low` to show every finding
-
-**Usage:**
-```bash
-# Review the working tree against HEAD
-goose review
-
-# Review a branch range
-goose review main...HEAD
-
-# Add review intent
-goose review --instructions "This is a refactor; flag behavior changes"
-
-# Review only selected files
-goose review --files crates/goose/src/agents/agent.rs documentation/docs/guides/goose-cli-commands.md
-
-# Preview the assembled prompt and discovered checks
-goose review --dry-run
-
-# Run only named checks
-goose review --check-filter security performance --checks-only
-```
-
----
-
 #### recipe
 Used to validate recipe files, manage recipe sharing, list available recipes, and open recipes in goose desktop.
 
@@ -713,7 +668,7 @@ goose acp
 ```
 
 :::info
-This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/gdk/acp) for details.
+This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Set up goose in Zed](/docs/guides/zed) for an editor setup example, or [Build an app with goose](/docs/gdk/acp) to create your own client.
 :::
 
 :::warning Unattended environments
@@ -828,6 +783,7 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills [<name>...]`** - List available skills, or load one or more skills by name
+- **`/status`** - Show the current session ID, model, provider, mode, and token usage. Use the ID to resume the same session in another client, or with `goose session --resume --session-id <session_id>` in the CLI.
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)
 

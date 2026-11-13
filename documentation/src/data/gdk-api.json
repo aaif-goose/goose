@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "docVersion": "0.1",
       "source": "crates/goose-sdk/src/bindings.rs",
       "functions": [
@@ -729,37 +729,37 @@
           "fields": [
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "reasoning_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
@@ -1477,31 +1477,31 @@
             },
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             }

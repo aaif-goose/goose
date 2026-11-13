@@ -84,7 +84,7 @@ export CLAUDE_THINKING_TYPE=disabled
 ```
 
 :::tip Viewing Thinking Output
-To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown automatically in a collapsible "Show reasoning" toggle.
+To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown in a collapsible **Thinking** block; you can change this with `Show Thinking` in `Settings` > `Chat`.
 :::
 
 ### Provider Retries
@@ -136,7 +136,8 @@ These variables control how goose manages conversation sessions and context.
 |----------|---------|---------|---------|
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 |
 | `GOOSE_GATEWAY_MAX_TURNS` | Maximum number of turns for gateway sessions (e.g., Telegram). Overrides `GOOSE_MAX_TURNS` for gateway traffic only, so chat platforms can keep a stricter cap than CLI/desktop sessions. | Integer (e.g., 5, 10, 25) | Falls back to `GOOSE_MAX_TURNS`, then 5 |
-| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
+| `GOOSE_MAX_CONCURRENT_SUBAGENTS` | Maximum number of subagents running at once per parent session. Additional tasks wait for a slot. Unset or invalid values use the default. | Positive integer (e.g., 2, 5, 10) | 5 |
+| `GOOSE_SUBAGENT_MAX_TURNS` | Overrides the turn budget for [subagents](/docs/guides/context-engineering/subagents). An explicit delegate `max_turns` or child recipe [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) takes precedence. | Positive integer (e.g., 25) | Falls back to `GOOSE_MAX_TURNS`, then 1000 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints", "AGENTS.md"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_PROMPT_EDITOR` | [External editor](/docs/guides/goose-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
@@ -311,7 +312,7 @@ These variables control security features, credential storage, and anonymous usa
 | `GOOSE_ALLOWLIST` | Controls which extensions can be loaded | URL for [allowed extensions](/docs/guides/allowlist) list | Unset |
 | `GOOSE_DISABLE_KEYRING` | Disables the system keyring for secret storage | Set to any value (e.g., "1", "true", "yes") to disable. The actual value doesn't matter, only whether the variable is set. | Unset (keyring enabled) |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false |
-| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 |
+| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (lower = stricter) | Float between 0.01 and 1.0 | 0.8 |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false |
 | `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | Classification endpoint URL for ML-based prompt injection detection | URL (e.g., "https://api.example.com/classify") | Unset |
 | `SECURITY_PROMPT_CLASSIFIER_TOKEN` | Authentication token for `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | String | Unset |
@@ -323,7 +324,7 @@ These variables control security features, credential storage, and anonymous usa
 # Enable prompt injection detection with default threshold
 export SECURITY_PROMPT_ENABLED=true
 
-# Enable with custom threshold (stricter)
+# Enable with custom threshold (more lenient than default)
 export SECURITY_PROMPT_ENABLED=true
 export SECURITY_PROMPT_THRESHOLD=0.9
 

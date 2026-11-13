@@ -20,9 +20,10 @@ use super::base::{
 };
 pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
-    block_binding_behavior, create_request_for_model, is_reserved_request_param_key,
-    is_thinking_signature_error, response_to_streaming_message, PrefixMismatchBehavior,
-    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    block_binding_behavior, create_request_for_model, error_for_type,
+    is_reserved_request_param_key, is_thinking_signature_error, response_to_streaming_message,
+    PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD,
+    THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
@@ -301,22 +302,10 @@ impl AnthropicProvider {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error")
                 .to_string();
-            let error_type = err_obj.get("type").and_then(Value::as_str);
-            return Err(match error_type {
-                Some("authentication_error" | "permission_error") => {
-                    ProviderError::Authentication(message)
-                }
-                Some("rate_limit_error") => ProviderError::RateLimitExceeded {
-                    details: message,
-                    retry_delay: None,
-                },
-                Some("billing_error") => ProviderError::CreditsExhausted {
-                    details: message,
-                    top_up_url: None,
-                },
-                Some("api_error" | "overloaded_error") => ProviderError::ServerError(message),
-                _ => ProviderError::RequestFailed(message),
-            });
+            return Err(error_for_type(
+                err_obj.get("type").and_then(Value::as_str),
+                message,
+            ));
         }
 
         let arr = match json.get("data").and_then(|v| v.as_array()) {

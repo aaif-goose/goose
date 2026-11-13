@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
+
+### Added
+
+- add IO Intelligence provider ([#12795](https://github.com/aaif-goose/goose/pull/12795))
+
+### Fixed
+
+- *(providers)* request summarized thinking from Claude models ([#13029](https://github.com/aaif-goose/goose/pull/13029))
+- *(databricks)* send the system prompt as system on the MLflow chat route ([#13057](https://github.com/aaif-goose/goose/pull/13057))
+- *(databricks)* omit stream_options for Gemini model services ([#12675](https://github.com/aaif-goose/goose/pull/12675))
+- fix stale models ([#13054](https://github.com/aaif-goose/goose/pull/13054))
+- *(providers)* add missing GLM models to OpenCode Go and Zen ([#12057](https://github.com/aaif-goose/goose/pull/12057))
+- *(openrouter)* use the context length OpenRouter reports ([#12853](https://github.com/aaif-goose/goose/pull/12853))
+- *(openai)* send session id as prompt_cache_key on Responses requests ([#12420](https://github.com/aaif-goose/goose/pull/12420))
+
+### Other
+
+- Support provider-defined cache prices ([#12944](https://github.com/aaif-goose/goose/pull/12944))
+- *(release)* bump version to 1.55.0 (minor) ([#12863](https://github.com/aaif-goose/goose/pull/12863))
+
 ## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
 
 ### Added

@@ -24,8 +24,6 @@ pub(crate) fn get_override(env_key: &str) -> Option<bool> {
 
 pub struct SecurityManager {
     scanner: OnceLock<PromptInjectionScanner>,
-    #[cfg(test)]
-    enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,26 +40,10 @@ impl SecurityManager {
     pub fn new() -> Self {
         Self {
             scanner: OnceLock::new(),
-            #[cfg(test)]
-            enabled: None,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn enabled() -> Self {
-        Self {
-            scanner: OnceLock::new(),
-            enabled: Some(true),
         }
     }
 
     pub fn is_prompt_injection_detection_enabled(&self) -> bool {
-        #[cfg(test)]
-        {
-            if let Some(enabled) = self.enabled {
-                return enabled;
-            }
-        }
         if let Some(overridden) = get_override("SECURITY_PROMPT_ENABLED_OVERRIDE") {
             return overridden;
         }
@@ -174,44 +156,33 @@ impl SecurityManager {
                 let sanitized_explanation = analysis_result.explanation.replace('\n', " | ");
 
                 if analysis_result.is_malicious {
-                    let above_threshold = analysis_result.confidence > config_threshold;
                     let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
 
                     let tool_call_json =
                         serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
 
-                    let action = if above_threshold { "BLOCK" } else { "LOG" };
-
                     tracing::warn!(
                         monotonic_counter.goose.prompt_injection_finding = 1,
                         security.event_type = "prompt_injection_scan",
-                        security.action = action,
+                        security.action = "BLOCK",
                         security.confidence = analysis_result.confidence,
                         security.threshold = config_threshold,
-                        security.above_threshold = above_threshold,
                         security.threat_type = "command_injection",
                         security.finding_id = %finding_id,
                         security.explanation = %sanitized_explanation,
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
                         tool.call_json = %tool_call_json,
-                        "{}",
-                        if above_threshold {
-                            "prompt injection scan: finding above threshold"
-                        } else {
-                            "prompt injection scan: finding below threshold"
-                        }
+                        "prompt injection scan: finding above threshold"
                     );
-                    if above_threshold {
-                        results.push(SecurityResult {
-                            is_malicious: analysis_result.is_malicious,
-                            confidence: analysis_result.confidence,
-                            explanation: analysis_result.explanation,
-                            should_ask_user: true, // Always ask user for threats above threshold
-                            finding_id,
-                            tool_request_id: tool_request.id.clone(),
-                        });
-                    }
+                    results.push(SecurityResult {
+                        is_malicious: analysis_result.is_malicious,
+                        confidence: analysis_result.confidence,
+                        explanation: analysis_result.explanation,
+                        should_ask_user: true,
+                        finding_id,
+                        tool_request_id: tool_request.id.clone(),
+                    });
                 } else if analysis_result.scanned {
                     let tool_call_json =
                         serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());

@@ -6,8 +6,6 @@ use super::pipeline::{
     test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MessageKind::User,
 };
 #[cfg(feature = "code-mode")]
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
-#[cfg(feature = "code-mode")]
 use crate::config::permission::PermissionLevel;
 #[cfg(feature = "code-mode")]
 use crate::config::GooseMode;
@@ -141,7 +139,7 @@ async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
 
 #[cfg(feature = "code-mode")]
 #[tokio::test]
-async fn unadvertised_load_skill_is_neither_approved_nor_loaded() -> Result<()> {
+async fn unadvertised_load_skill_is_not_confirmed_or_loaded() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let skill_dir = pipeline.working_dir().join(".agents/skills/private");
     std::fs::create_dir_all(&skill_dir)?;
@@ -169,24 +167,6 @@ async fn unadvertised_load_skill_is_neither_approved_nor_loaded() -> Result<()> 
             .iter()
             .any(|content| matches!(content, MessageContent::ActionRequired(_)))
     }));
-    let request = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .find(|request| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| tool_call.name == "load_skill")
-        })
-        .expect("load_skill request");
-    assert!(request
-        .tool_meta
-        .as_ref()
-        .and_then(|metadata| metadata.get(TOOL_EXECUTABLE_KEY))
-        .is_none());
 
     Ok(())
 }

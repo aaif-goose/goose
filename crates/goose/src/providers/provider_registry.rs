@@ -33,6 +33,7 @@ pub struct ProviderEntry {
     pub(crate) inventory_configured: super::inventory::InventoryConfiguredResolver,
     pub(crate) cleanup: Option<ProviderCleanup>,
     provider_type: ProviderType,
+    catalog_provider_id: Option<String>,
     supports_inventory_refresh: bool,
     tls_config: Option<TlsConfig>,
     toolshim: bool,
@@ -84,6 +85,9 @@ impl ProviderEntry {
                 .and_then(|m| m.supports_vision)
         {
             model.supports_vision = Some(supports_vision);
+        }
+        if let Some(catalog_provider_id) = &self.catalog_provider_id {
+            model = model.with_canonical_vision_support(catalog_provider_id);
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -172,6 +176,7 @@ impl ProviderRegistry {
                 } else {
                     ProviderType::Builtin
                 },
+                catalog_provider_id: None,
                 supports_inventory_refresh: inventory.supports_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
@@ -339,6 +344,7 @@ impl ProviderRegistry {
                 inventory_configured: inventory_configured.unwrap_or(default_inventory_configured),
                 cleanup: None,
                 provider_type,
+                catalog_provider_id: config.catalog_provider_id.clone(),
                 supports_inventory_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,

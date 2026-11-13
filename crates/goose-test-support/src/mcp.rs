@@ -126,11 +126,7 @@ impl McpFixtureServer {
         &self,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        let protocol_version = context
-            .peer
-            .peer_info()
-            .map(|info| info.protocol_version.clone())
-            .unwrap_or_default();
+        let protocol_version = context.protocol_version().unwrap_or_default();
         let roots = if protocol_version < ProtocolVersion::V_2026_07_28 {
             context
                 .peer
@@ -186,8 +182,15 @@ impl McpFixtureServer {
     }
 
     #[tool(name = "db.query", description = "A tool whose name contains a dot")]
-    fn db_query(&self) -> Result<CallToolResult, McpError> {
+    fn dotted_db_query(&self) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![ContentBlock::text("rows")]))
+    }
+
+    #[tool(description = "Spelled like db.query once the dot is replaced")]
+    fn db_query(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            "underscore rows",
+        )]))
     }
 
     #[tool(description = "Send a progress notification, then finish")]

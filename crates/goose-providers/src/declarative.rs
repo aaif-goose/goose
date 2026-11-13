@@ -14,6 +14,7 @@ pub(crate) mod declarative_providers {
 
     expose_declarative_providers!(
         aigateway,
+        aihubmix,
         aimlapi,
         alibaba,
         atomic_chat,
@@ -30,6 +31,7 @@ pub(crate) mod declarative_providers {
         iflytek_astron,
         inception,
         ionet,
+        lemonade,
         llama_swap,
         lmstudio,
         lynkr,
@@ -49,6 +51,7 @@ pub(crate) mod declarative_providers {
         ovhcloud,
         perplexity,
         pleumrouter,
+        routerplex,
         routstr,
         sakana,
         saladcloud,
@@ -430,6 +433,15 @@ mod tests {
             deserialize_provider_config(crate::groq::JSON).expect("groq.json should parse");
 
         assert!(!config.preserves_thinking);
+    }
+
+    #[test]
+    fn vercel_ai_gateway_json_refreshes_models_against_vercel_catalog() {
+        let config = deserialize_provider_config(crate::vercel_ai_gateway::JSON)
+            .expect("vercel_ai_gateway.json should parse");
+
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.catalog_provider_id.as_deref(), Some("vercel"));
     }
 
     #[test]

@@ -17,9 +17,10 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
+use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
-    InferenceInput, Operation, OperationResult,
+    InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -114,6 +115,39 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
         .retain(|content| !(is_thinking(content) && prior.contains(&content)));
 }
 
+fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
+    let mut seen = messages
+        .iter()
+        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
+        .collect::<HashSet<_>>();
+    let mut logs = Vec::new();
+
+    for (operation, line) in messages
+        .iter()
+        .filter_map(|message| message.metadata.operations.as_deref())
+        .flat_map(|operations| operations.iter())
+        .filter_map(|(operation, notes)| {
+            notes
+                .get(CLIENT_LOG)
+                .and_then(serde_json::Value::as_str)
+                .map(|line| (operation, line))
+        })
+    {
+        let log = format!("ops_{operation}: {line}");
+        if seen.insert(log.clone()) {
+            logs.push(log);
+        }
+    }
+
+    logs
+}
+
+fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
+    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
+        message.metadata.operation_logs = std::mem::take(logs);
+    }
+}
+
 pub fn chat_span(
     provider: &dyn Provider,
     model_config: &ModelConfig,
@@ -156,14 +190,14 @@ pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
     let Some(message) = messages.last() else {
         return false;
     };
-    let mut responses = message
+    let mut tool_responses = message
         .content
         .iter()
         .filter_map(MessageContent::as_tool_response)
         .peekable();
-    responses.peek().is_some()
-        && responses.all(|response| {
-            response
+    tool_responses.peek().is_some()
+        && tool_responses.all(|tool_response| {
+            tool_response
                 .tool_result
                 .as_ref()
                 .is_ok_and(|result| !result.is_error.unwrap_or(false))
@@ -221,13 +255,13 @@ pub struct InferenceRunner<'a, S, E> {
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
-/// unanswered by an earlier turn are dropped, since nothing will answer them now.
+/// with no response from an earlier turn are dropped, since nothing will respond to them now.
 fn messages_for_provider(
     conversation: &Conversation,
     turn: &[Message],
     keep_empty_messages: bool,
 ) -> Vec<Message> {
-    let answered: HashSet<&str> = conversation
+    let tool_response_ids: HashSet<&str> = conversation
         .messages()
         .iter()
         .flat_map(|message| message.get_tool_response_ids())
@@ -242,7 +276,9 @@ fn messages_for_provider(
             let mut message = message.agent_visible_content();
             if index < start {
                 message.content.retain(|content| match content {
-                    MessageContent::ToolRequest(request) => answered.contains(request.id.as_str()),
+                    MessageContent::ToolRequest(request) => {
+                        tool_response_ids.contains(request.id.as_str())
+                    }
                     _ => true,
                 });
             }
@@ -250,6 +286,24 @@ fn messages_for_provider(
         })
         .filter(|message| keep_empty_messages || !message.content.is_empty())
         .collect()
+}
+
+/// Signed reasoning only verifies with the provider account that produced it.
+fn drop_foreign_signed_thinking(messages: &mut [Message], provider: &str) {
+    for message in messages {
+        if message
+            .metadata
+            .inference
+            .as_ref()
+            .is_some_and(|inference| inference.provider != provider)
+        {
+            message.content.retain(|content| match content {
+                MessageContent::Thinking(thinking) => thinking.signature.is_empty(),
+                MessageContent::RedactedThinking(_) => false,
+                _ => true,
+            });
+        }
+    }
 }
 
 fn latest_provider_session_id<'a>(
@@ -347,10 +401,17 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         emit.message(message);
     }
 
-    fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Result<OperationResult<E>> {
+    fn error_outcome(
+        &self,
+        err: &ProviderError,
+        operation_logs: &mut Vec<String>,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        self.emit_message(Message::from_provider_error(err), emit);
+        let mut message = Message::from_provider_error(err);
+        attach_operation_logs(&mut message, operation_logs);
+        self.emit_message(message, emit);
         applied(self.take_output())
     }
 }
@@ -374,7 +435,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
@@ -401,9 +462,14 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
         if !should_infer(conversation, messages) {
             return not_applicable();
         }
+        let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
-        let span = inference_span(self.provider.as_ref(), &self.model_config);
+        let model_config = session
+            .thinking_effort()
+            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
+            .unwrap_or_else(|| self.model_config.clone());
+        let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
             let PreparedInferenceRequest {
@@ -421,6 +487,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             self.output().additional_messages = additional_messages;
 
             let provider_name = self.provider.get_name();
+            drop_foreign_signed_thinking(&mut messages_for_provider, provider_name);
             if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
                 if let Err(error) = self.provider.resume(session_id).await {
                     tracing::warn!(
@@ -445,7 +512,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let stream = self
                 .provider
                 .stream(
-                    &self.model_config,
+                    &model_config,
                     &system_prompt,
                     conversation_for_provider.messages(),
                     &tools,
@@ -454,10 +521,10 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, emit),
+                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
             };
 
-            let requested_model = self.model_config.model_name.clone();
+            let requested_model = model_config.model_name.clone();
             let resolved_model = self
                 .provider
                 .fetch_model_info(&requested_model)
@@ -476,7 +543,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, emit),
+                    Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -498,6 +565,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
                         self.output().accumulator.push(chunk);
                     } else {
+                        attach_operation_logs(&mut chunk, &mut operation_logs);
                         self.emit_message(chunk, emit);
                     }
                 }
@@ -525,6 +593,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let mut marker = Message::assistant()
                 .with_text(EMPTY_RESPONSE_MESSAGE)
                 .with_visibility(false, false);
+            attach_operation_logs(&mut marker, &mut operation_logs);
             marker.metadata.set_operation_note(
                 EMPTY_RESPONSE_NOTE_SCOPE,
                 EMPTY_RESPONSE_NOTE,
@@ -545,6 +614,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     message.content.clear();
                     message.metadata.user_visible = false;
                     message.metadata.agent_visible = true;
+                    attach_operation_logs(&mut message, &mut operation_logs);
                     output.accumulator.clear();
                     message
                 };

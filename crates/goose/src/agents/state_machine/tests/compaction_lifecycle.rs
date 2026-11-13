@@ -4,7 +4,10 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
 use super::dummy_api::ProviderFeatures;
-use super::pipeline::{self, test_pipeline, MessageKind::Agent};
+use super::pipeline::{
+    self, test_pipeline,
+    MessageKind::{Agent, Error},
+};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
@@ -34,14 +37,14 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     assert!(!api.calls().last().unwrap().input_contains("<compaction>"));
 
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * 0.79) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.79) as i64)
         .await;
     let near_threshold = pipeline.run(["check the budget"]).await?;
     near_threshold.assert_message(-1, Agent, "budget checked");
     assert_eq!(near_threshold.history_replacements(), 0);
     assert!(!api.calls().last().unwrap().input_contains("<compaction>"));
 
-    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i32;
+    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i64;
     pipeline.set_total_tokens(filled_usage).await;
     let compacted = pipeline.run(["continue"]).await?;
     compacted.assert_message(-1, Agent, "continued after compaction");
@@ -184,7 +187,7 @@ async fn a_failed_compact_command_reports_the_error_and_keeps_working() -> Resul
 
     let failed = pipeline.run(["/compact"]).await?;
     assert_eq!(failed.history_replacements(), 0);
-    failed.assert_message(-1, Agent, "summarizer offline");
+    failed.assert_message(-1, Error, "summarizer offline");
     assert!(failed
         .conversation()
         .messages()
@@ -207,7 +210,7 @@ async fn context_owning_provider_has_no_compaction_operation() -> Result<()> {
     .await?;
     api.on("continue").reply("continued");
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i64)
         .await;
 
     let continued = pipeline.run(["continue"]).await?;
@@ -256,7 +259,7 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(calls.len(), 3);
     let (summary, retry) = (&calls[1], &calls[2]);
     let usage = &recovered.session.usage;
-    let output_tokens = "recovered after compaction".chars().count() as i32;
+    let output_tokens = "recovered after compaction".chars().count() as i64;
     assert_eq!(usage.input_tokens, Some(retry.input_tokens()));
     assert_eq!(usage.output_tokens, Some(output_tokens));
     assert_eq!(
@@ -266,7 +269,7 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(
         recovered.session.accumulated_usage.total_tokens,
         Some(
-            summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
+            summary.input_tokens() + "summary".len() as i64 + retry.input_tokens() + output_tokens
         )
     );
 
@@ -290,6 +293,47 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     let recovered = pipeline.run(["try again"]).await?;
     recovered.assert_message(-1, Agent, "recovered on the next turn");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_compaction_reports_the_provider_error_kind() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("overflow").context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY).http_error(401);
+
+    let failed = pipeline.run(["overflow"]).await?;
+
+    assert_eq!(failed.history_replacements(), 0);
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(
+        failed.emitted_error_kinds(),
+        [
+            MessageErrorKind::ContextLengthExceeded,
+            MessageErrorKind::Authentication
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_compaction_without_a_provider_error_reports_other() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("overflow").context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY)
+        .context_limit_error("still too long");
+
+    let failed = pipeline.run(["overflow"]).await?;
+
+    assert_eq!(failed.history_replacements(), 0);
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(
+        failed.emitted_error_kinds(),
+        [
+            MessageErrorKind::ContextLengthExceeded,
+            MessageErrorKind::Other
+        ]
+    );
     Ok(())
 }
 
@@ -506,7 +550,7 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
     pipeline
         .seed([Message::user().with_text("old work"), request, response])
         .await?;
-    let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i32;
+    let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i64;
     pipeline.set_total_tokens(filled_usage).await;
 
     api.on(SUMMARIZE_HISTORY).reply("large work summarized");

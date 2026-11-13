@@ -18,7 +18,7 @@ use tokio::sync::oneshot;
 
 mod conversions;
 
-use super::{meta_string, GooseAcpAgent, ResultExt};
+use super::{meta_string, AcpConnection, ResultExt};
 use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
 use crate::recipe::local_recipes::{self, get_recipe_library_dir};
 use crate::recipe::manifest::{
@@ -43,7 +43,7 @@ pub(super) fn deserialize_save_recipe_request(
     result.map_err(save_recipe_validation_error)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn resolve_recipe_from_meta(
         &self,
         meta: Option<&Meta>,
@@ -151,7 +151,7 @@ impl GooseAcpAgent {
             .collect();
         *self.recipe_path_cache.lock().await = recipe_file_hash_map;
 
-        let scheduled_jobs = match self.agent_manager.scheduler() {
+        let scheduled_jobs = match self.services.scheduler.clone() {
             Some(scheduler) => scheduler.list_scheduled_jobs().await,
             None => Vec::new(),
         };
@@ -334,13 +334,15 @@ impl GooseAcpAgent {
         else {
             return Ok(());
         };
-        self.session_manager
+        self.services
+            .session_manager
             .update(&session.id)
             .recipe(Some(rendered))
             .apply()
             .await
             .internal_err()?;
         session.recipe = self
+            .services
             .session_manager
             .get_session(&session.id, false)
             .await

@@ -10,7 +10,7 @@
 #
 # Knobs:
 #   GOOSE_PROVIDER (default: anthropic)
-#   GOOSE_MODEL    (default: claude-haiku-4-5)
+#   GOOSE_MODEL    (default: claude-haiku-5-5)
 #   SKIP_BUILD     skip cargo build (assumes target/debug/goose already exists)
 #   KEEP_TESTDIR   don't rm the temp workdir on exit (for debugging)
 #
@@ -41,7 +41,7 @@ GOOSE_BIN="$SCRIPT_DIR/target/debug/goose"
 export PATH="$SCRIPT_DIR/target/debug:$PATH"
 
 export GOOSE_PROVIDER="${GOOSE_PROVIDER:-anthropic}"
-export GOOSE_MODEL="${GOOSE_MODEL:-claude-haiku-4-5}"
+export GOOSE_MODEL="${GOOSE_MODEL:-claude-haiku-5-5}"
 
 echo "Using provider: $GOOSE_PROVIDER"
 echo "Using model:    $GOOSE_MODEL"

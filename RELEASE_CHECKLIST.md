@@ -10,10 +10,6 @@ with instructions on how to download and sign.
 
 It will generate an analysis report in `/tmp/release_report_final.md` and perform testing is necessary for high risk pr changes.
 
-## Run the goose self-test recipe
-
-goose run --recipe goose-self-test.yaml
-
 ## Have goose produce a test plan
 
 Open the release candidate desktop app and have goose produce a test plan by pointing it at this PR. Use a prompt like

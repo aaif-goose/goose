@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures::StreamExt;
-use goose::agents::{Agent, AgentEvent, GoosePlatform};
+use goose::agents::{AgentEvent, GoosePlatform, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::{set_extension, ExtensionEntry};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     mod schedule_tool_tests {
         use super::*;
         use async_trait::async_trait;
@@ -18,7 +18,7 @@ mod tests {
             EXTENSION_NAME as SCHEDULER_EXTENSION_NAME, MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
         };
         use goose::agents::ExtensionConfig;
-        use goose::agents::{AgentConfig, ScheduleTool};
+        use goose::agents::{ScheduleTool, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
 
         use goose::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
@@ -128,9 +128,8 @@ mod tests {
             }
         }
 
-        async fn add_scheduler_extension(agent: &Arc<Agent>) -> String {
-            let session = agent
-                .config
+        async fn add_scheduler_extension(services: &Arc<StateMachineServices>) -> String {
+            let session = services
                 .session_manager
                 .create_session(
                     PathBuf::from("."),
@@ -140,8 +139,10 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            agent
-                .add_extension(
+            services
+                .extension_manager
+                .enable(
+                    &session.id,
                     ExtensionConfig::Platform {
                         name: SCHEDULER_EXTENSION_NAME.to_string(),
                         description: "Create and manage scheduled recipe execution".to_string(),
@@ -149,7 +150,6 @@ mod tests {
                         bundled: Some(true),
                         available_tools: vec![],
                     },
-                    &session.id,
                 )
                 .await
                 .unwrap();
@@ -252,17 +252,17 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
             let permission_manager = Arc::new(PermissionManager::new(data_dir));
             let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
                 false,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
-            let session_id = add_scheduler_extension(&agent).await;
+            let services = StateMachineServices::with_config(config);
+            let session_id = add_scheduler_extension(&services).await;
 
-            let tools = agent.list_tools(&session_id, None).await.unwrap();
+            let tools = services.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -278,10 +278,10 @@ mod tests {
 
         #[tokio::test]
         async fn test_no_schedule_management_tool_without_scheduler() {
-            let agent = Agent::new();
-            let session_id = add_scheduler_extension(&agent).await;
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
+            let session_id = add_scheduler_extension(&services).await;
 
-            let tools = agent.list_tools(&session_id, None).await.unwrap();
+            let tools = services.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -295,17 +295,17 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
             let permission_manager = Arc::new(PermissionManager::new(data_dir));
             let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
                 false,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
-            let session_id = add_scheduler_extension(&agent).await;
+            let services = StateMachineServices::with_config(config);
+            let session_id = add_scheduler_extension(&services).await;
 
-            let tools = agent
+            let tools = services
                 .list_tools(&session_id, Some(SCHEDULER_EXTENSION_NAME.to_string()))
                 .await
                 .unwrap();
@@ -350,17 +350,17 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
             let permission_manager = Arc::new(PermissionManager::new(data_dir));
             let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
                 false,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
-            let session_id = add_scheduler_extension(&agent).await;
+            let services = StateMachineServices::with_config(config);
+            let session_id = add_scheduler_extension(&services).await;
 
-            let tools = agent.list_tools(&session_id, None).await.unwrap();
+            let tools = services.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -463,7 +463,7 @@ mod tests {
         use async_trait::async_trait;
         use goose::agents::SessionConfig;
         use goose::config::GooseMode;
-        use goose::conversation::message::{Message, MessageContent};
+        use goose::conversation::message::{Message, MessageContent, MessageErrorKind};
         use goose::providers::base::{
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
@@ -539,12 +539,11 @@ mod tests {
 
         #[tokio::test]
         async fn test_max_turns_limit() -> Result<()> {
-            let agent = Agent::new();
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
             let provider = Arc::new(MockToolProvider::new());
             let user_message = Message::user().with_text("Hello");
 
-            let session = agent
-                .config
+            let session = services
                 .session_manager
                 .create_session(
                     PathBuf::default(),
@@ -554,7 +553,7 @@ mod tests {
                 )
                 .await?;
 
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
                 .await?;
 
@@ -565,7 +564,7 @@ mod tests {
                 max_turns: Some(1),
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = services.reply(user_message, session_config, None).await?;
             tokio::pin!(reply_stream);
 
             let mut responses = Vec::new();
@@ -576,7 +575,7 @@ mod tests {
                             response.content.first()
                         {
                             if let goose::conversation::message::ActionRequiredData::ToolConfirmation { id, .. } = &action.data {
-                                agent
+                                services
                                     .submit_tool_confirmation(
                                         &session_id,
                                         id,
@@ -605,16 +604,12 @@ mod tests {
                 responses.len()
             );
 
-            // Look for the max turns message as the last response
             let last_response = responses.last().unwrap();
-            let last_content = last_response.content.first().unwrap();
-            if let MessageContent::Text(text_content) = last_content {
-                assert!(text_content.text.contains(
-                    "I've reached the maximum number of actions I can do without user input"
-                ));
-            } else {
-                panic!("Expected text content in last message");
-            }
+            let error = last_response.error().expect("expected max turns error");
+            assert_eq!(error.kind, MessageErrorKind::ResourceExhausted);
+            assert!(error.message.contains(
+                "I've reached the maximum number of actions I can do without user input"
+            ));
             Ok(())
         }
     }
@@ -623,7 +618,7 @@ mod tests {
     mod tool_pair_summarization_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::agents::{SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -727,7 +722,7 @@ mod tests {
 
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 Arc::clone(&session_manager),
                 Arc::new(PermissionManager::new(temp_dir.path().join("config"))),
                 None,
@@ -745,7 +740,7 @@ mod tests {
                 )
                 .await?;
 
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
                 .await?;
 
@@ -789,7 +784,7 @@ mod tests {
                 max_turns: Some(1),
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = services.reply(user_message, session_config, None).await?;
             tokio::pin!(reply_stream);
 
             // Drain the stream
@@ -883,12 +878,13 @@ mod tests {
         use goose::agents::platform_extensions::{
             MANAGE_EXTENSIONS_TOOL_NAME, SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME,
         };
-        use goose::agents::AgentConfig;
+        use goose::agents::StateMachineServicesConfig;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::session::SessionManager;
 
-        async fn setup_agent_with_extension_manager() -> (Arc<Agent>, String, tempfile::TempDir) {
+        async fn setup_agent_with_extension_manager(
+        ) -> (Arc<StateMachineServices>, String, tempfile::TempDir) {
             use goose::session::session_manager::SessionType;
 
             // Add the TODO extension to the config so it can be discovered by search_available_extensions
@@ -910,7 +906,7 @@ mod tests {
             // Create agent with session_id from the start
             let temp_dir = tempfile::tempdir().unwrap();
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
@@ -918,7 +914,7 @@ mod tests {
                 GoosePlatform::GooseCli,
             );
 
-            let agent = Agent::with_config(config);
+            let services = StateMachineServices::with_config(config);
 
             let session = session_manager
                 .create_session(
@@ -940,17 +936,18 @@ mod tests {
                 available_tools: vec![],
             };
 
-            agent
-                .add_extension(ext_config, &session_id)
+            services
+                .extension_manager
+                .enable(&session_id, ext_config)
                 .await
                 .expect("Failed to add extension manager");
-            (agent, session_id, temp_dir)
+            (services, session_id, temp_dir)
         }
 
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
-            let (agent, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
-            let tools = agent.list_tools(&session_id, None).await.unwrap();
+            let (services, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
+            let tools = services.list_tools(&session_id, None).await.unwrap();
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
             // not the display name "Extension Manager"
@@ -976,7 +973,7 @@ mod tests {
     mod streaming_persistence_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::agents::{SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -1104,14 +1101,14 @@ mod tests {
             let cancel_token = CancellationToken::new();
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
                 true, // disable session naming so it doesn't consume a provider call
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
+            let services = StateMachineServices::with_config(config);
             let provider = Arc::new(MultiStepProvider::new(cancel_token.clone()));
 
             let session = session_manager
@@ -1124,7 +1121,7 @@ mod tests {
                 .await?;
 
             let session_id = session.id.clone();
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session_id)
                 .await?;
 
@@ -1143,7 +1140,7 @@ mod tests {
                 max_turns: Some(2),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(
                     Message::user().with_text("Do something then say hello"),
                     session_config,
@@ -1196,7 +1193,7 @@ mod tests {
                 max_turns: Some(2),
             };
 
-            let reply_stream2 = agent
+            let reply_stream2 = services
                 .reply(
                     Message::user().with_text("Tell me more"),
                     session_config2,
@@ -1250,7 +1247,7 @@ mod tests {
     mod thinking_preservation_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::agents::{SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::{Message, MessageContent};
@@ -1356,14 +1353,14 @@ mod tests {
         async fn run_and_collect(provider_name: &'static str) -> Result<Vec<Message>> {
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
                 true,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
+            let services = StateMachineServices::with_config(config);
             let provider = Arc::new(ThinkingStreamProvider::new(provider_name));
 
             let session = session_manager
@@ -1376,7 +1373,7 @@ mod tests {
                 .await?;
 
             let session_id = session.id.clone();
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session_id)
                 .await?;
 
@@ -1386,7 +1383,7 @@ mod tests {
                 max_turns: Some(2),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
@@ -1555,14 +1552,14 @@ mod tests {
         async fn test_reasoning_preserved_when_combined_with_tool_call() -> Result<()> {
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
                 true,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
+            let services = StateMachineServices::with_config(config);
             let provider = Arc::new(CombinedThinkingToolProvider::new());
 
             let session = session_manager
@@ -1575,7 +1572,7 @@ mod tests {
                 .await?;
 
             let session_id = session.id.clone();
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session_id)
                 .await?;
 
@@ -1585,7 +1582,7 @@ mod tests {
                 max_turns: Some(2),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
@@ -1616,8 +1613,8 @@ mod tests {
     mod goal_checking_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::AgentConfig;
         use goose::agents::SessionConfig;
+        use goose::agents::StateMachineServicesConfig;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -1700,22 +1697,22 @@ mod tests {
 
         fn create_agent_with_session_naming_disabled(
             session_manager: Arc<SessionManager>,
-        ) -> Arc<Agent> {
-            let config = AgentConfig::new(
+        ) -> Arc<StateMachineServices> {
+            let config = StateMachineServicesConfig::new(
                 session_manager,
                 PermissionManager::instance(),
                 None,
                 true,
                 GoosePlatform::GooseCli,
             );
-            Agent::with_config(config)
+            StateMachineServices::with_config(config)
         }
 
         #[tokio::test]
         async fn test_goal_nudges_agent_before_exit() -> Result<()> {
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let services = create_agent_with_session_naming_disabled(session_manager.clone());
             let provider = Arc::new(GoalTextProvider::new());
 
             let session = session_manager
@@ -1727,7 +1724,7 @@ mod tests {
                 )
                 .await?;
 
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -1750,7 +1747,7 @@ mod tests {
                 max_turns: Some(10),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("Hello"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
@@ -1802,7 +1799,7 @@ mod tests {
         async fn test_no_goal_exits_immediately() -> Result<()> {
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let services = create_agent_with_session_naming_disabled(session_manager.clone());
             let provider = Arc::new(GoalTextProvider::new());
 
             let session = session_manager
@@ -1814,7 +1811,7 @@ mod tests {
                 )
                 .await?;
 
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -1828,7 +1825,7 @@ mod tests {
                 max_turns: Some(10),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("Hello"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
@@ -1853,7 +1850,7 @@ mod tests {
         async fn test_setting_goal_via_reply_starts_a_turn() -> Result<()> {
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let services = create_agent_with_session_naming_disabled(session_manager.clone());
             let provider = Arc::new(GoalTextProvider::new());
 
             let session = session_manager
@@ -1864,7 +1861,7 @@ mod tests {
                     GooseMode::default(),
                 )
                 .await?;
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -1878,7 +1875,7 @@ mod tests {
                 max_turns: Some(10),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(
                     Message::user().with_text("/goal make all tests pass"),
                     session_config,
@@ -1916,7 +1913,7 @@ mod tests {
         async fn test_querying_goal_via_reply_does_not_start_a_turn() -> Result<()> {
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let services = create_agent_with_session_naming_disabled(session_manager.clone());
             let provider = Arc::new(GoalTextProvider::new());
 
             let session = session_manager
@@ -1927,7 +1924,7 @@ mod tests {
                     GooseMode::default(),
                 )
                 .await?;
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -1941,7 +1938,7 @@ mod tests {
                 max_turns: Some(10),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("/goal"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
@@ -2011,7 +2008,7 @@ mod tests {
     mod cumulative_token_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::agents::{SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -2026,8 +2023,8 @@ mod tests {
         use std::sync::Arc;
 
         struct FixedUsageProvider {
-            input_tokens: i32,
-            output_tokens: i32,
+            input_tokens: i64,
+            output_tokens: i64,
         }
 
         #[async_trait]
@@ -2057,13 +2054,17 @@ mod tests {
             }
         }
 
-        async fn run_turn(agent: &Arc<Agent>, session_id: &str, text: &str) -> Result<()> {
+        async fn run_turn(
+            services: &Arc<StateMachineServices>,
+            session_id: &str,
+            text: &str,
+        ) -> Result<()> {
             let session_config = SessionConfig {
                 id: session_id.to_string(),
                 schedule_id: None,
                 max_turns: Some(1),
             };
-            let stream = agent
+            let stream = services
                 .reply(Message::user().with_text(text), session_config, None)
                 .await?;
             tokio::pin!(stream);
@@ -2077,14 +2078,14 @@ mod tests {
         async fn test_accumulated_total_tokens_across_multiple_turns() -> Result<()> {
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let config = AgentConfig::new(
+            let config = StateMachineServicesConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
                 true,
                 GoosePlatform::GooseCli,
             );
-            let agent = Agent::with_config(config);
+            let services = StateMachineServices::with_config(config);
             let provider = Arc::new(FixedUsageProvider {
                 input_tokens: 10,
                 output_tokens: 5,
@@ -2100,7 +2101,7 @@ mod tests {
                 .await?;
 
             let session_id = session.id.clone();
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -2108,11 +2109,11 @@ mod tests {
                 )
                 .await?;
 
-            run_turn(&agent, &session_id, "Turn 1").await?;
+            run_turn(&services, &session_id, "Turn 1").await?;
             let after_1 = session_manager.get_session(&session_id, false).await?;
             assert_eq!(after_1.accumulated_usage.total_tokens, Some(15));
 
-            run_turn(&agent, &session_id, "Turn 2").await?;
+            run_turn(&services, &session_id, "Turn 2").await?;
             let after_2 = session_manager.get_session(&session_id, false).await?;
             assert_eq!(after_2.accumulated_usage.total_tokens, Some(30));
             assert_eq!(after_2.usage.total_tokens, Some(15));
@@ -2124,7 +2125,7 @@ mod tests {
     mod audience_tool_result_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::agents::{SessionConfig, StateMachineServicesConfig};
         use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
         use goose::conversation::message::{Message, MessageContent};
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
@@ -2208,7 +2209,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
@@ -2227,16 +2228,19 @@ mod tests {
                 )
                 .await?;
             let session_id = session.id.clone();
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
                     &session_id,
                 )
                 .await?;
-            agent.add_extension(extension, &session_id).await?;
+            services
+                .extension_manager
+                .enable(&session_id, extension)
+                .await?;
 
-            let stream = agent
+            let stream = services
                 .reply(
                     Message::user().with_text("use the audience tool"),
                     SessionConfig {
@@ -2280,7 +2284,7 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-        use goose::agents::{AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
+        use goose::agents::{AgentEvent, GoosePlatform, SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::{Message, MessageContent};
@@ -2487,9 +2491,8 @@ mod tests {
             provider: Arc<dyn Provider>,
             session_name: &str,
         ) -> Result<(Vec<Message>, Vec<Message>)> {
-            let agent = Agent::new();
-            let session = agent
-                .config
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
+            let session = services
                 .session_manager
                 .create_session(
                     PathBuf::default(),
@@ -2498,7 +2501,7 @@ mod tests {
                     GooseMode::default(),
                 )
                 .await?;
-            agent
+            services
                 .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
                 .await?;
 
@@ -2509,7 +2512,7 @@ mod tests {
                 max_turns: Some(50),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
@@ -2521,8 +2524,7 @@ mod tests {
                 }
             }
 
-            let persisted = agent
-                .config
+            let persisted = services
                 .session_manager
                 .get_session(&session_id, true)
                 .await?
@@ -2586,9 +2588,8 @@ mod tests {
         /// must still not be persisted ahead of the steer.
         #[tokio::test]
         async fn test_empty_response_with_steer_drops_empty_message() -> Result<()> {
-            let agent = Agent::new();
-            let session = agent
-                .config
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
+            let session = services
                 .session_manager
                 .create_session(
                     PathBuf::default(),
@@ -2597,7 +2598,7 @@ mod tests {
                     GooseMode::default(),
                 )
                 .await?;
-            agent
+            services
                 .update_provider(
                     Arc::new(EmptyThenTextProvider::new(1)),
                     ModelConfig::new("mock-model"),
@@ -2607,7 +2608,7 @@ mod tests {
 
             // Queue the steer before reply so it stays pending through the first
             // (empty) turn instead of being drained at the loop's start.
-            agent
+            services
                 .steer(&session.id, Message::user().with_text("keep going"))
                 .await;
 
@@ -2618,7 +2619,7 @@ mod tests {
                 max_turns: Some(50),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
@@ -2633,8 +2634,7 @@ mod tests {
                 }
             }
 
-            let persisted = agent
-                .config
+            let persisted = services
                 .session_manager
                 .get_session(&session_id, true)
                 .await?
@@ -2671,7 +2671,7 @@ mod tests {
 
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 Arc::new(PermissionManager::new(temp_dir.path().join("config"))),
                 None,
@@ -2689,7 +2689,7 @@ mod tests {
                 .await?;
             let session_id = session.id.clone();
             let provider = Arc::new(FinalOutputRequestProvider::new());
-            agent
+            services
                 .update_provider(
                     provider.clone(),
                     ModelConfig::new("mock-model"),
@@ -2722,7 +2722,7 @@ mod tests {
                 max_turns: Some(5),
             };
 
-            let reply_stream = agent
+            let reply_stream = services
                 .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);

@@ -6,7 +6,8 @@ use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,
 };
 use rmcp::model::{
-    ElicitationAction, ErrorCode, ExtensionCapabilities, Extensions, JsonObject, MetaObject,
+    ElicitationAction, ElicitationCapability, ErrorCode, ExtensionCapabilities, Extensions,
+    FormElicitationCapability, JsonObject, MetaObject,
 };
 use rmcp::{
     model::{
@@ -58,7 +59,7 @@ fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
     extensions
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GooseMcpHostInfo {
     pub explicit_extensions: bool,
     pub extensions: ExtensionCapabilities,
@@ -448,7 +449,9 @@ impl ClientHandler for GooseClient {
             ClientCapabilities::builder()
                 .enable_roots()
                 .enable_extensions_with(extensions)
-                .enable_elicitation()
+                .enable_elicitation_with(
+                    ElicitationCapability::new().with_form(FormElicitationCapability::new()),
+                )
                 .build(),
             self.resolved_client_info(),
         )
@@ -1274,6 +1277,17 @@ mod tests {
         assert!(
             info.capabilities.roots.is_some(),
             "client should advertise roots capability"
+        );
+    }
+
+    #[test]
+    fn test_client_capabilities_advertise_form_elicitation() {
+        let client = new_client(GoosePlatform::GooseCli);
+        let info = ClientHandler::get_info(&client);
+        let capabilities = serde_json::to_value(info.capabilities).unwrap();
+        assert_eq!(
+            capabilities.get("elicitation"),
+            Some(&json!({ "form": {} }))
         );
     }
 
