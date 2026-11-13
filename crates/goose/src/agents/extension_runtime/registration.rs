@@ -42,7 +42,6 @@ pub trait Connector: Send + Sync {
 
 /// Where and for whom a registration connects.
 pub struct ConnectRequest {
-    config: Option<ExtensionConfig>,
     auth: Arc<dyn ExtensionAuth>,
     pub scope_id: String,
     /// The scope's working directory (or the process's, if it has none).
@@ -60,10 +59,8 @@ impl ConnectRequest {
         working_dir: PathBuf,
         client: Arc<ClientContext>,
         manager: &Arc<ExtensionManager>,
-        config: Option<ExtensionConfig>,
     ) -> Self {
         Self {
-            config,
             auth: Arc::clone(&manager.services.auth),
             scope_id: scope_id.to_string(),
             working_dir,
@@ -104,7 +101,7 @@ impl ConnectRequest {
 pub struct Registration {
     pub(super) key: String,
     pub(super) name: String,
-    pub(super) connector: Arc<dyn Connector>,
+    pub(super) connection: Connection,
     identity: serde_json::Value,
     available_tools: Vec<String>,
     pub(super) unprefixed: bool,
@@ -112,7 +109,15 @@ pub struct Registration {
     /// from each call rather than restarting when it changes.
     pub(super) trusted: bool,
     pub(super) placed: bool,
-    pub(super) config: Option<ExtensionConfig>,
+}
+
+#[derive(Clone)]
+pub(super) enum Connection {
+    Config {
+        config: ExtensionConfig,
+        command: Option<Arc<dyn StdioCommand>>,
+    },
+    Custom(Arc<dyn Connector>),
 }
 
 impl fmt::Debug for Registration {
@@ -131,13 +136,12 @@ impl Registration {
         Self {
             key: name_to_key(&name),
             name,
-            connector,
+            connection: Connection::Custom(connector),
             identity: serde_json::Value::Null,
             available_tools: Vec::new(),
             unprefixed: false,
             trusted: false,
             placed: true,
-            config: None,
         }
     }
 
@@ -175,11 +179,16 @@ impl Registration {
                 available_tools, ..
             } => available_tools.clone(),
         };
-        let mut registration = Self::new(config.name(), Arc::new(ConfigConnector { command }))
-            .with_identity(serde_json::to_value(&config).expect("config serializes"))
-            .with_available_tools(available_tools);
-        registration.config = Some(config);
-        registration
+        Self {
+            key: config.key(),
+            name: config.name(),
+            identity: serde_json::to_value(&config).expect("config serializes"),
+            connection: Connection::Config { config, command },
+            available_tools,
+            unprefixed: false,
+            trusted: false,
+            placed: true,
+        }
     }
 
     /// Mark an in-process connector as trusted to emit host-reserved metadata.
@@ -201,6 +210,7 @@ impl Registration {
     /// Connection inputs and tool policy must both match to reuse a slot.
     pub(super) fn is_equivalent(&self, other: &Registration) -> bool {
         self.key == other.key
+            && std::mem::discriminant(&self.connection) == std::mem::discriminant(&other.connection)
             && self.identity == other.identity
             && self.available_tools == other.available_tools
             && self.unprefixed == other.unprefixed
@@ -209,82 +219,74 @@ impl Registration {
     }
 }
 
-/// Connects the transport config resolved by the manager.
-struct ConfigConnector {
-    command: Option<Arc<dyn StdioCommand>>,
-}
-
-#[async_trait]
-impl Connector for ConfigConnector {
-    async fn connect(
-        &self,
-        request: &ConnectRequest,
-    ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>> {
-        let resolved = request.config.as_ref().expect("config connector");
-        let working_dir = match resolved {
-            ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
-            _ => request
-                .environment
-                .connection_working_dir(&request.working_dir),
-        };
-        let environment = request.environment.as_ref();
-        match resolved {
-            ExtensionConfig::StreamableHttp {
-                uri,
-                timeout,
-                headers,
-                name,
-                envs,
-                socket,
-                client_id,
-                client_secret_key,
+pub(super) async fn connect_config(
+    resolved: &ExtensionConfig,
+    command: Option<&dyn StdioCommand>,
+    request: &ConnectRequest,
+) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    let working_dir = match resolved {
+        ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
+        _ => request
+            .environment
+            .connection_working_dir(&request.working_dir),
+    };
+    let environment = request.environment.as_ref();
+    match resolved {
+        ExtensionConfig::StreamableHttp {
+            uri,
+            timeout,
+            headers,
+            name,
+            envs,
+            socket,
+            client_id,
+            client_secret_key,
+            scopes,
+            ..
+        } => {
+            let static_oauth_client = streamable_http::resolve_static_oauth_client(
+                client_id.as_deref(),
+                client_secret_key.as_deref(),
                 scopes,
-                ..
-            } => {
-                let static_oauth_client = streamable_http::resolve_static_oauth_client(
-                    client_id.as_deref(),
-                    client_secret_key.as_deref(),
-                    scopes,
-                    &envs.get_env(),
-                )?;
-                let params = streamable_http::ConnectParams {
-                    uri: uri.clone(),
-                    name: name.clone(),
-                    headers: headers.clone(),
-                    static_oauth_client,
-                    ctx: request.connect_context(*timeout, working_dir),
-                    auth: Arc::clone(&request.auth),
-                };
-                let client = streamable_http::connect(
-                    params,
-                    socket.as_deref(),
-                    request.auth.credential_store(name),
+                &envs.get_env(),
+            )?;
+            let params = streamable_http::ConnectParams {
+                uri: uri.clone(),
+                name: name.clone(),
+                headers: headers.clone(),
+                static_oauth_client,
+                ctx: request.connect_context(*timeout, working_dir),
+                auth: Arc::clone(&request.auth),
+            };
+            let client = streamable_http::connect(
+                params,
+                socket.as_deref(),
+                request.auth.credential_store(name),
+            )
+            .await?;
+            Ok(client)
+        }
+        ExtensionConfig::Stdio {
+            cmd,
+            args,
+            envs,
+            timeout,
+            ..
+        } => {
+            let mut envs = envs.get_env();
+            envs.insert("AGENT_SESSION_ID".to_string(), request.scope_id.clone());
+            let client = Box::new(
+                stdio::connect(
+                    cmd,
+                    args,
+                    envs,
+                    command,
+                    request.connect_context(*timeout, working_dir),
+                    environment,
                 )
-                .await?;
-                Ok(Some(client))
-            }
-            ExtensionConfig::Stdio {
-                cmd,
-                args,
-                envs,
-                timeout,
-                ..
-            } => {
-                let mut envs = envs.get_env();
-                envs.insert("AGENT_SESSION_ID".to_string(), request.scope_id.clone());
-                let client = Box::new(
-                    stdio::connect(
-                        cmd,
-                        args,
-                        envs,
-                        self.command.as_deref(),
-                        request.connect_context(*timeout, working_dir),
-                        environment,
-                    )
-                    .await?,
-                );
-                Ok(Some(client as Box<dyn McpClientTrait>))
-            }
+                .await?,
+            );
+            Ok(client as Box<dyn McpClientTrait>)
         }
     }
 }

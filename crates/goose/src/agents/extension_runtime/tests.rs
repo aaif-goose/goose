@@ -503,6 +503,35 @@ impl host::ExtensionEnvironment for ChangingEnvironment {
     }
 }
 
+#[test]
+fn config_and_custom_connections_are_not_interchangeable() {
+    let config: goose_agent::extension::ExtensionConfig =
+        serde_json::from_value(serde_json::json!({
+            "type": "stdio", "name": "custom", "cmd": "unused", "args": [], "timeout": 30
+        }))
+        .unwrap();
+    let identity = serde_json::json!("same-inputs");
+    let configured = Registration::from_config(config, None).with_identity(identity.clone());
+    let custom = Registration::new("custom", StaticConnector::new(None)).with_identity(identity);
+    assert!(configured.is_equivalent(&configured.clone()));
+    assert!(custom.is_equivalent(&custom.clone()));
+    assert!(!configured.is_equivalent(&custom));
+}
+
+struct RecordingCommand(std::sync::Mutex<Vec<String>>);
+
+impl StdioCommand for RecordingCommand {
+    fn command(
+        &self,
+        program: &str,
+        _args: &[String],
+        _env: std::collections::HashMap<String, String>,
+    ) -> ExtensionResult<tokio::process::Command> {
+        self.0.lock().unwrap().push(program.to_string());
+        Err(ExtensionError::SetupError("recorded command".into()))
+    }
+}
+
 #[tokio::test]
 async fn manager_environment_owns_resolution_and_connection_freshness() {
     let environment = Arc::new(ChangingEnvironment {
@@ -518,33 +547,47 @@ async fn manager_environment_owns_resolution_and_connection_freshness() {
             capabilities: Default::default(),
         },
     ));
-    let config = serde_json::from_value(serde_json::json!({
-        "type": "stdio", "name": "external", "cmd": "unresolved", "args": [], "timeout": 30
-    }))
-    .unwrap();
-    let connector = StaticConnector::new(Some(vec!["echo"]));
-    let mut registration = manager.registration(config);
-    registration.connector = connector.clone();
-    let set = ExtensionSet::new("scope", None, vec![registration]).unwrap();
+    let config: goose_agent::extension::ExtensionConfig =
+        serde_json::from_value(serde_json::json!({
+            "type": "stdio", "name": "external", "cmd": "unresolved", "args": [], "timeout": 30
+        }))
+        .unwrap();
+    let command = Arc::new(RecordingCommand(std::sync::Mutex::new(vec![])));
+    let registration = Registration::from_config(config.clone(), Some(command.clone()));
+    let set = ExtensionSet::new("scope", None, vec![registration.clone()]).unwrap();
     let held = manager.resolve(&set).await;
-    held.tools().await;
-    manager.resolve(&set).await.tools().await;
+    assert!(!held.start().await[0].success);
+    assert_eq!(*command.0.lock().unwrap(), ["resolved-0"]);
     assert_eq!(environment.resolutions.load(Ordering::SeqCst), 1);
-    assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
 
+    let resolved = manager
+        .services
+        .environment
+        .resolve_config(config.clone())
+        .await
+        .unwrap();
+    let slot = manager.new_slot("scope", registration.clone(), None, manager.client("scope"));
+    slot.runtime
+        .set(Runtime::Running(Arc::new(Extension {
+            key: registration.key.clone(),
+            registration,
+            resolved_config: Some(ResolvedConfig {
+                original: config,
+                resolved,
+            }),
+            client: Arc::new(StaticToolsClient {
+                tools: Some(vec!["echo"]),
+            }),
+            server_info: None,
+            tools_version: Arc::new(AtomicU64::new(0)),
+            tools: Mutex::new(None),
+        })))
+        .unwrap_or_else(|_| panic!("slot already started"));
+    assert!(slot.config_is_current().await);
+    assert_eq!(environment.resolutions.load(Ordering::SeqCst), 2);
     environment.generation.store(1, Ordering::SeqCst);
-    manager.resolve(&set).await.tools().await;
+    assert!(!slot.config_is_current().await);
     assert_eq!(environment.resolutions.load(Ordering::SeqCst), 3);
-    assert_eq!(connector.connects.load(Ordering::SeqCst), 2);
-    let slot = manager.scopes.lock().await["scope"]["external"].clone();
-    let extension = slot.start().await.unwrap();
-    let Some(goose_agent::extension::ExtensionConfig::Stdio { cmd, .. }) =
-        &extension.resolved_config
-    else {
-        panic!("expected a resolved stdio config");
-    };
-    assert_eq!(cmd, "resolved-1");
-    assert_eq!(tool_names(held.tools().await), ["external__echo"]);
 }
 
 #[tokio::test]

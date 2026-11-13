@@ -86,7 +86,7 @@ impl Drop for ActionRequiredStream {
 pub(super) struct Extension {
     pub(super) key: String,
     registration: Registration,
-    resolved_config: Option<goose_agent::extension::ExtensionConfig>,
+    resolved_config: Option<ResolvedConfig>,
     pub(super) client: McpClientBox,
     server_info: Option<ServerConfig>,
     /// Bumped by the client on tools/list_changed; a cached list is only valid
@@ -96,6 +96,11 @@ pub(super) struct Extension {
     /// management hides itself from subagents), so the scope is part of the
     /// cache key.
     tools: Mutex<Option<CachedTools>>,
+}
+
+struct ResolvedConfig {
+    original: goose_agent::extension::ExtensionConfig,
+    resolved: goose_agent::extension::ExtensionConfig,
 }
 
 struct CachedTools {
@@ -159,15 +164,9 @@ impl ExtensionSlot {
                 Some(resolved) => manager
                     .services
                     .environment
-                    .resolve_config(
-                        extension
-                            .registration
-                            .config
-                            .clone()
-                            .expect("config-backed connection"),
-                    )
+                    .resolve_config(resolved.original.clone())
                     .await
-                    .is_ok_and(|config| config == *resolved),
+                    .is_ok_and(|config| config == resolved.resolved),
                 None => true,
             },
         };
@@ -611,24 +610,35 @@ impl ExtensionManager {
         scope_id: &str,
         client: &Arc<ClientContext>,
     ) -> ExtensionResult<Option<Extension>> {
-        let resolved_config = match &registration.config {
-            Some(config) => Some(
-                self.services
-                    .environment
-                    .resolve_config(config.clone())
-                    .await?,
-            ),
-            None => None,
-        };
         let request = ConnectRequest::new(
             scope_id,
             working_dir.map(Path::to_path_buf).unwrap_or_default(),
             Arc::clone(client),
             self,
-            resolved_config.clone(),
         );
-        let Some(mcp_client) = registration.connector.connect(&request).await? else {
-            return Ok(None);
+        let (mcp_client, resolved_config) = match &registration.connection {
+            registration::Connection::Config { config, command } => {
+                let resolved = self
+                    .services
+                    .environment
+                    .resolve_config(config.clone())
+                    .await?;
+                let client =
+                    registration::connect_config(&resolved, command.as_deref(), &request).await?;
+                (
+                    client,
+                    Some(ResolvedConfig {
+                        original: config.clone(),
+                        resolved,
+                    }),
+                )
+            }
+            registration::Connection::Custom(connector) => {
+                let Some(client) = connector.connect(&request).await? else {
+                    return Ok(None);
+                };
+                (client, None)
+            }
         };
         let server_info = mcp_client.get_info().cloned();
         Ok(Some(Extension {
