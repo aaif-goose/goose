@@ -12,12 +12,11 @@ use async_trait::async_trait;
 use goose_agent::{
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{applied, not_applicable, ConversationEffect, Emitter, Operation, OperationResult},
-    post_tool_call_hook::PostToolCallHook,
     tool::{ToolOperation, ToolProvider},
     tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
-    message::{Message, MessageContent, ToolRequest, ToolResponse},
+    message::{Message, MessageContent},
     Conversation,
 };
 use rmcp::{
@@ -364,69 +363,4 @@ async fn stop_saves_completed_results_then_responds_to_each_open_request_once() 
         .collect();
     assert_eq!(interrupted_ids, ["blocking", "remaining"]);
     assert!(messages[3].content.iter().all(interrupted));
-}
-
-struct StoppingHook {
-    cancel: CancellationToken,
-    calls: AtomicUsize,
-}
-
-#[async_trait]
-impl PostToolCallHook<Session> for StoppingHook {
-    async fn after_call(
-        &self,
-        _session: &Session,
-        _conversation: &Conversation,
-        _request: &ToolRequest,
-        _response: &ToolResponse,
-    ) -> Result<()> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.cancel.cancel();
-        std::future::pending().await
-    }
-}
-
-#[tokio::test]
-async fn stop_during_a_post_tool_call_hook_saves_the_result_without_rerunning_the_hook() {
-    let cancel = CancellationToken::new();
-    let hook = Arc::new(StoppingHook {
-        cancel: cancel.clone(),
-        calls: AtomicUsize::new(0),
-    });
-    let operation = ToolOperation::new()
-        .with_provider(Arc::new(FinishingTools))
-        .with_post_tool_call_hook(hook.clone());
-    let machine = StateMachine::new(vec![Step::Operation(Arc::new(operation))], cancel.clone());
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, cancel);
-    let runtime = Runtime::new([
-        Message::user().with_text("kickoff"),
-        executable_calls(&[("hooked", "finish"), ("remaining", "finish")]),
-    ]);
-
-    let messages = tokio::time::timeout(
-        Duration::from_secs(5),
-        machine.run(&runtime, "session", &emit),
-    )
-    .await
-    .expect("Stop should not wait for the hook")
-    .unwrap()
-    .0
-    .messages()
-    .clone();
-
-    assert_eq!(hook.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(messages.len(), 4);
-    let output = messages[2].content[0].as_tool_response().unwrap();
-    assert_eq!(output.id, "hooked");
-    assert_eq!(
-        output.tool_result.as_ref().unwrap().content[0]
-            .as_text()
-            .unwrap()
-            .text,
-        "finished output"
-    );
-    let remaining = messages[3].content[0].as_tool_response().unwrap();
-    assert_eq!(remaining.id, "remaining");
-    assert!(interrupted(&messages[3].content[0]));
 }

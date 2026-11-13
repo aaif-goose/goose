@@ -1,19 +1,18 @@
 //! Answers tool requests that no other operation handled.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
-    ToolDisposition,
+    leased_working_dir, pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
 };
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
+use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -28,17 +27,17 @@ pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
 }
 
 impl RemainingToolCallsOperation {
     pub fn new(
         hook_manager: HookManager,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+        extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
             hook_manager,
-            post_tool_call_hook,
+            extension_lease,
         }
     }
 }
@@ -94,37 +93,38 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                 ToolDisposition::Execute => {
                     match request.tool_call.as_ref() {
                         Ok(tool_call) => {
-                            let tool_input = tool_call
-                                .arguments
-                                .as_ref()
-                                .map(|arguments| serde_json::Value::Object(arguments.clone()));
-                            emit_extended_pre_hooks(
+                            let working_dir = leased_working_dir(&self.extension_lease, session);
+                            if let Some(denied) = check_pre_tool_hooks(
                                 &self.hook_manager,
-                                &tool_call.name,
-                                tool_input.as_ref(),
-                                session,
-                            )
-                            .instrument(span.clone())
-                            .await;
-                            span.record("error.type", "tool_not_available");
-                            let output = Ok(CallToolResult::error(vec![ContentBlock::text(
-                                format!("Tool '{}' is not available.", tool_call.name),
-                            )]));
-                            let tool_response = ToolResponse {
-                                id: request.id.clone(),
-                                tool_result: output.clone(),
-                                metadata: request.metadata.clone(),
-                            };
-                            run_post_tool_call_hook(
-                                self.post_tool_call_hook.as_ref(),
-                                session,
-                                conversation,
+                                &session.id,
+                                &working_dir,
                                 &request,
-                                &tool_response,
                             )
                             .instrument(span.clone())
-                            .await;
-                            (output, true)
+                            .await
+                            {
+                                (Ok(denied), false)
+                            } else {
+                                span.record("error.type", "tool_not_available");
+                                let output = Ok(CallToolResult::error(vec![ContentBlock::text(
+                                    format!("Tool '{}' is not available.", tool_call.name),
+                                )]));
+                                let tool_response = ToolResponse {
+                                    id: request.id.clone(),
+                                    tool_result: output.clone(),
+                                    metadata: request.metadata.clone(),
+                                };
+                                emit_post_tool_hooks(
+                                    &self.hook_manager,
+                                    &session.id,
+                                    &working_dir,
+                                    &request,
+                                    &tool_response,
+                                )
+                                .instrument(span.clone())
+                                .await;
+                                (output, true)
+                            }
                         }
                         Err(error) => (
                             Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -153,51 +153,26 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
 mod tests {
     use super::*;
     use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-    use crate::conversation::message::ToolRequest;
+    use crate::agents::state_machine::tests::hooks_lifecycle::{
+        HookTestEnv, LOG_AND_BLOCK_SCRIPT, RECORD_AND_ALLOW_SCRIPT,
+    };
+    use crate::agents::state_machine::ConversationEffect;
+    use crate::conversation::message::MessageContent;
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
-    use std::sync::Mutex;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
-
-    #[derive(Default)]
-    struct RecordingHook(Mutex<Vec<(String, bool)>>);
-
-    #[async_trait]
-    impl PostToolCallHook<Session> for RecordingHook {
-        async fn after_call(
-            &self,
-            _session: &Session,
-            _conversation: &Conversation,
-            request: &ToolRequest,
-            response: &ToolResponse,
-        ) -> Result<()> {
-            let failed = response
-                .tool_result
-                .as_ref()
-                .map_or(true, |result| result.is_error == Some(true));
-            self.0.lock().unwrap().push((request.id.clone(), failed));
-            Ok(())
-        }
-    }
-
-    async fn run_with_hook(
-        session: &Session,
-        messages: Vec<Message>,
-        hook: Arc<RecordingHook>,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let emit = Emitter::new(tx, CancellationToken::new());
-        RemainingToolCallsOperation::new(HookManager::default(), hook)
-            .run(session, &Conversation::new_unvalidated(messages), &emit)
-            .await
-    }
 
     async fn run(
         session: &Session,
         messages: Vec<Message>,
+        hook_manager: HookManager,
     ) -> Result<OperationResult<GooseEffect>> {
-        run_with_hook(session, messages, Arc::default()).await
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let emit = Emitter::new(tx, CancellationToken::new());
+        RemainingToolCallsOperation::new(hook_manager, Arc::default())
+            .run(session, &Conversation::new_unvalidated(messages), &emit)
+            .await
     }
 
     fn executable_calls(calls: &[(&str, &str)]) -> Message {
@@ -225,20 +200,57 @@ mod tests {
             ]
         };
 
-        let hook = Arc::new(RecordingHook::default());
-        run_with_hook(&Session::default(), messages(), hook.clone()).await?;
-        assert_eq!(
-            *hook.0.lock().unwrap(),
-            [("missing".to_string(), true), ("final".to_string(), true)]
-        );
+        let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
+        run(&Session::default(), messages(), env.hook_manager()).await?;
+        let tool_call_ids: Vec<_> = env
+            .payloads()
+            .iter()
+            .map(|payload| payload["tool_call_id"].clone())
+            .collect();
+        assert_eq!(tool_call_ids, ["missing", "final"]);
 
         let chat = Session {
             goose_mode: GooseMode::Chat,
             ..Session::default()
         };
-        let hook = Arc::new(RecordingHook::default());
-        run_with_hook(&chat, messages(), hook.clone()).await?;
-        assert!(hook.0.lock().unwrap().is_empty());
+        let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
+        run(&chat, messages(), env.hook_manager()).await?;
+        assert!(env.payloads().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_pre_tool_hook_denial_answers_the_call_with_the_hook_reason() -> Result<()> {
+        let messages = vec![
+            Message::user().with_text("go"),
+            executable_calls(&[("missing", "missing_tool")]),
+        ];
+        let env = HookTestEnv::new("PreToolUse", LOG_AND_BLOCK_SCRIPT);
+
+        let OperationResult::Applied(step) =
+            run(&Session::default(), messages, env.hook_manager()).await?
+        else {
+            panic!("expected the call to be answered");
+        };
+        let [GooseEffect::Conversation(ConversationEffect::AppendMessage(message))] =
+            step.effects.as_slice()
+        else {
+            panic!("expected one response message");
+        };
+        let MessageContent::ToolResponse(response) = &message.content[0] else {
+            panic!("expected a tool response");
+        };
+        let result = response.tool_result.as_ref().unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("not done yet"));
+        assert!(response
+            .metadata
+            .as_ref()
+            .is_none_or(|metadata| !metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
         Ok(())
     }
 
@@ -258,7 +270,7 @@ mod tests {
         ];
 
         assert!(matches!(
-            run(&Session::default(), messages).await?,
+            run(&Session::default(), messages, HookManager::default()).await?,
             OperationResult::NotApplicable
         ));
         Ok(())

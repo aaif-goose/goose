@@ -10,13 +10,13 @@ use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 
-struct HookTestEnv {
+pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
     plugin_dir: std::path::PathBuf,
 }
 
 impl HookTestEnv {
-    fn new(event: &str, script: &str) -> Self {
+    pub(in crate::agents::state_machine) fn new(event: &str, script: &str) -> Self {
         let temp_dir = tempfile::tempdir().unwrap();
         let plugin_dir = temp_dir.path().join("test-plugin");
         std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
@@ -34,7 +34,7 @@ impl HookTestEnv {
         }
     }
 
-    fn hook_manager(&self) -> crate::hooks::HookManager {
+    pub(in crate::agents::state_machine) fn hook_manager(&self) -> crate::hooks::HookManager {
         use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
         crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
             name: "test-plugin".into(),
@@ -57,7 +57,7 @@ impl HookTestEnv {
         .expect("hook context is valid JSON")
     }
 
-    fn payloads(&self) -> Vec<Value> {
+    pub(in crate::agents::state_machine) fn payloads(&self) -> Vec<Value> {
         std::fs::read_to_string(self.plugin_dir.join("hook.log"))
             .unwrap_or_default()
             .lines()
@@ -67,10 +67,10 @@ impl HookTestEnv {
 }
 
 const LOG_AND_ALLOW_SCRIPT: &str = "#!/bin/sh\necho ran >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
-const LOG_AND_BLOCK_SCRIPT: &str =
+pub(in crate::agents::state_machine) const LOG_AND_BLOCK_SCRIPT: &str =
     "#!/bin/sh\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
 const LOG_CONTEXT_AND_BLOCK_SCRIPT: &str = "#!/bin/sh\ncat > \"$PLUGIN_ROOT/context.json\"\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
-const RECORD_AND_ALLOW_SCRIPT: &str =
+pub(in crate::agents::state_machine) const RECORD_AND_ALLOW_SCRIPT: &str =
     "#!/bin/sh\npayload=$(cat)\nprintf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
 const RECORD_AND_BLOCK_MARKER_SCRIPT: &str = "#!/bin/sh
 payload=$(cat)
@@ -281,6 +281,26 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
 }
 
 #[tokio::test]
+async fn stop_hook_block_cap_resets_for_each_user_message() -> Result<()> {
+    let blocked = HookTestEnv::new("Stop", LOG_AND_BLOCK_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(blocked.hook_manager())
+        .with_stop_hook_block_cap(1);
+    api.on("first").reply("done");
+
+    pipeline.run(["first"]).await?;
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(blocked.invocations(), 2);
+
+    pipeline.run(["second"]).await?;
+    assert_eq!(api.call_count(), 4);
+    assert_eq!(blocked.invocations(), 4);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> {
     let session_start = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
@@ -298,7 +318,7 @@ async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> 
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(opened_by_client.hook_manager());
     pipeline
-        .seed([crate::agents::state_machine::session_start_message(&[])])
+        .seed([crate::agents::session_hooks::session_start_message(&[])])
         .await?;
     api.on("first").reply("ok");
     pipeline.run(["first"]).await?;
@@ -865,51 +885,6 @@ async fn load_skill_denied_by_hook_does_not_execute() -> Result<()> {
         !loaded_body,
         "a denied load_skill call must not execute the skill load"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn unadvertised_unknown_tool_skips_pre_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn unadvertised_unknown_tool_skips_post_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
     Ok(())
 }
 

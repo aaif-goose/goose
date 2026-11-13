@@ -21,6 +21,7 @@ pub mod retry;
 #[cfg(feature = "scheduler")]
 mod schedule_tool;
 mod services;
+mod session_hooks;
 mod session_runtime;
 pub mod state_machine;
 mod state_machine_builder;

@@ -2610,7 +2610,7 @@ mod tests {
             // (empty) turn instead of being drained at the loop's start.
             services
                 .steer(&session.id, Message::user().with_text("keep going"))
-                .await;
+                .await?;
 
             let session_id = session.id.clone();
             let session_config = SessionConfig {
