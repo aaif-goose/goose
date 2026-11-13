@@ -368,7 +368,8 @@ impl AcpConnection {
         }
         self.services
             .steer(session_id, Message::user().with_text(input).agent_only())
-            .await;
+            .await
+            .map_err(|_| "The task could not receive the latest instruction.".to_string())?;
         Ok(
             "The latest instruction was added to the work in progress. Wait for its updated result."
                 .into(),

@@ -15,7 +15,7 @@ use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionM
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    has_unapplied_tool_confirmation_response, is_session_start_message, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
     Operation, StateMachine, SteerQueue, DEFAULT_BLOCK_CAP,
 };
@@ -28,6 +28,7 @@ use crate::agents::AgentEvent;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
+use crate::hooks::{HookContext, HookEvent};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
@@ -353,6 +354,10 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
+fn is_user_prompt(message: &Message) -> bool {
+    message.role == rmcp::model::Role::User && !message.is_tool_response()
+}
+
 impl StateMachineServices {
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
         let mut default_client = ClientContext::new(&config.goose_platform, None);
@@ -423,8 +428,60 @@ impl StateMachineServices {
         Ok(banners)
     }
 
-    pub async fn steer(&self, session_id: &str, message: Message) {
+    pub(crate) async fn emit_prompt_hooks(&self, session_id: &str) -> Result<()> {
+        if !self.hook_manager.has_hooks(HookEvent::SessionStart)
+            && !self.hook_manager.has_hooks(HookEvent::UserPromptSubmit)
+        {
+            return Ok(());
+        }
+        let session = self.session_manager.get_session(session_id, true).await?;
+        let Some((prompt, earlier)) = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| conversation.messages().split_last())
+        else {
+            return Ok(());
+        };
+        if !is_user_prompt(prompt) {
+            return Ok(());
+        }
+        if !earlier.iter().any(|message| {
+            is_session_start_message(message)
+                || (is_user_prompt(message) && message.is_user_visible())
+        }) {
+            self.hook_manager
+                .emit(
+                    HookEvent::SessionStart,
+                    HookContext::new(HookEvent::SessionStart, session_id)
+                        .with_working_dir(session.working_dir.to_string_lossy()),
+                )
+                .await;
+        }
+        self.emit_user_prompt_submit(&session, agent_visible_message_text(prompt))
+            .await;
+        Ok(())
+    }
+
+    async fn emit_user_prompt_submit(&self, session: &Session, prompt: String) {
+        if prompt.is_empty() {
+            return;
+        }
+        self.hook_manager
+            .emit(
+                HookEvent::UserPromptSubmit,
+                HookContext::new(HookEvent::UserPromptSubmit, &session.id)
+                    .with_message(prompt)
+                    .with_working_dir(session.working_dir.to_string_lossy()),
+            )
+            .await;
+    }
+
+    pub async fn steer(&self, session_id: &str, message: Message) -> Result<()> {
+        let session = self.session_manager.get_session(session_id, false).await?;
+        let prompt = agent_visible_message_text(&message);
         self.runtime.steer(session_id, message).await;
+        self.emit_user_prompt_submit(&session, prompt).await;
+        Ok(())
     }
 
     pub fn discard_pending_steers(&self, session_id: &str) {
@@ -915,6 +972,7 @@ impl StateMachineServices {
         session_manager
             .add_message(&session_config.id, &user_message)
             .await?;
+        self.emit_prompt_hooks(&session_config.id).await?;
 
         if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
@@ -941,7 +999,7 @@ impl StateMachineServices {
     }
 
     /// Runs a subagent on the conversation saved for it.
-    pub(super) fn run_subagent_turn(
+    pub(super) async fn run_subagent_turn(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -952,6 +1010,7 @@ impl StateMachineServices {
             .session(&session_config.id)
             .try_start_turn()?;
         turn_guard.state().start_new_turn();
+        self.emit_prompt_hooks(&session_config.id).await?;
         Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
@@ -1126,7 +1185,6 @@ impl StateMachineServices {
                         run_goose(
                             &machine,
                             session_manager.as_ref(),
-                            &self.hook_manager,
                             &session_id,
                             &emit,
                         ),

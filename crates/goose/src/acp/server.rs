@@ -2347,7 +2347,10 @@ impl AcpConnection {
 
         let message_id = format!("steer_{}", Uuid::new_v4());
         let message = message.with_id(message_id.clone());
-        self.services.steer(&req.session_id, message).await;
+        self.services
+            .steer(&req.session_id, message)
+            .await
+            .internal_err()?;
 
         if let Some(cx) = self.client_cx.get() {
             let _ = Self::send_queued_steer_update(

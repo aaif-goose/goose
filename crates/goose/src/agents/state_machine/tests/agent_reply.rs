@@ -1093,6 +1093,152 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
 }
 
 #[tokio::test]
+async fn reply_and_steer_fire_the_prompt_hook_when_they_accept_input() -> Result<()> {
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["SessionStart", "UserPromptSubmit"], 0)?;
+    let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    api.on("say hi").reply("hi");
+
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("add one"),
+    )
+    .await?;
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("say hi"),
+    )
+    .await?;
+    services
+        .steer(&session_id, Message::user().with_text("then wave"))
+        .await?;
+
+    let working_dir = services
+        .session_manager
+        .get_session(&session_id, false)
+        .await?
+        .working_dir
+        .to_string_lossy()
+        .into_owned();
+    let payloads = hook_payloads(&hook_log_path);
+    assert!(payloads
+        .iter()
+        .all(|payload| payload["working_dir"] == working_dir.as_str()));
+    assert_eq!(
+        hook_events(&payloads),
+        [
+            (
+                session_id.clone(),
+                "SessionStart".to_string(),
+                String::new()
+            ),
+            (
+                session_id.clone(),
+                "UserPromptSubmit".to_string(),
+                "add one".to_string()
+            ),
+            (
+                session_id.clone(),
+                "UserPromptSubmit".to_string(),
+                "say hi".to_string()
+            ),
+            (
+                session_id,
+                "UserPromptSubmit".to_string(),
+                "then wave".to_string()
+            ),
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Result<()> {
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["SessionStart", "UserPromptSubmit"], 0)?;
+    let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    services
+        .extension_manager
+        .enable(
+            &session_id,
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        )
+        .await?;
+
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "name the planets", "max_turns": 3 }),
+    );
+    api.on("name the planets").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "planets named" }),
+    );
+    api.on("planets named").reply("delegated");
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("hand this off"),
+    )
+    .await?;
+
+    let subagent_id = hook_sessions(&hook_log_path, "UserPromptSubmit")
+        .into_iter()
+        .find(|id| id != &session_id)
+        .expect("the subagent fired the prompt hook");
+    api.on("resume the helper").call(
+        "delegate",
+        json!({ "resume": subagent_id, "instructions": "now list the colors" }),
+    );
+    api.on("now list the colors").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "colors listed" }),
+    );
+    api.on("colors listed").reply("resumed");
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("resume the helper"),
+    )
+    .await?;
+
+    let subagent_events: Vec<_> = hook_events(&hook_payloads(&hook_log_path))
+        .into_iter()
+        .filter(|(id, _, _)| id == &subagent_id)
+        .map(|(_, event, message)| (event, message))
+        .collect();
+    assert_eq!(
+        subagent_events,
+        [
+            ("SessionStart".to_string(), String::new()),
+            (
+                "UserPromptSubmit".to_string(),
+                format!("Subagent ID: {subagent_id}\n\nname the planets")
+            ),
+            (
+                "UserPromptSubmit".to_string(),
+                "now list the colors".to_string()
+            ),
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
@@ -1426,6 +1572,30 @@ fn hook_log(
         },
     ]);
     Ok((hooks, hook_dir, plugin_dir.join("hook.log")))
+}
+
+fn hook_payloads(log: &std::path::Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("hook payload should be JSON"))
+        .collect()
+}
+
+fn hook_events(payloads: &[serde_json::Value]) -> Vec<(String, String, String)> {
+    let field = |payload: &serde_json::Value, key: &str| {
+        payload[key].as_str().unwrap_or_default().to_string()
+    };
+    payloads
+        .iter()
+        .map(|payload| {
+            (
+                field(payload, "session_id"),
+                field(payload, "event"),
+                field(payload, "message"),
+            )
+        })
+        .collect()
 }
 
 fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {

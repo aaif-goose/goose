@@ -149,7 +149,7 @@ pub(crate) fn build_state_machine(
                     .unwrap_or(NonZeroUsize::new(5).unwrap()),
             ),
         ),
-        Arc::new(SteerOperation::new(steer_queue, hook_manager.clone())),
+        Arc::new(SteerOperation::new(steer_queue)),
         Arc::new(BangShellOperation::new()),
     ];
     if !manages_own_context {
