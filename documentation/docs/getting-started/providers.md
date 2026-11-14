@@ -871,11 +871,11 @@ To set up EmpirioLabs with goose, follow these steps:
 GMI Cloud offers models that support tool calling, including:
 - **deepseek-ai/DeepSeek-V4-Pro** - DeepSeek V4 Pro with 1M context
 - **deepseek-ai/DeepSeek-V4-Flash** - DeepSeek V4 Flash with 1M context
-- **zai-org/GLM-5.1-FP8** - GLM 5.1 with 200K context
-- **moonshotai/Kimi-K2.5** - Kimi K2.5 with 262K context
-- **Qwen/Qwen3.5-397B-A17B** - Qwen 3.5 with 262K context
+- **zai-org/GLM-5.2-FP8** - GLM 5.2 with 1M context
+- **moonshotai/kimi-k2.7-code-highspeed** - Kimi K2.7 Code with 262K context
+- **Qwen/Qwen3.8-Max** - Qwen 3.8 Max with 262K context
 
-goose fetches the full model list from GMI Cloud, so newly added models appear without an update. For the starter list, see [gmicloud.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/gmicloud.json).
+goose fetches the live model list from GMI Cloud and hides text-incompatible models and models known not to support tool calling. For the starter list, see [gmicloud.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/gmicloud.json).
 
 To set up GMI Cloud with goose, follow these steps:
 

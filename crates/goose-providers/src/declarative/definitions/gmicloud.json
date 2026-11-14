@@ -9,49 +9,48 @@
     {
       "name": "deepseek-ai/DeepSeek-V4-Pro",
       "context_limit": 1048576,
-      "input_token_cost": 0.00000174,
-      "output_token_cost": 0.00000348,
+      "input_token_cost": 1.74e-06,
+      "output_token_cost": 3.48e-06,
       "currency": "USD"
     },
     {
       "name": "deepseek-ai/DeepSeek-V4-Flash",
       "context_limit": 1048575,
-      "input_token_cost": 0.00000014,
-      "output_token_cost": 0.00000028,
+      "input_token_cost": 1.4e-07,
+      "output_token_cost": 2.8e-07,
       "currency": "USD"
     },
     {
-      "name": "zai-org/GLM-5.1-FP8",
-      "context_limit": 202752,
-      "input_token_cost": 0.0000014,
-      "output_token_cost": 0.0000044,
+      "name": "zai-org/GLM-5.2-FP8",
+      "context_limit": 1048576,
+      "input_token_cost": 1.4e-06,
+      "output_token_cost": 4.4e-06,
       "currency": "USD"
     },
     {
-      "name": "moonshotai/Kimi-K2.5",
+      "name": "moonshotai/kimi-k2.7-code-highspeed",
       "context_limit": 262144,
-      "input_token_cost": 0.0000006,
-      "output_token_cost": 0.000003,
+      "input_token_cost": 1.9e-06,
+      "output_token_cost": 8e-06,
       "currency": "USD"
     },
     {
-      "name": "Qwen/Qwen3.5-397B-A17B",
+      "name": "Qwen/Qwen3.8-Max",
       "context_limit": 262144,
-      "input_token_cost": 0.0000006,
-      "output_token_cost": 0.0000036,
+      "input_token_cost": 2e-06,
+      "output_token_cost": 6e-06,
       "currency": "USD"
     },
     {
-      "name": "MiniMaxAI/MiniMax-M2.7",
-      "context_limit": 196608,
-      "input_token_cost": 0.0000003,
-      "output_token_cost": 0.0000012,
+      "name": "MiniMaxAI/MiniMax-M3",
+      "context_limit": 1048576,
+      "input_token_cost": 3e-07,
+      "output_token_cost": 1.2e-06,
       "currency": "USD"
     }
   ],
   "supports_streaming": true,
   "dynamic_models": true,
-  "skip_canonical_filtering": true,
   "model_doc_link": "https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference",
   "setup_steps": [
     "Create an API key in the GMI Cloud console at https://console.gmicloud.ai.",
