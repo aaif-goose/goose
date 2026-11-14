@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, type RenderOptions, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  type RenderOptions,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import ModelsBottomBar from './ModelsBottomBar';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 
@@ -11,6 +18,7 @@ const createDropdownRef = (): React.RefObject<HTMLDivElement> =>
 
 let mockCurrentModel: string | null = 'config-model';
 let mockCurrentProvider: string | null = 'config-provider';
+const mockChangeModel = vi.fn();
 const mockGetProviders = vi.fn();
 const mockOnModelChanged = vi.fn();
 const mockPreventCloseAutoFocus = vi.fn();
@@ -19,6 +27,7 @@ vi.mock('../../../ModelAndProviderContext', () => ({
   useModelAndProvider: () => ({
     currentModel: mockCurrentModel,
     currentProvider: mockCurrentProvider,
+    changeModel: mockChangeModel,
   }),
 }));
 
@@ -31,6 +40,10 @@ vi.mock('../../../ConfigContext', () => ({
 vi.mock('../modelInterface', () => ({
   getProviderMetadata: vi.fn().mockResolvedValue({ display_name: 'Config Provider' }),
   fetchModelReasoning: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../../acp/providers', () => ({
+  acpReadThinkingEffort: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../predefinedModelsUtils', () => ({
@@ -52,7 +65,19 @@ vi.mock('../../../ui/dropdown-menu', () => ({
       {children}
     </div>
   ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({
+    children,
+    disabled,
+    title,
+  }: {
+    children: React.ReactNode;
+    disabled?: boolean;
+    title?: string;
+  }) => (
+    <div data-testid="model-menu-trigger" data-disabled={disabled ? 'true' : 'false'} title={title}>
+      {children}
+    </div>
+  ),
   DropdownMenuContent: ({
     children,
     onCloseAutoFocus,
@@ -70,10 +95,25 @@ vi.mock('../../../ui/dropdown-menu', () => ({
   DropdownMenuItem: ({
     children,
     onSelect,
+    onClick,
+    disabled,
   }: {
     children: React.ReactNode;
     onSelect?: () => void;
-  }) => <button onClick={onSelect}>{children}</button>,
+    onClick?: (event: unknown) => void;
+    disabled?: boolean;
+  }) => (
+    <button
+      disabled={disabled}
+      onClick={(event) => {
+        if (disabled) return;
+        onSelect?.();
+        onClick?.(event);
+      }}
+    >
+      {children}
+    </button>
+  ),
   DropdownMenuSeparator: () => null,
 }));
 
@@ -95,6 +135,8 @@ describe('ModelsBottomBar', () => {
     mockCurrentModel = 'config-model';
     mockCurrentProvider = 'config-provider';
     mockGetProviders.mockResolvedValue([]);
+    mockChangeModel.mockReset();
+    mockChangeModel.mockResolvedValue(false);
   });
 
   it('shows a loading placeholder while the active session model is still loading', async () => {
@@ -104,6 +146,7 @@ describe('ModelsBottomBar', () => {
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
         sessionLoaded={false}
       />
     );
@@ -120,6 +163,7 @@ describe('ModelsBottomBar', () => {
         sessionModel="session-model"
         sessionProvider="session-provider"
         onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
         sessionLoaded={true}
       />
     );
@@ -135,6 +179,7 @@ describe('ModelsBottomBar', () => {
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
       />
     );
 
@@ -151,6 +196,7 @@ describe('ModelsBottomBar', () => {
         sessionModel="local-model"
         sessionProvider="local"
         onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
         sessionLoaded={true}
       />
     );
@@ -179,5 +225,138 @@ describe('ModelsBottomBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
     expect(screen.getByTestId('switch-model-modal')).toBeInTheDocument();
     expect(mockPreventCloseAutoFocus).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the model picker closed while a turn is running', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        modelChangeLocked
+      />
+    );
+
+    const trigger = screen.getByTestId('model-menu-trigger');
+    expect(trigger).toHaveAttribute('data-disabled', 'true');
+    expect(trigger).toHaveAttribute(
+      'title',
+      'Model changes apply after this turn finishes. Stop the run to switch now.'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open model menu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Change Model' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
+    expect(screen.queryByTestId('switch-model-modal')).not.toBeInTheDocument();
+  });
+
+  it('applies a recent-model switch when the session is idle', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce([
+      { model: 'recent-model', provider: 'recent-provider' },
+    ]);
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
+        sessionLoaded={true}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /recent-model/ }));
+    await waitFor(() => {
+      expect(mockChangeModel).toHaveBeenCalledWith(
+        'session-123',
+        expect.objectContaining({ name: 'recent-model', provider: 'recent-provider' })
+      );
+    });
+  });
+
+  it('does not start a second recent-model switch while the first changeModel is in flight', async () => {
+    let resolveChange: (value: boolean) => void = () => {};
+    mockChangeModel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveChange = resolve;
+        })
+    );
+    vi.mocked(window.electron.getSetting).mockResolvedValue([
+      { model: 'recent-model', provider: 'recent-provider' },
+    ]);
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
+        sessionLoaded={true}
+      />
+    );
+
+    const recent = await screen.findByRole('button', { name: /recent-model/ });
+    fireEvent.click(recent);
+    await waitFor(() => expect(mockChangeModel).toHaveBeenCalledTimes(1));
+    fireEvent.click(recent);
+    expect(mockChangeModel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveChange(true);
+    });
+  });
+
+  it('uses the cancellation title while the picker is locked for a pending stop', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        modelChangeLocked
+        modelChangeLockedTitle="Waiting for cancellation to finish"
+      />
+    );
+
+    expect(screen.getByTestId('model-menu-trigger')).toHaveAttribute(
+      'title',
+      'Waiting for cancellation to finish'
+    );
+  });
+
+  it('drops a recent-model switch when a turn starts while lookups are pending', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce([
+      { model: 'recent-model', provider: 'recent-provider' },
+    ]);
+    const renderBar = (locked: boolean) => (
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        modelChangeLocked={locked}
+        sessionLoaded={true}
+      />
+    );
+    const view = renderWithIntl(renderBar(false));
+
+    fireEvent.click(await screen.findByRole('button', { name: /recent-model/ }));
+    view.rerender(renderBar(true));
+    await act(async () => {});
+    expect(mockChangeModel).not.toHaveBeenCalled();
   });
 });

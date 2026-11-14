@@ -25,6 +25,16 @@ import {
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
 import { isAcpRecovering } from '../acp/acpConnection';
+import {
+  isModelChangePendingNow,
+  isModelChangeSubmitHeld,
+  subscribeModelChangePending,
+} from '../components/ModelAndProviderContext';
+import {
+  drainDeferredSubmit,
+  enqueueDeferredSubmit,
+  type DeferredSubmitDisposition,
+} from './deferredSessionSubmits';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -41,6 +51,25 @@ function isClearCommand(message: string): boolean {
 
 function isSlashCommand(message: string): boolean {
   return message.trim().startsWith('/');
+}
+
+function deferForModelChange(sessionId: string): boolean {
+  return isModelChangePendingNow(sessionId) || isModelChangeSubmitHeld(sessionId);
+}
+
+function sessionTurnBusy(sessionId: string): boolean {
+  if (deferForModelChange(sessionId) || isAcpRecovering()) return true;
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  if (!snapshot?.session) return true;
+  return (
+    snapshot.chatState === ChatState.LoadingConversation ||
+    snapshot.chatState === ChatState.Streaming ||
+    snapshot.chatState === ChatState.Thinking ||
+    snapshot.chatState === ChatState.Compacting ||
+    snapshot.pendingCancelPromptAttemptId !== null ||
+    Boolean(snapshot.activePromptAttemptId) ||
+    Boolean(snapshot.activeRunId)
+  );
 }
 
 const i18n = defineMessages({
@@ -137,15 +166,14 @@ export function useChatSession({
   );
 
   const submitToAcpSession = useCallback(
-    async (targetSessionId: string, userMessage: Message) => {
-      await acpChatSessionController.submitMessage(targetSessionId, userMessage, {
+    (targetSessionId: string, userMessage: Message) =>
+      acpChatSessionController.submitMessage(targetSessionId, userMessage, {
         getCurrentSnapshot: () =>
           targetSessionId === sessionId
             ? getCurrentSnapshot()
             : acpChatSessionStore.getSnapshot(targetSessionId),
         onFinish,
-      });
-    },
+      }),
     [getCurrentSnapshot, onFinish, sessionId]
   );
 
@@ -164,24 +192,16 @@ export function useChatSession({
     void retrySessionLoad();
   }, [retrySessionLoad]);
 
-  const handleSubmit = useCallback(
-    async (input: UserInput) => {
-      if (isAcpRecovering()) {
-        return;
+  const beginSubmit = useCallback(
+    (input: UserInput): { disposition: DeferredSubmitDisposition; done?: Promise<void> } => {
+      if (sessionTurnBusy(sessionId)) {
+        return { disposition: 'busy' };
       }
 
       const { msg: userMessage, images } = input;
-      const currentSnapshot = getCurrentSnapshot();
-
-      if (
-        !currentSnapshot?.session ||
-        currentSnapshot.chatState === ChatState.LoadingConversation ||
-        currentSnapshot.chatState === ChatState.Streaming ||
-        currentSnapshot.chatState === ChatState.Thinking ||
-        currentSnapshot.chatState === ChatState.Compacting ||
-        currentSnapshot.pendingCancelPromptAttemptId !== null
-      ) {
-        return;
+      const currentSnapshot = acpChatSessionStore.getSnapshot(sessionId) ?? getCurrentSnapshot();
+      if (!currentSnapshot?.session) {
+        return { disposition: 'busy' };
       }
 
       const currentMessages = currentSnapshot.messages;
@@ -190,7 +210,7 @@ export function useChatSession({
       const clearsConversation = hasNewMessage && isClearCommand(userMessage);
 
       if (!hasNewMessage && !hasExistingMessages) {
-        return;
+        return { disposition: 'dropped' };
       }
 
       // Emit session-created event for first message in a new session
@@ -202,7 +222,7 @@ export function useChatSession({
       // An empty submit sends the last message again as the prompt; an assistant
       // reply sent that way reaches the model as if the user had pasted it.
       if (!hasNewMessage && lastMessage.role !== 'user') {
-        return;
+        return { disposition: 'dropped' };
       }
 
       const newMessage = hasNewMessage ? createUserMessage(userMessage, images) : lastMessage;
@@ -216,10 +236,60 @@ export function useChatSession({
         acpChatSessionActions.setMessages(sessionId, messagesForStore);
       }
 
-      await submitToAcpSession(sessionId, newMessage);
+      const attemptBefore =
+        acpChatSessionStore.getSnapshot(sessionId)?.activePromptAttemptId ?? null;
+      const done = submitToAcpSession(sessionId, newMessage);
+      const attemptAfter =
+        acpChatSessionStore.getSnapshot(sessionId)?.activePromptAttemptId ?? null;
+      const started = attemptAfter !== null && attemptAfter !== attemptBefore;
+      return { disposition: started ? 'started' : 'busy', done };
     },
     [getCurrentSnapshot, sessionId, submitToAcpSession]
   );
+
+  const handleSubmit = useCallback(
+    async (input: UserInput) => {
+      if (deferForModelChange(sessionId)) {
+        enqueueDeferredSubmit(sessionId, input);
+        return;
+      }
+      const { done } = beginSubmit(input);
+      if (done) {
+        await done;
+      }
+    },
+    [beginSubmit, sessionId]
+  );
+
+  const drainQueuedSubmits = useCallback(() => {
+    drainDeferredSubmit(
+      sessionId,
+      () => !sessionTurnBusy(sessionId),
+      (input) => {
+        const { disposition, done } = beginSubmit(input);
+        if (done) {
+          void done.catch((error) => {
+            console.error('Failed to submit queued message:', error);
+          });
+        }
+        return disposition;
+      }
+    );
+  }, [beginSubmit, sessionId]);
+
+  // Snapshot fields retrigger the drain when the in-flight turn releases the session.
+  // The pending subscription does not fire for that transition, and the queue lives
+  // outside this hook so a settings remount can still send what was deferred.
+  useEffect(() => {
+    drainQueuedSubmits();
+    return subscribeModelChangePending(drainQueuedSubmits);
+  }, [
+    drainQueuedSubmits,
+    acpSnapshot?.chatState,
+    acpSnapshot?.activePromptAttemptId,
+    acpSnapshot?.activeRunId,
+    acpSnapshot?.pendingCancelPromptAttemptId,
+  ]);
 
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {

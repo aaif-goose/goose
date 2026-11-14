@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toastError, toastSuccess } from '../toasts';
 import Model, { getProviderMetadata } from './settings/models/modelInterface';
 import type { ProviderMetadata } from '../types/providers';
@@ -9,6 +9,7 @@ import {
   acpSetSessionProviderModel,
   type AppliedSessionProviderModel,
 } from '../acp/providers';
+import type { ThinkingEffort } from '../types/providers';
 import { errorMessage } from '../utils/conversionUtils';
 import {
   getModelDisplayName,
@@ -46,6 +47,11 @@ const i18n = defineMessages({
 interface ModelAndProviderContextType {
   currentModel: string | null;
   currentProvider: string | null;
+  /** True while changeModel's provider/model/thinking RPCs are still in flight. */
+  modelChangePending: boolean;
+  /** Same signal as modelChangePending, readable before the next render. */
+  isModelChangePending: (sessionId: string | null) => boolean;
+  modelChangeRevision: number;
   changeModel: (sessionId: string | null, model: Model) => Promise<boolean>;
   getCurrentModelAndProvider: () => Promise<{ model: string; provider: string }>;
   getFallbackModelAndProvider: () => Promise<{ model: string; provider: string }>;
@@ -60,6 +66,92 @@ interface ModelAndProviderProviderProps {
 }
 
 const ModelAndProviderContext = createContext<ModelAndProviderContextType | undefined>(undefined);
+
+const pendingBySession = new Map<string, number>();
+let defaultModelChangePendingCount = 0;
+const submitHeldSessions = new Set<string>();
+const modelChangeListeners = new Set<() => void>();
+
+const thinkingEfforts = new Set<ThinkingEffort>(['off', 'low', 'medium', 'high', 'max']);
+
+/** Readable before the next render, including from submit paths outside ChatInput. */
+export function isModelChangePendingNow(sessionId: string | null): boolean {
+  if (sessionId == null) return defaultModelChangePendingCount > 0;
+  return (pendingBySession.get(sessionId) ?? 0) > 0;
+}
+
+/** A failed session switch that could not be rolled back. Do not release queued turns. */
+export function isModelChangeSubmitHeld(sessionId: string): boolean {
+  return submitHeldSessions.has(sessionId);
+}
+
+export function resetModelChangeTrackingForTests(): void {
+  pendingBySession.clear();
+  defaultModelChangePendingCount = 0;
+  submitHeldSessions.clear();
+}
+
+export function subscribeModelChangePending(listener: () => void): () => void {
+  modelChangeListeners.add(listener);
+  return () => {
+    modelChangeListeners.delete(listener);
+  };
+}
+
+function hasAnyModelChangePending(): boolean {
+  return defaultModelChangePendingCount > 0 || pendingBySession.size > 0;
+}
+
+function beginModelChange(sessionId: string | null) {
+  if (sessionId == null) {
+    defaultModelChangePendingCount += 1;
+    return;
+  }
+  pendingBySession.set(sessionId, (pendingBySession.get(sessionId) ?? 0) + 1);
+}
+
+function endModelChange(sessionId: string | null) {
+  if (sessionId == null) {
+    defaultModelChangePendingCount = Math.max(0, defaultModelChangePendingCount - 1);
+    return;
+  }
+  const next = Math.max(0, (pendingBySession.get(sessionId) ?? 0) - 1);
+  if (next === 0) pendingBySession.delete(sessionId);
+  else pendingBySession.set(sessionId, next);
+}
+
+function thinkingEffortFromSession(sessionId: string): ThinkingEffort | null {
+  const raw =
+    acpChatSessionStore.getSnapshot(sessionId)?.session?.model_config?.request_params
+      ?.thinking_effort;
+  return typeof raw === 'string' && thinkingEfforts.has(raw as ThinkingEffort)
+    ? (raw as ThinkingEffort)
+    : null;
+}
+
+async function rollbackSessionModel(sessionId: string): Promise<boolean> {
+  const session = acpChatSessionStore.getSnapshot(sessionId)?.session;
+  const providerId = session?.provider_name;
+  if (!providerId) return false;
+
+  try {
+    const applied = await acpSetSessionProviderModel(
+      sessionId,
+      providerId,
+      session.model_config?.model_name ?? null,
+      thinkingEffortFromSession(sessionId)
+    );
+    patchAcpSessionProviderModel(sessionId, applied);
+    return true;
+  } catch (error) {
+    console.error('Failed to roll back session model', error);
+    return false;
+  }
+}
+
+function notifyModelChangePending() {
+  for (const listener of modelChangeListeners) listener();
+}
 
 export { i18n as modelAndProviderMessages };
 
@@ -87,13 +179,25 @@ function patchAcpSessionProviderModel(
 export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> = ({ children }) => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
+  const [modelChangeRevision, setModelChangeRevision] = useState(0);
   const intl = useIntl();
+  const publishModelChange = useCallback(() => {
+    setModelChangeRevision((revision) => revision + 1);
+    notifyModelChangePending();
+  }, []);
+  const isModelChangePending = useCallback(
+    (sessionId: string | null) => isModelChangePendingNow(sessionId),
+    []
+  );
+  const modelChangePending = hasAnyModelChangePending();
 
   const changeModel = useCallback(
     async (sessionId: string | null, model: Model) => {
       const modelName = model.name;
       const providerName = model.provider;
       let phase = 'agent';
+      beginModelChange(sessionId);
+      publishModelChange();
 
       try {
         if (sessionId) {
@@ -104,6 +208,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
             model.request_params?.thinking_effort ?? null
           );
           patchAcpSessionProviderModel(sessionId, applied);
+          submitHeldSessions.delete(sessionId);
         }
 
         // Only update the global config default when there's no session
@@ -111,9 +216,6 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
         if (!sessionId) {
           phase = 'config';
           await acpSaveDefaults(providerName, modelName);
-        }
-
-        if (!sessionId) {
           setCurrentProvider(providerName);
           setCurrentModel(modelName);
         }
@@ -127,6 +229,11 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
         });
         return true;
       } catch (error) {
+        if (sessionId) {
+          const rolledBack = await rollbackSessionModel(sessionId);
+          if (rolledBack) submitHeldSessions.delete(sessionId);
+          else submitHeldSessions.add(sessionId);
+        }
         console.error(`Failed to change model at ${phase} step -- ${modelName} ${providerName}`);
         toastError({
           title: intl.formatMessage(i18n.modelChangeFailed, {
@@ -137,9 +244,12 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
           traceback: errorMessage(error),
         });
         return false;
+      } finally {
+        endModelChange(sessionId);
+        publishModelChange();
       }
     },
-    [intl]
+    [intl, publishModelChange]
   );
 
   const getFallbackModelAndProvider = useCallback(async () => {
@@ -234,6 +344,9 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
     () => ({
       currentModel,
       currentProvider,
+      modelChangePending,
+      modelChangeRevision,
+      isModelChangePending,
       changeModel,
       getCurrentModelAndProvider,
       getFallbackModelAndProvider,
@@ -245,6 +358,9 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
     [
       currentModel,
       currentProvider,
+      modelChangePending,
+      modelChangeRevision,
+      isModelChangePending,
       changeModel,
       getCurrentModelAndProvider,
       getFallbackModelAndProvider,

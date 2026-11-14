@@ -99,6 +99,9 @@ vi.mock('./components/ModelAndProviderContext', () => ({
     getCurrentModelAndProvider: vi.fn(),
     getFallbackModelAndProvider: vi.fn().mockResolvedValue({ provider: '', model: '' }),
     refreshCurrentModelAndProvider: vi.fn().mockResolvedValue(undefined),
+    isModelChangePending: () => false,
+    modelChangePending: false,
+    modelChangeRevision: 0,
     setCurrentModelAndProvider: vi.fn(),
   }),
 }));
