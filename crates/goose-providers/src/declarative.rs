@@ -26,6 +26,7 @@ pub(crate) mod declarative_providers {
         fireworks,
         friendli,
         futurmix,
+        gmicloud,
         groq,
         iflytek,
         iflytek_astron,

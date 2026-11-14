@@ -37,6 +37,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Friendli AI](https://friendli.ai/)                                            | Friendli Model APIs provide instant access to a curated set of models, powered by a proprietary inference stack called [Friendli Engine](https://friendli.ai/why-friendliai) for high-performance, cost-efficient inference.               | `FRIENDLI_API_KEY`                                                                                                                                                                  |
 | [FuturMix](https://futurmix.ai/)                                            | Unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API.                                                                          | `FUTURMIX_API_KEY`                                                                                                                                                                  |
 | [Gemini](https://ai.google.dev/gemini-api/docs)                             | Advanced LLMs by Google with multimodal capabilities (text, images). Gemini 3 models support configurable [thinking levels](#gemini-3-thinking-levels).                                                                                                | `GOOGLE_API_KEY`, `GEMINI3_THINKING_LEVEL` (optional)                                                                                                                              |
+| [GMI Cloud](https://www.gmicloud.ai/)                                       | OpenAI-compatible inference for open-source and frontier models, including DeepSeek, GLM, Kimi, Qwen, and MiniMax.                                                                                    | `GMI_API_KEY`                                                                                                                                                                       |
 | [GCP Vertex AI](https://cloud.google.com/vertex-ai)                         | Google Cloud's Vertex AI platform, supporting Gemini and Claude models. **Credentials must be [configured in advance](https://cloud.google.com/vertex-ai/docs/authentication).** Filters for allowed models by organization policy (if configured). | `GCP_PROJECT_ID`, `GCP_LOCATION` and optionally `GCP_MAX_RATE_LIMIT_RETRIES` (5), `GCP_MAX_OVERLOADED_RETRIES` (5), `GCP_INITIAL_RETRY_INTERVAL_MS` (5000), `GCP_BACKOFF_MULTIPLIER` (2.0), `GCP_MAX_RETRY_INTERVAL_MS` (320_000). |
 | [GitHub Copilot](https://docs.github.com/en/copilot/using-github-copilot/ai-models) | Access to AI models from OpenAI, Anthropic, Google, and other providers through GitHub's Copilot infrastructure. **GitHub account with Copilot access required.** | No manual key. Uses [device flow authentication](#github-copilot-authentication) for both CLI and Desktop. |
 | [Gondola](https://gondola-ai.com/guides)                                     | Pay-per-request inference via Venice AI, settled in USDC on Base. No subscription or minimum. Includes privacy-preserving TEE models (`e2ee-*`). OpenAI-compatible.                                                      | `GONDOLA_API_KEY`, `GONDOLA_HOST` (optional)                                                                                                                                        |
@@ -861,6 +862,45 @@ To set up EmpirioLabs with goose, follow these steps:
     3. Follow the prompts to choose `EmpirioLabs AI` as the provider.
     4. Enter your API key when prompted.
     5. Select the EmpirioLabs model of your choice.
+  </TabItem>
+</Tabs>
+
+### GMI Cloud
+[GMI Cloud](https://www.gmicloud.ai/) provides OpenAI-compatible inference for open-source and frontier models. To use GMI Cloud with goose, you need an API key from the [GMI Cloud console](https://console.gmicloud.ai/).
+
+GMI Cloud offers models that support tool calling, including:
+- **deepseek-ai/DeepSeek-V4-Pro** - DeepSeek V4 Pro with 1M context
+- **deepseek-ai/DeepSeek-V4-Flash** - DeepSeek V4 Flash with 1M context
+- **zai-org/GLM-5.2-FP8** - GLM 5.2 with 1M context
+- **moonshotai/kimi-k2.7-code-highspeed** - Kimi K2.7 Code with 262K context
+- **Qwen/Qwen3.8-Max** - Qwen 3.8 Max with 262K context
+
+goose fetches the live model list from GMI Cloud and hides text-incompatible models and models known not to support tool calling. For the starter list, see [gmicloud.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/gmicloud.json).
+
+To set up GMI Cloud with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider and API key:**
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `GMI Cloud` as provider from the list.
+    6. Click `Configure`, enter your API key, and click `Submit`.
+    7. Select the GMI Cloud model of your choice.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run:
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `GMI Cloud` as the provider.
+    4. Enter your API key when prompted.
+    5. Select the GMI Cloud model of your choice.
   </TabItem>
 </Tabs>
 
