@@ -440,6 +440,25 @@ export OTEL_TRACES_SAMPLER="parentbased_traceidratio"
 export OTEL_TRACES_SAMPLER_ARG="0.1"
 ```
 
+#### Sending traces to a hosted OTLP backend
+
+Most hosted observability platforms accept traces over OTLP/HTTP. Set the base endpoint and an auth header:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-backend.example.com/api/otel"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
+```
+
+goose appends `/v1/traces` to the base endpoint when sending traces, so the full URL becomes `https://your-backend.example.com/api/otel/v1/traces`. Check your backend's OTLP ingestion docs to confirm the expected base path.
+
+By default, model prompts and tool results are **not** included in exported traces. Enable them with:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+When this is on, message content is sent to the configured backend. Only enable it if your backend is trusted and you are comfortable with that data leaving your machine.
+
 [otel-env]: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
 
 ### Langfuse Integration
