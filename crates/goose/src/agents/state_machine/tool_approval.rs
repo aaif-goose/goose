@@ -107,17 +107,26 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
 
     async fn on_confirmation(
         &self,
-        _session: &Session,
+        session: &Session,
         request: &ToolRequest,
         permission: &Permission,
     ) -> Result<()> {
-        let level = match permission {
-            Permission::AlwaysAllow => PermissionLevel::AlwaysAllow,
-            Permission::AlwaysDeny => PermissionLevel::NeverAllow,
-            _ => return Ok(()),
-        };
+        // Standing permissions granted while remote skill instructions steer the
+        // model would outlive the content that asked for them.
+        if !crate::skills::mcp::active_origins(&session.id).is_empty() {
+            return Ok(());
+        }
         let Ok(tool_call) = &request.tool_call else {
             return Ok(());
+        };
+        let level = match permission {
+            Permission::AlwaysAllow
+                if tool_call.name != crate::skills::approval::LOAD_SKILL_TOOL_NAME =>
+            {
+                PermissionLevel::AlwaysAllow
+            }
+            Permission::AlwaysDeny => PermissionLevel::NeverAllow,
+            _ => return Ok(()),
         };
         self.tool_inspection_manager
             .update_permission_manager(&tool_call.name, level)

@@ -47,6 +47,7 @@ impl ExtensionManager {
             server_info: info,
             tools_version: Arc::new(AtomicU64::new(0)),
             tools: Mutex::new(None),
+            skills: Mutex::new(None),
         }))));
         self.scopes
             .lock()
@@ -60,6 +61,139 @@ impl ExtensionManager {
         self.install_test_client("session", builtin_config(&name, vec![]), client, None)
             .await;
     }
+}
+
+struct SkillClient {
+    info: InitializeResult,
+    markdown: String,
+    list_calls: AtomicUsize,
+    reads: AtomicUsize,
+}
+
+impl SkillClient {
+    fn new() -> Self {
+        let mut extensions = rmcp::model::ExtensionCapabilities::new();
+        extensions.insert(
+            rmcp::model::SKILLS_EXTENSION_ID.to_string(),
+            JsonObject::new(),
+        );
+        let mut capabilities = rmcp::model::ServerCapabilities::default();
+        capabilities.extensions = Some(extensions);
+        capabilities.resources = Some(Default::default());
+        let markdown =
+            "---\nname: billing\ndescription: Billing workflow\n---\n\nDo the work.\n".to_string();
+        Self {
+            info: InitializeResult::new(capabilities),
+            markdown,
+            list_calls: AtomicUsize::new(0),
+            reads: AtomicUsize::new(0),
+        }
+    }
+
+    fn manifest(&self) -> rmcp::model::Skill {
+        let uri = "skill://acme/billing/SKILL.md";
+        rmcp::model::Skill::new(
+            uri,
+            rmcp::model::SkillFrontmatter::new("billing", "Billing workflow"),
+            rmcp::model::SkillResources::Files(vec![rmcp::model::SkillResource::from_bytes(
+                uri,
+                self.markdown.as_bytes(),
+            )]),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl McpClientTrait for SkillClient {
+    fn get_info(&self) -> Option<&InitializeResult> {
+        Some(&self.info)
+    }
+
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        Ok(ListToolsResult::default())
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        Ok(CallToolResult::success(vec![]))
+    }
+
+    async fn list_skills(
+        &self,
+        _session_id: &str,
+        _cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::ListSkillsResult, Error> {
+        self.list_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(rmcp::model::ListSkillsResult {
+            result_type: Some(rmcp::model::ResultType::COMPLETE),
+            meta: None,
+            next_cursor: None,
+            ttl_ms: Some(300_000),
+            cache_scope: Some(rmcp::model::CacheScope::Private),
+            skills: vec![self.manifest()],
+        })
+    }
+
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::GetSkillResult, Error> {
+        Ok(rmcp::model::GetSkillResult::new(self.manifest()).with_ttl_ms(300_000))
+    }
+
+    async fn read_resource(
+        &self,
+        _session_id: &str,
+        uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ReadResourceResult, Error> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        Ok(ReadResourceResult::new(vec![
+            rmcp::model::ResourceContents::text(self.markdown.clone(), uri),
+        ]))
+    }
+}
+
+#[tokio::test]
+async fn lease_lists_gets_and_reads_stable_mcp_skills() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(ExtensionManager::with_data_dir(
+        temp_dir.path().to_path_buf(),
+    ));
+    let client = Arc::new(SkillClient::new());
+    manager
+        .add_mock_extension("billing-server".to_string(), client.clone())
+        .await;
+
+    let lease = manager.scope_lease("session").await;
+    let listed = lease.list_mcp_skills().await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(lease.list_mcp_skills().await.len(), 1);
+    assert_eq!(client.list_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(listed[0].extension_name, "billing-server");
+    let got = lease
+        .send_skill_get("billing-server", &listed[0].uri)
+        .await
+        .unwrap();
+    let text = lease
+        .read_skill_text("billing-server", &listed[0].uri)
+        .await
+        .unwrap();
+    crate::skills::mcp::verify_skill_markdown(&got, &text).unwrap();
+    assert_eq!(client.reads.load(Ordering::SeqCst), 1);
 }
 
 struct MockClient {}

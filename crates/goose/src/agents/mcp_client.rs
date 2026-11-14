@@ -12,8 +12,9 @@ use rmcp::model::{
 use rmcp::{
     model::{
         CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
-        InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
+        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, GetSkillRequest,
+        GetSkillRequestParams, GetSkillResult, Implementation, InitializeRequestParams,
+        InitializeResult, ListPromptsResult, ListResourcesResult, ListSkillsResult,
         ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
         ServerNotification, ServerResult,
@@ -135,6 +136,32 @@ pub trait McpClientTrait: Send + Sync {
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
         mpsc::channel(1).1
+    }
+
+    async fn list_skills(
+        &self,
+        _session_id: &str,
+        _cursor: Option<String>,
+        _cancel_token: CancellationToken,
+    ) -> Result<ListSkillsResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<GetSkillResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    /// Skill files are served over `resources/read`, so a server that declares
+    /// the skills extension without resources cannot serve any skill.
+    fn supports_skills(&self) -> bool {
+        self.get_info().is_some_and(|info| {
+            info.capabilities.resources.is_some() && info.capabilities.supports_skills()
+        })
     }
 
     async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
@@ -889,6 +916,52 @@ impl McpClientTrait for McpClient {
         self.notification_subscribers.lock().await.push(tx);
         rx
     }
+
+    async fn list_skills(
+        &self,
+        session_id: &str,
+        cursor: Option<String>,
+        cancel_token: CancellationToken,
+    ) -> Result<ListSkillsResult, Error> {
+        let result = self
+            .send_request_with_context(
+                session_id,
+                None,
+                None,
+                ClientRequest::ListSkillsRequest(RequestOptionalParam::with_param(
+                    PaginatedRequestParams::default().with_cursor(cursor),
+                )),
+                cancel_token,
+            )
+            .await?;
+        match result {
+            ServerResult::ListSkillsResult(result) => Ok(result),
+            _ => Err(ServiceError::UnexpectedResponse),
+        }
+    }
+
+    async fn get_skill(
+        &self,
+        session_id: &str,
+        uri: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<GetSkillResult, Error> {
+        let result = self
+            .send_request_with_context(
+                session_id,
+                None,
+                None,
+                ClientRequest::GetSkillRequest(GetSkillRequest::new(GetSkillRequestParams::new(
+                    uri,
+                ))),
+                cancel_token,
+            )
+            .await?;
+        match result {
+            ServerResult::GetSkillResult(result) => Ok(result),
+            _ => Err(ServiceError::UnexpectedResponse),
+        }
+    }
 }
 
 /// Injects the given session_id and working_dir into Extensions._meta.
@@ -1016,6 +1089,24 @@ fn inject_session_context_into_request(
                 None,
             );
             ClientRequest::GetPromptRequest(req)
+        }
+        ClientRequest::ListSkillsRequest(mut req) => {
+            req.extensions = inject_session_context_into_extensions(
+                req.extensions,
+                session_id,
+                working_dir,
+                tool_call_request_id,
+            );
+            ClientRequest::ListSkillsRequest(req)
+        }
+        ClientRequest::GetSkillRequest(mut req) => {
+            req.extensions = inject_session_context_into_extensions(
+                req.extensions,
+                session_id,
+                working_dir,
+                tool_call_request_id,
+            );
+            ClientRequest::GetSkillRequest(req)
         }
         other => other,
     }
