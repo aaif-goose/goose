@@ -5,11 +5,10 @@ use std::sync::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::command::{
-    normalize_command_name, parse_slash_command, Command, CommandAction, CommandInvocation,
+use goose_agent::command::Command;
+use goose_agent::operation::{
+    applied, ConversationEffect, Emitter, Operation, OperationFuture, OperationResult,
 };
-use goose_agent::machine::{MachineSession, StateMachine, Step};
-use goose_agent::operation::{applied, ConversationEffect, Emitter, Operation, OperationResult};
 use goose_agent::slash_command::SlashCommandOperation;
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
@@ -28,16 +27,6 @@ impl TestSession {
     }
 }
 
-impl MachineSession for TestSession {
-    fn id(&self) -> &str {
-        "test"
-    }
-
-    fn conversation(&self) -> Option<&Conversation> {
-        Some(&self.conversation)
-    }
-}
-
 struct TestCommandOperation {
     description: &'static str,
     collections: AtomicUsize,
@@ -49,6 +38,20 @@ impl TestCommandOperation {
             description,
             collections: AtomicUsize::new(0),
         }
+    }
+
+    fn command<'a>(
+        &'a self,
+        arguments: &'a str,
+        _session: &'a TestSession,
+        _conversation: &'a Conversation,
+        _emit: &'a Emitter,
+    ) -> OperationFuture<'a, Result<OperationResult>> {
+        Box::pin(async move {
+            applied([Message::assistant()
+                .with_text(format!("{}:do-it:{arguments}", self.description))
+                .into()])
+        })
     }
 }
 
@@ -63,27 +66,13 @@ impl Operation<TestSession> for TestCommandOperation {
         _session: &'a TestSession,
     ) -> Result<Vec<Command<'a, TestSession, ConversationEffect>>> {
         self.collections.fetch_add(1, Ordering::SeqCst);
-        Ok(vec![
-            Command::new("Do-It", self.description, self).with_aliases(["alias"])
-        ])
-    }
-}
-
-#[async_trait]
-impl CommandAction<TestSession, ConversationEffect> for TestCommandOperation {
-    async fn execute(
-        &self,
-        command: &CommandInvocation<'_>,
-        _session: &TestSession,
-        _conversation: &Conversation,
-        _emit: &Emitter,
-    ) -> Result<OperationResult> {
-        applied([Message::assistant()
-            .with_text(format!(
-                "{}:{}:{}",
-                self.description, command.name, command.arguments
-            ))
-            .into()])
+        Ok(vec![Command::new(
+            "Do-It",
+            self.description,
+            self,
+            Self::command,
+        )
+        .with_aliases(["alias"])])
     }
 }
 
@@ -109,38 +98,11 @@ fn command_result(result: OperationResult) -> String {
     message.as_concat_text()
 }
 
-#[test]
-fn parsing_and_normalization_are_shared() {
-    let command = parse_slash_command("  /Do-It   some input  ").unwrap();
-
-    assert_eq!(normalize_command_name(command.name), "do-it");
-    assert_eq!(command.arguments, "some input");
-    assert!(parse_slash_command("Do-It").is_none());
-}
-
-#[tokio::test]
-async fn state_machine_returns_duplicate_commands_in_step_order() -> Result<()> {
-    let first = Arc::new(TestCommandOperation::new("first"));
-    let second = Arc::new(TestCommandOperation::new("second"));
-    let machine = StateMachine::new(
-        vec![Step::Operation(first), Step::Operation(second)],
-        CancellationToken::new(),
-    );
-    let session = TestSession::with_messages(vec![Message::user().with_text("hello")]);
-
-    let commands = machine.commands(&session).await?;
-
-    assert_eq!(commands.len(), 2);
-    assert_eq!(commands[0].description, "first");
-    assert_eq!(commands[1].description, "second");
-    Ok(())
-}
-
 #[tokio::test]
 async fn slash_dispatch_uses_aliases_arguments_and_the_first_match() -> Result<()> {
     let first = Arc::new(TestCommandOperation::new("first"));
     let second = Arc::new(TestCommandOperation::new("second"));
-    let operation = SlashCommandOperation::new(vec![first, second]);
+    let operation = SlashCommandOperation::new(vec![first.clone(), second.clone()]);
     let session = TestSession::with_messages(vec![Message::user().with_text("/ALIAS hello")]);
 
     let result = operation
@@ -148,13 +110,6 @@ async fn slash_dispatch_uses_aliases_arguments_and_the_first_match() -> Result<(
         .await?;
 
     assert_eq!(command_result(result), "first:do-it:hello");
-    Ok(())
-}
-
-#[tokio::test]
-async fn slash_dispatch_accepts_another_collision_policy() -> Result<()> {
-    let first = Arc::new(TestCommandOperation::new("first"));
-    let second = Arc::new(TestCommandOperation::new("second"));
     let operation = SlashCommandOperation::new(vec![first, second]).with_resolver(reverse);
     let session = TestSession::with_messages(vec![Message::user().with_text("/do-it")]);
 

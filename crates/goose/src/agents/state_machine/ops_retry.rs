@@ -9,8 +9,7 @@ use crate::agents::retry::{
 };
 use crate::agents::state_machine::{
     applied, builtin_command, ends_turn, messages_since_kickoff, not_applicable, yielded_with,
-    Command, CommandAction, CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation,
-    OperationResult,
+    Command, ConversationEffect, Emitter, GooseEffect, Operation, OperationFuture, OperationResult,
 };
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
@@ -88,11 +87,17 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 "goal",
                 "Set a goal the agent must satisfy before finishing, or clear with /goal off",
                 self,
+                |operation, arguments, session, conversation, emit| {
+                    operation.set_goal_command(false, arguments, session, conversation, emit)
+                },
             ),
             builtin_command(
                 "grind",
                 "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
                 self,
+                |operation, arguments, session, conversation, emit| {
+                    operation.set_goal_command(true, arguments, session, conversation, emit)
+                },
             ),
         ])
     }
@@ -206,96 +211,96 @@ impl Operation<Session, GooseEffect> for RetryOperation {
     }
 }
 
-#[async_trait]
-impl CommandAction<Session, GooseEffect> for RetryOperation {
-    async fn execute(
-        &self,
-        command: &CommandInvocation<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let mut state = GoalState::of(session);
-        let target = if command.name == "goal" {
-            &mut state.goal
-        } else {
-            &mut state.grind
-        };
-        let label = if command.name == "goal" {
-            "goal"
-        } else {
-            "grind goal"
-        };
-        let params = command.arguments;
-        let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
-
-        let response = if params.is_empty() {
-            match target {
-                Some(value) => Message::assistant().with_text(format!("Current {label}: {value}")),
-                None => Message::assistant().with_text(format!(
-                    "No {label} set. Use `/{command_name} <description>` to set one.",
-                    command_name = command.name
-                )),
-            }
-        } else if !starts_turn {
-            *target = None;
-            let text = if command.name == "goal" {
-                "Goal cleared. The agent will finish normally."
+impl RetryOperation {
+    fn set_goal_command<'a>(
+        &'a self,
+        grind: bool,
+        arguments: &'a str,
+        session: &'a Session,
+        conversation: &'a Conversation,
+        emit: &'a Emitter,
+    ) -> OperationFuture<'a, Result<OperationResult<GooseEffect>>> {
+        Box::pin(async move {
+            let mut state = GoalState::of(session);
+            let target = if grind {
+                &mut state.grind
             } else {
-                "Grind cleared. The agent will finish normally."
+                &mut state.goal
             };
-            Message::assistant().with_text(text)
-        } else {
-            *target = Some(params.to_string());
-            let text = if command.name == "goal" {
-                format!(
-                    "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
-                )
+            let label = if grind { "grind goal" } else { "goal" };
+            let command_name = if grind { "grind" } else { "goal" };
+            let params = arguments;
+            let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
+
+            let response = if params.is_empty() {
+                match target {
+                    Some(value) => {
+                        Message::assistant().with_text(format!("Current {label}: {value}"))
+                    }
+                    None => Message::assistant().with_text(format!(
+                        "No {label} set. Use `/{command_name} <description>` to set one.",
+                    )),
+                }
+            } else if !starts_turn {
+                *target = None;
+                let text = if grind {
+                    "Grind cleared. The agent will finish normally."
+                } else {
+                    "Goal cleared. The agent will finish normally."
+                };
+                Message::assistant().with_text(text)
             } else {
-                format!(
+                *target = Some(params.to_string());
+                let text = if grind {
+                    format!(
                     "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {params}"
                 )
+                } else {
+                    format!(
+                    "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
+                )
+                };
+                Message::assistant().with_text(text)
             };
-            Message::assistant().with_text(text)
-        };
 
-        let command_message = messages_since_kickoff(conversation)?
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow!("slash command conversation has no kickoff message"))?;
-        let message_id = command_message
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        let command_message = command_message.with_visibility(true, false);
-        let response = response.with_visibility(true, false);
-        emit.message(command_message);
-        let response = emit.message(response);
+            let command_message = messages_since_kickoff(conversation)?
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow!("slash command conversation has no kickoff message"))?;
+            let message_id = command_message
+                .id
+                .clone()
+                .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
+            let command_message = command_message.with_visibility(true, false);
+            let response = response.with_visibility(true, false);
+            emit.message(command_message);
+            let response = emit.message(response);
 
-        let mut effects = vec![
-            ConversationEffect::SetMessageVisibility {
-                message_id,
-                user_visible: true,
-                agent_visible: false,
+            let mut effects = vec![
+                ConversationEffect::SetMessageVisibility {
+                    message_id,
+                    user_visible: true,
+                    agent_visible: false,
+                }
+                .into(),
+                response.into(),
+            ];
+            if !params.is_empty() {
+                effects.push(GooseEffect::extension_state(&state)?);
             }
-            .into(),
-            response.into(),
-        ];
-        if !params.is_empty() {
-            effects.push(GooseEffect::extension_state(&state)?);
-        }
-        if starts_turn {
-            effects.push(
-                Message::user()
-                    .with_text(format!(
-                        "Start working toward this goal now:\n\n**Goal:** {params}"
-                    ))
-                    .with_visibility(false, true)
-                    .into(),
-            );
-        } else {
-            return yielded_with(effects);
-        }
-        applied(effects)
+            if starts_turn {
+                effects.push(
+                    Message::user()
+                        .with_text(format!(
+                            "Start working toward this goal now:\n\n**Goal:** {params}"
+                        ))
+                        .with_visibility(false, true)
+                        .into(),
+                );
+            } else {
+                return yielded_with(effects);
+            }
+            applied(effects)
+        })
     }
 }

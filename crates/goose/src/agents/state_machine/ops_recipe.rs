@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, Command, CommandAction,
-    CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
+    Emitter, GooseEffect, Operation, OperationFuture, OperationResult,
 };
 use crate::config::extensions::is_extension_available;
 use crate::conversation::message::Message;
@@ -84,7 +84,22 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 let mut meta = serde_json::Map::new();
                 meta.insert("commandType".to_string(), "Recipe".into());
                 meta.insert("sourcePath".to_string(), source_path.into());
-                let mut command = Command::new(name, description, self).with_meta(meta);
+                let command_name = name.clone();
+                let mut command = Command::new(
+                    name,
+                    description,
+                    self,
+                    move |operation, arguments, session, conversation, emit| {
+                        operation.recipe_command(
+                            command_name.clone(),
+                            arguments,
+                            session,
+                            conversation,
+                            emit,
+                        )
+                    },
+                )
+                .with_meta(meta);
                 if let Some(input_hint) = input_hint {
                     command = command.with_input_hint(input_hint);
                 }
@@ -108,74 +123,79 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
     }
 }
 
-#[async_trait]
-impl CommandAction<Session, GooseEffect> for RecipeOperation {
-    async fn execute(
-        &self,
-        command: &CommandInvocation<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let (recipe, prompt) = match crate::slash_commands::recipe_slash_command::resolve_command(
-            command.name,
-            command.arguments,
-        ) {
-            Ok(Some(recipe)) => recipe,
-            Ok(None) => return not_applicable(),
-            Err(error) => return command_error(conversation, error, emit),
-        };
+impl RecipeOperation {
+    fn recipe_command<'a>(
+        &'a self,
+        name: String,
+        arguments: &'a str,
+        session: &'a Session,
+        conversation: &'a Conversation,
+        emit: &'a Emitter,
+    ) -> OperationFuture<'a, Result<OperationResult<GooseEffect>>> {
+        Box::pin(async move {
+            let (recipe, prompt) =
+                match crate::slash_commands::recipe_slash_command::resolve_command(&name, arguments)
+                {
+                    Ok(Some(recipe)) => recipe,
+                    Ok(None) => return not_applicable(),
+                    Err(error) => return command_error(conversation, error, emit),
+                };
 
-        if let Some(response) = recipe.response.clone() {
-            if let Err(error) = FinalOutputTool::try_new(response) {
-                return command_error(conversation, format!("Recipe is not valid: {error}"), emit);
+            if let Some(response) = recipe.response.clone() {
+                if let Err(error) = FinalOutputTool::try_new(response) {
+                    return command_error(
+                        conversation,
+                        format!("Recipe is not valid: {error}"),
+                        emit,
+                    );
+                }
             }
-        }
 
-        for extension in recipe
-            .extensions
-            .iter()
-            .flatten()
-            .filter(|extension| is_extension_available(extension))
-        {
-            if let Err(error) = self
-                .extension_manager
-                .enable(&session.id, extension.clone())
-                .await
+            for extension in recipe
+                .extensions
+                .iter()
+                .flatten()
+                .filter(|extension| is_extension_available(extension))
             {
-                return command_error(
-                    conversation,
-                    format!(
-                        "Could not load recipe extension '{}': {error}",
-                        extension.name()
-                    ),
-                    emit,
-                );
+                if let Err(error) = self
+                    .extension_manager
+                    .enable(&session.id, extension.clone())
+                    .await
+                {
+                    return command_error(
+                        conversation,
+                        format!(
+                            "Could not load recipe extension '{}': {error}",
+                            extension.name()
+                        ),
+                        emit,
+                    );
+                }
             }
-        }
 
-        #[cfg(feature = "telemetry")]
-        crate::posthog::emit_custom_slash_command_used();
+            #[cfg(feature = "telemetry")]
+            crate::posthog::emit_custom_slash_command_used();
 
-        let command_message = messages_since_kickoff(conversation)?
-            .first()
-            .ok_or_else(|| anyhow!("recipe command conversation has no kickoff message"))?;
-        let message_id = command_message
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        applied([
-            ConversationEffect::SetMessageVisibility {
-                message_id,
-                user_visible: true,
-                agent_visible: false,
-            }
-            .into(),
-            GooseEffect::SetRecipe(Box::new(Some(recipe))),
-            Message::user()
-                .with_text(prompt)
-                .with_visibility(false, true)
+            let command_message = messages_since_kickoff(conversation)?
+                .first()
+                .ok_or_else(|| anyhow!("recipe command conversation has no kickoff message"))?;
+            let message_id = command_message
+                .id
+                .clone()
+                .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
+            applied([
+                ConversationEffect::SetMessageVisibility {
+                    message_id,
+                    user_visible: true,
+                    agent_visible: false,
+                }
                 .into(),
-        ])
+                GooseEffect::SetRecipe(Box::new(Some(recipe))),
+                Message::user()
+                    .with_text(prompt)
+                    .with_visibility(false, true)
+                    .into(),
+            ])
+        })
     }
 }

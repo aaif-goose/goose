@@ -18,8 +18,7 @@ use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, builtin_command, messages_since_kickoff, not_applicable, yielded_with, Command,
-    CommandAction, CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation,
-    OperationResult,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationFuture, OperationResult,
 };
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
@@ -419,7 +418,7 @@ impl ToolExecutionOperation {
 
     async fn list_prompts(
         &self,
-        command: &CommandInvocation<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
@@ -429,7 +428,7 @@ impl ToolExecutionOperation {
             .await?
             .list_prompts(emit.cancel_token().clone())
             .await;
-        let extension_filter = command.arguments.split_whitespace().next();
+        let extension_filter = arguments.split_whitespace().next();
         if let Some(filter) = extension_filter {
             if !prompts.contains_key(filter) {
                 return Self::command_response(
@@ -462,12 +461,12 @@ impl ToolExecutionOperation {
 
     async fn run_prompt(
         &self,
-        command: &CommandInvocation<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let params: Vec<_> = command.arguments.split_whitespace().collect();
+        let params: Vec<_> = arguments.split_whitespace().collect();
         let Some(prompt_name) = params.first() else {
             return Self::command_response(
                 conversation,
@@ -762,11 +761,19 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 "prompts",
                 "List available prompts, optionally filtered by extension",
                 self,
+                |operation, arguments, session, conversation, emit| {
+                    Box::pin(operation.list_prompts(arguments, session, conversation, emit))
+                        as OperationFuture<'_, _>
+                },
             ),
             builtin_command(
                 "prompt",
                 "Execute a prompt or show its info with --info",
                 self,
+                |operation, arguments, session, conversation, emit| {
+                    Box::pin(operation.run_prompt(arguments, session, conversation, emit))
+                        as OperationFuture<'_, _>
+                },
             ),
         ])
     }
@@ -1030,24 +1037,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
         emit.emit(AgentEvent::Message(response.user_visible_content()));
         applied(actions.into_iter().chain([response]).map(GooseEffect::from))
-    }
-}
-
-#[async_trait]
-impl CommandAction<Session, GooseEffect> for ToolExecutionOperation {
-    async fn execute(
-        &self,
-        command: &CommandInvocation<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        if command.name == "prompts" {
-            self.list_prompts(command, session, conversation, emit)
-                .await
-        } else {
-            self.run_prompt(command, session, conversation, emit).await
-        }
     }
 }
 

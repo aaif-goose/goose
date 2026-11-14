@@ -1,38 +1,65 @@
 use anyhow::Result;
-use async_trait::async_trait;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-use crate::operation::{Emitter, OperationResult};
+use crate::operation::{Emitter, OperationFuture, OperationResult};
 
-pub struct CommandInvocation<'a> {
+pub struct ParsedCommand<'a> {
     pub name: &'a str,
     pub arguments: &'a str,
 }
 
-pub fn parse_slash_command(message: &str) -> Option<CommandInvocation<'_>> {
+pub fn parse_slash_command(message: &str) -> Option<ParsedCommand<'_>> {
     let command = message.trim().strip_prefix('/')?;
     let (name, arguments) = command
         .split_once(' ')
         .map(|(command, params)| (command, params.trim()))
         .unwrap_or((command, ""));
-    Some(CommandInvocation { name, arguments })
+    Some(ParsedCommand { name, arguments })
 }
 
 pub fn normalize_command_name(name: &str) -> String {
     name.trim_start_matches('/').to_lowercase()
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-pub trait CommandAction<S, E: MaybeSend + 'static>: MaybeSend + MaybeSync {
-    async fn execute(
-        &self,
-        command: &CommandInvocation<'_>,
-        session: &S,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<E>>;
+trait CommandAction<S, E: MaybeSend + 'static>: MaybeSend + MaybeSync {
+    fn execute<'a>(
+        &'a self,
+        arguments: &'a str,
+        session: &'a S,
+        conversation: &'a Conversation,
+        emit: &'a Emitter,
+    ) -> OperationFuture<'a, Result<OperationResult<E>>>;
+}
+
+struct BoundCommandAction<'a, T: ?Sized, F> {
+    target: &'a T,
+    execute: F,
+}
+
+impl<S, E, T, F> CommandAction<S, E> for BoundCommandAction<'_, T, F>
+where
+    E: MaybeSend + 'static,
+    T: MaybeSync + ?Sized,
+    F: MaybeSend
+        + MaybeSync
+        + for<'a> Fn(
+            &'a T,
+            &'a str,
+            &'a S,
+            &'a Conversation,
+            &'a Emitter,
+        ) -> OperationFuture<'a, Result<OperationResult<E>>>,
+{
+    fn execute<'a>(
+        &'a self,
+        arguments: &'a str,
+        session: &'a S,
+        conversation: &'a Conversation,
+        emit: &'a Emitter,
+    ) -> OperationFuture<'a, Result<OperationResult<E>>> {
+        (self.execute)(self.target, arguments, session, conversation, emit)
+    }
 }
 
 pub struct Command<'a, S, E: MaybeSend + 'static> {
@@ -41,22 +68,36 @@ pub struct Command<'a, S, E: MaybeSend + 'static> {
     pub description: String,
     pub input_hint: Option<String>,
     pub meta: serde_json::Map<String, serde_json::Value>,
-    action: &'a dyn CommandAction<S, E>,
+    action: Box<dyn CommandAction<S, E> + 'a>,
 }
 
 impl<'a, S, E: MaybeSend + 'static> Command<'a, S, E> {
-    pub fn new(
+    pub fn new<T, F>(
         name: impl AsRef<str>,
         description: impl Into<String>,
-        action: &'a dyn CommandAction<S, E>,
-    ) -> Self {
+        target: &'a T,
+        execute: F,
+    ) -> Self
+    where
+        T: MaybeSync + ?Sized,
+        F: MaybeSend
+            + MaybeSync
+            + for<'b> Fn(
+                &'b T,
+                &'b str,
+                &'b S,
+                &'b Conversation,
+                &'b Emitter,
+            ) -> OperationFuture<'b, Result<OperationResult<E>>>
+            + 'a,
+    {
         Self {
             name: normalize_command_name(name.as_ref()),
             aliases: Vec::new(),
             description: description.into(),
             input_hint: None,
             meta: serde_json::Map::new(),
-            action,
+            action: Box::new(BoundCommandAction { target, execute }),
         }
     }
 
@@ -91,15 +132,7 @@ impl<'a, S, E: MaybeSend + 'static> Command<'a, S, E> {
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         self.action
-            .execute(
-                &CommandInvocation {
-                    name: &self.name,
-                    arguments,
-                },
-                session,
-                conversation,
-                emit,
-            )
+            .execute(arguments, session, conversation, emit)
             .await
     }
 }

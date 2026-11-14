@@ -38,8 +38,7 @@ mod tests;
 
 pub use effects::GooseEffect;
 pub use goose_agent::command::{
-    normalize_command_name, parse_slash_command, Command, CommandAction, CommandInvocation,
-    CommandResolver,
+    normalize_command_name, parse_slash_command, Command, CommandResolver,
 };
 pub use goose_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
@@ -47,7 +46,8 @@ pub use goose_agent::machine::{
 pub use goose_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
-    InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, StepResult, CLIENT_LOG,
+    InferenceInput, MachineEffect, Operation, OperationFuture, OperationResult, RunStatus,
+    StepResult, CLIENT_LOG,
 };
 pub(super) use goose_agent::slash_command::SlashCommandOperation;
 pub(super) use goose_agent::subagent::SubagentOperation;
@@ -58,17 +58,29 @@ pub(crate) use tool_confirmation::{
     persist_tool_confirmation_decision,
 };
 
-pub(super) fn builtin_command<'a, S, E>(
+pub(super) fn builtin_command<'a, S, E, T, F>(
     name: &str,
     description: &str,
-    action: &'a dyn CommandAction<S, E>,
+    target: &'a T,
+    execute: F,
 ) -> Command<'a, S, E>
 where
     E: goose_provider_types::maybe_send::MaybeSend + 'static,
+    T: goose_provider_types::maybe_send::MaybeSync + ?Sized,
+    F: goose_provider_types::maybe_send::MaybeSend
+        + goose_provider_types::maybe_send::MaybeSync
+        + for<'b> Fn(
+            &'b T,
+            &'b str,
+            &'b S,
+            &'b Conversation,
+            &'b Emitter,
+        ) -> OperationFuture<'b, anyhow::Result<OperationResult<E>>>
+        + 'a,
 {
     let mut meta = serde_json::Map::new();
     meta.insert("commandType".to_string(), "Builtin".into());
-    Command::new(name, description, action).with_meta(meta)
+    Command::new(name, description, target, execute).with_meta(meta)
 }
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
