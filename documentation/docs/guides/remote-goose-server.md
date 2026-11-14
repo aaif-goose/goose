@@ -97,12 +97,13 @@ The fingerprint changes whenever `goose serve` regenerates its certificate (for 
 
 ### 4. Configure goose Desktop
 
-On the client machine, open goose Desktop and navigate to **Settings → goose Server**:
+On the client machine, open goose Desktop and navigate to **Settings → External Backend**. Under the **External Backend (ACP)** section:
 
 | Setting | Value |
 |---------|-------|
-| **Use external server** | Enabled |
-| **URL** | `https://your-server-host:3000` (use the hostname or IP that the client can reach — for example a VPN/tailnet address) |
+| **Use external backend** | Enabled |
+| **Backend Base URL** | `https://your-server-host:3000` (the HTTP(S) base URL — goose connects to `/acp` and checks `/status` under this base) |
+| **Remote Working Directory** | Optional. Absolute path on the remote machine. Leave blank to send the local working directory. |
 | **Secret Key** | The same value you used for `GOOSE_SERVER__SECRET_KEY` |
 | **Certificate Fingerprint** | Optional. Use the `GOOSED_CERT_FINGERPRINT` value from the server logs to pin a specific TLS certificate. |
 
