@@ -1,3 +1,4 @@
+pub mod bang_shell;
 pub mod events;
 pub mod exit_on_error;
 #[cfg(not(target_arch = "wasm32"))]
