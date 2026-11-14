@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
     return Promise.resolve();
   }),
   modelChangePending: false,
+  pendingSessionId: 'sess-1' as string | null,
+  submitHeld: false,
   listeners: new Set<() => void>(),
 }));
 
@@ -42,7 +44,12 @@ vi.mock('../acp/acpConnection', () => ({
 }));
 
 vi.mock('../components/ModelAndProviderContext', () => ({
-  isModelChangePendingNow: () => mocks.modelChangePending,
+  isModelChangePendingNow: (sessionId?: string | null) => {
+    if (!mocks.modelChangePending) return false;
+    if (sessionId == null) return mocks.pendingSessionId == null;
+    return mocks.pendingSessionId == null || mocks.pendingSessionId === sessionId;
+  },
+  isModelChangeSubmitHeld: () => mocks.submitHeld,
   subscribeModelChangePending: (listener: () => void) => {
     mocks.listeners.add(listener);
     return () => {
@@ -100,6 +107,8 @@ describe('useChatSession handleSubmit', () => {
     vi.clearAllMocks();
     clearDeferredSubmits();
     mocks.modelChangePending = false;
+    mocks.pendingSessionId = 'sess-1';
+    mocks.submitHeld = false;
     mocks.listeners.clear();
     mocks.submitMessage.mockImplementation(() => {
       if (mocks.snapshot) {
@@ -152,6 +161,38 @@ describe('useChatSession handleSubmit', () => {
       }),
       expect.anything()
     );
+  });
+
+  it('does not defer a submit for another session model change', async () => {
+    mocks.modelChangePending = true;
+    mocks.pendingSessionId = 'other-session';
+    const question = createUserMessage('Question');
+    const { result } = renderChatSession([question]);
+
+    await act(() => result.current.handleSubmit({ msg: 'local turn', images: [] }));
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release a deferred submit when the switch fails without a rollback', async () => {
+    mocks.modelChangePending = true;
+    const question = createUserMessage('Question');
+    const { result } = renderChatSession([question]);
+
+    await act(() => result.current.handleSubmit({ msg: 'from recipe', images: [] }));
+    mocks.modelChangePending = false;
+    mocks.submitHeld = true;
+    await act(() => {
+      for (const listener of mocks.listeners) listener();
+    });
+
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+
+    mocks.submitHeld = false;
+    await act(() => {
+      for (const listener of mocks.listeners) listener();
+    });
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
   });
 
   it('sends deferred submits one turn at a time', async () => {

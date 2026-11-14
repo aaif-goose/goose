@@ -464,7 +464,7 @@ export const SwitchModelModal = ({
       if (
         closedRef.current ||
         modelChangeLockedRef.current ||
-        isModelChangePendingNow() ||
+        isModelChangePendingNow(sessionId) ||
         sessionTurnInFlight(sessionId)
       ) {
         return;

@@ -13,7 +13,8 @@ import { GitBranchIndicator } from './GitBranchIndicator';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuExtensionSelection } from './bottom_menu/BottomMenuExtensionSelection';
 import { cn } from '../utils';
-import { useModelAndProvider } from './ModelAndProviderContext';
+import { isModelChangeSubmitHeld, useModelAndProvider } from './ModelAndProviderContext';
+import { shouldProcessModelSwitchQueue } from './modelChangeQueue';
 import { acpGetProviderDetails } from '../acp/providers';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useFocusOnTyping } from '../hooks/useFocusOnTyping';
@@ -321,15 +322,15 @@ export default function ChatInput({
     getCurrentModelAndProvider,
     currentModel: configModel,
     currentProvider: configProvider,
-    modelChangePending,
     isModelChangePending,
   } = useModelAndProvider();
+  const sessionModelChangePending = isModelChangePending(sessionId);
+  const sessionSubmitHeld = sessionId != null && isModelChangeSubmitHeld(sessionId);
   const modelChangeInFlight = useCallback(
-    () => isModelChangePending?.() ?? Boolean(modelChangePending),
-    [isModelChangePending, modelChangePending]
+    () => sessionModelChangePending || sessionSubmitHeld,
+    [sessionModelChangePending, sessionSubmitHeld]
   );
-  const modelPickerLocked =
-    isSubmissionBusy || queueProcessingBlocked || Boolean(modelChangePending);
+  const modelPickerLocked = isSubmissionBusy || queueProcessingBlocked || sessionModelChangePending;
 
   // Local override for when the user changes the model in the modal,
   // before the session object is re-fetched from the backend.
@@ -428,11 +429,16 @@ export default function ChatInput({
     }
 
     if (
-      (becameAvailable || (becameUnblocked && !isSubmissionBusy) || modelChangeSettled) &&
-      !queueProcessingBlocked &&
-      !modelChangeInFlight() &&
-      !hasSendNowInFlight &&
-      queuedMessages.length > 0
+      shouldProcessModelSwitchQueue({
+        becameAvailable,
+        becameUnblocked,
+        modelChangeSettled,
+        isSubmissionBusy,
+        queueProcessingBlocked,
+        modelChangeInFlight: modelChangeInFlight(),
+        hasSendNowInFlight,
+        hasQueuedMessages: queuedMessages.length > 0,
+      })
     ) {
       const pendingSendAfterStopId = sendAfterStopMessageIdRef.current;
       const messageToSend = pendingSendAfterStopId
@@ -488,7 +494,8 @@ export default function ChatInput({
   }, [
     isSubmissionBusy,
     queueProcessingBlocked,
-    modelChangePending,
+    sessionModelChangePending,
+    sessionSubmitHeld,
     modelChangeInFlight,
     queuedMessages,
     handleSubmit,

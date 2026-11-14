@@ -27,6 +27,7 @@ import { acpSteerSession } from '../acp/prompt';
 import { isAcpRecovering } from '../acp/acpConnection';
 import {
   isModelChangePendingNow,
+  isModelChangeSubmitHeld,
   subscribeModelChangePending,
 } from '../components/ModelAndProviderContext';
 import {
@@ -52,8 +53,12 @@ function isSlashCommand(message: string): boolean {
   return message.trim().startsWith('/');
 }
 
+function deferForModelChange(sessionId: string): boolean {
+  return isModelChangePendingNow(sessionId) || isModelChangeSubmitHeld(sessionId);
+}
+
 function sessionTurnBusy(sessionId: string): boolean {
-  if (isModelChangePendingNow() || isAcpRecovering()) return true;
+  if (deferForModelChange(sessionId) || isAcpRecovering()) return true;
   const snapshot = acpChatSessionStore.getSnapshot(sessionId);
   if (!snapshot?.session) return true;
   return (
@@ -244,7 +249,7 @@ export function useChatSession({
 
   const handleSubmit = useCallback(
     async (input: UserInput) => {
-      if (isModelChangePendingNow()) {
+      if (deferForModelChange(sessionId)) {
         enqueueDeferredSubmit(sessionId, input);
         return;
       }
