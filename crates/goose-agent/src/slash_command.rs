@@ -32,8 +32,6 @@ impl<'a, S, E: MaybeSend + 'static> SlashCommandOperation<'a, S, E> {
         }
     }
 
-    /// Replaces the default collision rule, where the first command to claim a
-    /// name wins, with one that sees every command and keeps the winners.
     pub fn with_resolver(
         mut self,
         resolver: impl for<'c> Fn(Vec<Command<'c, S, E>>) -> Vec<Command<'c, S, E>>
