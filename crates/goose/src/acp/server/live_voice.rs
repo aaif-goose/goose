@@ -13,6 +13,8 @@ const LIVE_DELEGATION_INSTRUCTION: &str = concat!(
     "failures, and any required user action. Do not include raw tool output."
 );
 
+const STEER_FAILED_MESSAGE: &str = "The task could not receive the latest instruction.";
+
 impl AcpConnection {
     async fn load_live_voice_session(
         &self,
@@ -76,6 +78,7 @@ impl AcpConnection {
         let start = self.live_voice.start_interaction(
             reservation,
             offer,
+            req.instructions,
             self.services.session_manager.clone(),
             transcript_publisher,
             main_agent,
@@ -107,7 +110,7 @@ impl AcpConnection {
             let [MessageContent::Text(text)] = message.content.as_slice() else {
                 return;
             };
-            let chunk = content_chunk_for_message(
+            let chunk = live_transcript_chunk(
                 &message,
                 ContentBlock::Text(TextContent::new(text.text.clone())),
             );
@@ -302,7 +305,11 @@ impl AcpConnection {
                         let text = projected_message
                             .content
                             .iter()
-                            .filter_map(MessageContent::as_text)
+                            .filter_map(|content| match content {
+                                MessageContent::Text(text) => Some(text.text.as_str()),
+                                MessageContent::Error(error) => Some(error.message.as_str()),
+                                _ => None,
+                            })
                             .collect::<String>();
                         if !text.trim().is_empty() {
                             if outcome_message_id.is_some()
@@ -359,11 +366,12 @@ impl AcpConnection {
         input: String,
     ) -> Result<String, String> {
         if self.runs().agent_run_id(session_id).is_none() {
-            return Err("The task could not receive the latest instruction.".into());
+            return Err(STEER_FAILED_MESSAGE.into());
         }
         self.services
             .steer(session_id, Message::user().with_text(input).agent_only())
-            .await;
+            .await
+            .map_err(|_| STEER_FAILED_MESSAGE.to_string())?;
         Ok(
             "The latest instruction was added to the work in progress. Wait for its updated result."
                 .into(),

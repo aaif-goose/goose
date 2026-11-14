@@ -686,12 +686,12 @@ fn finalize_usage(
     output_token_count: i32,
     extra_log_fields: Option<(&str, &str)>,
 ) -> ProviderUsage {
-    let input_tokens = prompt_token_count as i32;
-    let total_tokens = input_tokens + output_token_count;
+    let input_tokens = prompt_token_count as i64;
+    let output_tokens = i64::from(output_token_count);
     let usage = Usage::new(
         Some(input_tokens),
-        Some(output_token_count),
-        Some(total_tokens),
+        Some(output_tokens),
+        Some(input_tokens + output_tokens),
     );
     let mut log_json = serde_json::json!({
         "path": path_label,

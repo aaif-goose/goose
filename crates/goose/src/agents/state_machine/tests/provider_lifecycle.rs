@@ -468,7 +468,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
 
     let result = pipeline.run(["hello"]).await?;
     let input_tokens = api.calls()[0].input_tokens();
-    let output_tokens = "hi there".chars().count() as i32;
+    let output_tokens = "hi there".chars().count() as i64;
     let total_tokens = input_tokens + output_tokens;
 
     assert_eq!(result.session.usage.total_tokens, Some(total_tokens));
@@ -501,7 +501,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .server_error("boom");
     let result = pipeline.run(["stream then fail"]).await?;
     let stream_total =
-        api.calls().last().unwrap().input_tokens() + "partial response".chars().count() as i32;
+        api.calls().last().unwrap().input_tokens() + "partial response".chars().count() as i64;
     assert_eq!(result.session.usage.total_tokens, Some(stream_total));
     assert!(result.events.iter().any(
         |event| matches!(event, AgentEvent::Usage(usage) if usage.usage.total_tokens == Some(stream_total))

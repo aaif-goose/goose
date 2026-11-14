@@ -1,15 +1,17 @@
 //! Ends the turn when the agent has used its autonomous turn budget.
 
-use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::{
-    assistant_turn_count, messages_since_kickoff, not_applicable, yielded_with, Emitter, Operation,
-    OperationResult,
-};
-use crate::conversation::message::Message;
-use crate::conversation::Conversation;
-use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::conversation::message::{Message, MessageErrorKind};
+use goose_provider_types::conversation::Conversation;
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+
+use crate::operation::{
+    assistant_turn_count, ends_turn, messages_since_kickoff, not_applicable, yielded, yielded_with,
+    Emitter, Operation, OperationResult,
+};
+
+const OPERATION_NAME: &str = "max_turns";
 
 pub const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 
@@ -33,17 +35,18 @@ impl MaxTurnsOperation {
     }
 }
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for MaxTurnsOperation {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S, E> Operation<S, E> for MaxTurnsOperation
+where
+    S: MaybeSend + MaybeSync + 'static,
+    E: From<Message> + MaybeSend + 'static,
+{
     fn name(&self) -> &'static str {
-        "max_turns"
+        OPERATION_NAME
     }
 
-    async fn moim_parts(
-        &self,
-        _session: &Session,
-        conversation: &Conversation,
-    ) -> Result<Vec<String>> {
+    async fn moim_parts(&self, _session: &S, conversation: &Conversation) -> Result<Vec<String>> {
         let turns_taken = assistant_turn_count(messages_since_kickoff(conversation)?);
         Ok(turn_budget_part(turns_taken, self.max_turns)
             .into_iter()
@@ -52,16 +55,22 @@ impl Operation<Session, GooseEffect> for MaxTurnsOperation {
 
     async fn run(
         &self,
-        _session: &Session,
+        _session: &S,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<E>> {
         let messages = messages_since_kickoff(conversation)?;
-        if assistant_turn_count(messages) < self.max_turns {
+        if messages.last().and_then(Message::error_kind)
+            == Some(MessageErrorKind::ResourceExhausted)
+        {
+            return yielded();
+        }
+        if ends_turn(messages) || assistant_turn_count(messages) < self.max_turns {
             return not_applicable();
         }
 
-        let message = Message::assistant().with_text(MAX_TURNS_MESSAGE);
+        let message =
+            Message::assistant().with_error(MessageErrorKind::ResourceExhausted, MAX_TURNS_MESSAGE);
         let message = emit.message(message);
         yielded_with([message.into()])
     }

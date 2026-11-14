@@ -102,6 +102,7 @@ fn is_permanent_request_failure(message: &str) -> bool {
         .iter()
         .any(|marker| message.contains(marker))
         || crate::formats::anthropic::is_thinking_signature_error(message)
+        || crate::formats::anthropic::is_unsupported_thinking_config_error(message)
         || crate::formats::openai_responses::is_encrypted_reasoning_error(message)
 }
 
@@ -306,8 +307,17 @@ mod tests {
         assert!(is_permanent_request_failure(
             "messages.1.content.0: Invalid `signature` in `thinking` block."
         ));
+        assert!(is_permanent_request_failure(
+            "\"thinking.type.disabled\" is not supported for this model."
+        ));
+        assert!(is_permanent_request_failure(
+            "To turn thinking off on this model, send \"thinking\": {\"type\": \"between_tools\"}"
+        ));
         assert!(!is_permanent_request_failure(
             "Bad request (400): model not found"
+        ));
+        assert!(!is_permanent_request_failure(
+            "tools.0: Tool type 'web_fetch_20250910' is not supported for this model."
         ));
     }
 

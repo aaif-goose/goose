@@ -5,64 +5,68 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::conversation::message::Message;
+use goose_provider_types::conversation::{Conversation, EffectiveRole};
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use tokio::sync::Mutex;
 
-use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::{
+use crate::operation::{
     applied, ends_turn, last_effective_role, messages_since_kickoff, not_applicable, Emitter,
     Operation, OperationResult,
 };
-use crate::conversation::message::Message;
-use crate::conversation::{Conversation, EffectiveRole};
-use crate::hooks::{HookContext, HookEvent, HookManager};
-use crate::session::Session;
 
-pub(crate) type SteerQueue = Arc<Mutex<VecDeque<Message>>>;
+pub type SteerQueue = Arc<Mutex<VecDeque<Message>>>;
 
 pub struct SteerOperation {
     queue: SteerQueue,
-    hook_manager: HookManager,
     drained: std::sync::Mutex<Vec<Message>>,
 }
 
 impl SteerOperation {
-    pub(crate) fn new(queue: SteerQueue, hook_manager: HookManager) -> Self {
+    pub fn new(queue: SteerQueue) -> Self {
         Self {
             queue,
-            hook_manager,
             drained: std::sync::Mutex::default(),
         }
     }
 
-    fn take_drained(&self) -> Vec<GooseEffect> {
+    fn take_drained<E>(&self) -> Vec<E>
+    where
+        E: From<Message>,
+    {
         std::mem::take(&mut *self.drained.lock().unwrap())
             .into_iter()
-            .map(GooseEffect::from)
+            .map(E::from)
             .collect()
     }
 }
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for SteerOperation {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S, E> Operation<S, E> for SteerOperation
+where
+    S: MaybeSend + MaybeSync + 'static,
+    E: From<Message> + MaybeSend + 'static,
+{
     fn name(&self) -> &'static str {
         "steer"
     }
 
     async fn finalize_cancellation(
         &self,
-        _session: &Session,
+        _session: &S,
         _conversation: &Conversation,
         _emit: &Emitter,
-    ) -> Vec<GooseEffect> {
+    ) -> Vec<E> {
         self.take_drained()
     }
 
     async fn run(
         &self,
-        session: &Session,
+        _session: &S,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<E>> {
         let messages = messages_since_kickoff(conversation)?;
         let between_turns =
             ends_turn(messages) || last_effective_role(messages)? == EffectiveRole::Tool;
@@ -85,14 +89,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         for message in pending {
             drained.push(emit.message(message));
         }
-        *self.drained.lock().unwrap() = drained.clone();
-        for message in drained {
-            let context = HookContext::new(HookEvent::UserPromptSubmit, &session.id)
-                .with_message(message.agent_visible_content().as_concat_text());
-            self.hook_manager
-                .emit(HookEvent::UserPromptSubmit, context)
-                .await;
-        }
+        *self.drained.lock().unwrap() = drained;
         applied(self.take_drained())
     }
 }

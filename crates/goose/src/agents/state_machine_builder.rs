@@ -2,7 +2,11 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::{
+    exit_on_error::ExitOnErrorOperation,
+    max_turns::MaxTurnsOperation,
+    steer::{SteerOperation, SteerQueue},
+};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -12,14 +16,12 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    deny_limit_warning, BangShellOperation, CompactionOperation, ContextRelevanceOperation,
-    DoctorOperation, EmptyResponseOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook, GoosePreToolHook,
-    GooseStopHook, GooseToolApproval, InferenceRunner, MaxTurnsOperation, Operation,
-    PreToolCallHookOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation,
-    ThinkingRecoveryOperation, ToolApprovalOperation, ToolExecutionOperation,
+    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
+    EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
+    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, ThinkingRecoveryOperation, ToolApprovalOperation, ToolExecutionOperation,
     ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -37,6 +39,8 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) compaction_threshold: f64,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
+    pub(crate) defer_tools: bool,
+    pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -100,6 +104,8 @@ pub(crate) fn build_state_machine(
         compaction_threshold,
         tool_call_cutoff,
         tool_pair_summarization,
+        defer_tools,
+        always_load_tools,
         session_manager,
         extension_manager,
         extension_lease,
@@ -117,36 +123,27 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let post_tool_call_hook: Arc<dyn PostToolCallHook<Session>> = Arc::new(GoosePostToolHook::new(
-        hook_manager.clone(),
-        Arc::clone(&extension_lease),
-    ));
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+        Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(Arc::new(
-            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
-        ))),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
-            Arc::clone(&post_tool_call_hook),
+            hook_manager.clone(),
         )),
-        Arc::new(RecipeOperation::new(
-            provider.clone(),
-            Arc::clone(&extension_manager),
-            Arc::clone(&post_tool_call_hook),
-        )),
+        Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
             hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
             Arc::clone(&extension_lease),
+            defer_tools,
+            always_load_tools,
         )),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
-            post_tool_call_hook,
+            Arc::clone(&extension_lease),
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
@@ -156,7 +153,7 @@ pub(crate) fn build_state_machine(
                     .unwrap_or(NonZeroUsize::new(5).unwrap()),
             ),
         ),
-        Arc::new(SteerOperation::new(steer_queue, hook_manager.clone())),
+        Arc::new(SteerOperation::new(steer_queue)),
         Arc::new(BangShellOperation::new()),
     ];
     if !manages_own_context {
@@ -186,13 +183,10 @@ pub(crate) fn build_state_machine(
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
         Arc::new(ThinkingRecoveryOperation),
-        Arc::new(
-            StopHookOperation::new(Arc::new(GooseStopHook::new(hook_manager)))
-                .with_deny_limit_per_turn(stop_hook_block_cap)
-                .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
-        ),
+        Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
+        Arc::new(StatusOperation::new(provider.clone(), model_config.clone())),
     ];
     operations.extend(remaining_operations);
     operations.extend(extra_operations);
@@ -202,16 +196,13 @@ pub(crate) fn build_state_machine(
         tool_inspection_manager,
         context_limit,
     };
-    let status_operation = Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let mut command_handlers = operations.clone();
-    command_handlers.push(status_operation);
     let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(command_handlers));
+        Arc::new(SlashCommandOperation::new(operations.clone()));
     let steps = std::iter::once(command_operation)
         .chain(operations)
         .map(Step::Operation)

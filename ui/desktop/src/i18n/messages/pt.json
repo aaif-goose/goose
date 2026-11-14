@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Diretórios recentes"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "O resultado estruturado não foi coletado"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "O resultado estruturado foi rejeitado"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Resultado estruturado retornado"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Retornando resultado estruturado…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Falha ao mudar para {branch}"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "Usar modelos de ML para detetar potenciais injeções de prompts na sua conversa"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Valores mais altos são mais rigorosos (0,01 = muito tolerante, 1,0 = rigor máximo)"
+    "defaultMessage": "Valores mais baixos são mais rigorosos (0,01 = rigor máximo, 1,0 = muito tolerante)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "A deteção de injeção de comandos funciona melhor quando ligada ao WARP (necessário para aceder ao serviço de classificação)."
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Escolha o idioma de exibição do goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Neerlandês"
   },
   "settings.language.english": {
     "defaultMessage": "English"

@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "हाल की निर्देशिकाएँ"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "संरचित परिणाम एकत्र नहीं किया गया"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "संरचित परिणाम अस्वीकार कर दिया गया"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "संरचित परिणाम लौटाया गया"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "संरचित परिणाम लौटाया जा रहा है…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} पर स्विच नहीं किया जा सका"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "अपनी चैट में संभावित शीघ्र इंजेक्शन का पता लगाने के लिए एमएल मॉडल का उपयोग करें"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "उच्च मान अधिक सख्त होते हैं (0.01 = बहुत उदार, 1.0 = अधिकतम सख्त)"
+    "defaultMessage": "निम्न मान अधिक सख्त होते हैं (0.01 = अधिकतम सख्त, 1.0 = बहुत उदार)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "WARP से कनेक्ट होने पर कमांड इंजेक्शन डिटेक्शन सबसे अच्छा काम करता है (वर्गीकरण सेवा तक पहुंचने के लिए आवश्यक)।"
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "goose के लिए प्रदर्शन भाषा चुनें"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "डच"
   },
   "settings.language.english": {
     "defaultMessage": "अंग्रेज़ी"

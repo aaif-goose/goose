@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Zuletzt verwendete Verzeichnisse"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Strukturiertes Ergebnis wurde nicht erfasst"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Strukturiertes Ergebnis wurde abgelehnt"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Strukturiertes Ergebnis zurückgegeben"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Strukturiertes Ergebnis wird zurückgegeben…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Wechsel zu {branch} fehlgeschlagen"
   },
@@ -3705,7 +3717,7 @@
     "defaultMessage": "ML-Modelle verwenden, um potenzielle Prompt-Injektionen in Ihrem Chat zu erkennen"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Höhere Werte sind strenger (0,01 = sehr nachsichtig, 1,0 = maximal streng)"
+    "defaultMessage": "Niedrigere Werte sind strenger (0,01 = maximal streng, 1,0 = sehr nachsichtig)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Die Erkennung von Befehlsinjektionen funktioniert am besten, wenn eine Verbindung zu WARP besteht (erforderlich, um den Klassifizierungsdienst zu erreichen)."
@@ -3955,6 +3967,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Wählen Sie die Anzeigesprache für goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Niederländisch"
   },
   "settings.language.english": {
     "defaultMessage": "English"

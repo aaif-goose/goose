@@ -470,8 +470,13 @@ fn search_available_extensions(enabled: &[String]) -> String {
                     .to_string(),
                 ExtensionConfig::Builtin { description, .. }
                 | ExtensionConfig::Platform { description, .. }
-                | ExtensionConfig::StreamableHttp { description, .. }
-                | ExtensionConfig::Stdio { description, .. } => description.clone(),
+                | ExtensionConfig::External(
+                    goose_agent::extension::ExtensionConfig::StreamableHttp { description, .. },
+                )
+                | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                    description,
+                    ..
+                }) => description.clone(),
             };
             format!("- {} - {}", extension.config.name(), description)
         })

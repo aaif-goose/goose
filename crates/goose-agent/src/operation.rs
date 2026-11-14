@@ -158,8 +158,8 @@ pub struct InferenceInput {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S, E> {
-    /// Whether the next step would reach the provider. The machine asks before
-    /// firing the hooks that mark the start of a turn.
+    /// Whether the next step would reach the provider. When it would not, the
+    /// machine skips inference and moves on to the next step.
     fn applies(&self, conversation: &Conversation) -> bool;
 
     async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {

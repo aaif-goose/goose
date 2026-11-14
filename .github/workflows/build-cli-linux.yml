@@ -118,7 +118,7 @@ jobs:
             tar
 
       - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-${{ matrix.build-on }}-${{ matrix.container || 'native' }}
 
@@ -194,7 +194,7 @@ jobs:
           echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.tar.gz" >> $GITHUB_ENV
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant != 'standard' && matrix.variant != 'musl' && format('-{0}', matrix.variant) || '' }}
           path: |
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload internal Goose binary
         if: ${{ inputs.package_desktop && matrix.target-suffix == 'unknown-linux-gnu' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: internal-goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant == 'vulkan' && '-vulkan' || '' }}
           path: artifacts/internal-goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant == 'vulkan' && '-vulkan' || '' }}
@@ -333,7 +333,7 @@ jobs:
         run: flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Download internal Goose binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-goose-${{ matrix.target }}${{ matrix.variant_suffix }}
           path: backend
@@ -397,21 +397,21 @@ jobs:
           find out/ -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.flatpak" \) -exec ls -lh {} \;
 
       - name: Upload .deb package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-linux-${{ matrix.electron_arch }}${{ matrix.variant_suffix }}-deb
           path: ui/desktop/out/make/deb/${{ matrix.electron_arch }}/*${{ matrix.variant_suffix }}.deb
           if-no-files-found: error
 
       - name: Upload .rpm package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-linux-${{ matrix.electron_arch }}${{ matrix.variant_suffix }}-rpm
           path: ui/desktop/out/make/rpm/${{ matrix.electron_arch }}/*${{ matrix.variant_suffix }}.rpm
           if-no-files-found: error
 
       - name: Upload .flatpak package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: Goose-linux-${{ matrix.electron_arch }}${{ matrix.variant_suffix }}-flatpak
           path: ui/desktop/out/make/flatpak/${{ matrix.flatpak_arch }}/*${{ matrix.variant_suffix }}.flatpak

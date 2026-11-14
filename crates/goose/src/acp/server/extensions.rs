@@ -177,7 +177,7 @@ fn config_to_goose_extension(
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::Stdio {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -187,7 +187,7 @@ fn config_to_goose_extension(
             bundled,
             available_tools,
             ..
-        } => GooseExtension::Mcp {
+        }) => GooseExtension::Mcp {
             server: Box::new(McpServer::Stdio(
                 McpServerStdio::new(name, cmd).args(args.clone()),
             )),
@@ -201,7 +201,7 @@ fn config_to_goose_extension(
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description,
             uri,
@@ -215,7 +215,7 @@ fn config_to_goose_extension(
             bundled,
             available_tools,
             ..
-        } => {
+        }) => {
             let headers = headers
                 .iter()
                 .map(|(key, value)| HttpHeader::new(key, value))
@@ -306,7 +306,7 @@ fn goose_extension_to_config(
                     }
                     secret_updates.push((env.name, serde_json::Value::String(env.value)));
                 }
-                ExtensionConfig::Stdio {
+                ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
                     name: stdio.name,
                     description: description.unwrap_or_default(),
                     cmd: stdio.command.to_string_lossy().to_string(),
@@ -317,27 +317,29 @@ fn goose_extension_to_config(
                     cwd: None,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
-                }
+                })
             }
-            McpServer::Http(http) => ExtensionConfig::StreamableHttp {
-                name: http.name,
-                description: description.unwrap_or_default(),
-                uri: http.url,
-                envs: Envs::default(),
-                env_keys,
-                headers: http
-                    .headers
-                    .into_iter()
-                    .map(|header| (header.name, header.value))
-                    .collect(),
-                timeout,
-                socket,
-                client_id,
-                client_secret_key,
-                scopes,
-                bundled,
-                available_tools: available_tools.unwrap_or_default(),
-            },
+            McpServer::Http(http) => {
+                ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+                    name: http.name,
+                    description: description.unwrap_or_default(),
+                    uri: http.url,
+                    envs: Envs::default(),
+                    env_keys,
+                    headers: http
+                        .headers
+                        .into_iter()
+                        .map(|header| (header.name, header.value))
+                        .collect(),
+                    timeout,
+                    socket,
+                    client_id,
+                    client_secret_key,
+                    scopes,
+                    bundled,
+                    available_tools: available_tools.unwrap_or_default(),
+                })
+            }
             McpServer::Sse(_) => {
                 return Err(agent_client_protocol::Error::invalid_params()
                     .data("SSE is unsupported, migrate to streamable_http"));
@@ -510,7 +512,7 @@ mod tests {
 
     #[test]
     fn stdio_config_converts_to_goose_mcp_extension_without_literal_envs() {
-        let config = ExtensionConfig::Stdio {
+        let config = ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name: "test-stdio".to_string(),
             description: "Test stdio".to_string(),
             cmd: "test-command".to_string(),
@@ -524,7 +526,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec!["run".to_string()],
-        };
+        });
 
         let extension = config_to_goose_extension(&config)
             .expect("conversion should succeed")
@@ -568,27 +570,28 @@ mod tests {
 
     #[test]
     fn streamable_http_config_converts_to_goose_mcp_extension_without_literal_envs() {
-        let config = ExtensionConfig::StreamableHttp {
-            name: "test-http".to_string(),
-            description: "Test HTTP".to_string(),
-            uri: "https://example.com/mcp".to_string(),
-            envs: Envs::new(HashMap::from([(
-                "API_TOKEN".to_string(),
-                "literal-secret".to_string(),
-            )])),
-            env_keys: vec!["API_TOKEN".to_string()],
-            headers: HashMap::from([(
-                "Authorization".to_string(),
-                "Bearer ${API_TOKEN}".to_string(),
-            )]),
-            timeout: Some(99),
-            socket: Some("@egress.sock".to_string()),
-            client_id: Some("registered-client".to_string()),
-            client_secret_key: Some("OAUTH_CLIENT_SECRET".to_string()),
-            scopes: vec!["scope.read".to_string()],
-            bundled: None,
-            available_tools: vec!["fetch".to_string()],
-        };
+        let config =
+            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "test-http".to_string(),
+                description: "Test HTTP".to_string(),
+                uri: "https://example.com/mcp".to_string(),
+                envs: Envs::new(HashMap::from([(
+                    "API_TOKEN".to_string(),
+                    "literal-secret".to_string(),
+                )])),
+                env_keys: vec!["API_TOKEN".to_string()],
+                headers: HashMap::from([(
+                    "Authorization".to_string(),
+                    "Bearer ${API_TOKEN}".to_string(),
+                )]),
+                timeout: Some(99),
+                socket: Some("@egress.sock".to_string()),
+                client_id: Some("registered-client".to_string()),
+                client_secret_key: Some("OAUTH_CLIENT_SECRET".to_string()),
+                scopes: vec!["scope.read".to_string()],
+                bundled: None,
+                available_tools: vec!["fetch".to_string()],
+            });
 
         let extension = config_to_goose_extension(&config)
             .expect("conversion should succeed")
@@ -652,7 +655,7 @@ mod tests {
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
-        let ExtensionConfig::Stdio {
+        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -663,7 +666,7 @@ mod tests {
             bundled,
             available_tools,
             ..
-        } = conversion.config
+        }) = conversion.config
         else {
             panic!("expected stdio config");
         };
@@ -724,7 +727,12 @@ mod tests {
             ]
         );
 
-        let ExtensionConfig::Stdio { envs, env_keys, .. } = conversion.config else {
+        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            envs,
+            env_keys,
+            ..
+        }) = conversion.config
+        else {
             panic!("expected stdio config");
         };
 
@@ -757,7 +765,7 @@ mod tests {
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
-        let ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description,
             uri,
@@ -771,7 +779,7 @@ mod tests {
             scopes,
             bundled,
             available_tools,
-        } = conversion.config
+        }) = conversion.config
         else {
             panic!("expected streamable http config");
         };

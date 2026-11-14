@@ -45,3 +45,6 @@ image = { version = "0.24.4", default-features = false, features = ["bmp", "dds"
 umya-spreadsheet = { version = "3", default-features = false, optional = true }
 shell-words = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

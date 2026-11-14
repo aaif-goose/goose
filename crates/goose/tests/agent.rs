@@ -463,7 +463,7 @@ mod tests {
         use async_trait::async_trait;
         use goose::agents::SessionConfig;
         use goose::config::GooseMode;
-        use goose::conversation::message::{Message, MessageContent};
+        use goose::conversation::message::{Message, MessageContent, MessageErrorKind};
         use goose::providers::base::{
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
@@ -604,16 +604,12 @@ mod tests {
                 responses.len()
             );
 
-            // Look for the max turns message as the last response
             let last_response = responses.last().unwrap();
-            let last_content = last_response.content.first().unwrap();
-            if let MessageContent::Text(text_content) = last_content {
-                assert!(text_content.text.contains(
-                    "I've reached the maximum number of actions I can do without user input"
-                ));
-            } else {
-                panic!("Expected text content in last message");
-            }
+            let error = last_response.error().expect("expected max turns error");
+            assert_eq!(error.kind, MessageErrorKind::ResourceExhausted);
+            assert!(error.message.contains(
+                "I've reached the maximum number of actions I can do without user input"
+            ));
             Ok(())
         }
     }
@@ -2027,8 +2023,8 @@ mod tests {
         use std::sync::Arc;
 
         struct FixedUsageProvider {
-            input_tokens: i32,
-            output_tokens: i32,
+            input_tokens: i64,
+            output_tokens: i64,
         }
 
         #[async_trait]
@@ -2614,7 +2610,7 @@ mod tests {
             // (empty) turn instead of being drained at the loop's start.
             services
                 .steer(&session.id, Message::user().with_text("keep going"))
-                .await;
+                .await?;
 
             let session_id = session.id.clone();
             let session_config = SessionConfig {
