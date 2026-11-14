@@ -20,6 +20,7 @@ use reqwest::{Response, StatusCode};
 use rmcp::model::Tool;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tokio::pin;
@@ -305,6 +306,10 @@ fn resolve_ollama_num_ctx(options: &OllamaOptions) -> Option<usize> {
     options.input_limit
 }
 
+/// One-time guard for the GOOSE_INPUT_LIMIT num_ctx warning: the setting is
+/// resolved once into OllamaOptions, so one warning per process says it all.
+static NUM_CTX_WARNED: AtomicBool = AtomicBool::new(false);
+
 fn apply_ollama_options(
     payload: &mut Value,
     options: &OllamaOptions,
@@ -325,23 +330,40 @@ fn apply_ollama_options(
             obj.remove("stream_options");
         }
 
-        // Convert max_completion_tokens / max_tokens to Ollama's options.num_predict.
-        // Reasoning models emit max_completion_tokens; non-reasoning models emit max_tokens.
-        let max_tokens = obj
-            .remove("max_completion_tokens")
-            .or_else(|| obj.remove("max_tokens"));
-        if let Some(max_tokens) = max_tokens {
-            let options_value = obj.entry("options").or_insert_with(|| json!({}));
-            if let Some(options_obj) = options_value.as_object_mut() {
-                options_obj.entry("num_predict").or_insert(max_tokens);
-            }
+        // Keep the token limit at the top level: Ollama's OpenAI-compatible
+        // /v1/chat/completions endpoint ignores the `options` object
+        // entirely, so moving max_tokens into options.num_predict made
+        // GOOSE_MAX_TOKENS a no-op (#13089). The endpoint does honor
+        // top-level max_tokens. Reasoning models emit max_completion_tokens,
+        // which older Ollama builds don't recognize, so fold that into
+        // max_tokens - an explicit max_tokens wins when both are present.
+        if let Some(max_completion) = obj.remove("max_completion_tokens") {
+            obj.entry("max_tokens").or_insert(max_completion);
         }
 
-        // Only an explicit GOOSE_INPUT_LIMIT overrides Ollama's num_ctx.
+        // GOOSE_INPUT_LIMIT maps to options.num_ctx, which only Ollama's
+        // native /api/chat endpoint honors — the OpenAI-compatible /v1
+        // endpoint this provider calls loads the model at its default
+        // window no matter what options carry (#13089). Send it anyway so
+        // a future Ollama that starts honoring options needs no goose
+        // change, but say plainly that it has no effect here.
         if let Some(limit) = resolve_ollama_num_ctx(options) {
             let options_value = obj.entry("options").or_insert_with(|| json!({}));
             if let Some(options_obj) = options_value.as_object_mut() {
                 options_obj.insert("num_ctx".to_string(), json!(limit));
+            }
+            // apply_ollama_options runs on every stream call; the setting and its
+            // meaning do not change between them, so say it once instead of once
+            // per turn (a multi-turn session with compaction or subagents would
+            // otherwise repeat the same line for the whole session).
+            if !NUM_CTX_WARNED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    "GOOSE_INPUT_LIMIT={limit} was sent as options.num_ctx, but Ollama's \
+                     OpenAI-compatible /v1 endpoint ignores `options`; the model loads at \
+                     its default context window. Set OLLAMA_CONTEXT_LENGTH on the Ollama \
+                     server (or OLLAMA_CONTEXT_LENGTH in its env) to change the loaded \
+                     window."
+                );
             }
         }
     }
@@ -790,6 +812,37 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_ollama_options_keeps_max_tokens_top_level() {
+        // Ollama's OpenAI-compatible /v1 endpoint ignores `options`, so the
+        // token limit must stay at the top level to have any effect (#13089).
+        let options = OllamaOptions::default();
+        let mut payload = json!({"max_tokens": 20});
+        apply_ollama_options(&mut payload, &options, None);
+        assert_eq!(payload["max_tokens"], 20);
+        assert!(payload.get("options").is_none());
+    }
+
+    #[test]
+    fn test_apply_ollama_options_renames_max_completion_tokens() {
+        // Reasoning models emit max_completion_tokens, which older Ollama
+        // builds don't recognize on /v1: rename it to max_tokens.
+        let options = OllamaOptions::default();
+        let mut payload = json!({"max_completion_tokens": 42});
+        apply_ollama_options(&mut payload, &options, None);
+        assert_eq!(payload["max_tokens"], 42);
+        assert!(payload.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn test_apply_ollama_options_prefers_explicit_max_tokens() {
+        let options = OllamaOptions::default();
+        let mut payload = json!({"max_tokens": 7, "max_completion_tokens": 42});
+        apply_ollama_options(&mut payload, &options, None);
+        assert_eq!(payload["max_tokens"], 7);
+        assert!(payload.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
     fn test_apply_ollama_options_ignores_context_management_limit() {
         let options = OllamaOptions::default();
         let mut payload = json!({});
@@ -996,17 +1049,15 @@ mod tests {
             payload.get("stream_options").is_some(),
             "stream_options should be preserved by default for usage tracking"
         );
-        assert!(
-            payload.get("max_tokens").is_none(),
-            "max_tokens should be removed for Ollama"
+        // Ollama's /v1 endpoint ignores `options`, so the token limit stays
+        // at the top level where the endpoint honors it (#13089).
+        assert_eq!(
+            payload["max_tokens"], 4096,
+            "max_tokens should stay at the top level for Ollama's /v1 endpoint"
         );
         assert!(
             payload.get("max_completion_tokens").is_none(),
-            "max_completion_tokens should be removed for Ollama"
-        );
-        assert_eq!(
-            payload["options"]["num_predict"], 4096,
-            "max_tokens should be moved to options.num_predict"
+            "max_completion_tokens should be folded into max_tokens"
         );
         assert_eq!(payload["stream"], true, "stream field should be preserved");
     }
