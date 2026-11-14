@@ -121,8 +121,9 @@ that runs it, so listing a command and running it read the same object.
 included.
 
 `slash_command::SlashCommandOperation` is one way to run them. On a fresh
-kickoff that starts with `/`, it collects commands from its operations and runs
-the first one whose name or alias matches, ignoring case. Ordinary messages and
+kickoff that starts with `/`, it lowercases the name that follows, collects
+commands from its operations and runs the first one whose name or alias matches,
+so name commands in lowercase. Ordinary messages and
 unknown commands pass through. `with_resolver` replaces the first-match rule.
 Put it before the other operations so a command runs before they see the
 kickoff.

@@ -2,12 +2,12 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
-use goose_agent::command::normalize_command_name;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use super::slash_command::is_builtin_command;
 use super::types::{SlashCommandEntry, SlashCommandSource};
+use super::util::normalize_command_name;
 use crate::config::Config;
 use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
 use crate::recipe::{Recipe, RecipeParameter, RecipeParameterRequirement};

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-use crate::command::{parse_slash_command, Command};
+use crate::command::Command;
 use crate::operation::{
     messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
@@ -67,9 +67,11 @@ where
             return not_applicable();
         };
         let text = kickoff.agent_visible_content().as_concat_text();
-        let Some((name, arguments)) = parse_slash_command(&text) else {
+        let Some(invocation) = text.trim().strip_prefix('/') else {
             return not_applicable();
         };
+        let (name, arguments) = invocation.split_once(' ').unwrap_or((invocation, ""));
+        let name = name.to_lowercase();
 
         let mut commands = Vec::new();
         for operation in &self.operations {
@@ -81,6 +83,8 @@ where
         let Some(command) = commands.iter().find(|command| command.answers_to(&name)) else {
             return not_applicable();
         };
-        command.run(arguments, session, conversation, emit).await
+        command
+            .run(arguments.trim(), session, conversation, emit)
+            .await
     }
 }

@@ -34,7 +34,7 @@ impl Operation<(), Message> for Echo {
 
     async fn commands(&self, _session: &()) -> Result<Vec<Command<'_, (), Message>>> {
         self.collected.fetch_add(1, Ordering::SeqCst);
-        let mut echo = Command::new("Echo", "Echo the arguments", move |call| {
+        let mut echo = Command::new("echo", "Echo the arguments", move |call| {
             Box::pin(async move {
                 applied([
                     Message::assistant().with_text(format!("{}: {}", self.label, call.arguments))

@@ -60,7 +60,7 @@ impl<'a, S, E> Command<'a, S, E> {
     pub fn answers_to(&self, name: &str) -> bool {
         std::iter::once(&self.name)
             .chain(&self.aliases)
-            .any(|own| normalize_command_name(own) == name)
+            .any(|own| own == name)
     }
 
     pub async fn run(
@@ -79,14 +79,4 @@ impl<'a, S, E> Command<'a, S, E> {
         })
         .await
     }
-}
-
-pub fn normalize_command_name(name: &str) -> String {
-    name.trim_start_matches('/').to_lowercase()
-}
-
-pub fn parse_slash_command(text: &str) -> Option<(String, &str)> {
-    let command = text.trim().strip_prefix('/')?;
-    let (name, arguments) = command.split_once(' ').unwrap_or((command, ""));
-    Some((normalize_command_name(name), arguments.trim()))
 }

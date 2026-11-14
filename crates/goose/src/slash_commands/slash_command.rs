@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use goose_agent::command::normalize_command_name;
-
 use super::types::{SlashCommandEntry, SlashCommandSource};
+use super::util::normalize_command_name;
 use crate::agents::execute_commands;
 
 pub fn list_builtin_commands() -> Vec<SlashCommandEntry> {

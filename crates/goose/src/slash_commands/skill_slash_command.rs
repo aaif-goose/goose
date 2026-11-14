@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use goose_agent::command::normalize_command_name;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 
 use super::recipe_slash_command::runnable_recipes;
 use super::slash_command::is_builtin_command;
 use super::types::{SlashCommandEntry, SlashCommandSource};
+use super::util::normalize_command_name;
 
 pub fn list_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
     commands_from_sources(crate::skills::list_installed_skills(working_dir))
