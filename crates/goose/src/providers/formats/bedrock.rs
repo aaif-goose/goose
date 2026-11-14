@@ -372,14 +372,14 @@ pub fn to_bedrock_image(data: &str, mime_type: &str) -> Result<bedrock::ImageBlo
         .decode(data)
         .map_err(|e| anyhow!("Failed to decode base64 image data: {}", e))?;
 
-    if let Ok(img) = image::load_from_memory(&bytes) {
-        let (w, h) = (img.width(), img.height());
-        if w > BEDROCK_MAX_IMAGE_DIMENSION || h > BEDROCK_MAX_IMAGE_DIMENSION {
-            bail!(
-                "Image ({w}x{h} px) exceeds Bedrock's {BEDROCK_MAX_IMAGE_DIMENSION} px limit per \
-                 dimension for multi-image requests. Please resize the image before submitting."
-            );
-        }
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| anyhow!("Failed to decode image data: {}", e))?;
+    let (w, h) = (img.width(), img.height());
+    if w > BEDROCK_MAX_IMAGE_DIMENSION || h > BEDROCK_MAX_IMAGE_DIMENSION {
+        bail!(
+            "Image ({w}x{h} px) exceeds Bedrock's {BEDROCK_MAX_IMAGE_DIMENSION} px limit per \
+             dimension for multi-image requests. Please resize the image before submitting."
+        );
     }
 
     let source = bedrock::ImageSource::Bytes(aws_smithy_types::Blob::new(bytes));
