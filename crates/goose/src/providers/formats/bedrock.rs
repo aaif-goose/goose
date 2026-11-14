@@ -354,8 +354,9 @@ pub fn to_bedrock_role(role: &Role) -> bedrock::ConversationRole {
     }
 }
 
+const BEDROCK_MAX_IMAGE_DIMENSION: u32 = 2000;
+
 pub fn to_bedrock_image(data: &str, mime_type: &str) -> Result<bedrock::ImageBlock> {
-    // Extract format from MIME type
     let format = match mime_type {
         "image/png" => bedrock::ImageFormat::Png,
         "image/jpeg" | "image/jpg" => bedrock::ImageFormat::Jpeg,
@@ -367,14 +368,21 @@ pub fn to_bedrock_image(data: &str, mime_type: &str) -> Result<bedrock::ImageBlo
         ),
     };
 
-    // Create image source with base64 data
-    let source = bedrock::ImageSource::Bytes(aws_smithy_types::Blob::new(
-        base64::prelude::BASE64_STANDARD
-            .decode(data)
-            .map_err(|e| anyhow!("Failed to decode base64 image data: {}", e))?,
-    ));
+    let bytes = base64::prelude::BASE64_STANDARD
+        .decode(data)
+        .map_err(|e| anyhow!("Failed to decode base64 image data: {}", e))?;
 
-    // Build the image block
+    if let Ok(img) = image::load_from_memory(&bytes) {
+        let (w, h) = (img.width(), img.height());
+        if w > BEDROCK_MAX_IMAGE_DIMENSION || h > BEDROCK_MAX_IMAGE_DIMENSION {
+            bail!(
+                "Image ({w}x{h} px) exceeds Bedrock's {BEDROCK_MAX_IMAGE_DIMENSION} px limit per \
+                 dimension for multi-image requests. Please resize the image before submitting."
+            );
+        }
+    }
+
+    let source = bedrock::ImageSource::Bytes(aws_smithy_types::Blob::new(bytes));
     Ok(bedrock::ImageBlock::builder()
         .format(format)
         .source(source)
@@ -873,6 +881,32 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Failed to decode base64 image data"));
+    }
+
+    #[test]
+    fn image_exceeding_dimension_limit_returns_error() {
+        let img = image::DynamicImage::new_rgb8(2001, 100);
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        let data = base64::prelude::BASE64_STANDARD.encode(&buf);
+
+        let result = to_bedrock_image(&data, "image/png");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("2001x100"));
+        assert!(msg.contains("2000"));
+    }
+
+    #[test]
+    fn image_within_dimension_limit_is_accepted() {
+        let img = image::DynamicImage::new_rgb8(2000, 2000);
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        let data = base64::prelude::BASE64_STANDARD.encode(&buf);
+
+        assert!(to_bedrock_image(&data, "image/png").is_ok());
     }
 
     #[test]
