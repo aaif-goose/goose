@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getLocale } from './index';
+import { getLocale, normalizeLocaleTag } from './index';
+import { formatClockDisplay } from '../utils/timeUtils';
 
 // Helper to mock window.appConfig for tests
 function mockAppConfig(values: Record<string, unknown>) {
@@ -8,6 +9,44 @@ function mockAppConfig(values: Record<string, unknown>) {
     getAll: () => values,
   };
 }
+
+describe('normalizeLocaleTag', () => {
+  it.each([
+    ['en-US@rg=nozzzz', 'en-NO'],
+    ['en_US@rg=nozzzz', 'en-NO'],
+    ['nb_NO@rg=nozzzz', 'nb-NO'],
+    ['nn_NO@rg=nozzzz', 'nn-NO'],
+    ['zh_Hant_TW@rg=hkzzzz', 'zh-Hant-HK'],
+    ['sr-Latn@rg=rszzzz', 'sr-Latn-RS'],
+    ['es-ES@rg=419zzzz', 'es-419'],
+    ['en-US@calendar=gregorian;rg=nozzzz', 'en-NO'],
+    ['en-US-u-hc-h12@rg=nozzzz', 'en-NO-u-hc-h12'],
+  ])('applies the region override in %s as %s', (input, expected) => {
+    expect(normalizeLocaleTag(input)).toBe(expected);
+  });
+
+  it.each([
+    'en',
+    'en-US',
+    'en-GB',
+    'nb-NO',
+    'nn-NO',
+    'zh-Hant-TW',
+    'sr-Latn-RS',
+    'de-DE-u-co-phonebk',
+  ])('preserves ordinary locale tag %s', (tag) => {
+    expect(normalizeLocaleTag(tag)).toBe(tag);
+  });
+
+  it.each([
+    ['ko_KR', 'ko-KR'],
+    ['de-DE@calendar=gregorian', 'de-DE'],
+    ['en-US@rg=invalid', 'en-US'],
+    ['en-@rg=nozzzz', 'en-'],
+  ])('normalizes %s without a valid region override to %s', (input, expected) => {
+    expect(normalizeLocaleTag(input)).toBe(expected);
+  });
+});
 
 describe('getLocale', () => {
   afterEach(() => {
@@ -44,6 +83,73 @@ describe('getLocale', () => {
     mockAppConfig({ GOOSE_LOCALE: 'en-GB' });
     vi.stubGlobal('navigator', { languages: ['xx-XX'] });
     expect(getLocale()).toEqual({ locale: 'en-GB', messageLocale: 'en' });
+  });
+
+  it('uses the macOS region override for 24-hour clock formatting', () => {
+    mockAppConfig({ GOOSE_LOCALE: 'en-US@rg=nozzzz' });
+    vi.stubGlobal('navigator', { languages: ['en-US'] });
+
+    const resolved = getLocale();
+    expect(resolved).toEqual({ locale: 'en-NO', messageLocale: 'en' });
+    expect(formatClockDisplay(new Date(2026, 9, 14, 18, 28), resolved.locale)).toEqual({
+      time: '18:28',
+      meridiem: '',
+      hour: 18,
+    });
+  });
+
+  it('preserves the script subtag when resolving a region override', () => {
+    mockAppConfig({ GOOSE_LOCALE: 'ru-Cyrl-RU@rg=byzzzz' });
+    vi.stubGlobal('navigator', { languages: ['en-US'] });
+    expect(getLocale()).toEqual({ locale: 'ru-Cyrl-BY', messageLocale: 'ru' });
+  });
+
+  it('normalizes a region override from navigator.languages', () => {
+    vi.stubGlobal('navigator', { languages: ['en-US@rg=nozzzz'] });
+    expect(getLocale()).toEqual({ locale: 'en-NO', messageLocale: 'en' });
+  });
+
+  it.each([
+    ['zh_CN@rg=hkzzzz', 'zh-HK', 'zh-CN'],
+    ['zh_CN@rg=mozzzz', 'zh-MO', 'zh-CN'],
+    ['zh_CN@rg=twzzzz', 'zh-TW', 'zh-CN'],
+    ['zh_Hans_CN@rg=hkzzzz', 'zh-Hans-HK', 'zh-CN'],
+    ['zh_Hant_TW@rg=cnzzzz', 'zh-Hant-CN', 'zh-TW'],
+    ['zh_Hant_TW@rg=twzzzz', 'zh-Hant-TW', 'zh-TW'],
+    ['zh_TW@rg=cnzzzz', 'zh-CN', 'zh-TW'],
+    ['zh_HK@rg=cnzzzz', 'zh-CN', 'zh-TW'],
+  ])(
+    'keeps the Chinese catalog when applying the region override in %s',
+    (tag, locale, messageLocale) => {
+      mockAppConfig({ GOOSE_LOCALE: tag });
+      vi.stubGlobal('navigator', { languages: ['xx-XX'] });
+      expect(getLocale()).toEqual({ locale, messageLocale });
+    }
+  );
+
+  it('keeps the Chinese catalog for a region override from navigator.languages', () => {
+    vi.stubGlobal('navigator', { languages: ['zh_CN@rg=hkzzzz'] });
+    expect(getLocale()).toEqual({ locale: 'zh-HK', messageLocale: 'zh-CN' });
+  });
+
+  it.each([
+    ['en', 'en', 'en'],
+    ['en-US', 'en-US', 'en'],
+    ['en-GB', 'en-GB', 'en'],
+    ['nb-NO', 'en', 'en'],
+    ['nn-NO', 'en', 'en'],
+    ['ru-Cyrl-RU', 'ru-Cyrl-RU', 'ru'],
+    ['zh-CN', 'zh-CN', 'zh-CN'],
+    ['zh-Hans-CN', 'zh-CN', 'zh-CN'],
+    ['zh-Hant-TW', 'zh-TW', 'zh-TW'],
+    ['zh-TW', 'zh-TW', 'zh-TW'],
+    ['zh-HK', 'zh-TW', 'zh-TW'],
+    ['zh-MO', 'zh-TW', 'zh-TW'],
+    ['de-DE-u-co-phonebk', 'de-DE-u-co-phonebk', 'de'],
+  ])('keeps existing locale and catalog resolution for %s', (tag, locale, messageLocale) => {
+    mockAppConfig({ GOOSE_LOCALE: tag });
+    vi.stubGlobal('navigator', { languages: ['xx-XX'] });
+    expect(getLocale()).toEqual({ locale, messageLocale });
   });
 
   it('falls back to base language tag for message catalog', () => {
