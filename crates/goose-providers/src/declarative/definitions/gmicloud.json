@@ -1,0 +1,61 @@
+{
+  "name": "gmicloud",
+  "engine": "openai",
+  "display_name": "GMI Cloud",
+  "description": "OpenAI-compatible inference for open-source and frontier models on GMI Cloud GPUs",
+  "api_key_env": "GMI_API_KEY",
+  "base_url": "https://api.gmi-serving.com/v1/chat/completions",
+  "models": [
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Pro",
+      "context_limit": 1048576,
+      "input_token_cost": 0.00000174,
+      "output_token_cost": 0.00000348,
+      "currency": "USD"
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Flash",
+      "context_limit": 1048575,
+      "input_token_cost": 0.00000014,
+      "output_token_cost": 0.00000028,
+      "currency": "USD"
+    },
+    {
+      "name": "zai-org/GLM-5.1-FP8",
+      "context_limit": 202752,
+      "input_token_cost": 0.0000014,
+      "output_token_cost": 0.0000044,
+      "currency": "USD"
+    },
+    {
+      "name": "moonshotai/Kimi-K2.5",
+      "context_limit": 262144,
+      "input_token_cost": 0.0000006,
+      "output_token_cost": 0.000003,
+      "currency": "USD"
+    },
+    {
+      "name": "Qwen/Qwen3.5-397B-A17B",
+      "context_limit": 262144,
+      "input_token_cost": 0.0000006,
+      "output_token_cost": 0.0000036,
+      "currency": "USD"
+    },
+    {
+      "name": "MiniMaxAI/MiniMax-M2.7",
+      "context_limit": 196608,
+      "input_token_cost": 0.0000003,
+      "output_token_cost": 0.0000012,
+      "currency": "USD"
+    }
+  ],
+  "supports_streaming": true,
+  "dynamic_models": true,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference",
+  "setup_steps": [
+    "Create an API key in the GMI Cloud console at https://console.gmicloud.ai.",
+    "Paste it above as GMI_API_KEY.",
+    "Select a model such as deepseek-ai/DeepSeek-V4-Pro."
+  ]
+}
