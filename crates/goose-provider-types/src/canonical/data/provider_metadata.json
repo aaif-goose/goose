@@ -107,7 +107,7 @@
     "env": [
       "AIMLAPI_API_KEY"
     ],
-    "model_count": 169
+    "model_count": 168
   },
   {
     "id": "ainetcafe",
@@ -352,6 +352,17 @@
     "model_count": 20
   },
   {
+    "id": "byteplus",
+    "display_name": "BytePlus ModelArk",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://ark.ap-southeast.bytepluses.com/api/v3",
+    "doc": "https://docs.byteplus.com/en/docs/ModelArk/1529329",
+    "env": [
+      "BYTEPLUS_API_KEY"
+    ],
+    "model_count": 14
+  },
+  {
     "id": "chutes",
     "display_name": "Chutes",
     "npm": "@ai-sdk/openai-compatible",
@@ -416,7 +427,7 @@
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_KEY"
     ],
-    "model_count": 28
+    "model_count": 29
   },
   {
     "id": "commandcode",
@@ -449,7 +460,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 106
+    "model_count": 104
   },
   {
     "id": "crossmodel",
@@ -460,7 +471,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 72
+    "model_count": 73
   },
   {
     "id": "crusoe",
@@ -516,7 +527,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 84
+    "model_count": 86
   },
   {
     "id": "dinference",
@@ -571,7 +582,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 383
+    "model_count": 396
   },
   {
     "id": "empiriolabs",
@@ -593,7 +604,7 @@
     "env": [
       "ENGY_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 10
   },
   {
     "id": "evroc",
@@ -659,7 +670,7 @@
     "env": [
       "FROGBOT_API_KEY"
     ],
-    "model_count": 26
+    "model_count": 51
   },
   {
     "id": "github-copilot",
@@ -670,7 +681,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 36
+    "model_count": 38
   },
   {
     "id": "gmicloud",
@@ -758,7 +769,7 @@
     "env": [
       "HYPER_API_KEY"
     ],
-    "model_count": 18
+    "model_count": 19
   },
   {
     "id": "impossibl",
@@ -913,7 +924,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 376
+    "model_count": 468
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1001,7 +1012,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 203
+    "model_count": 202
   },
   {
     "id": "llmgateway-providers",
@@ -1012,7 +1023,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 448
+    "model_count": 467
   },
   {
     "id": "llmtech",
@@ -1320,7 +1331,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 632
+    "model_count": 617
   },
   {
     "id": "nearai",
@@ -1342,7 +1353,7 @@
     "env": [
       "NEBIUS_API_KEY"
     ],
-    "model_count": 26
+    "model_count": 21
   },
   {
     "id": "neon",
@@ -1431,7 +1442,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 150
+    "model_count": 151
   },
   {
     "id": "ollama-cloud",
@@ -1453,7 +1464,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 138
+    "model_count": 139
   },
   {
     "id": "opencode-go",
@@ -1695,7 +1706,7 @@
     "env": [
       "SAMBANOVA_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 5
   },
   {
     "id": "sarvam",
@@ -1971,7 +1982,7 @@
     "env": [
       "TINFOIL_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 8
   },
   {
     "id": "tokengo",
