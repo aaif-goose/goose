@@ -148,7 +148,7 @@ tools, provider, or subagent runner:
 | [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 | [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
-| [`BangShellOperation`](https://docs.rs/goose-agent/latest/goose_agent/bang_shell/struct.BangShellOperation.html) | Turn a user message beginning with `!` into a request for your shell tool, without inference. |
+| [`BangCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/bang_command/struct.BangCommandOperation.html) | Turn a user message beginning with `!` into a call to a tool you name, without inference. |
 
 ### Operations in goose
 

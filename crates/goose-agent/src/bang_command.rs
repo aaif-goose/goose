@@ -1,4 +1,4 @@
-//! Runs a kickoff message beginning with `!` as a direct call to a shell tool.
+//! Runs a kickoff message beginning with `!` as a direct tool call.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -12,7 +12,7 @@ use crate::operation::{
     Operation, OperationResult,
 };
 
-fn bang_shell_command(message: &str) -> Option<&str> {
+fn bang_command(message: &str) -> Option<&str> {
     message
         .trim_start()
         .strip_prefix('!')
@@ -20,29 +20,32 @@ fn bang_shell_command(message: &str) -> Option<&str> {
         .filter(|command| !command.is_empty())
 }
 
-/// Requests `{ "command": ... }` from the named tool and ends the turn after
-/// its response. The host registers that tool with its normal tool steps.
-pub struct BangShellOperation {
+/// Calls `tool_name` with the text after `!` as `argument_name`, and ends the
+/// turn after its response. The host registers that tool with its normal tool
+/// steps.
+pub struct BangCommandOperation {
     tool_name: String,
+    argument_name: String,
 }
 
-impl BangShellOperation {
-    pub fn new(tool_name: impl Into<String>) -> Self {
+impl BangCommandOperation {
+    pub fn new(tool_name: impl Into<String>, argument_name: impl Into<String>) -> Self {
         Self {
             tool_name: tool_name.into(),
+            argument_name: argument_name.into(),
         }
     }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S, E> Operation<S, E> for BangShellOperation
+impl<S, E> Operation<S, E> for BangCommandOperation
 where
     S: MaybeSend + MaybeSync + 'static,
     E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
-        "bang_shell"
+        "bang_command"
     }
 
     async fn run(
@@ -56,7 +59,7 @@ where
             return not_applicable();
         };
         let kickoff_text = kickoff.user_visible_content().as_concat_text();
-        let Some(command) = bang_shell_command(&kickoff_text) else {
+        let Some(command) = bang_command(&kickoff_text) else {
             return not_applicable();
         };
 
@@ -70,12 +73,12 @@ where
 
         let call = CallToolRequestParams::new(self.tool_name.clone()).with_arguments(
             serde_json::Map::from_iter([(
-                "command".to_string(),
+                self.argument_name.clone(),
                 serde_json::Value::String(command.to_string()),
             )]),
         );
         let request = Message::assistant()
-            .with_tool_request(format!("bang_shell_{}", uuid::Uuid::new_v4()), Ok(call));
+            .with_tool_request(format!("bang_command_{}", uuid::Uuid::new_v4()), Ok(call));
 
         applied([E::from(emit.message(request))])
     }

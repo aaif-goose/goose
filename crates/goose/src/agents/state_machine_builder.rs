@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::{
-    bang_shell::BangShellOperation,
+    bang_command::BangCommandOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
@@ -155,7 +155,7 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(BangShellOperation::new("shell")),
+        Arc::new(BangCommandOperation::new("shell", "command")),
     ];
     if !manages_own_context {
         if let Some(decisions) = context_relevance {
