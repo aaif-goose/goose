@@ -21,6 +21,7 @@ pub(crate) mod declarative_providers {
         celeris,
         cerebras,
         deepseek,
+        dothoosh,
         empiriolabs,
         eurouter,
         fireworks,
