@@ -26,6 +26,12 @@ fn retry_error(error: &str) -> Message {
     )
 }
 
+#[derive(Clone, Copy)]
+enum GoalKind {
+    Goal,
+    Grind,
+}
+
 pub struct RetryOperation {
     retry_timeout: Duration,
     on_failure_timeout: Duration,
@@ -73,19 +79,17 @@ impl RetryOperation {
 
     async fn goal_command(
         &self,
-        name: &str,
+        kind: GoalKind,
         params: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let mut state = GoalState::of(session);
-        let target = if name == "goal" {
-            &mut state.goal
-        } else {
-            &mut state.grind
+        let (name, label, target) = match kind {
+            GoalKind::Goal => ("goal", "goal", &mut state.goal),
+            GoalKind::Grind => ("grind", "grind goal", &mut state.grind),
         };
-        let label = if name == "goal" { "goal" } else { "grind goal" };
         let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
 
         let response = if params.is_empty() {
@@ -98,22 +102,20 @@ impl RetryOperation {
             }
         } else if !starts_turn {
             *target = None;
-            let text = if name == "goal" {
-                "Goal cleared. The agent will finish normally."
-            } else {
-                "Grind cleared. The agent will finish normally."
+            let text = match kind {
+                GoalKind::Goal => "Goal cleared. The agent will finish normally.",
+                GoalKind::Grind => "Grind cleared. The agent will finish normally.",
             };
             Message::assistant().with_text(text)
         } else {
             *target = Some(params.to_string());
-            let text = if name == "goal" {
-                format!(
+            let text = match kind {
+                GoalKind::Goal => format!(
                     "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
-                )
-            } else {
-                format!(
+                ),
+                GoalKind::Grind => format!(
                     "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {params}"
-                )
+                ),
             };
             Message::assistant().with_text(text)
         };
@@ -172,7 +174,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 "Set a goal the agent must satisfy before finishing, or clear with /goal off",
                 move |call| {
                     Box::pin(self.goal_command(
-                        "goal",
+                        GoalKind::Goal,
                         call.arguments,
                         call.session,
                         call.conversation,
@@ -185,7 +187,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
                 move |call| {
                     Box::pin(self.goal_command(
-                        "grind",
+                        GoalKind::Grind,
                         call.arguments,
                         call.session,
                         call.conversation,
