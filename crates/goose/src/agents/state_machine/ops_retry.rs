@@ -8,8 +8,8 @@ use crate::agents::retry::{
     execute_on_failure_command_with_timeout, execute_success_checks_with_timeout,
 };
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect,
-    Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, Command,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
@@ -70,33 +70,22 @@ impl RetryOperation {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for RetryOperation {
-    fn name(&self) -> &'static str {
-        "retry"
-    }
-
-    async fn run_command(
+    async fn goal_command(
         &self,
-        command: &SlashCommand<'_>,
+        name: &str,
+        params: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let mut state = GoalState::of(session);
-        let target = match command.command {
-            "goal" => &mut state.goal,
-            "grind" => &mut state.grind,
-            _ => return not_applicable(),
-        };
-        let label = if command.command == "goal" {
-            "goal"
+        let target = if name == "goal" {
+            &mut state.goal
         } else {
-            "grind goal"
+            &mut state.grind
         };
-        let params = command.params_str;
+        let label = if name == "goal" { "goal" } else { "grind goal" };
         let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
 
         let response = if params.is_empty() {
@@ -104,12 +93,12 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 Some(value) => Message::assistant().with_text(format!("Current {label}: {value}")),
                 None => Message::assistant().with_text(format!(
                     "No {label} set. Use `/{command_name} <description>` to set one.",
-                    command_name = command.command
+                    command_name = name
                 )),
             }
         } else if !starts_turn {
             *target = None;
-            let text = if command.command == "goal" {
+            let text = if name == "goal" {
                 "Goal cleared. The agent will finish normally."
             } else {
                 "Grind cleared. The agent will finish normally."
@@ -117,7 +106,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             Message::assistant().with_text(text)
         } else {
             *target = Some(params.to_string());
-            let text = if command.command == "goal" {
+            let text = if name == "goal" {
                 format!(
                     "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
                 )
@@ -167,6 +156,44 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             return yielded_with(effects);
         }
         applied(effects)
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for RetryOperation {
+    fn name(&self) -> &'static str {
+        "retry"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(vec![
+            Command::new(
+                "goal",
+                "Set a goal the agent must satisfy before finishing, or clear with /goal off",
+                move |call| {
+                    Box::pin(self.goal_command(
+                        "goal",
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+            Command::new(
+                "grind",
+                "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
+                move |call| {
+                    Box::pin(self.goal_command(
+                        "grind",
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+        ])
     }
 
     async fn run(

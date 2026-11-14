@@ -17,8 +17,8 @@ use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
+    Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
@@ -418,7 +418,7 @@ impl ToolExecutionOperation {
 
     async fn list_prompts(
         &self,
-        command: &SlashCommand<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
@@ -428,7 +428,7 @@ impl ToolExecutionOperation {
             .await?
             .list_prompts(emit.cancel_token().clone())
             .await;
-        let extension_filter = command.params_str.split_whitespace().next();
+        let extension_filter = arguments.split_whitespace().next();
         if let Some(filter) = extension_filter {
             if !prompts.contains_key(filter) {
                 return Self::command_response(
@@ -461,12 +461,12 @@ impl ToolExecutionOperation {
 
     async fn run_prompt(
         &self,
-        command: &SlashCommand<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let params: Vec<_> = command.params_str.split_whitespace().collect();
+        let params: Vec<_> = arguments.split_whitespace().collect();
         let Some(prompt_name) = params.first() else {
             return Self::command_response(
                 conversation,
@@ -752,21 +752,33 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             .collect()
     }
 
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        match command.command {
-            "prompts" => {
-                self.list_prompts(command, session, conversation, emit)
-                    .await
-            }
-            "prompt" => self.run_prompt(command, session, conversation, emit).await,
-            _ => not_applicable(),
-        }
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(vec![
+            Command::new(
+                "prompts",
+                "List available prompts, optionally filtered by extension",
+                move |call| {
+                    Box::pin(self.list_prompts(
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+            Command::new(
+                "prompt",
+                "Execute a prompt or show its info with --info",
+                move |call| {
+                    Box::pin(self.run_prompt(
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+        ])
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {

@@ -148,6 +148,7 @@ tools, provider, or subagent runner:
 | [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 | [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
+| [`SlashCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/slash_command/struct.SlashCommandOperation.html) | Run the command named by a kickoff message that starts with `/`, using the commands its operations offer. |
 
 ### Operations in goose
 
@@ -174,7 +175,6 @@ your application.
 | `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
-| `SlashCommandOperation`       | Route a recognized slash command to operations' command handlers.                                 |
 | `StatusOperation`             | Report the current session, model, and usage through `/status`.                                   |
 
 The [state machine builder](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/state_machine_builder.rs)

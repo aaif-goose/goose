@@ -57,7 +57,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
         .is_some_and(|tokens| tokens < filled_usage));
 
     let first_manual = pipeline.run(["/compact"]).await?;
-    let second_manual = pipeline.run(["/compact"]).await?;
+    let second_manual = pipeline.run(["/summarize"]).await?;
     first_manual.assert_emitted("Compaction complete");
     let (replaced, stored) = first_manual.replaced_and_stored_ids();
     assert_eq!(replaced, stored);
@@ -68,7 +68,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.as_concat_text().trim() == "/compact")
+        .filter(|message| matches!(message.as_concat_text().trim(), "/compact" | "/summarize"))
         .collect::<Vec<_>>();
     assert_eq!(commands.len(), 2);
     assert!(commands

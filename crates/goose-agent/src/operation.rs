@@ -6,6 +6,7 @@ use std::pin::Pin;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::command::Command;
 use crate::events::AgentEvent;
 use goose_provider_types::conversation::message::{Message, MessageContent, MessageErrorKind};
 use goose_provider_types::conversation::{effective_role, Conversation, EffectiveRole};
@@ -25,11 +26,6 @@ pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + 'a>>;
 
 pub const CLIENT_LOG: &str = "client_log";
-
-pub struct SlashCommand<'a> {
-    pub command: &'a str,
-    pub params_str: &'a str,
-}
 
 pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]> {
     let messages = conversation.messages();
@@ -112,14 +108,8 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         Vec::new()
     }
 
-    async fn run_command(
-        &self,
-        _command: &SlashCommand<'_>,
-        _session: &S,
-        _conversation: &Conversation,
-        _emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
-        not_applicable()
+    async fn commands(&self, _session: &S) -> Result<Vec<Command<'_, S, E>>> {
+        Ok(Vec::new())
     }
 
     async fn inference_tools(&self, _session: &S) -> Result<Vec<Tool>> {

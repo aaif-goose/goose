@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
+use crate::command::Command;
 use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
     Operation, OperationResult, RunStatus, StepResult,
@@ -132,6 +133,16 @@ where
                 .extend(operation.prompt_parts(session, conversation).await?);
         }
         Ok(input)
+    }
+
+    /// Every command the steps offer, in step order. Duplicates are kept;
+    /// choosing between them is up to whoever runs or lists the commands.
+    pub async fn commands(&self, session: &S) -> Result<Vec<Command<'_, S, E>>> {
+        let mut commands = Vec::new();
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            commands.extend(operation.commands(session).await?);
+        }
+        Ok(commands)
     }
 
     /// The prompt contributions plus the turn-context parts.
