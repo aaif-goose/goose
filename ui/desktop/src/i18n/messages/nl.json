@@ -2441,6 +2441,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Instellingen lokaal model — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "Modelwijzigingen worden toegepast nadat deze beurt is afgerond. Stop de run om nu te wisselen."
+  },
   "modelsBottomBar.recentModels": {
     "defaultMessage": "Recent"
   },
