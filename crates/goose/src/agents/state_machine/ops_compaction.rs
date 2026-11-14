@@ -9,8 +9,9 @@ use tracing_futures::Instrument;
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::proactive_compaction::proactive_compaction_tokens;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with,
-    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, builtin_command, messages_since_kickoff, not_applicable, trailing_error, yielded_with,
+    Command, CommandAction, CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation,
+    OperationResult,
 };
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
@@ -102,61 +103,14 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
         "compaction"
     }
 
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        match command.command {
-            "clear" => return Self::clear(conversation, emit),
-            "compact" => {}
-            _ => return not_applicable(),
-        }
-
-        let span = chat_span(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            "compaction",
-        );
-        let result = match compact_messages(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            conversation,
-            true,
-        )
-        .instrument(span.clone())
-        .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                span.record("error.type", "compaction_error");
-                return Self::command_error(conversation, &error, emit);
-            }
-        };
-        let compacted = result.conversation;
-        let usage = result.usage;
-        record_chat_usage(&span, &usage);
-
-        let command = messages_since_kickoff(conversation)?
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow!("compact command conversation has no kickoff message"))?
-            .with_visibility(true, false);
-        let response = Message::assistant()
-            .with_text("Compaction complete")
-            .with_visibility(true, false);
-        emit.message(command);
-        let response = emit.message(response);
-        yielded_with([
-            GooseEffect::CompactConversation {
-                conversation: compacted,
-                usage: Some(usage),
-            },
-            response.into(),
+    async fn commands<'a>(
+        &'a self,
+        _session: &'a Session,
+    ) -> Result<Vec<Command<'a, Session, GooseEffect>>> {
+        Ok(vec![
+            builtin_command("compact", "Compact the conversation history", self)
+                .with_aliases(["summarize"]),
+            builtin_command("clear", "Clear the conversation history", self),
         ])
     }
 
@@ -260,6 +214,65 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
                 yielded_with([message.into()])
             }
         }
+    }
+}
+
+#[async_trait]
+impl CommandAction<Session, GooseEffect> for CompactionOperation {
+    async fn execute(
+        &self,
+        command: &CommandInvocation<'_>,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        if command.name == "clear" {
+            return Self::clear(conversation, emit);
+        }
+
+        let span = chat_span(
+            self.provider.as_ref(),
+            &self.model_config,
+            &session.id,
+            "compaction",
+        );
+        let result = match compact_messages(
+            self.provider.as_ref(),
+            &self.model_config,
+            &session.id,
+            conversation,
+            true,
+        )
+        .instrument(span.clone())
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                span.record("error.type", "compaction_error");
+                return Self::command_error(conversation, &error, emit);
+            }
+        };
+        let compacted = result.conversation;
+        let usage = result.usage;
+        record_chat_usage(&span, &usage);
+
+        let command = messages_since_kickoff(conversation)?
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow!("compact command conversation has no kickoff message"))?
+            .with_visibility(true, false);
+        let response = Message::assistant()
+            .with_text("Compaction complete")
+            .with_visibility(true, false);
+        emit.message(command);
+        let response = emit.message(response);
+        yielded_with([
+            GooseEffect::CompactConversation {
+                conversation: compacted,
+                usage: Some(usage),
+            },
+            response.into(),
+        ])
     }
 }
 

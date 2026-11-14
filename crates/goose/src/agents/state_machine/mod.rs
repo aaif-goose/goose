@@ -20,7 +20,6 @@ mod ops_recipe;
 mod ops_remaining_tool_calls;
 mod ops_retry;
 mod ops_skills;
-mod ops_slash_command;
 mod ops_status;
 mod ops_stop_hook;
 mod ops_subagent;
@@ -38,15 +37,19 @@ mod usage;
 mod tests;
 
 pub use effects::GooseEffect;
+pub use goose_agent::command::{
+    normalize_command_name, parse_slash_command, Command, CommandAction, CommandInvocation,
+    CommandResolver,
+};
 pub use goose_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
 pub use goose_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
-    InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
-    CLIENT_LOG,
+    InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, StepResult, CLIENT_LOG,
 };
+pub(super) use goose_agent::slash_command::SlashCommandOperation;
 pub(super) use goose_agent::subagent::SubagentOperation;
 pub(super) use goose_agent::tool_approval::ToolApprovalOperation;
 pub(super) use goose_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
@@ -54,6 +57,19 @@ pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,
 };
+
+pub(super) fn builtin_command<'a, S, E>(
+    name: &str,
+    description: &str,
+    action: &'a dyn CommandAction<S, E>,
+) -> Command<'a, S, E>
+where
+    E: goose_provider_types::maybe_send::MaybeSend + 'static,
+{
+    let mut meta = serde_json::Map::new();
+    meta.insert("commandType".to_string(), "Builtin".into());
+    Command::new(name, description, action).with_meta(meta)
+}
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
 pub(super) use ops_auto_effort::AutoEffortOperation;
@@ -71,7 +87,6 @@ pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;
 pub(super) use ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 pub(super) use ops_retry::RetryOperation;
 pub(super) use ops_skills::SkillOperation;
-pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_stop_hook::{StopHookOperation, DEFAULT_BLOCK_CAP};
 pub(super) use ops_subagent::DELEGATED_META_KEY;

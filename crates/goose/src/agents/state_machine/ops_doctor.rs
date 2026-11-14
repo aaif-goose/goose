@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use rmcp::model::Role;
 
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, builtin_command, messages_since_kickoff, yielded_with, Command, CommandAction,
+    CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -30,17 +30,27 @@ impl Operation<Session, GooseEffect> for DoctorOperation {
         "doctor"
     }
 
-    async fn run_command(
+    async fn commands<'a>(
+        &'a self,
+        _session: &'a Session,
+    ) -> Result<Vec<Command<'a, Session, GooseEffect>>> {
+        Ok(vec![builtin_command(
+            "doctor",
+            "Check that your Goose setup is working",
+            self,
+        )])
+    }
+}
+
+#[async_trait]
+impl CommandAction<Session, GooseEffect> for DoctorOperation {
+    async fn execute(
         &self,
-        command: &SlashCommand<'_>,
+        _command: &CommandInvocation<'_>,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command != "doctor" {
-            return not_applicable();
-        }
-
         let command_message = messages_since_kickoff(conversation)?
             .first()
             .cloned()

@@ -200,13 +200,14 @@ pub(crate) fn build_state_machine(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(operations.clone()));
-    let steps = std::iter::once(command_operation)
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+    let mut steps = Vec::new();
+    if crate::agents::execute_commands::slash_commands_enabled() {
+        let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
+            Arc::new(SlashCommandOperation::new(operations.clone()));
+        steps.push(Step::Operation(command_operation));
+    }
+    steps.extend(operations.into_iter().map(Step::Operation));
+    steps.push(Step::Inference(inference));
 
     StateMachine::new(steps, cancel)
 }

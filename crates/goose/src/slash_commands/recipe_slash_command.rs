@@ -66,30 +66,32 @@ pub fn get_recipe_for_command(command: &str) -> Option<PathBuf> {
         .map(|mapping| PathBuf::from(mapping.recipe_path))
 }
 
-pub(super) fn get_existing_recipe_for_command(command: &str) -> Option<PathBuf> {
+pub(crate) fn get_existing_recipe_for_command(command: &str) -> Option<PathBuf> {
     get_recipe_for_command(command).filter(|recipe_path| recipe_path.exists())
 }
 
-pub(super) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<SlashCommandEntry> {
+pub(crate) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<SlashCommandEntry> {
     mappings
         .into_iter()
-        .filter_map(|mapping| {
-            let name = normalize_command_name(&mapping.command);
-            if name.is_empty() {
-                return None;
-            }
-
-            let metadata = recipe_entry(&mapping.recipe_path)?;
-
-            Some(SlashCommandEntry {
-                name,
-                description: metadata.description,
-                source: SlashCommandSource::Recipe,
-                source_path: Some(mapping.recipe_path),
-                input_hint: metadata.input_hint,
-            })
-        })
+        .filter_map(command_from_mapping)
         .collect()
+}
+
+pub(crate) fn command_from_mapping(mapping: SlashCommandMapping) -> Option<SlashCommandEntry> {
+    let name = normalize_command_name(&mapping.command);
+    if name.is_empty() {
+        return None;
+    }
+
+    let metadata = recipe_entry(&mapping.recipe_path)?;
+
+    Some(SlashCommandEntry {
+        name,
+        description: metadata.description,
+        source: SlashCommandSource::Recipe,
+        source_path: Some(mapping.recipe_path),
+        input_hint: metadata.input_hint,
+    })
 }
 
 struct RecipeCommandMetadata {

@@ -540,6 +540,11 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
     assert!(command.is_user_visible());
     assert!(command.is_agent_visible());
 
+    api.on("Please compact this conversation")
+        .reply("treated as a prompt");
+    let sentence = pipeline.run(["Please compact this conversation"]).await?;
+    sentence.assert_message(-1, Agent, "treated as a prompt");
+
     pipeline
         .set_goal(Some("finish the migration".to_string()))
         .await;
@@ -553,7 +558,7 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
     let cleared = pipeline.run(["/goal clear"]).await?;
     cleared.assert_message(-1, Agent, "Goal cleared");
     assert!(pipeline.get_goal().await.is_none());
-    assert_eq!(api.call_count(), 1);
+    assert_eq!(api.call_count(), 2);
 
     Ok(())
 }

@@ -30,9 +30,10 @@ pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
 
 pub fn is_builtin_command(command: &str) -> bool {
     let command = normalize_command_name(command);
-    execute_commands::list_commands()
-        .iter()
-        .any(|builtin| builtin.name == command)
+    command == "summarize"
+        || execute_commands::list_commands()
+            .iter()
+            .any(|builtin| builtin.name == command)
 }
 
 pub(super) fn merge_command_sources(
@@ -170,10 +171,11 @@ mod tests {
     fn builtin_names_never_run_as_recipes_or_skills() {
         let tmp = TempDir::new().unwrap();
         write_skill(tmp.path(), "compact");
-        let mappings = recipe_mappings(tmp.path(), &["compact"]);
+        write_skill(tmp.path(), "summarize");
+        let mappings = recipe_mappings(tmp.path(), &["compact", "summarize"]);
         let _guard = env_lock::lock_env([("SLASH_COMMANDS", Some(mappings.as_str()))]);
 
-        for command in ["compact", "Compact", "/COMPACT"] {
+        for command in ["compact", "Compact", "/COMPACT", "summarize"] {
             assert!(is_builtin_command(command), "{command}");
             assert!(!runs_as_recipe(command), "{command}");
             assert!(!runs_as_skill(command, tmp.path()), "{command}");

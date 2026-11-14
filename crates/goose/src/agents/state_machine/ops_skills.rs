@@ -18,8 +18,9 @@ use crate::agents::state_machine::ops_toolcalling::{
 };
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, builtin_command, messages_since_kickoff, not_applicable, yielded_with, Command,
+    CommandAction, CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation,
+    OperationResult,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
@@ -256,51 +257,37 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         "skills"
     }
 
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        if command.command == "skills" {
-            return Self::command_response(
-                conversation,
-                crate::slash_commands::skill_slash_command::format_installed_skills(Some(
-                    &session.working_dir,
-                )),
-                emit,
-            );
-        }
-
-        let prompt = match crate::slash_commands::skill_slash_command::resolve_command(
-            command.command,
-            command.params_str,
-            Some(&session.working_dir),
-        ) {
-            Ok(Some(prompt)) => prompt,
-            Ok(None) => return not_applicable(),
-            Err(error) => return Self::command_response(conversation, error, emit),
-        };
-        let command_message = messages_since_kickoff(conversation)?
-            .first()
-            .ok_or_else(|| anyhow!("skill command conversation has no kickoff message"))?;
-        let message_id = command_message
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        applied([
-            ConversationEffect::SetMessageVisibility {
-                message_id,
-                user_visible: true,
-                agent_visible: false,
-            }
-            .into(),
-            Message::user()
-                .with_text(prompt)
-                .with_visibility(false, true)
-                .into(),
-        ])
+    async fn commands<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> Result<Vec<Command<'a, Session, GooseEffect>>> {
+        let mut commands = vec![builtin_command(
+            "skills",
+            "List installed skills and other available sources",
+            self,
+        )];
+        commands.extend(
+            crate::slash_commands::skill_slash_command::list_commands(Some(&session.working_dir))
+                .into_iter()
+                .filter(|entry| {
+                    !crate::slash_commands::slash_command::is_builtin_command(&entry.name)
+                        && crate::slash_commands::recipe_slash_command::get_existing_recipe_for_command(
+                            &entry.name,
+                        )
+                        .is_none()
+                })
+                .map(|entry| {
+                    let mut meta = serde_json::Map::new();
+                    meta.insert("commandType".to_string(), "Skill".into());
+                    let mut command =
+                        Command::new(entry.name, entry.description, self).with_meta(meta);
+                    if let Some(input_hint) = entry.input_hint {
+                        command = command.with_input_hint(input_hint);
+                    }
+                    command
+                }),
+        );
+        Ok(commands)
     }
 
     async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
@@ -411,6 +398,56 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         }
         let response = emit.message(response);
         applied([response.into()])
+    }
+}
+
+#[async_trait]
+impl CommandAction<Session, GooseEffect> for SkillOperation {
+    async fn execute(
+        &self,
+        command: &CommandInvocation<'_>,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        if command.name == "skills" {
+            return Self::command_response(
+                conversation,
+                crate::slash_commands::skill_slash_command::format_installed_skills(Some(
+                    &session.working_dir,
+                )),
+                emit,
+            );
+        }
+
+        let prompt = match crate::slash_commands::skill_slash_command::resolve_command(
+            command.name,
+            command.arguments,
+            Some(&session.working_dir),
+        ) {
+            Ok(Some(prompt)) => prompt,
+            Ok(None) => return not_applicable(),
+            Err(error) => return Self::command_response(conversation, error, emit),
+        };
+        let command_message = messages_since_kickoff(conversation)?
+            .first()
+            .ok_or_else(|| anyhow!("skill command conversation has no kickoff message"))?;
+        let message_id = command_message
+            .id
+            .clone()
+            .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
+        applied([
+            ConversationEffect::SetMessageVisibility {
+                message_id,
+                user_visible: true,
+                agent_visible: false,
+            }
+            .into(),
+            Message::user()
+                .with_text(prompt)
+                .with_visibility(false, true)
+                .into(),
+        ])
     }
 }
 

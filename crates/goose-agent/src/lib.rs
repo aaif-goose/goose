@@ -16,6 +16,8 @@ pub mod unhandled_tool_calls;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod action_required_manager;
+pub mod command;
+pub mod slash_command;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod subprocess;
 #[cfg(not(target_arch = "wasm32"))]

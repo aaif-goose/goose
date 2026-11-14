@@ -6,8 +6,8 @@ use goose_providers::base::Provider;
 use goose_providers::model::ModelConfig;
 
 use crate::agents::state_machine::{
-    messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter, GooseEffect,
-    Operation, OperationResult, SlashCommand,
+    builtin_command, messages_since_kickoff, yielded_with, Command, CommandAction,
+    CommandInvocation, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -33,16 +33,27 @@ impl Operation<Session, GooseEffect> for StatusOperation {
         "status"
     }
 
-    async fn run_command(
+    async fn commands<'a>(
+        &'a self,
+        _session: &'a Session,
+    ) -> Result<Vec<Command<'a, Session, GooseEffect>>> {
+        Ok(vec![builtin_command(
+            "status",
+            "Show session status: session ID, model, provider, mode, and token usage",
+            self,
+        )])
+    }
+}
+
+#[async_trait]
+impl CommandAction<Session, GooseEffect> for StatusOperation {
+    async fn execute(
         &self,
-        command: &SlashCommand<'_>,
+        _command: &CommandInvocation<'_>,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command != "status" {
-            return not_applicable();
-        }
         let context_limit = crate::context_limit::get_context_limit(
             self.provider.as_ref(),
             &self.model_config.model_name,
