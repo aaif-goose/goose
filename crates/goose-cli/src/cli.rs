@@ -266,6 +266,17 @@ pub struct InputOptions {
     )]
     pub system: Option<String>,
 
+    /// Read the additional system prompt from a file
+    #[arg(
+        long = "system-file",
+        value_name = "FILE",
+        help = "Read the additional system prompt from a file",
+        long_help = "Like --system, but the text is read from FILE, so long or multiline instructions do not have to fit in one command-line argument",
+        conflicts_with = "system",
+        conflicts_with = "recipe"
+    )]
+    pub system_file: Option<String>,
+
     #[arg(
         long,
         value_name = "KEY=VALUE",
@@ -2092,6 +2103,17 @@ async fn log_session_completion(
     }
 }
 
+/// The additional system prompt of a run: `--system`, or the contents of
+/// `--system-file` (the two conflict, so at most one is set).
+fn additional_system_prompt(input_opts: &InputOptions) -> Result<Option<String>> {
+    match &input_opts.system_file {
+        Some(file) => std::fs::read_to_string(file)
+            .map(Some)
+            .map_err(|err| anyhow::anyhow!("Cannot read --system-file {file}: {err}")),
+        None => Ok(input_opts.system.clone()),
+    }
+}
+
 fn parse_run_input(
     input_opts: &InputOptions,
     quiet: bool,
@@ -2109,7 +2131,7 @@ fn parse_run_input(
             Ok(Some((
                 InputConfig {
                     contents: Some(contents),
-                    additional_system_prompt: input_opts.system.clone(),
+                    additional_system_prompt: additional_system_prompt(input_opts)?,
                 },
                 None,
             )))
@@ -2125,7 +2147,7 @@ fn parse_run_input(
             Ok(Some((
                 InputConfig {
                     contents: Some(contents),
-                    additional_system_prompt: None,
+                    additional_system_prompt: additional_system_prompt(input_opts)?,
                 },
                 None,
             )))
@@ -2133,7 +2155,7 @@ fn parse_run_input(
         (_, Some(text), _) => Ok(Some((
             InputConfig {
                 contents: Some(text.clone()),
-                additional_system_prompt: input_opts.system.clone(),
+                additional_system_prompt: additional_system_prompt(input_opts)?,
             },
             None,
         ))),
@@ -2955,6 +2977,69 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_reads_system_prompt_from_a_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let system = dir.path().join("system.txt");
+        std::fs::write(&system, "be terse").expect("write system");
+
+        let input_opts = InputOptions {
+            input_text: Some("do the thing".to_string()),
+            system_file: Some(system.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let (config, _) = parse_run_input(&input_opts, true)
+            .expect("parse failed")
+            .expect("input expected");
+
+        assert_eq!(config.additional_system_prompt.as_deref(), Some("be terse"));
+    }
+
+    #[test]
+    fn run_applies_system_file_with_an_instruction_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let instructions = dir.path().join("instructions.txt");
+        let system = dir.path().join("system.txt");
+        std::fs::write(&instructions, "do the thing").expect("write instructions");
+        std::fs::write(&system, "be terse").expect("write system");
+
+        let input_opts = InputOptions {
+            instructions: Some(instructions.to_string_lossy().into_owned()),
+            system_file: Some(system.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let (config, recipe) = parse_run_input(&input_opts, true)
+            .expect("parse failed")
+            .expect("input expected");
+
+        assert_eq!(config.contents.as_deref(), Some("do the thing"));
+        assert_eq!(config.additional_system_prompt.as_deref(), Some("be terse"));
+        assert!(recipe.is_none());
+    }
+
+    #[test]
+    fn run_fails_on_an_unreadable_system_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input_opts = InputOptions {
+            input_text: Some("do the thing".to_string()),
+            system_file: Some(dir.path().join("absent.txt").to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+
+        let err = parse_run_input(&input_opts, true).expect_err("missing file must fail");
+
+        assert!(err.to_string().contains("--system-file"));
+    }
+
+    #[test]
+    fn run_rejects_system_file_with_system_or_recipe() {
+        for other in [["--system", "a"], ["--recipe", "r.yaml"]] {
+            let parsed =
+                Cli::try_parse_from(["goose", "run", other[0], other[1], "--system-file", "b"]);
+            assert!(parsed.is_err(), "{} must conflict", other[0]);
+        }
+    }
 
     #[test]
     fn completion_command_accepts_nushell_alias() {
