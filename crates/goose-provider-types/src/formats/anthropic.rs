@@ -935,6 +935,12 @@ pub fn is_thinking_signature_error(message: &str) -> bool {
             || lower.contains("block_binding"))
 }
 
+/// A thinking block was replayed under a different prefix (system prompt, tools or
+/// earlier messages) than the one it was created with.
+pub fn is_thinking_binding_error(message: &str) -> bool {
+    is_thinking_signature_error(message) && message.contains("prefix_mismatch_behavior")
+}
+
 pub fn is_unsupported_thinking_config_error(message: &str) -> bool {
     let lower = message.to_lowercase();
     lower.contains("thinking")
