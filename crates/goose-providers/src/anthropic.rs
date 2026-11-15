@@ -449,7 +449,7 @@ impl Provider for AnthropicProvider {
     }
 }
 
-fn beta_header_value(
+pub(crate) fn beta_header_value(
     api_client: &ApiClient,
     model_config: &ModelConfig,
     payload: &Value,
