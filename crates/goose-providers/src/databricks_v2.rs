@@ -1,7 +1,6 @@
 use crate::anthropic::beta_header_value;
 use crate::formats::anthropic::{
-    block_binding_behavior, is_thinking_binding_error, AnthropicFormatOptions,
-    PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
+    block_binding_behavior, AnthropicFormatOptions, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
 };
 use crate::formats::openai::{self, extract_reasoning_effort, is_openai_responses_model};
 use crate::http_status::{read_error_body, read_json_response};
@@ -563,7 +562,7 @@ impl DatabricksV2Provider {
 
         let response = match self.post_anthropic_messages(model_config, &payload).await {
             Err(ProviderError::RequestFailed(message))
-                if !binds && is_thinking_binding_error(&message) =>
+                if !binds && Self::is_thinking_binding_error(&message) =>
             {
                 let retry =
                     self.anthropic_messages_payload(model_config, system, messages, tools, true)?;
@@ -571,9 +570,12 @@ impl DatabricksV2Provider {
                     Err(ProviderError::RequestFailed(message))
                 } else {
                     let _ = log.error(&message);
-                    self.binding_models.lock().unwrap().insert(model.clone());
                     log = start_log(model_config, &retry)?;
-                    self.post_anthropic_messages(model_config, &retry).await
+                    self.post_anthropic_messages(model_config, &retry)
+                        .await
+                        .inspect(|_| {
+                            self.binding_models.lock().unwrap().insert(model.clone());
+                        })
                 }
             }
             other => other,
@@ -597,6 +599,10 @@ impl DatabricksV2Provider {
                 yield (message, usage);
             }
         }))
+    }
+
+    fn is_thinking_binding_error(message: &str) -> bool {
+        message.contains("bound to a different conversation")
     }
 }
 
