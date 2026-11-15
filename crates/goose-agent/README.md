@@ -112,6 +112,12 @@ before the boundary if it should recover from context-length errors.
 
 At exhaustion, the operation appends a user-visible `ResourceExhausted` error and yields. The operation also contributes a `moim_parts` budget reminder once half the limit is used. Hosts must render these parts in their request preparer; `IdentityInferenceRequestPreparer` does not include them.
 
+## Bang commands
+
+`bang_command::BangCommandOperation::new(tool_name, argument_name)` turns a
+user message starting with `!` into a request for `tool_name`, with the text
+after `!` as `argument_name`. Put it before inference.
+
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference
