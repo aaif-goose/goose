@@ -2,7 +2,7 @@ use std::path::Path;
 
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 
-use super::recipe_slash_command::get_existing_recipe_for_command;
+use super::recipe_slash_command::runnable_recipes;
 use super::slash_command::is_builtin_command;
 use super::types::{SlashCommandEntry, SlashCommandSource};
 use super::util::normalize_command_name;
@@ -42,27 +42,19 @@ pub fn format_installed_skills(working_dir: Option<&Path>) -> String {
     output
 }
 
-pub fn resolve_command(
-    command: &str,
-    params_str: &str,
-    working_dir: Option<&Path>,
-) -> Result<Option<String>, String> {
-    if is_builtin_command(command) || get_existing_recipe_for_command(command).is_some() {
-        return Ok(None);
-    }
-    let command_name = normalize_command_name(command);
-    let Some(skill) = crate::skills::list_installed_skills(working_dir)
+pub fn runnable_skills(working_dir: Option<&Path>) -> Vec<(String, SourceEntry)> {
+    let recipes: Vec<String> = runnable_recipes()
         .into_iter()
-        .find(|skill| normalize_command_name(&skill.name) == command_name)
-    else {
-        return Ok(None);
-    };
-
-    let args = (!params_str.is_empty()).then_some(params_str);
-    let prompt = crate::skills::loaded_skill_context_with_args(&skill, args)
-        .map_err(|e| format!("Skill /{}: {}", command, e))?;
-
-    Ok(Some(prompt))
+        .map(|(name, _)| name)
+        .collect();
+    crate::skills::list_installed_skills(working_dir)
+        .into_iter()
+        .filter_map(|skill| {
+            let name = normalize_command_name(&skill.name);
+            (!name.is_empty() && !is_builtin_command(&name) && !recipes.contains(&name))
+                .then_some((name, skill))
+        })
+        .collect()
 }
 
 pub(super) fn commands_from_sources(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {

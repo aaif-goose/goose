@@ -128,4 +128,5 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ## Entry Points
 - CLI: crates/goose-cli/src/main.rs
 - UI: ui/desktop/src/main.ts
-- Agent: crates/goose/src/agents/agent.rs
+- Agent: crates/goose/src/agents/services.rs (`reply`)
+- Agent loop: crates/goose/src/agents/state_machine_builder.rs (the ordered operations), run by crates/goose/src/agents/state_machine/

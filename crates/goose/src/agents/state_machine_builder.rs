@@ -2,8 +2,13 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::empty_response::EmptyResponseOperation;
-use goose_agent::max_turns::MaxTurnsOperation;
+use goose_agent::{
+    bang_command::BangCommandOperation,
+    empty_response::EmptyResponseOperation,
+    exit_on_error::ExitOnErrorOperation,
+    max_turns::MaxTurnsOperation,
+    steer::{SteerOperation, SteerQueue},
+};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -13,11 +18,10 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    ExitOnErrorOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
-    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
+    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
     StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
     ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
@@ -151,7 +155,7 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(BangShellOperation::new()),
+        Arc::new(BangCommandOperation::new("shell", "command")),
     ];
     if !manages_own_context {
         if let Some(decisions) = context_relevance {
@@ -197,13 +201,14 @@ pub(crate) fn build_state_machine(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(operations.clone()));
-    let steps = std::iter::once(command_operation)
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+    let mut steps = Vec::new();
+    if crate::agents::execute_commands::slash_commands_enabled() {
+        steps.push(Step::Operation(Arc::new(SlashCommandOperation::new(
+            operations.clone(),
+        ))));
+    }
+    steps.extend(operations.into_iter().map(Step::Operation));
+    steps.push(Step::Inference(inference));
 
     StateMachine::new(steps, cancel)
 }

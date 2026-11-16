@@ -9,8 +9,8 @@ use tracing_futures::Instrument;
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::proactive_compaction::proactive_compaction_tokens;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with,
-    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Command,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
@@ -94,27 +94,13 @@ impl CompactionOperation {
             response.into(),
         ])
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for CompactionOperation {
-    fn name(&self) -> &'static str {
-        "compaction"
-    }
-
-    async fn run_command(
+    async fn compact(
         &self,
-        command: &SlashCommand<'_>,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        match command.command {
-            "clear" => return Self::clear(conversation, emit),
-            "compact" => {}
-            _ => return not_applicable(),
-        }
-
         let span = chat_span(
             self.provider.as_ref(),
             &self.model_config,
@@ -158,6 +144,25 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             },
             response.into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for CompactionOperation {
+    fn name(&self) -> &'static str {
+        "compaction"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        let mut compact =
+            Command::new("compact", "Compact the conversation history", move |call| {
+                Box::pin(self.compact(call.session, call.conversation, call.emit))
+            });
+        compact.aliases.push("summarize".to_string());
+        let clear = Command::new("clear", "Clear the conversation history", |call| {
+            Box::pin(async move { Self::clear(call.conversation, call.emit) })
+        });
+        Ok(vec![compact, clear])
     }
 
     async fn run(
