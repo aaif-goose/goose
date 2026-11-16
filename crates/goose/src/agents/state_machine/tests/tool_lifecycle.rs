@@ -747,10 +747,10 @@ async fn platform_and_mcp_operations_answer_the_same_model_batch() -> Result<()>
     let services = pipeline.services().await;
     let lease = services
         .extension_manager
-        .current_lease(&pipeline.session_id)
+        .current_tools(&pipeline.session_id)
         .await?;
     assert!(lease
-        .runtime
+        .mcp
         .configs()
         .iter()
         .all(|registration| registration.key() != "todo"));

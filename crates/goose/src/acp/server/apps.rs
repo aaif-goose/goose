@@ -26,7 +26,7 @@ impl AcpConnection {
         let lease = self
             .services
             .extension_manager
-            .current_lease(&session_id)
+            .current_tools(&session_id)
             .await
             .internal_err()?;
         let mut apps = fetch_mcp_apps(&lease).await;

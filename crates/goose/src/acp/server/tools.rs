@@ -123,9 +123,10 @@ impl AcpConnection {
         let tool_result = self
             .services
             .extension_manager
-            .current_lease(session_id)
+            .current_tools(session_id)
             .await
             .internal_err()?
+            .mcp
             .call_for_app(
                 tool_call,
                 &req.extension_name,

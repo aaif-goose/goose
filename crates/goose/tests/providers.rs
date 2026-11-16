@@ -314,7 +314,7 @@ impl ProviderFixture {
         let lease = self
             .services
             .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?;
         let tools = lease.tools().await;
         let info = lease.instructions().await;
@@ -364,7 +364,7 @@ impl ProviderFixture {
         let result = self
             .services
             .extension_manager
-            .current_lease(&ctx.session_id)
+            .current_tools(&ctx.session_id)
             .await?
             .call(params, CallRequest::from(&ctx), CancellationToken::new())
             .await

@@ -16,9 +16,10 @@ use tokio_util::sync::CancellationToken;
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{
-    CallRequest, ClientContext, ExtensionLease, ExtensionManager, ExtensionSet,
+    CallRequest, ClientContext, ExtensionManager, ExtensionSet,
 };
 use goose::agents::mcp_client::GooseMcpClientCapabilities;
+use goose::agents::tool_dispatcher::ToolDispatcher;
 use goose::agents::GoosePlatform;
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
@@ -140,7 +141,7 @@ impl Fixture {
         &self,
         session: &goose::session::Session,
         configs: &[ExtensionConfig],
-    ) -> ExtensionLease {
+    ) -> ToolDispatcher {
         self.manager
             .resolve(
                 &ExtensionSet::new(
@@ -222,7 +223,7 @@ fn request(name: &str, arguments: Option<rmcp::model::JsonObject>) -> CallToolRe
 }
 
 async fn call(
-    lease: &ExtensionLease,
+    lease: &ToolDispatcher,
     name: &str,
     arguments: Option<rmcp::model::JsonObject>,
 ) -> Result<CallToolResult, ErrorData> {
@@ -247,11 +248,11 @@ fn text_of(result: &CallToolResult) -> String {
         .join("\n")
 }
 
-async fn call_text(lease: &ExtensionLease, name: &str) -> String {
+async fn call_text(lease: &ToolDispatcher, name: &str) -> String {
     text_of(&call(lease, name, None).await.unwrap())
 }
 
-async fn load_leased_skill(lease: &ExtensionLease) -> String {
+async fn load_leased_skill(lease: &ToolDispatcher) -> String {
     text_of(
         &call(
             lease,
@@ -263,7 +264,7 @@ async fn load_leased_skill(lease: &ExtensionLease) -> String {
     )
 }
 
-async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
+async fn inspect_context(lease: &ToolDispatcher, name: &str) -> ContextReport {
     serde_json::from_str(&call_text(lease, name).await).unwrap()
 }
 
@@ -431,6 +432,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         ErrorCode::RESOURCE_NOT_FOUND
     );
     let Err(scoped) = lease
+        .mcp
         .call_for_app(
             request("fixture_http__get_code", None),
             "fixture_stdio",
@@ -527,7 +529,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
     assert!(!tool_names(
         &fx.manager
-            .current_lease(&session.id)
+            .current_tools(&session.id)
             .await
             .unwrap()
             .tools()

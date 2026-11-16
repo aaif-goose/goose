@@ -1108,7 +1108,7 @@ impl AcpConnection {
         let extension_results = self
             .services
             .extension_manager
-            .current_lease(&session.id)
+            .current_tools(&session.id)
             .await
             .internal_err()?
             .start()

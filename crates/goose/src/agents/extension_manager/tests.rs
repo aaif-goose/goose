@@ -293,7 +293,7 @@ async fn dispatch_notification_methods(ctx: ToolCallContext) -> Vec<String> {
     let tool_call =
         CallToolRequestParams::new("notifications__tool".to_string()).with_arguments(object!({}));
     let dispatched = extension_manager
-        .scope_lease(&ctx.session_id)
+        .scope_tools(&ctx.session_id)
         .await
         .call(
             tool_call,
@@ -355,7 +355,7 @@ async fn dispatch_reuses_existing_notification_emitter() {
         CallToolRequestParams::new("notifications__tool".to_string()).with_arguments(object!({}));
 
     let dispatched = extension_manager
-        .scope_lease(&ctx.session_id)
+        .scope_tools(&ctx.session_id)
         .await
         .call(
             tool_call,
@@ -504,7 +504,7 @@ async fn dispatch_subagent_meta_tool(extension: &str, tool: &str) -> Option<Meta
         .await;
 
     let dispatched = extension_manager
-        .scope_lease("session")
+        .scope_tools("session")
         .await
         .call(
             CallToolRequestParams::new(tool.to_string()).with_arguments(object!({})),
@@ -558,11 +558,11 @@ async fn dispatch_keeps_subagent_session_id_from_platform_extensions() {
     }
     let temp = tempfile::tempdir().unwrap();
     let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().to_path_buf()));
-    let lease = manager.scope_lease("session").await.with_platform_client(
+    let lease = manager.scope_tools("session").await.with_platform_client(
         builtin_config("summon", vec![]),
         Arc::new(PlatformSubagentMeta),
     );
-    assert!(lease.runtime.configs().is_empty());
+    assert!(lease.mcp.configs().is_empty());
     let result = lease
         .call(
             CallToolRequestParams::new("delegate"),
@@ -617,7 +617,7 @@ async fn app_dispatch_rejects_colliding_flattened_name_from_sibling_owner() {
         )
         .await;
 
-    let lease = extension_manager.scope_lease("session").await;
+    let lease = extension_manager.scope_tools("session").await;
     assert_eq!(
         lease.tools().await.len(),
         1,
@@ -632,8 +632,9 @@ async fn app_dispatch_rejects_colliding_flattened_name_from_sibling_owner() {
 
     let ctx = ToolCallContext::new("session".to_string(), None, None);
     let result = extension_manager
-        .scope_lease(&ctx.session_id)
+        .scope_tools(&ctx.session_id)
         .await
+        .mcp
         .call_for_app(
             CallToolRequestParams::new("ext_a__ext_b__secret".to_string()),
             other,
@@ -891,7 +892,7 @@ async fn first_lease_starts_the_selection_in_the_session_record() {
     .await;
 
     let tools = manager
-        .current_lease(&session.id)
+        .current_tools(&session.id)
         .await
         .unwrap()
         .tools()
@@ -922,7 +923,7 @@ async fn concurrent_first_leases_start_an_extension_once() {
         tokio::spawn(async move {
             barrier.wait().await;
             manager
-                .current_lease(&session_id)
+                .current_tools(&session_id)
                 .await
                 .unwrap()
                 .start()
@@ -974,12 +975,12 @@ async fn a_lease_resolved_while_enabling_keeps_the_started_process() {
     while GATED_FIXTURE_STARTS.load(Ordering::SeqCst) == 0 {
         tokio::task::yield_now().await;
     }
-    let during = manager.current_lease(&session.id).await.unwrap();
+    let during = manager.current_tools(&session.id).await.unwrap();
     assert!(!during.is_enabled("gated_fixture"));
     GATED_FIXTURE_GATE.add_permits(2);
     enable.await.unwrap().unwrap();
 
-    let after = manager.current_lease(&session.id).await.unwrap();
+    let after = manager.current_tools(&session.id).await.unwrap();
     assert!(after.start().await.iter().all(|result| result.success));
     assert_eq!(GATED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
 }
@@ -996,10 +997,10 @@ async fn selection_changes_show_up_in_the_next_lease_only() {
         vec![fixture_config("fixture", serve_fixture)],
     )
     .await;
-    let before = manager.current_lease(&session.id).await.unwrap();
+    let before = manager.current_tools(&session.id).await.unwrap();
 
     assert!(manager.disable(&session.id, "fixture").await.unwrap());
-    let after = manager.current_lease(&session.id).await.unwrap();
+    let after = manager.current_tools(&session.id).await.unwrap();
 
     assert!(after.tools().await.is_empty());
     assert!(before
@@ -1037,7 +1038,7 @@ async fn a_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_the_lease
         .await
         .unwrap();
 
-    let lease = manager.current_lease(&session.id).await.unwrap();
+    let lease = manager.current_tools(&session.id).await.unwrap();
 
     assert_eq!(
         lease
@@ -1066,7 +1067,7 @@ async fn a_failing_extension_is_reported_and_left_out() {
     )
     .await;
 
-    let lease = manager.current_lease(&session.id).await.unwrap();
+    let lease = manager.current_tools(&session.id).await.unwrap();
     let results = lease.start().await;
 
     assert_eq!(
@@ -1104,7 +1105,7 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
     )
     .await;
     manager
-        .current_lease(&session.id)
+        .current_tools(&session.id)
         .await
         .unwrap()
         .start()
@@ -1119,7 +1120,7 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
         .apply()
         .await
         .unwrap();
-    let lease = manager.current_lease(&session.id).await.unwrap();
+    let lease = manager.current_tools(&session.id).await.unwrap();
 
     let after = manager.scopes.lock().await[&session.id].clone();
     assert!(!before.contains_key("developer"));
@@ -1211,7 +1212,7 @@ async fn a_held_lease_survives_session_release() {
         vec![fixture_config("release_fixture", serve_fixture)],
     )
     .await;
-    let held = manager.current_lease(&session.id).await.unwrap();
+    let held = manager.current_tools(&session.id).await.unwrap();
     assert!(held.start().await.iter().all(|result| result.success));
     let before = Arc::downgrade(&manager.scopes.lock().await[&session.id]["release_fixture"]);
 
@@ -1235,7 +1236,7 @@ async fn a_held_lease_survives_session_release() {
         .iter()
         .any(|content| content.as_text().is_some_and(|text| text.text == FAKE_CODE)));
 
-    let current = manager.current_lease(&session.id).await.unwrap();
+    let current = manager.current_tools(&session.id).await.unwrap();
     assert!(!Weak::ptr_eq(
         &before,
         &Arc::downgrade(&manager.scopes.lock().await[&session.id]["release_fixture"]),
@@ -1281,7 +1282,7 @@ async fn extension_manager_tools_follow_resource_support() {
         .unwrap();
 
     let tools = extension_manager
-        .current_lease(&session.id)
+        .current_tools(&session.id)
         .await
         .unwrap()
         .tools_for("extensionmanager")
@@ -1305,7 +1306,7 @@ async fn extension_manager_tools_follow_resource_support() {
         .await;
 
     let tools = extension_manager
-        .current_lease(&session.id)
+        .current_tools(&session.id)
         .await
         .unwrap()
         .tools_for("extensionmanager")
@@ -1319,7 +1320,7 @@ async fn extension_manager_tools_follow_resource_support() {
         .await
         .unwrap();
     let tools = extension_manager
-        .current_lease(&session.id)
+        .current_tools(&session.id)
         .await
         .unwrap()
         .tools_for("extensionmanager")
@@ -1362,7 +1363,7 @@ async fn extension_manager_resource_tools_use_the_calling_lease() {
             Some(resource_info.clone()),
         )
         .await;
-    let lease = extension_manager.current_lease(&session.id).await.unwrap();
+    let lease = extension_manager.current_tools(&session.id).await.unwrap();
     extension_manager
         .disable(&session.id, "resources")
         .await
@@ -1437,7 +1438,7 @@ async fn tool_list_changed_during_fetch_prevents_stale_cache() {
     let manager = extension_manager;
     let first_fetch = {
         let manager = manager.clone();
-        tokio::spawn(async move { manager.scope_lease("session").await.tools().await })
+        tokio::spawn(async move { manager.scope_tools("session").await.tools().await })
     };
 
     let _started = tools_client.first_fetch_started.acquire().await.unwrap();
@@ -1447,7 +1448,7 @@ async fn tool_list_changed_during_fetch_prevents_stale_cache() {
     let stale_result = first_fetch.await.unwrap();
     assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
 
-    let refreshed = manager.scope_lease("session").await.tools().await;
+    let refreshed = manager.scope_tools("session").await.tools().await;
     assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
     assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
 }
@@ -1603,9 +1604,27 @@ async fn platform_tools_never_enter_the_mcp_runtime() {
         ],
     )
     .await;
-    let held = manager.current_lease(&session.id).await.unwrap();
-    assert!(held.runtime.configs().is_empty());
-    assert!(held.runtime.tools().await.is_empty());
+    let held = manager.current_tools(&session.id).await.unwrap();
+    let developer = Arc::clone(
+        &manager.platform_clients.lock().unwrap()[&(session.id.clone(), "developer".to_string())],
+    );
+    let next = manager.current_tools(&session.id).await.unwrap();
+    assert_ne!(held.mcp.id(), next.mcp.id());
+    assert!(Arc::ptr_eq(
+        &developer,
+        &manager.platform_clients.lock().unwrap()[&(session.id.clone(), "developer".to_string())]
+    ));
+    assert!(held.mcp.configs().is_empty());
+    assert!(held.mcp.tools().await.is_empty());
+    assert!(held
+        .mcp
+        .call(
+            CallToolRequestParams::new("shell"),
+            CallRequest::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .is_err());
     let tools = held.platform_tools().await;
     assert!(tools.iter().any(|tool| tool.name == "shell"));
     assert!(tools
@@ -1618,7 +1637,7 @@ async fn platform_tools_never_enter_the_mcp_runtime() {
         .any(|part| part.contains("Current tasks")));
 
     manager.disable(&session.id, "todo").await.unwrap();
-    let current = manager.current_lease(&session.id).await.unwrap();
+    let current = manager.current_tools(&session.id).await.unwrap();
     assert!(!current.is_enabled("todo"));
     assert!(held.is_enabled("todo"));
     assert!(held
@@ -1628,10 +1647,23 @@ async fn platform_tools_never_enter_the_mcp_runtime() {
         .any(|tool| get_tool_owner(tool).as_deref() == Some("todo")));
     manager.release(&session.id).await;
     assert!(manager
-        .scope_lease(&session.id)
+        .scope_tools(&session.id)
         .await
         .platform_tools()
         .await
         .is_empty());
     assert!(!held.platform_tools().await.is_empty());
+    let result = held
+        .call(
+            CallToolRequestParams::new("todo__todo_write")
+                .with_arguments(object!({"content": "held instance still works"})),
+            CallRequest::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+        .result
+        .await
+        .unwrap();
+    assert_ne!(result.is_error, Some(true));
 }

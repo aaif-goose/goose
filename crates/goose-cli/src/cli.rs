@@ -1480,7 +1480,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
 
     let mut results = Vec::new();
     for step in script.steps {
-        let lease = services.extension_manager.current_lease(session_id).await?;
+        let lease = services.extension_manager.current_tools(session_id).await?;
         let result = match step {
             McpProbeStep::ListTools => serde_json::json!({
                 "action": "listTools",
@@ -1491,7 +1491,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
             }),
             McpProbeStep::ListPrompts => serde_json::json!({
                 "action": "listPrompts",
-                "result": lease.list_prompts_from_extension(
+                "result": lease.mcp.list_prompts_from_extension(
                     "probe",
                     CancellationToken::new(),
                 ).await?,

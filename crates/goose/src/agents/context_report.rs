@@ -124,7 +124,7 @@ impl StateMachineServices {
                 false
             }
         };
-        let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
+        let tool_dispatcher = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
 
         let mut next_messages = session
             .conversation
@@ -146,7 +146,7 @@ impl StateMachineServices {
                 },
                 CancellationToken::new(),
                 self.runtime.steer_queue(session_id),
-                extension_lease,
+                tool_dispatcher,
             )
             .await;
         let input = machine

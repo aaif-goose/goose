@@ -12,7 +12,7 @@ use tracing_futures::Instrument;
 use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::{ClientContext, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
@@ -22,6 +22,7 @@ use crate::agents::state_machine::{
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::tool_dispatcher::ToolDispatcher;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
@@ -595,7 +596,7 @@ impl StateMachineServices {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
-        let lease = self.extension_manager.current_lease(session_id).await?;
+        let lease = self.extension_manager.current_tools(session_id).await?;
         Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
@@ -700,11 +701,11 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let extension_lease = self
+        let tool_dispatcher = self
             .runtime
             .confirmations
             .session(&session_config.id)
-            .extension_lease();
+            .tool_dispatcher();
         self.create_state_machine_with_lease(
             provider,
             model_config,
@@ -712,7 +713,7 @@ impl StateMachineServices {
             session_config,
             cancel,
             steer_queue,
-            extension_lease,
+            tool_dispatcher,
         )
         .await
     }
@@ -726,7 +727,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        tool_dispatcher: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
@@ -753,7 +754,7 @@ impl StateMachineServices {
             always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
-            extension_lease,
+            tool_dispatcher,
             tool_inspection_manager: &self.tool_inspection_manager,
             hook_manager: self.hook_manager.clone(),
             steer_queue,
@@ -1468,7 +1469,7 @@ mod tests {
             services.touch_session(session_id).await;
             services
                 .extension_manager
-                .current_lease(session_id)
+                .current_tools(session_id)
                 .await
                 .unwrap()
                 .start()

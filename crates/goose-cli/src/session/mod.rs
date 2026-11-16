@@ -501,8 +501,9 @@ impl CliSession {
         let prompts = self
             .services
             .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
 
@@ -529,8 +530,9 @@ impl CliSession {
         let prompts = self
             .services
             .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
 
@@ -554,9 +556,10 @@ impl CliSession {
         let lease = self
             .services
             .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?;
         let extension = lease
+            .mcp
             .list_prompts(CancellationToken::default())
             .await
             .into_iter()
@@ -564,6 +567,7 @@ impl CliSession {
             .map(|(extension, _)| extension)
             .ok_or_else(|| anyhow::anyhow!("Prompt '{}' not found", name))?;
         Ok(lease
+            .mcp
             .get_prompt(&extension, name, arguments, CancellationToken::default())
             .await?
             .messages)
@@ -1193,7 +1197,7 @@ impl CliSession {
         for result in self
             .services
             .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
             .start()
             .await
@@ -1835,8 +1839,9 @@ impl CliSession {
     ) -> Result<()> {
         let prompts = services
             .extension_manager
-            .current_lease(session_id)
+            .current_tools(session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
         let all_providers = goose::providers::providers().await;

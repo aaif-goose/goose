@@ -35,7 +35,7 @@ pub struct ToolCallContext {
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
     container: Option<Container>,
-    extension_lease: Option<Arc<ExtensionLease>>,
+    tool_dispatcher: Option<Arc<ToolDispatcher>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
@@ -50,7 +50,7 @@ impl ToolCallContext {
             working_dir,
             tool_call_request_id,
             container: None,
-            extension_lease: None,
+            tool_dispatcher: None,
             notification_emitter: None,
         }
     }
@@ -64,13 +64,13 @@ impl ToolCallContext {
         self.container.as_ref()
     }
 
-    pub(crate) fn with_extension_lease(mut self, extension_lease: Arc<ExtensionLease>) -> Self {
-        self.extension_lease = Some(extension_lease);
+    pub(crate) fn with_tool_dispatcher(mut self, tool_dispatcher: Arc<ToolDispatcher>) -> Self {
+        self.tool_dispatcher = Some(tool_dispatcher);
         self
     }
 
-    pub(crate) fn extension_lease(&self) -> Option<&Arc<ExtensionLease>> {
-        self.extension_lease.as_ref()
+    pub(crate) fn tool_dispatcher(&self) -> Option<&Arc<ToolDispatcher>> {
+        self.tool_dispatcher.as_ref()
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -108,7 +108,7 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
     }
 }
 
-use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::tool_dispatcher::ToolDispatcher;
 use crate::agents::StateMachineServices;
 
 pub(super) enum ToolStreamItem<T> {

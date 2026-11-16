@@ -1,11 +1,12 @@
 use super::javascript::{self, ToolCallback, ToolFuture};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
-    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
+    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest,
 };
 use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::is_tool_visible_to_model;
+use crate::agents::tool_dispatcher::ToolDispatcher;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -104,9 +105,8 @@ impl CodeExecutionClient {
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, String> {
         let input: ExecuteWithToolGraph = parse_arguments(arguments)?;
-        let catalog =
-            callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
-        let manager = dispatching_lease(ctx).manager();
+        let catalog = callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
+        let manager = tool_dispatcher(ctx).manager();
         let dispatch = cancellation_token.child_token();
         let callback: ToolCallback = Arc::new({
             let ctx = ctx.clone();
@@ -159,9 +159,9 @@ fn execution_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
-    ctx.extension_lease()
-        .expect("platform tool calls are dispatched through a lease")
+fn tool_dispatcher(ctx: &ToolCallContext) -> &ToolDispatcher {
+    ctx.tool_dispatcher()
+        .expect("platform tool calls carry the advertised tool dispatcher")
 }
 
 fn dispatch_tool(
@@ -180,7 +180,7 @@ fn dispatch_tool(
         let tool_call = CallToolRequestParams::new(full_name).with_arguments(arguments);
         let handle = rt.spawn(async move {
             let execution = async {
-                let dispatch_result = dispatching_lease(&ctx)
+                let dispatch_result = tool_dispatcher(&ctx)
                     .call(
                         tool_call,
                         CallRequest::from(&ctx),
@@ -289,7 +289,7 @@ impl PlatformExtension for CodeExecutionClient {
         let result = match name {
             "list_functions" => {
                 let catalog =
-                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                    callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
                 let functions: Vec<_> = catalog.iter().map(|tool| json!({
                     "name": tool.name,
                     "description": tool.description.as_deref().unwrap_or("").lines().next().unwrap_or("").chars().take(240).collect::<String>()
@@ -298,7 +298,7 @@ impl PlatformExtension for CodeExecutionClient {
             }
             "get_function_details" => {
                 let catalog =
-                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                    callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
                 parse_arguments::<GetFunctionDetailsInput>(arguments)
                     .and_then(|input| function_details(&catalog, &input.functions))
                     .map(|details| vec![ContentBlock::text(details.to_string())])
@@ -457,8 +457,8 @@ mod tests {
                 None,
             )
             .await;
-        let lease = Arc::new(manager.scope_lease(&session.id).await);
-        let ctx = ToolCallContext::new(session.id, None, None).with_extension_lease(lease);
+        let lease = Arc::new(manager.scope_tools(&session.id).await);
+        let ctx = ToolCallContext::new(session.id, None, None).with_tool_dispatcher(lease);
         let dispatch = CancellationToken::new();
         let mut callback = dispatch_tool(
             ctx,
@@ -576,7 +576,7 @@ mod tests {
             )
             .await;
 
-        let lease = manager.scope_lease("test-session").await;
+        let lease = manager.scope_tools("test-session").await;
         let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
@@ -618,7 +618,7 @@ mod tests {
             .await
             .unwrap();
 
-        let lease = manager.current_lease(&session.id).await.unwrap();
+        let lease = manager.current_tools(&session.id).await.unwrap();
         let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
@@ -657,7 +657,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let lease = Arc::new(manager.current_lease(&session.id).await.unwrap());
+        let lease = Arc::new(manager.current_tools(&session.id).await.unwrap());
         manager
             .disable(&session.id, "extensionmanager")
             .await
@@ -675,7 +675,7 @@ mod tests {
             Some(session.working_dir.clone()),
             Some("manage".into()),
         )
-        .with_extension_lease(lease);
+        .with_tool_dispatcher(lease);
         let context = manager.get_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
@@ -740,9 +740,9 @@ mod tests {
                 None,
             )
             .await;
-        let lease = Arc::new(manager.scope_lease(&session.id).await);
+        let lease = Arc::new(manager.scope_tools(&session.id).await);
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
-            .with_extension_lease(lease.clone());
+            .with_tool_dispatcher(lease.clone());
         let context = manager.get_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
@@ -788,7 +788,7 @@ mod tests {
         assert!(!output.contains("secret"));
         assert!(callable_catalog(
             manager
-                .current_lease(&session.id)
+                .current_tools(&session.id)
                 .await
                 .unwrap()
                 .tools()

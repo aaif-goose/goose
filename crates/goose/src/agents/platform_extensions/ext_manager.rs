@@ -103,7 +103,7 @@ impl ExtensionManagerClient {
 
     fn handle_search_available_extensions(ctx: &ToolCallContext) -> Vec<ContentBlock> {
         let enabled = ctx
-            .extension_lease()
+            .tool_dispatcher()
             .expect("platform calls carry the advertised tool snapshot")
             .enabled_names();
         vec![ContentBlock::text(search_available_extensions(&enabled))]
@@ -207,8 +207,8 @@ impl ExtensionManagerClient {
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
         let result = ctx
-            .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
+            .tool_dispatcher()
+            .expect("platform tool calls carry the advertised tool dispatcher")
             .list_resources(params, CancellationToken::default())
             .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {
@@ -223,8 +223,8 @@ impl ExtensionManagerClient {
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
         let result = ctx
-            .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
+            .tool_dispatcher()
+            .expect("platform tool calls carry the advertised tool dispatcher")
             .read_resource_tool(params, CancellationToken::default())
             .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {

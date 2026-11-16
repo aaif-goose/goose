@@ -1,4 +1,5 @@
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
+use crate::agents::tool_dispatcher::ToolDispatcher;
 use crate::conversation::message::{Message, MessageMetadata};
 use crate::conversation::{CURRENT_TIME_TAG, TURN_CONTEXT_TAG, WORKING_DIRECTORY_TAG};
 use std::path::{Path, PathBuf};
@@ -36,7 +37,7 @@ pub fn system_prompt_block() -> Option<String> {
 pub async fn turn_context_message(
     session_id: &str,
     extension_manager: &ExtensionManager,
-    lease: &ExtensionLease,
+    lease: &ToolDispatcher,
     turns_taken: u32,
     max_turns: u32,
     turn_start: chrono::DateTime<chrono::Local>,
@@ -243,7 +244,7 @@ mod tests {
     #[tokio::test]
     async fn turn_context_message_is_an_agent_only_user_message() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        let lease = em.current_lease(&session_id).await.unwrap();
+        let lease = em.current_tools(&session_id).await.unwrap();
 
         let message = turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now())
             .await
@@ -261,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn turn_context_bytes_are_stable_for_a_turn() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        let lease = em.current_lease(&session_id).await.unwrap();
+        let lease = em.current_tools(&session_id).await.unwrap();
         let turn_start = chrono::Local::now();
 
         let first = turn_context_message(&session_id, &em, &lease, 0, 100, turn_start)
@@ -282,12 +283,12 @@ mod tests {
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
         let lease = em
-            .current_lease(&session_id)
+            .current_tools(&session_id)
             .await
             .unwrap()
             .with_platform_client(moim_extension(), Arc::new(MoimClient("old context")));
         let _replacement = em
-            .current_lease(&session_id)
+            .current_tools(&session_id)
             .await
             .unwrap()
             .with_platform_client(moim_extension(), Arc::new(MoimClient("new context")));
@@ -302,11 +303,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_context_uses_the_leased_working_dir() {
+    async fn turn_context_uses_the_advertised_working_dir() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        let leased_working_dir = PathBuf::from("/leased/dir");
+        let advertised_working_dir = PathBuf::from("/leased/dir");
         let lease = em
-            .resolve(&ExtensionSet::new(&session_id, Some(leased_working_dir), vec![]).unwrap())
+            .resolve(&ExtensionSet::new(&session_id, Some(advertised_working_dir), vec![]).unwrap())
             .await;
 
         let message = turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now())

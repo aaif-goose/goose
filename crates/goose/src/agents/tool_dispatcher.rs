@@ -1,28 +1,29 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
 use rmcp::model::{CallToolRequestParams, ErrorCode, ErrorData, MetaObject, Tool};
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
-use super::{get_tool_owner, recover_mangled_tool_name};
-use super::{CallRequest, ExtensionLoadResult, ExtensionManager};
 use crate::agents::extension::{ExtensionConfig, ExtensionInfo};
+use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
+use crate::agents::extension_manager::{CallRequest, ExtensionLoadResult, ExtensionManager};
 use crate::agents::platform_extensions::{PlatformExtension, PLATFORM_EXTENSIONS};
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 
-pub(super) type PlatformClients =
+pub(crate) type PlatformClients =
     std::collections::HashMap<(String, String), Arc<dyn PlatformExtension>>;
 
-pub(super) fn is_platform(config: &ExtensionConfig) -> bool {
+pub(crate) fn is_platform(config: &ExtensionConfig) -> bool {
     matches!(
         config,
         ExtensionConfig::Builtin { .. } | ExtensionConfig::Platform { .. }
     ) && PLATFORM_EXTENSIONS.contains_key(name_to_key(&config.name()).as_str())
 }
 
+#[derive(Clone)]
 struct PlatformEntry {
     key: String,
     config: ExtensionConfig,
@@ -37,19 +38,37 @@ struct PlatformTool {
     entry: usize,
 }
 
-pub(super) struct PlatformSnapshot {
-    entries: Vec<PlatformEntry>,
-    tools: OnceCell<Vec<PlatformTool>>,
+/// Application routing for advertised tools; connection leases belong only to MCP.
+#[derive(Clone)]
+pub struct ToolDispatcher {
+    pub mcp: crate::agents::extension_manager::McpLease,
+    platform: Vec<PlatformEntry>,
+    platform_tools: Arc<OnceCell<Vec<PlatformTool>>>,
     #[cfg(feature = "code-mode")]
     manager: Arc<ExtensionManager>,
 }
 
-impl PlatformSnapshot {
-    pub(super) fn new(
+impl ToolDispatcher {
+    pub(crate) async fn for_session(
+        current: &Mutex<Option<Arc<Self>>>,
         manager: &Arc<ExtensionManager>,
-        scope: &str,
+        session_id: &str,
+    ) -> anyhow::Result<Arc<Self>> {
+        let tools = current.lock().expect("tool dispatcher unavailable").clone();
+        if let Some(tools) = tools.filter(|tools| tools.scope_id() == session_id) {
+            return Ok(tools);
+        }
+        let tools = Arc::new(manager.current_tools(session_id).await?);
+        *current.lock().expect("tool dispatcher unavailable") = Some(Arc::clone(&tools));
+        Ok(tools)
+    }
+
+    pub(crate) fn new(
+        manager: &Arc<ExtensionManager>,
+        mcp: crate::agents::extension_manager::McpLease,
         configs: &[ExtensionConfig],
-    ) -> Arc<Self> {
+    ) -> Self {
+        let scope = mcp.scope_id();
         let manager = Arc::clone(manager);
         let context = manager.get_context().clone();
         let selected: std::collections::HashSet<_> = configs
@@ -57,11 +76,11 @@ impl PlatformSnapshot {
             .filter(|config| is_platform(config))
             .map(ExtensionConfig::key)
             .collect();
-        manager
+        let mut clients = manager
             .platform_clients
             .lock()
-            .expect("platform clients unavailable")
-            .retain(|(session, key), _| session != scope || selected.contains(key));
+            .expect("platform clients unavailable");
+        clients.retain(|(session, key), _| session != scope || selected.contains(key));
         let entries = configs
             .iter()
             .filter(|config| is_platform(config))
@@ -69,10 +88,6 @@ impl PlatformSnapshot {
                 let key = name_to_key(&config.name());
                 let definition = PLATFORM_EXTENSIONS.get(key.as_str())?;
                 let cache_key = (scope.to_string(), key.clone());
-                let mut clients = manager
-                    .platform_clients
-                    .lock()
-                    .expect("platform clients unavailable");
                 let client = match clients.get(&cache_key) {
                     Some(client) => Arc::clone(client),
                     None => {
@@ -90,47 +105,39 @@ impl PlatformSnapshot {
                 })
             })
             .collect();
-        Arc::new(Self {
-            entries,
-            tools: OnceCell::new(),
+        drop(clients);
+        Self {
+            mcp,
+            platform: entries,
+            platform_tools: Arc::default(),
             #[cfg(feature = "code-mode")]
             manager,
-        })
+        }
     }
-}
 
-/// Goose's advertised tool snapshot. MCP connections remain in the runtime lease;
-/// platform tools are owned by Goose and never registered with that runtime.
-#[derive(Clone)]
-pub struct ExtensionLease {
-    pub(crate) runtime: super::lease::McpLease,
-    pub(super) platform: Arc<PlatformSnapshot>,
-}
-
-impl std::ops::Deref for ExtensionLease {
-    type Target = super::lease::McpLease;
-    fn deref(&self) -> &Self::Target {
-        &self.runtime
+    pub fn scope_id(&self) -> &str {
+        self.mcp.scope_id()
     }
-}
 
-impl ExtensionLease {
+    pub fn working_dir(&self) -> Option<&Path> {
+        self.mcp.working_dir()
+    }
+
     #[cfg(feature = "code-mode")]
     pub(crate) fn manager(&self) -> Arc<ExtensionManager> {
-        Arc::clone(&self.platform.manager)
+        Arc::clone(&self.manager)
     }
 
     async fn platform_catalog(&self) -> &Vec<PlatformTool> {
-        self.platform
-            .tools
+        self.platform_tools
             .get_or_init(|| async {
                 let has_resources = self
-                    .runtime
+                    .mcp
                     .instructions()
                     .await
                     .iter()
                     .any(|info| info.has_resources)
-                    || self.platform.entries.iter().any(|entry| {
+                    || self.platform.iter().any(|entry| {
                         entry
                             .client
                             .get_info()
@@ -138,7 +145,7 @@ impl ExtensionLease {
                     });
                 let mut catalog = Vec::new();
                 let mut names = std::collections::HashSet::new();
-                for (index, entry) in self.platform.entries.iter().enumerate() {
+                for (index, entry) in self.platform.iter().enumerate() {
                     let mut cursor = None;
                     loop {
                         let Ok(page) = entry
@@ -212,17 +219,13 @@ impl ExtensionLease {
         let definition = PLATFORM_EXTENSIONS
             .get(key.as_str())
             .expect("registered platform extension");
-        self.platform = Arc::new(PlatformSnapshot {
-            entries: vec![PlatformEntry {
-                key,
-                config,
-                client,
-                unprefixed: definition.unprefixed_tools,
-            }],
-            tools: OnceCell::new(),
-            #[cfg(feature = "code-mode")]
-            manager: Arc::clone(&self.platform.manager),
-        });
+        self.platform = vec![PlatformEntry {
+            key,
+            config,
+            client,
+            unprefixed: definition.unprefixed_tools,
+        }];
+        self.platform_tools = Arc::default();
         self
     }
 
@@ -239,7 +242,7 @@ impl ExtensionLease {
         let mut names: std::collections::HashSet<_> =
             tools.iter().map(|tool| tool.name.to_string()).collect();
         tools.extend(
-            self.runtime
+            self.mcp
                 .tools()
                 .await
                 .into_iter()
@@ -268,30 +271,27 @@ impl ExtensionLease {
 
     pub fn configs(&self) -> Vec<ExtensionConfig> {
         self.platform
-            .entries
             .iter()
             .map(|entry| entry.config.clone())
-            .chain(self.runtime.configs())
+            .chain(self.mcp.configs())
             .collect()
     }
 
     pub async fn untrusted_tools(&self) -> Vec<Tool> {
-        self.runtime.tools().await
+        self.mcp.tools().await
     }
 
     pub fn is_enabled(&self, extension: &str) -> bool {
         let key = name_to_key(extension);
-        self.platform.entries.iter().any(|entry| entry.key == key)
-            || self.runtime.is_enabled(extension)
+        self.platform.iter().any(|entry| entry.key == key) || self.mcp.is_enabled(extension)
     }
 
     pub fn enabled_names(&self) -> Vec<String> {
         self.platform
-            .entries
             .iter()
             .map(|entry| entry.key.clone())
             .chain(
-                self.runtime
+                self.mcp
                     .configs()
                     .iter()
                     .map(|registration| registration.key()),
@@ -300,27 +300,28 @@ impl ExtensionLease {
     }
 
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
-        let mut results = self.runtime.start().await;
-        results.extend(
-            self.platform
-                .entries
-                .iter()
-                .map(|entry| ExtensionLoadResult {
-                    name: entry.config.name(),
-                    success: true,
-                    error: None,
-                }),
-        );
+        let mut results = self.mcp.start().await;
+        results.extend(self.platform.iter().map(|entry| ExtensionLoadResult {
+            name: entry.config.name(),
+            success: true,
+            error: None,
+        }));
         results
     }
 
     pub async fn instructions(&self) -> Vec<ExtensionInfo> {
-        let mut infos = self.runtime.instructions().await;
+        let mut infos = self.mcp.instructions().await;
+        infos.extend(self.platform_instructions().await);
+        infos
+    }
+
+    pub(crate) async fn platform_instructions(&self) -> Vec<ExtensionInfo> {
+        let mut infos = Vec::new();
         let directory = self
             .working_dir()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        for entry in &self.platform.entries {
+        for entry in &self.platform {
             let instructions = entry
                 .client
                 .get_instructions(self.scope_id(), &directory)
@@ -340,7 +341,7 @@ impl ExtensionLease {
 
     pub async fn moim(&self) -> Vec<String> {
         let mut parts = Vec::new();
-        for entry in &self.platform.entries {
+        for entry in &self.platform {
             let tools = self.tools_excluding(&entry.key).await;
             if let Some(part) = entry.client.get_moim(self.scope_id(), &tools).await {
                 parts.push(part);
@@ -369,12 +370,9 @@ impl ExtensionLease {
             item.tool.name == tool_call.name || name.as_deref() == Some(item.tool.name.as_ref())
         });
         let Some(item) = item else {
-            return self
-                .runtime
-                .call(tool_call, request, cancellation_token)
-                .await;
+            return self.mcp.call(tool_call, request, cancellation_token).await;
         };
-        let client = Arc::clone(&self.platform.entries[item.entry].client);
+        let client = Arc::clone(&self.platform[item.entry].client);
         let (sender, receiver) = tokio::sync::mpsc::channel(32);
         let emitter = request
             .notification_emitter
@@ -385,7 +383,7 @@ impl ExtensionLease {
             request.tool_call_id,
         )
         .with_container(request.container)
-        .with_extension_lease(Arc::new(self.clone()))
+        .with_tool_dispatcher(Arc::new(self.clone()))
         .with_notification_emitter(emitter);
         let server_name = item.server_name.clone();
         Ok(ToolCallResult {
@@ -422,7 +420,6 @@ impl ExtensionLease {
     ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
         if let Some(entry) = self
             .platform
-            .entries
             .iter()
             .find(|entry| entry.key == name_to_key(extension))
         {
@@ -434,7 +431,7 @@ impl ExtensionLease {
                     ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
                 });
         }
-        self.runtime
+        self.mcp
             .list_tools_from_extension(extension, cancellation)
             .await
     }
@@ -447,7 +444,6 @@ impl ExtensionLease {
     ) -> Result<rmcp::model::ReadResourceResult, ErrorData> {
         if let Some(entry) = self
             .platform
-            .entries
             .iter()
             .find(|entry| entry.key == name_to_key(extension))
         {
@@ -459,9 +455,7 @@ impl ExtensionLease {
                     ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
                 });
         }
-        self.runtime
-            .read_resource(uri, extension, cancellation)
-            .await
+        self.mcp.read_resource(uri, extension, cancellation).await
     }
 
     pub async fn list_resources_result_from_extension(
@@ -471,7 +465,6 @@ impl ExtensionLease {
     ) -> Result<rmcp::model::ListResourcesResult, ErrorData> {
         if let Some(entry) = self
             .platform
-            .entries
             .iter()
             .find(|entry| entry.key == name_to_key(extension))
         {
@@ -483,7 +476,7 @@ impl ExtensionLease {
                     ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
                 });
         }
-        self.runtime
+        self.mcp
             .list_resources_result_from_extension(extension, cancellation)
             .await
     }
@@ -562,8 +555,8 @@ impl ExtensionLease {
     }
 
     pub async fn ui_resources(&self) -> Vec<(String, rmcp::model::Resource)> {
-        let mut resources = self.runtime.ui_resources().await;
-        for entry in &self.platform.entries {
+        let mut resources = self.mcp.ui_resources().await;
+        for entry in &self.platform {
             if let Ok(result) = entry
                 .client
                 .list_resources(self.scope_id(), None, CancellationToken::new())

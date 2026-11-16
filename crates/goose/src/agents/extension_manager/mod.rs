@@ -38,9 +38,9 @@ mod lease;
 mod stdio;
 mod streamable_http;
 
-pub use lease::{CallRequest, ExtensionSet, LeaseId};
-mod platform;
-pub use platform::ExtensionLease;
+use super::tool_dispatcher as platform;
+use super::tool_dispatcher::ToolDispatcher;
+pub use lease::{CallRequest, ExtensionSet, LeaseId, McpLease};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "lowercase")]
@@ -444,8 +444,7 @@ pub struct ExtensionManager {
     /// lease would start a second process.
     enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
     context: PlatformExtensionContext,
-    platform_clients: std::sync::Mutex<platform::PlatformClients>,
-    platform_scopes: std::sync::Mutex<HashMap<String, Vec<ExtensionConfig>>>,
+    pub(crate) platform_clients: std::sync::Mutex<platform::PlatformClients>,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
 }
@@ -651,7 +650,6 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             platform_clients: Default::default(),
-            platform_scopes: Default::default(),
             scopes: Mutex::new(HashMap::new()),
             enabling: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
@@ -732,12 +730,7 @@ impl ExtensionManager {
         }
     }
 
-    pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
-        self.platform_scopes
-            .lock()
-            .expect("platform scopes unavailable")
-            .insert(set.scope_id().to_string(), set.extensions().to_vec());
-        let platform = platform::PlatformSnapshot::new(self, set.scope_id(), set.extensions());
+    pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ToolDispatcher {
         let client = self.client(set.scope_id());
         let slots = {
             let mut scopes = self.scopes.lock().await;
@@ -781,36 +774,37 @@ impl ExtensionManager {
             scopes.insert(set.scope_id().to_string(), selected);
             slots
         };
-        ExtensionLease {
-            runtime: self.lease(set.scope_id(), set.working_dir.clone(), slots, &client),
-            platform,
-        }
+        ToolDispatcher::new(
+            self,
+            self.lease(set.scope_id(), set.working_dir.clone(), slots, &client),
+            set.extensions(),
+        )
     }
 
-    pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
+    pub async fn current_tools(self: &Arc<Self>, session_id: &str) -> Result<ToolDispatcher> {
         let session = self
             .context
             .session_manager
             .get_session(session_id, false)
             .await?;
-        self.session_lease(&session).await
+        self.session_tools(&session).await
     }
 
     pub async fn current_session_snapshot(
         self: &Arc<Self>,
         session: &Session,
-    ) -> Result<(Session, ExtensionLease)> {
+    ) -> Result<(Session, ToolDispatcher)> {
         let session = self
             .context
             .session_manager
             .get_session(&session.id, session.conversation.is_some())
             .await?;
-        let lease = self.session_lease(&session).await?;
+        let lease = self.session_tools(&session).await?;
         Ok((session, lease))
     }
 
     #[cfg(test)]
-    pub(crate) async fn scope_lease(self: &Arc<Self>, scope_id: &str) -> ExtensionLease {
+    pub(crate) async fn scope_tools(self: &Arc<Self>, scope_id: &str) -> ToolDispatcher {
         let client = self.client(scope_id);
         let slots = self
             .scopes
@@ -822,19 +816,25 @@ impl ExtensionManager {
             .cloned()
             .collect();
         let configs = self
-            .platform_scopes
-            .lock()
-            .expect("platform scopes unavailable")
-            .get(scope_id)
-            .cloned()
+            .context
+            .session_manager
+            .get_session(scope_id, false)
+            .await
+            .map(|session| selection(&session))
             .unwrap_or_default();
-        ExtensionLease {
-            runtime: self.lease(scope_id, None, slots, &client),
-            platform: platform::PlatformSnapshot::new(self, scope_id, &configs),
-        }
+        let configs: Vec<_> = configs
+            .into_iter()
+            .filter(|config| {
+                self.platform_clients
+                    .lock()
+                    .expect("platform clients unavailable")
+                    .contains_key(&(scope_id.to_string(), config.key()))
+            })
+            .collect();
+        ToolDispatcher::new(self, self.lease(scope_id, None, slots, &client), &configs)
     }
 
-    async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
+    async fn session_tools(self: &Arc<Self>, session: &Session) -> Result<ToolDispatcher> {
         // A pinned provider may not be in the registry at all, so it answers
         // for itself when there is one.
         let provider_runs_tool_loop = match self.context.providers.pinned(session).await {
@@ -1003,15 +1003,7 @@ impl ExtensionManager {
     ) -> ExtensionResult<()> {
         let session = self.session(session_id).await?;
         if platform::is_platform(&config) {
-            self.select(session_id, config.clone()).await?;
-            let mut scopes = self
-                .platform_scopes
-                .lock()
-                .expect("platform scopes unavailable");
-            let configs = scopes.entry(session_id.to_string()).or_default();
-            configs.retain(|selected| selected.key() != config.key());
-            configs.push(config);
-            return Ok(());
+            return self.select(session_id, config).await;
         }
         let client = self.client(session_id);
         let pending_key = (session_id.to_string(), config.key());
@@ -1132,10 +1124,6 @@ impl ExtensionManager {
 
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
-        self.platform_scopes
-            .lock()
-            .expect("platform scopes unavailable")
-            .remove(session_id);
         self.platform_clients
             .lock()
             .expect("platform clients unavailable")
