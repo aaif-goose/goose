@@ -73,9 +73,9 @@ fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Mess
         .collect()
 }
 
-/// The summary message that replaces compacted history. When the model didn't
-/// follow the structured output format (schema-ignoring models, user-customized
-/// prompts), the raw response text is kept unchanged as the summary.
+/// When the model didn't follow the structured output format (schema-ignoring
+/// models, user-customized prompts), the raw response text is kept unchanged
+/// as the summary.
 pub fn summary_message(response_text: &str, summary_template: &str) -> Message {
     let text = match StructuredSummary::parse(response_text)
         .map(|summary| summary.render_with(summary_template))
@@ -122,9 +122,8 @@ async fn ensure_usage_tokens(
     }
 }
 
-/// Summarizes `messages` into a single summary message (see [`summary_message`])
-/// with a standalone request, retrying with progressively more tool responses
-/// removed when the summarizer itself overflows its context window.
+/// Retries with progressively more tool responses removed when the summarizer
+/// itself overflows its context window.
 pub async fn summarize(
     model: &dyn CompactionModel,
     estimator: Option<&dyn TokenEstimator>,

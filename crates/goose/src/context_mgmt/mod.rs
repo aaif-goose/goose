@@ -9,7 +9,7 @@ use crate::providers::base::Provider;
 use crate::providers::base::{stream_from_single_message, MessageStream};
 use crate::{config::Config, token_counter::create_token_counter};
 use anyhow::Result;
-use goose_context_management::compacted::{
+use goose_agent::compaction::{
     CONVERSATION_CONTINUATION_TEXT, MANUAL_COMPACT_CONTINUATION_TEXT, TOOL_LOOP_CONTINUATION_TEXT,
 };
 use goose_providers::conversation::token_usage::ProviderUsage;
@@ -143,8 +143,6 @@ pub async fn check_if_compaction_needed(
     Ok(needs_compaction)
 }
 
-/// Summarizes with the session's provider using one-shot settings; the
-/// session id is inherited from the surrounding turn.
 pub(crate) struct GooseCompactionModel {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,

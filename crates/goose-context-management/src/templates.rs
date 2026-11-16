@@ -18,11 +18,8 @@ pub fn builtin_template(name: &str) -> Option<String> {
 /// user-customized templates for the built-in ones.
 #[derive(Debug, Clone)]
 pub struct Templates {
-    /// System prompt of a standalone summarization request.
     pub compaction: String,
-    /// Renders the structured summary into the post-compaction context.
     pub summary: String,
-    /// User message that asks the model to summarize the conversation it is in.
     pub request: String,
 }
 

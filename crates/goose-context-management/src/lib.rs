@@ -1,13 +1,11 @@
 //! Conversation compaction: summarizing a message history down to a single
 //! message so a conversation can continue past a model's context window.
 //!
-//! Three layers, smallest first:
+//! Two layers, smallest first:
 //!
 //! * [`summarize`] - given a model and messages, produce one summary message
 //!   with a standalone request. [`summary_message`] builds the same message
 //!   from a reply the agent produced in-band to [`Templates::request`].
-//! * [`compacted_conversation`] - lays out the conversation that continues
-//!   from a summary.
 //! * [`compact`] - the trait-based API ([`CompactionInput`] /
 //!   [`CompactionOutput`]) letting a caller read from and write back to its own
 //!   conversation representation. Rust only.
@@ -15,7 +13,6 @@
 //! Cross-language (Python/Kotlin) access is exposed by `goose-sdk`, which
 //! wraps this crate in its uniffi bindings.
 
-pub mod compacted;
 pub mod format;
 pub mod model;
 pub mod provider;
@@ -27,7 +24,6 @@ use anyhow::Result;
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 
-pub use compacted::{compacted_conversation, latest_prompt};
 pub use format::format_message_for_compacting;
 pub use model::{CompactionModel, ProviderModel, TokenEstimator};
 pub use provider::CompactingProvider;

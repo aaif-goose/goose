@@ -313,6 +313,62 @@ async fn a_failed_in_band_request_reports_the_error_and_restores_the_prompt() ->
 }
 
 #[tokio::test]
+async fn an_attachment_only_prompt_is_replayed_after_compaction_in_a_tool_loop() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let image = "A".repeat((pipeline.context_limit() as f64 * 0.7) as usize);
+    api.on(&image).call(ADD, value(1));
+    api.on(WRITE_WORKING_NOTES).reply("inband-notes");
+    api.on("Your context was compacted")
+        .reply("continued after compaction");
+
+    let result = pipeline
+        .run_message(Message::user().with_image(&image, "image/png"))
+        .await?;
+
+    result.assert_message(-1, Agent, "continued after compaction");
+    assert_eq!(result.history_replacements(), 1);
+    let last_call = api.calls().last().cloned().unwrap();
+    assert!(last_call.input_contains(&image));
+    assert!(!last_call.input_contains(WRITE_WORKING_NOTES));
+    assert!(result.emitted_error_kinds().is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tool_call_in_reply_to_the_compaction_request_is_not_executed() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("fill the context").reply("filled");
+    api.on(WRITE_WORKING_NOTES).call(ADD, value(100));
+    api.on(SUMMARIZE_HISTORY).reply("standalone summary");
+    api.on("Your context was compacted")
+        .reply("continued after compaction");
+
+    let half_full = format!(
+        "fill the context {}",
+        "x".repeat(pipeline.context_limit() / 2)
+    );
+    pipeline.run([half_full.as_str()]).await?;
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.85) as i64)
+        .await;
+    let result = pipeline.run(["keep going"]).await?;
+
+    result.assert_message(-1, Agent, "continued after compaction");
+    assert_eq!(result.history_replacements(), 1);
+    assert_eq!(pipeline.calculator_total(), 0);
+    assert!(result.emitted_error_kinds().is_empty());
+    assert!(result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| message.is_tool_call())
+        .all(|message| !message.is_agent_visible() && !message.is_user_visible()));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn context_errors_compact_and_retry() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("overflow once").context_limit_error("too long");

@@ -53,10 +53,16 @@ pub fn last_effective_role(messages: &[Message]) -> Result<EffectiveRole> {
         .ok_or_else(|| anyhow!("cannot determine the role of an empty conversation"))
 }
 
+/// Messages hidden from both audiences (an archived in-band compaction
+/// exchange) have left the conversation and are not actions the agent took.
 pub fn assistant_turn_count(messages: &[Message]) -> u32 {
     let mut turns = 0;
     let mut in_assistant_block = false;
-    for message in messages.iter().rev() {
+    for message in messages
+        .iter()
+        .rev()
+        .filter(|message| message.is_user_visible() || message.is_agent_visible())
+    {
         if message.role == rmcp::model::Role::Assistant {
             if !in_assistant_block {
                 turns += 1;

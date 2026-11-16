@@ -25,7 +25,7 @@ use crate::agents::StateMachineServices;
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
-use crate::conversation::Conversation;
+use crate::conversation::{unanswered_tool_requests, Conversation};
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
@@ -293,29 +293,16 @@ impl ToolExecutionOperation {
 }
 
 pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    let answered: HashSet<&str> = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect();
-
-    messages
-        .iter()
-        .filter(|message| message.role == Role::Assistant)
-        .flat_map(|message| {
-            message.content.iter().filter_map(|c| match c {
-                MessageContent::ToolRequest(req) if req.was_executed_externally() => None,
-                MessageContent::ToolRequest(req) if !answered.contains(req.id.as_str()) => {
-                    if let Err(parse_error) = &req.tool_call {
-                        return Some((
-                            req.clone(),
-                            ToolDisposition::ParseError(parse_error.to_string()),
-                        ));
-                    }
-                    (request_executable(req) == Some(true))
-                        .then(|| (req.clone(), ToolDisposition::Execute))
-                }
-                _ => None,
-            })
+    unanswered_tool_requests(messages)
+        .filter_map(|request| {
+            if let Err(parse_error) = &request.tool_call {
+                return Some((
+                    request.clone(),
+                    ToolDisposition::ParseError(parse_error.to_string()),
+                ));
+            }
+            (request_executable(request) == Some(true))
+                .then(|| (request.clone(), ToolDisposition::Execute))
         })
         .collect()
 }

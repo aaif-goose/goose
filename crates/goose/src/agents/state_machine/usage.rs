@@ -21,8 +21,6 @@ fn attach_to_last_assistant(effects: &mut [GooseEffect], usage: &ProviderUsage) 
     message.metadata.usage = Some(Box::new(MessageUsage::from_provider_usage(usage, false)));
 }
 
-/// Usage spent on compaction: the standalone summary that comes with the
-/// replacement, or the in-band reply to a pending compaction request.
 pub(super) fn is_compaction(session: &Session, effects: &[GooseEffect]) -> bool {
     effects
         .iter()

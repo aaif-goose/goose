@@ -1,27 +1,25 @@
 //! Compacts the conversation when it outgrows the context window.
 //!
-//! The in-band shape asks the model for a summary through the normal inference
-//! step: the operation appends an agent-only request, the next inference writes
-//! the summary on the live prefix, and the operation then harvests the reply
-//! into the compacted layout. The standalone shape summarizes with a separate
-//! request; it recovers from context-length errors, where the live prefix no
-//! longer fits, and backs up the in-band shape when the reply is unusable.
-//!
-//! Place the operation before everything that reacts to an assistant reply,
-//! so the summary is harvested before tool execution or turn-end logic sees it.
+//! In-band compaction asks for the summary through the normal inference step on
+//! the live prefix and harvests the reply afterwards. Standalone compaction
+//! summarizes with a separate request; it recovers from context-length errors,
+//! where the live prefix no longer fits, and backs up the in-band shape when the
+//! reply is unusable. The operation must run before anything that reacts to an
+//! assistant reply, so the summary is harvested before tool execution sees it.
+
+mod layout;
 
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use goose_context_management::{
-    compacted_conversation, latest_prompt, summarize, summary_message, CompactionModel, Templates,
-    TokenEstimator,
+    summarize, summary_message, CompactionModel, Templates, TokenEstimator,
 };
 use goose_provider_types::conversation::message::{
     Message, MessageContent, MessageErrorKind, MessageMetadata, SystemNotificationType,
 };
-use goose_provider_types::conversation::{Conversation, EffectiveRole};
+use goose_provider_types::conversation::{unanswered_tool_requests, Conversation, EffectiveRole};
 use goose_provider_types::errors::ProviderError;
 use rmcp::model::Role;
 
@@ -32,6 +30,10 @@ use crate::operation::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error,
     yielded_with, ConversationEffect, Emitter, Operation, OperationResult,
 };
+use layout::{compacted_conversation, latest_prompt};
+pub use layout::{
+    CONVERSATION_CONTINUATION_TEXT, MANUAL_COMPACT_CONTINUATION_TEXT, TOOL_LOOP_CONTINUATION_TEXT,
+};
 
 const NAME: &str = "compaction";
 const REQUEST_NOTE: &str = "request";
@@ -40,13 +42,10 @@ const PROMPT_NOTE: &str = "prompt";
 const COMPACTION_THINKING_TEXT: &str = "Compacting the conversation...";
 const COMPACTION_COMPLETE_TEXT: &str = "Compaction complete";
 
-/// Context-length errors recovered from within one turn before giving up.
 pub const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
 
-/// Effects compaction produces beyond those of inference.
 pub trait CompactionEffect: InferenceEffect + From<ConversationEffect> {
-    /// Replaces the conversation with its compacted layout. Hosts that store
-    /// messages individually can override this to update them in place.
+    /// Hosts that store messages individually can override this to update them in place.
     fn compact(conversation: Conversation) -> Self {
         Self::from(ConversationEffect::ReplaceConversation(conversation))
     }
@@ -54,9 +53,7 @@ pub trait CompactionEffect: InferenceEffect + From<ConversationEffect> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactionMode {
-    /// Summarize through the next inference on the live conversation.
     InBand,
-    /// Summarize with a separate request outside the conversation.
     Standalone,
 }
 
@@ -77,8 +74,6 @@ fn is_compaction_request(message: &Message) -> bool {
         .is_some()
 }
 
-/// Whether the conversation ends with an in-band request the next inference
-/// will answer, so its usage belongs to compaction.
 pub fn awaits_compaction_reply(conversation: &Conversation) -> bool {
     conversation
         .messages()
@@ -93,8 +88,8 @@ async fn agent_visible_tokens(estimator: &dyn TokenEstimator, messages: &[Messag
     estimator.count_chat_tokens("", &visible).await as i64
 }
 
-/// Reported usage stops at the inference that requested the tools, so the
-/// results that answered it are not counted until the next request.
+/// Reported usage stops at the inference that requested the tools; their results
+/// are not counted until the next request.
 async fn unreported_tool_tokens(
     conversation: &Conversation,
     estimator: &dyn TokenEstimator,
@@ -110,8 +105,6 @@ async fn unreported_tool_tokens(
     Ok(agent_visible_tokens(estimator, &messages[after_request..]).await)
 }
 
-/// The context size when proactive compaction should run before the next
-/// inference, or `None` when it should not.
 pub async fn proactive_compaction_tokens<S: MachineSession + ?Sized>(
     session: &S,
     conversation: &Conversation,
@@ -122,7 +115,6 @@ pub async fn proactive_compaction_tokens<S: MachineSession + ?Sized>(
     if threshold <= 0.0 || threshold >= 1.0 {
         return Ok(None);
     }
-    // An assistant tail ends the turn, so no inference follows.
     if last_effective_role(messages_since_kickoff(conversation)?)? == EffectiveRole::Assistant {
         return Ok(None);
     }
@@ -135,8 +127,7 @@ pub async fn proactive_compaction_tokens<S: MachineSession + ?Sized>(
     Ok((tokens > 0 && tokens as f64 / context_limit as f64 > threshold).then_some(tokens))
 }
 
-/// A summary that was never followed by a model reply cannot have grown, so
-/// compacting again would only summarize the summary.
+/// Compacting again before the model replied would only summarize the summary.
 fn replied_since_last_summary(conversation: &Conversation) -> bool {
     let messages = conversation.messages();
     let Some(summary) = messages
@@ -150,18 +141,19 @@ fn replied_since_last_summary(conversation: &Conversation) -> bool {
         .any(|message| message.role == Role::Assistant && message.metadata.inference.is_some())
 }
 
-/// A prompt with nothing before it has no history to summarize; if it does not
-/// fit, the context-length recovery handles it.
-fn has_history_before_prompt(messages: &[Message]) -> bool {
-    latest_prompt(messages).is_none_or(|prompt| {
-        messages[..prompt]
-            .iter()
-            .any(|message| message.is_agent_visible() && !message.is_turn_context())
+/// Operations ahead of tool execution may answer part of a tool batch; archiving
+/// the rest of the requests would orphan their results.
+fn has_outstanding_tool_calls(messages: &[Message]) -> bool {
+    unanswered_tool_requests(messages).next().is_some()
+}
+
+fn has_history_beyond_prompt(messages: &[Message]) -> bool {
+    let prompt = latest_prompt(messages);
+    messages.iter().enumerate().any(|(index, message)| {
+        Some(index) != prompt && message.is_agent_visible() && !message.is_turn_context()
     })
 }
 
-/// The in-band request and its replies leave both audiences; errors and turn
-/// context in the tail keep their own visibility.
 fn is_archived(message: &Message) -> bool {
     !message.is_turn_context() && message.error_kind().is_none()
 }
@@ -173,49 +165,27 @@ fn message_id(message: &Message) -> Result<String> {
         .ok_or_else(|| anyhow!("persisted message has no id"))
 }
 
-fn hide(message: &Message) -> Result<ConversationEffect> {
+fn set_visibility(
+    message: &Message,
+    user_visible: bool,
+    agent_visible: bool,
+) -> Result<ConversationEffect> {
     Ok(ConversationEffect::SetMessageVisibility {
         message_id: message_id(message)?,
-        user_visible: false,
-        agent_visible: false,
-    })
-}
-
-fn agent_visibility(message: &Message, agent_visible: bool) -> Result<ConversationEffect> {
-    Ok(ConversationEffect::SetMessageVisibility {
-        message_id: message_id(message)?,
-        user_visible: message.is_user_visible(),
+        user_visible,
         agent_visible,
     })
 }
 
-/// The prompt an in-band request hid while the model summarized: it sits right
-/// before the request, since both leave the operation in one step.
 fn hidden_prompt(messages: &[Message], request_index: usize) -> Option<usize> {
-    request_index.checked_sub(1).filter(|&index| {
-        let message = &messages[index];
-        message.metadata.operation_note(NAME, PROMPT_NOTE).is_some() && !message.is_agent_visible()
-    })
-}
-
-/// Tool calls in a compaction reply never run; closing them keeps tool
-/// execution from picking them up.
-fn unanswered_tool_calls(tail: &[Message]) -> Option<Message> {
-    let mut responses = Message::user();
-    for request in tail
+    messages[..request_index]
         .iter()
-        .flat_map(|message| message.content.iter())
-        .filter_map(MessageContent::as_tool_request)
-    {
-        responses.add_tool_response_with_metadata(
-            request.id.clone(),
-            Ok(rmcp::model::CallToolResult::error(vec![
-                rmcp::model::ContentBlock::text("Tool calls are not executed while compacting"),
-            ])),
-            request.metadata.as_ref(),
-        );
-    }
-    (!responses.content.is_empty()).then(|| responses.with_visibility(false, false))
+        .rposition(|message| !message.is_turn_context())
+        .filter(|&index| {
+            let message = &messages[index];
+            message.metadata.operation_note(NAME, PROMPT_NOTE).is_some()
+                && !message.is_agent_visible()
+        })
 }
 
 fn compaction_failure_message(error: &anyhow::Error) -> Message {
@@ -239,8 +209,6 @@ fn complete_message() -> Message {
 }
 
 impl CompactionOperation {
-    /// `estimator` sizes the context when the provider reports no usage and
-    /// fills in missing usage of standalone summarization.
     pub fn new(
         model: Arc<dyn CompactionModel>,
         estimator: Arc<dyn TokenEstimator>,
@@ -268,7 +236,6 @@ impl CompactionOperation {
         self
     }
 
-    /// Handles `/compact` (a compaction the user asked for).
     pub fn with_compact_command(mut self) -> Self {
         self.compact_command = true;
         self
@@ -288,9 +255,6 @@ impl CompactionOperation {
         request
     }
 
-    /// Appends the in-band request. A prompt the model has not answered yet
-    /// leaves its context first, so the model summarizes instead of answering
-    /// it; the compacted layout re-issues it.
     fn request_effects<E: CompactionEffect>(
         &self,
         messages: &[Message],
@@ -299,7 +263,11 @@ impl CompactionOperation {
         let mut effects = Vec::new();
         if !manual && last_effective_role(messages)? == EffectiveRole::User {
             if let Some(prompt) = latest_prompt(messages).map(|index| &messages[index]) {
-                effects.push(E::from(agent_visibility(prompt, false)?));
+                effects.push(E::from(set_visibility(
+                    prompt,
+                    prompt.is_user_visible(),
+                    false,
+                )?));
                 effects.push(E::from(ConversationEffect::SetMessageOperationNote {
                     message_id: message_id(prompt)?,
                     operation: NAME.to_string(),
@@ -312,18 +280,20 @@ impl CompactionOperation {
         Ok(effects)
     }
 
-    /// Undoes an in-band request that produced no summary: the request and its
-    /// replies leave both audiences, and the prompt it hid returns to the agent.
     fn abandon<E: CompactionEffect>(messages: &[Message], request_index: usize) -> Result<Vec<E>> {
         let tail = &messages[request_index..];
         let mut effects = tail
             .iter()
             .filter(|message| is_archived(message))
-            .map(|message| hide(message).map(E::from))
+            .map(|message| set_visibility(message, false, false).map(E::from))
             .collect::<Result<Vec<_>>>()?;
-        effects.extend(unanswered_tool_calls(tail).map(E::from));
         if let Some(prompt) = hidden_prompt(messages, request_index) {
-            effects.push(E::from(agent_visibility(&messages[prompt], true)?));
+            let prompt = &messages[prompt];
+            effects.push(E::from(set_visibility(
+                prompt,
+                prompt.is_user_visible(),
+                true,
+            )?));
         }
         Ok(effects)
     }
@@ -343,9 +313,6 @@ impl CompactionOperation {
         ));
     }
 
-    /// Summarizes `messages[..end]` with a standalone request. `request_index`
-    /// marks an in-band request whose tail is archived; `before` leads the
-    /// effects whether or not the summary succeeds.
     #[allow(clippy::too_many_arguments)]
     async fn standalone<E: CompactionEffect>(
         &self,
@@ -420,9 +387,6 @@ impl CompactionOperation {
                     .metadata
                     .user_visible = false;
             }
-            compacted
-                .messages_mut()
-                .splice(messages.len()..messages.len(), unanswered_tool_calls(tail));
         }
         effects.push(E::compact(compacted));
         if manual {
@@ -436,8 +400,6 @@ impl CompactionOperation {
         applied(effects)
     }
 
-    /// Turns the reply to an in-band request into the compacted conversation,
-    /// or falls back to a standalone summary when the reply is unusable.
     async fn harvest<E: CompactionEffect>(
         &self,
         conversation: &Conversation,
@@ -459,10 +421,11 @@ impl CompactionOperation {
         if let Some(kind) = trailing_error(conversation) {
             if kind != MessageErrorKind::ContextLengthExceeded {
                 let mut effects = Self::abandon(messages, request_index)?;
-                if let Some(error) = conversation.last().and_then(Message::error) {
-                    effects.push(E::from(emit.message(
-                        Message::assistant().with_error(error.kind, error.message.clone()),
-                    )));
+                if let Some(error) = conversation.last() {
+                    let mut shown = error.clone();
+                    shown.id = None;
+                    shown.metadata.user_visible = true;
+                    effects.push(E::from(emit.message(shown)));
                 }
                 return applied(effects);
             }
@@ -521,14 +484,7 @@ impl CompactionOperation {
         let command_message = messages_since_kickoff(conversation)?
             .first()
             .ok_or_else(|| anyhow!("compact command conversation has no kickoff message"))?;
-        let command_hidden = E::from(ConversationEffect::SetMessageVisibility {
-            message_id: command_message
-                .id
-                .clone()
-                .ok_or_else(|| anyhow!("persisted slash command message has no id"))?,
-            user_visible: true,
-            agent_visible: false,
-        });
+        let command_hidden = E::from(set_visibility(command_message, true, false)?);
         match self.mode {
             CompactionMode::InBand => {
                 applied([command_hidden, E::from(self.request_message(true))])
@@ -549,8 +505,6 @@ impl CompactionOperation {
         }
     }
 
-    /// A request left behind by an earlier turn (the user cancelled or the
-    /// inference never ran) must not shape later requests.
     fn stale_request_effects<E: CompactionEffect>(
         conversation: &Conversation,
         request_index: usize,
@@ -630,7 +584,8 @@ impl<S: MachineSession, E: CompactionEffect> Operation<S, E> for CompactionOpera
         .await?
         .is_none()
             || !replied_since_last_summary(conversation)
-            || !has_history_before_prompt(messages)
+            || !has_history_beyond_prompt(messages)
+            || has_outstanding_tool_calls(messages_since_kickoff(conversation)?)
         {
             return not_applicable();
         }

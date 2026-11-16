@@ -129,7 +129,6 @@ pub struct TurnSettings {
     pub always_load_tools: Vec<String>,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
-    /// Summarize with a separate request instead of through the conversation.
     pub standalone_compaction: bool,
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,

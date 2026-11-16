@@ -1288,15 +1288,23 @@ fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step
 
 fn has_open_tool_call(turn: &[Message]) -> bool {
     let mut open = HashSet::new();
-    for content in turn.iter().flat_map(|message| &message.content) {
-        match content {
-            MessageContent::ToolRequest(request) if !request.was_executed_externally() => {
-                open.insert(request.id.as_str());
+    let mut answering_hidden_request = false;
+    for message in turn {
+        if message.role == rmcp::model::Role::User && !message.is_turn_context() {
+            answering_hidden_request = message.metadata.hide_response;
+        }
+        for content in &message.content {
+            match content {
+                MessageContent::ToolRequest(request)
+                    if !request.was_executed_externally() && !answering_hidden_request =>
+                {
+                    open.insert(request.id.as_str());
+                }
+                MessageContent::ToolResponse(response) => {
+                    open.remove(response.id.as_str());
+                }
+                _ => {}
             }
-            MessageContent::ToolResponse(response) => {
-                open.remove(response.id.as_str());
-            }
-            _ => {}
         }
     }
     !open.is_empty()
