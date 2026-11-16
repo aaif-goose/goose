@@ -1320,9 +1320,8 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
     Ok(())
 }
 
-/// A bang command offers `shell`, which the test session does not have, so no
-/// operation runs it. The call still passes the pre-tool decision and gets a
-/// failed post event; in chat mode nothing would run it, so no tool hook fires.
+const BANG_COMMAND_NO_TOOL_RUNS: &str = "!echo hi";
+
 #[tokio::test]
 async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
     for (mode, fired) in [(GooseMode::Auto, true), (GooseMode::Chat, false)] {
@@ -1341,7 +1340,7 @@ async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
             .with_goose_mode(mode)
             .await;
 
-        pipeline.run(["!echo hi"]).await?;
+        pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
 
         let events = |log| env.payloads(log).len();
         let expected = usize::from(fired);
@@ -1357,7 +1356,7 @@ async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Res
     let (pipeline, _) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
 
-    let result = pipeline.run(["!echo hi"]).await?;
+    let result = pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
 
     result.assert_message(-1, ToolResponse, "blocked by test policy");
     let response = result
