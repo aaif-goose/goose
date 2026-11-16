@@ -38,7 +38,9 @@ mod lease;
 mod stdio;
 mod streamable_http;
 
-pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
+pub use lease::{CallRequest, ExtensionSet, LeaseId};
+mod platform;
+pub use platform::ExtensionLease;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "lowercase")]
@@ -156,13 +158,10 @@ struct Placement {
 
 impl Placement {
     fn for_config(
-        config: &ExtensionConfig,
+        _config: &ExtensionConfig,
         working_dir: Option<&Path>,
         container: Option<&Container>,
     ) -> Option<Self> {
-        if is_in_process(config) {
-            return None;
-        }
         let working_dir = working_dir
             .map(Path::to_path_buf)
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
@@ -297,16 +296,6 @@ impl Extension {
             .is_some()
     }
 
-    pub(super) fn is_platform(&self) -> bool {
-        match &self.config {
-            ExtensionConfig::Platform { .. } => true,
-            ExtensionConfig::Builtin { name, .. } => {
-                PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-            }
-            _ => false,
-        }
-    }
-
     /// The extension's tools as the model sees them: filtered by
     /// `available_tools`, prefixed unless first-class, tagged with the owner,
     /// schema-normalized.
@@ -340,7 +329,6 @@ impl Extension {
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
         let cancel_token = CancellationToken::default();
-        let expose_unprefixed = is_unprefixed_extension(&self.config);
         let mut tools = Vec::new();
         let mut cursor = None;
         loop {
@@ -359,9 +347,7 @@ impl Extension {
                 if !self.config.is_tool_available(&tool.name) {
                     continue;
                 }
-                if !expose_unprefixed {
-                    tool.name = format!("{}__{}", self.key, tool.name).into();
-                }
+                tool.name = format!("{}__{}", self.key, tool.name).into();
                 let mut meta = tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
                 meta.insert(
                     TOOL_EXTENSION_META_KEY.to_string(),
@@ -458,6 +444,8 @@ pub struct ExtensionManager {
     /// lease would start a second process.
     enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
     context: PlatformExtensionContext,
+    platform_clients: std::sync::Mutex<platform::PlatformClients>,
+    platform_scopes: std::sync::Mutex<HashMap<String, Vec<ExtensionConfig>>>,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
 }
@@ -640,25 +628,6 @@ fn insert_trusted_tool_update_meta(
     result.meta = Some(MetaObject(meta_map));
 }
 
-fn is_in_process(config: &ExtensionConfig) -> bool {
-    matches!(
-        config,
-        ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
-            if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-    )
-}
-
-fn is_unprefixed_extension(config: &ExtensionConfig) -> bool {
-    match config {
-        ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. } => {
-            PLATFORM_EXTENSIONS
-                .get(name_to_key(name).as_str())
-                .is_some_and(|def| def.unprefixed_tools)
-        }
-        _ => false,
-    }
-}
-
 /// Returns true if the named extension is a first-class platform extension
 /// whose tools are exposed unprefixed and remain visible during code execution mode.
 pub fn is_first_class_extension(name: &str) -> bool {
@@ -681,10 +650,11 @@ impl ExtensionManager {
         default_client: ClientContext,
     ) -> Self {
         Self {
+            platform_clients: Default::default(),
+            platform_scopes: Default::default(),
             scopes: Mutex::new(HashMap::new()),
             enabling: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
-                extension_manager: None,
                 providers,
                 session_manager,
                 scheduler,
@@ -732,8 +702,8 @@ impl ExtensionManager {
         working_dir: Option<PathBuf>,
         slots: Vec<Arc<ExtensionSlot>>,
         client: &ClientContext,
-    ) -> ExtensionLease {
-        ExtensionLease::new(
+    ) -> lease::McpLease {
+        lease::McpLease::new(
             scope_id,
             working_dir,
             slots,
@@ -763,13 +733,22 @@ impl ExtensionManager {
     }
 
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
+        self.platform_scopes
+            .lock()
+            .expect("platform scopes unavailable")
+            .insert(set.scope_id().to_string(), set.extensions().to_vec());
+        let platform = platform::PlatformSnapshot::new(self, set.scope_id(), set.extensions());
         let client = self.client(set.scope_id());
         let slots = {
             let mut scopes = self.scopes.lock().await;
             let enabling = self.enabling.lock().await;
             let mut current = scopes.remove(set.scope_id()).unwrap_or_default();
             let mut selected = IndexMap::new();
-            for config in set.extensions() {
+            for config in set
+                .extensions()
+                .iter()
+                .filter(|config| !platform::is_platform(config))
+            {
                 let key = config.key();
                 let pending = enabling
                     .get(&(set.scope_id().to_string(), key.clone()))
@@ -802,7 +781,10 @@ impl ExtensionManager {
             scopes.insert(set.scope_id().to_string(), selected);
             slots
         };
-        self.lease(set.scope_id(), set.working_dir.clone(), slots, &client)
+        ExtensionLease {
+            runtime: self.lease(set.scope_id(), set.working_dir.clone(), slots, &client),
+            platform,
+        }
     }
 
     pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
@@ -828,7 +810,7 @@ impl ExtensionManager {
     }
 
     #[cfg(test)]
-    pub(crate) async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
+    pub(crate) async fn scope_lease(self: &Arc<Self>, scope_id: &str) -> ExtensionLease {
         let client = self.client(scope_id);
         let slots = self
             .scopes
@@ -839,7 +821,17 @@ impl ExtensionManager {
             .flat_map(IndexMap::values)
             .cloned()
             .collect();
-        self.lease(scope_id, None, slots, &client)
+        let configs = self
+            .platform_scopes
+            .lock()
+            .expect("platform scopes unavailable")
+            .get(scope_id)
+            .cloned()
+            .unwrap_or_default();
+        ExtensionLease {
+            runtime: self.lease(scope_id, None, slots, &client),
+            platform: platform::PlatformSnapshot::new(self, scope_id, &configs),
+        }
     }
 
     async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
@@ -938,17 +930,6 @@ impl ExtensionManager {
                 )
                 .await?
             }
-            ExtensionConfig::Builtin { name, .. } | ExtensionConfig::Platform { name, .. }
-                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str()) =>
-            {
-                let def = &PLATFORM_EXTENSIONS[name_to_key(name).as_str()];
-                let mut context = self.context.clone();
-                context.extension_manager = Some(Arc::downgrade(self));
-                let Some(client) = (def.client_factory)(context) else {
-                    return Ok(None);
-                };
-                client
-            }
             ExtensionConfig::Builtin { name, timeout, .. } => {
                 builtin::connect(name, container, ctx(*timeout, client_working_dir)).await?
             }
@@ -1021,6 +1002,17 @@ impl ExtensionManager {
         config: ExtensionConfig,
     ) -> ExtensionResult<()> {
         let session = self.session(session_id).await?;
+        if platform::is_platform(&config) {
+            self.select(session_id, config.clone()).await?;
+            let mut scopes = self
+                .platform_scopes
+                .lock()
+                .expect("platform scopes unavailable");
+            let configs = scopes.entry(session_id.to_string()).or_default();
+            configs.retain(|selected| selected.key() != config.key());
+            configs.push(config);
+            return Ok(());
+        }
         let client = self.client(session_id);
         let pending_key = (session_id.to_string(), config.key());
         let slot = {
@@ -1140,6 +1132,14 @@ impl ExtensionManager {
 
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
+        self.platform_scopes
+            .lock()
+            .expect("platform scopes unavailable")
+            .remove(session_id);
+        self.platform_clients
+            .lock()
+            .expect("platform clients unavailable")
+            .retain(|(scope, _), _| scope != session_id);
         let mut scopes = self.scopes.lock().await;
         let mut enabling = self.enabling.lock().await;
         scopes.remove(session_id);

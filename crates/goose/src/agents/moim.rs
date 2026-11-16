@@ -167,7 +167,7 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 mod tests {
     use super::*;
     use crate::agents::extension_manager::ExtensionSet;
-    use crate::agents::mcp_client::McpClientTrait;
+    use crate::agents::platform_extensions::PlatformExtension;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
     use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
@@ -178,7 +178,7 @@ mod tests {
     struct MoimClient(&'static str);
 
     #[async_trait::async_trait]
-    impl McpClientTrait for MoimClient {
+    impl PlatformExtension for MoimClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -281,21 +281,16 @@ mod tests {
     #[tokio::test]
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        em.add_test_client(
-            &session_id,
-            moim_extension(),
-            Arc::new(MoimClient("old context")),
-            None,
-        )
-        .await;
-        let lease = em.current_lease(&session_id).await.unwrap();
-        em.add_test_client(
-            &session_id,
-            moim_extension(),
-            Arc::new(MoimClient("new context")),
-            None,
-        )
-        .await;
+        let lease = em
+            .current_lease(&session_id)
+            .await
+            .unwrap()
+            .with_platform_client(moim_extension(), Arc::new(MoimClient("old context")));
+        let _replacement = em
+            .current_lease(&session_id)
+            .await
+            .unwrap()
+            .with_platform_client(moim_extension(), Arc::new(MoimClient("new context")));
 
         let message = turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now())
             .await

@@ -1,4 +1,5 @@
 use super::*;
+use crate::agents::mcp_client::McpCallContext as ToolCallContext;
 use rmcp::model::CallToolResult;
 use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
 use rmcp::{object, ServiceError as Error};
@@ -9,7 +10,7 @@ use rmcp::model::ListToolsResult;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::ServerNotification;
 
-use super::super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
+use super::super::tool_execution::ToolCallNotificationEmitter;
 use futures::StreamExt;
 use goose_test_support::mcp::{McpFixtureServer, FAKE_CODE};
 use rmcp::model::{CallToolRequestParams, GetPromptResult, Resource};
@@ -528,11 +529,54 @@ async fn dispatch_strips_subagent_session_id_from_external_extensions() {
 
 #[tokio::test]
 async fn dispatch_keeps_subagent_session_id_from_platform_extensions() {
-    let meta = dispatch_subagent_meta_tool("summon", "delegate").await;
-
+    use crate::agents::platform_extensions::PlatformExtension;
+    struct PlatformSubagentMeta;
+    #[async_trait::async_trait]
+    impl PlatformExtension for PlatformSubagentMeta {
+        async fn list_tools(
+            &self,
+            scope: &str,
+            cursor: Option<String>,
+            cancel: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            SubagentMetaClient.list_tools(scope, cursor, cancel).await
+        }
+        async fn call_tool(
+            &self,
+            _context: &crate::agents::tool_execution::ToolCallContext,
+            _name: &str,
+            _args: Option<JsonObject>,
+            _cancel: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Ok(CallToolResult::success(vec![]).with_meta(Some(MetaObject(
+                object!({"subagent_session_id": "other-session"}),
+            ))))
+        }
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().to_path_buf()));
+    let lease = manager.scope_lease("session").await.with_platform_client(
+        builtin_config("summon", vec![]),
+        Arc::new(PlatformSubagentMeta),
+    );
+    assert!(lease.runtime.configs().is_empty());
+    let result = lease
+        .call(
+            CallToolRequestParams::new("delegate"),
+            CallRequest::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+        .result
+        .await
+        .unwrap();
     assert_eq!(
-        meta.and_then(|meta| meta.0.get("subagent_session_id").cloned()),
-        Some(serde_json::json!("other-session")),
+        result.meta.unwrap().0["subagent_session_id"],
+        "other-session"
     );
 }
 
@@ -1078,7 +1122,9 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
     let lease = manager.current_lease(&session.id).await.unwrap();
 
     let after = manager.scopes.lock().await[&session.id].clone();
-    assert!(Arc::ptr_eq(&before["developer"], &after["developer"]));
+    assert!(!before.contains_key("developer"));
+    assert!(!after.contains_key("developer"));
+    assert!(lease.is_enabled("developer"));
     assert!(!Arc::ptr_eq(&before["fixture"], &after["fixture"]));
     assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
     assert!(lease.start().await.iter().all(|result| result.success));
@@ -1116,16 +1162,16 @@ async fn client_changes_restart_only_extensions_that_negotiate_capabilities() {
     drop(scopes);
     let reattached_lease = resolving.await;
     let reattached = slots().await;
-    for key in ["developer", "client_fixture"] {
-        assert!(
-            Arc::ptr_eq(&first[key], &reattached[key]),
-            "{key} was restarted"
-        );
-    }
+    assert!(Arc::ptr_eq(
+        &first["client_fixture"],
+        &reattached["client_fixture"]
+    ));
+    assert!(!reattached.contains_key("developer"));
 
     let current = manager.resolve(&set).await;
     let changed = slots().await;
-    assert!(Arc::ptr_eq(&reattached["developer"], &changed["developer"]));
+    assert!(!changed.contains_key("developer"));
+    assert!(current.is_enabled("developer"));
     assert!(!Arc::ptr_eq(
         &reattached["client_fixture"],
         &changed["client_fixture"]
@@ -1542,4 +1588,50 @@ fn test_recover_mangled_tool_name_non_extension_manager_tools() {
         recover_mangled_tool_name("platform.manage_schedule", tools.iter().copied()).as_deref(),
         Some("platform__manage_schedule")
     );
+}
+
+#[tokio::test]
+async fn platform_tools_never_enter_the_mcp_runtime() {
+    let temp = tempfile::tempdir().unwrap();
+    let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().to_path_buf()));
+    let session = session_selecting(
+        &manager,
+        temp.path(),
+        vec![
+            builtin_config("developer", vec![]),
+            builtin_config("todo", vec![]),
+        ],
+    )
+    .await;
+    let held = manager.current_lease(&session.id).await.unwrap();
+    assert!(held.runtime.configs().is_empty());
+    assert!(held.runtime.tools().await.is_empty());
+    let tools = held.platform_tools().await;
+    assert!(tools.iter().any(|tool| tool.name == "shell"));
+    assert!(tools
+        .iter()
+        .any(|tool| get_tool_owner(tool).as_deref() == Some("todo")));
+    assert!(held
+        .moim()
+        .await
+        .iter()
+        .any(|part| part.contains("Current tasks")));
+
+    manager.disable(&session.id, "todo").await.unwrap();
+    let current = manager.current_lease(&session.id).await.unwrap();
+    assert!(!current.is_enabled("todo"));
+    assert!(held.is_enabled("todo"));
+    assert!(held
+        .tools()
+        .await
+        .iter()
+        .any(|tool| get_tool_owner(tool).as_deref() == Some("todo")));
+    manager.release(&session.id).await;
+    assert!(manager
+        .scope_lease(&session.id)
+        .await
+        .platform_tools()
+        .await
+        .is_empty());
+    assert!(!held.platform_tools().await.is_empty());
 }

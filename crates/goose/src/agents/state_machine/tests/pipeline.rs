@@ -452,7 +452,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::mcp_client::McpCallContext> {
         self.calculator.contexts()
     }
 
@@ -1254,11 +1254,12 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 6] = [
+const TOOL_OPERATIONS: [&str; 7] = [
     "final_output",
     "tool_approval",
     "skills",
     "tool_execution",
+    "platform_extensions",
     "remaining_tool_calls",
     "unhandled_tool_calls",
 ];

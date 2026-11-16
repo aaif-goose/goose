@@ -4,7 +4,8 @@ pub mod languages;
 pub mod parser;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -209,7 +210,7 @@ impl AnalyzeClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AnalyzeClient {
+impl PlatformExtension for AnalyzeClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -277,7 +278,6 @@ mod tests {
 
     fn ctx() -> PlatformExtensionContext {
         PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager: Arc::new(SessionManager::new(std::env::temp_dir())),
             scheduler: None,

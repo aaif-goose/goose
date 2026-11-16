@@ -13,7 +13,8 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
 
@@ -65,7 +66,7 @@ impl SummarizeClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SummarizeClient {
+impl PlatformExtension for SummarizeClient {
     async fn list_tools(
         &self,
         _session_id: &str,

@@ -1,5 +1,6 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
 };
@@ -563,7 +564,7 @@ impl AppsManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AppsManagerClient {
+impl PlatformExtension for AppsManagerClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -814,7 +815,6 @@ mod tests {
         AppsManagerClient {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
-                extension_manager: None,
                 providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,

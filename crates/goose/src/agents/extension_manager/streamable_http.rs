@@ -22,7 +22,7 @@ use tracing::warn;
 
 use super::super::extension::{ExtensionError, ExtensionResult};
 use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
-use super::super::tool_execution::ToolCallContext;
+use crate::agents::mcp_client::McpCallContext as ToolCallContext;
 use crate::oauth::{oauth_flow, oauth_flow_with_challenge, StaticOAuthClientConfig};
 
 /// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
@@ -549,10 +549,6 @@ impl McpClientTrait for OAuthStepUpClient {
         let (sender, receiver) = mpsc::channel(32);
         self.notification_subscribers.lock().await.push(sender);
         receiver
-    }
-
-    async fn get_moim(&self, session_id: &str, tools: &[rmcp::model::Tool]) -> Option<String> {
-        self.inner.read().await.get_moim(session_id, tools).await
     }
 }
 

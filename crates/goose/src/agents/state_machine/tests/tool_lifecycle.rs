@@ -726,3 +726,33 @@ async fn a_pinned_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_go
     assert!(!leased.contains(&"remote".to_string()));
     Ok(())
 }
+
+#[tokio::test]
+async fn platform_and_mcp_operations_answer_the_same_model_batch() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("todo").await?;
+    api.on("use both tool families").calls([
+        ("mcp", ADD, value(3)),
+        (
+            "platform",
+            "todo__todo_write",
+            json!({"content": "keep the platform boundary"}),
+        ),
+    ]);
+    api.on("keep the platform boundary").reply("both completed");
+    let result = pipeline.run(["use both tool families"]).await?;
+    result.assert_message(-1, Agent, "both completed");
+    assert_eq!(pipeline.calculator_total(), 3);
+    assert!(api.calls().last().unwrap().answers_every_tool_call_next());
+    let services = pipeline.services().await;
+    let lease = services
+        .extension_manager
+        .current_lease(&pipeline.session_id)
+        .await?;
+    assert!(lease
+        .runtime
+        .configs()
+        .iter()
+        .all(|registration| registration.key() != "todo"));
+    Ok(())
+}

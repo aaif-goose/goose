@@ -212,6 +212,7 @@ pub struct ToolExecutionOperation {
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
     always_load_tools: HashSet<String>,
+    platform: bool,
 }
 
 impl ToolExecutionOperation {
@@ -226,7 +227,43 @@ impl ToolExecutionOperation {
             lease,
             batch: Arc::default(),
             defer_tools,
+            platform: false,
             always_load_tools: always_load_tools.into_iter().collect(),
+        }
+    }
+
+    pub(super) fn for_platform(mut self) -> Self {
+        self.platform = true;
+        self
+    }
+
+    async fn execution_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
+        if self.platform {
+            lease
+                .platform_tools()
+                .await
+                .into_iter()
+                .filter(|tool| {
+                    !crate::agents::extension_manager::is_tool_owned_by_extension(
+                        tool,
+                        crate::skills::EXTENSION_NAME,
+                    )
+                })
+                .collect()
+        } else {
+            let platform_names: HashSet<_> = lease
+                .platform_tools()
+                .await
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect();
+            lease
+                .runtime
+                .tools()
+                .await
+                .into_iter()
+                .filter(|tool| !platform_names.contains(tool.name.as_ref()))
+                .collect()
         }
     }
 
@@ -236,12 +273,13 @@ impl ToolExecutionOperation {
             return false;
         }
         let _ = lease;
-        self.defer_tools
+        !self.platform && self.defer_tools
     }
 
     async fn mcp_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
         lease
-            .tools_where(|extension| !extension.is_platform())
+            .runtime
+            .tools()
             .await
             .into_iter()
             .filter(is_tool_visible_to_model)
@@ -679,7 +717,11 @@ fn extension_prompt_parts(
 #[async_trait]
 impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     fn name(&self) -> &'static str {
-        "tool_execution"
+        if self.platform {
+            "platform_extensions"
+        } else {
+            "tool_execution"
+        }
     }
 
     async fn finalize_cancellation(
@@ -730,7 +772,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
         let lease = self.lease(session).await?;
-        let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
+        let mut tools = self.execution_tools(&lease).await;
         if self.defers_tools(&lease) {
             let deferred: HashSet<_> = self
                 .mcp_tools(&lease)
@@ -757,7 +799,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<String>> {
-        Ok(self.lease(session).await?.moim().await)
+        if self.platform {
+            Ok(self.lease(session).await?.moim().await)
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     async fn prompt_parts(
@@ -779,7 +825,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 }
             }
         }
-        let mut prompt_parts = hints.load_new_hints(&session.working_dir);
+        let mut prompt_parts = if self.platform {
+            Vec::new()
+        } else {
+            hints.load_new_hints(&session.working_dir)
+        };
 
         let lease = self.lease(session).await?;
         #[cfg(feature = "code-mode")]
@@ -788,7 +838,12 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
 
         let mut extensions = lease.instructions().await;
-        extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
+        extensions.retain(|extension| {
+            extension.name != crate::skills::EXTENSION_NAME
+                && crate::agents::platform_extensions::PLATFORM_EXTENSIONS
+                    .contains_key(extension.name.as_str())
+                    == self.platform
+        });
         if extensions.is_empty() {
             return Ok(prompt_parts);
         }
@@ -870,8 +925,8 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             return applied([response.into()]);
         };
 
-        let mut known_tools: HashSet<_> = lease
-            .tools_excluding(crate::skills::EXTENSION_NAME)
+        let mut known_tools: HashSet<_> = self
+            .execution_tools(&lease)
             .await
             .into_iter()
             .map(|tool| tool.name.to_string())

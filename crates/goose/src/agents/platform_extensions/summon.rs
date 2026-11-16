@@ -1,6 +1,7 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
@@ -1440,7 +1441,7 @@ impl SummonClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SummonClient {
+impl PlatformExtension for SummonClient {
     async fn list_tools(
         &self,
         session_id: &str,
@@ -1564,7 +1565,6 @@ mod tests {
         session_manager: Arc<crate::session::SessionManager>,
     ) -> PlatformExtensionContext {
         PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager,
             scheduler: None,

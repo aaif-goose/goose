@@ -3,7 +3,8 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
     get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
 };
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
@@ -25,7 +26,6 @@ const INSTRUCTIONS: &str = "Discover exact Goose tool names with list_functions 
 
 pub struct CodeExecutionClient {
     info: InitializeResult,
-    context: PlatformExtensionContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -90,11 +90,11 @@ fn unknown_tool(name: &str) -> String {
 }
 
 impl CodeExecutionClient {
-    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+    pub fn new(_context: PlatformExtensionContext) -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Code Mode"))
             .with_instructions(INSTRUCTIONS);
-        Ok(Self { info, context })
+        Ok(Self { info })
     }
 
     async fn handle_execute_javascript(
@@ -106,12 +106,7 @@ impl CodeExecutionClient {
         let input: ExecuteWithToolGraph = parse_arguments(arguments)?;
         let catalog =
             callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
-        let manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|w| w.upgrade())
-            .ok_or("Extension manager not available")?;
+        let manager = dispatching_lease(ctx).manager();
         let dispatch = cancellation_token.child_token();
         let callback: ToolCallback = Arc::new({
             let ctx = ctx.clone();
@@ -172,7 +167,7 @@ fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::ExtensionManager>,
+    manager: Arc<crate::agents::extension_manager::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
     args: Value,
@@ -193,17 +188,19 @@ fn dispatch_tool(
                     )
                     .await;
                 match dispatch_result {
-                    Ok(dispatch_result) => match manager
-                        .applying_mutation(dispatch_result, &ctx.session_id)
-                        .result
-                        .await
-                    {
-                        Ok(result) if result.is_error == Some(true) => {
-                            Err(callback_result_to_value(&result).to_string())
+                    Ok(dispatch_result) => {
+                        match manager
+                            .applying_mutation(dispatch_result, &ctx.session_id)
+                            .result
+                            .await
+                        {
+                            Ok(result) if result.is_error == Some(true) => {
+                                Err(callback_result_to_value(&result).to_string())
+                            }
+                            Ok(result) => Ok(callback_result_to_value(&result)),
+                            Err(e) => Err(format!("Tool error: {}", e.message)),
                         }
-                        Ok(result) => Ok(callback_result_to_value(&result)),
-                        Err(e) => Err(format!("Tool error: {}", e.message)),
-                    },
+                    }
                     Err(e) => Err(format!("Dispatch error: {e}")),
                 }
             };
@@ -256,7 +253,7 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 }
 
 #[async_trait]
-impl McpClientTrait for CodeExecutionClient {
+impl PlatformExtension for CodeExecutionClient {
     async fn list_tools(
         &self,
         _: &str,
@@ -388,7 +385,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for PendingClient {
+    impl crate::agents::mcp_client::McpClientTrait for PendingClient {
         async fn list_tools(
             &self,
             session_id: &str,
@@ -402,7 +399,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _: &ToolCallContext,
+            _: &crate::agents::mcp_client::McpCallContext,
             _: &str,
             _: Option<JsonObject>,
             _: CancellationToken,
@@ -466,7 +463,7 @@ mod tests {
         let mut callback = dispatch_tool(
             ctx,
             "pending__ordinary".into(),
-            manager,
+            manager.clone(),
             dispatch.clone(),
             tokio::runtime::Handle::current(),
             json!({}),
@@ -484,7 +481,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for VisibilityClient {
+    impl crate::agents::mcp_client::McpClientTrait for VisibilityClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -528,7 +525,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _ctx: &ToolCallContext,
+            _ctx: &crate::agents::mcp_client::McpCallContext,
             _name: &str,
             arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,
@@ -679,8 +676,7 @@ mod tests {
             Some("manage".into()),
         )
         .with_extension_lease(lease);
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        let context = manager.get_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
         let result = client
@@ -747,8 +743,7 @@ mod tests {
         let lease = Arc::new(manager.scope_lease(&session.id).await);
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
             .with_extension_lease(lease.clone());
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        let context = manager.get_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
             .call_tool(&ctx, "list_functions", None, CancellationToken::new())

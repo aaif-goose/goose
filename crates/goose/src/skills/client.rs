@@ -1,16 +1,16 @@
 use super::discover_skills_with_config;
 use super::loaded_skill_context_with_args;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::ToolCallContext;
 use crate::config::Config;
 use async_trait::async_trait;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, ServerNotification, Tool,
+    ServerCapabilities, Tool,
 };
 use std::path::{Path, PathBuf};
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "skills";
@@ -59,7 +59,7 @@ impl SkillsClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SkillsClient {
+impl PlatformExtension for SkillsClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -261,11 +261,6 @@ impl McpClientTrait for SkillsClient {
             instructions.push_str(&format!("\n• {} - {}", skill.name, skill.description));
         }
         Some(instructions)
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        let (_tx, rx) = mpsc::channel(1);
-        rx
     }
 }
 

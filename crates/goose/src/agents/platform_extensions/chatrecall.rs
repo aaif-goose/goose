@@ -1,5 +1,6 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::conversation::Conversation;
 use crate::session::session_manager::SessionType;
@@ -297,7 +298,7 @@ impl ChatRecallClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ChatRecallClient {
+impl PlatformExtension for ChatRecallClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -445,7 +446,6 @@ mod tests {
             .unwrap();
 
         let client = ChatRecallClient::new(PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager,
             scheduler: None,

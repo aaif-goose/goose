@@ -16,14 +16,14 @@ use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
-use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
     GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
-    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnavailableDecisions, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -132,6 +132,11 @@ pub(crate) fn build_state_machine(
         ),
         Arc::new(SkillOperation::new(Arc::clone(&extension_lease))),
         Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
+        Arc::new(PlatformExtensionOperation::new(
+            Arc::clone(&extension_manager),
+            hook_manager.clone(),
+            Arc::clone(&extension_lease),
+        )),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
             Arc::clone(&extension_lease),

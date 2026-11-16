@@ -1,7 +1,8 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_all_extensions, get_extension_by_name};
@@ -10,15 +11,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
 use rmcp::model::{
-    CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult, Implementation,
-    InitializeResult, JsonObject, ListPromptsResult, ListResourcesResult, ListToolsResult,
-    ReadResourceResult, ServerCapabilities, ServerNotification, Tool, ToolAnnotations,
+    CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
+    JsonObject, ListResourcesResult, ListToolsResult, ReadResourceResult, ServerCapabilities, Tool,
+    ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "Extension Manager";
@@ -63,8 +62,8 @@ pub struct ListResourcesParams {
     pub extension_name: Option<String>,
 }
 
-pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const LIST_RESOURCES_TOOL_NAME: &str = "list_resources";
+pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME: &str = "search_available_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME: &str = "manage_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE: &str = "extensionmanager__manage_extensions";
@@ -103,13 +102,10 @@ impl ExtensionManagerClient {
     }
 
     fn handle_search_available_extensions(ctx: &ToolCallContext) -> Vec<ContentBlock> {
-        let enabled: Vec<String> = ctx
+        let enabled = ctx
             .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
-            .configs()
-            .iter()
-            .map(ExtensionConfig::key)
-            .collect();
+            .expect("platform calls carry the advertised tool snapshot")
+            .enabled_names();
         vec![ContentBlock::text(search_available_extensions(&enabled))]
     }
 
@@ -350,7 +346,7 @@ impl ExtensionManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ExtensionManagerClient {
+impl PlatformExtension for ExtensionManagerClient {
     async fn list_resources(
         &self,
         _session_id: &str,
@@ -426,29 +422,6 @@ impl McpClientTrait for ExtensionManagerClient {
         }
     }
 
-    async fn list_prompts(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListPromptsResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn get_prompt(
-        &self,
-        _session_id: &str,
-        _name: &str,
-        _arguments: Value,
-        _cancellation_token: CancellationToken,
-    ) -> Result<GetPromptResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        mpsc::channel(1).1
-    }
-
     fn get_info(&self) -> Option<&InitializeResult> {
         Some(&self.info)
     }
@@ -516,7 +489,6 @@ mod tests {
 
     fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
-            extension_manager: None,
             providers: manager.get_context().providers.clone(),
             session_manager: manager.get_context().session_manager.clone(),
             scheduler: None,

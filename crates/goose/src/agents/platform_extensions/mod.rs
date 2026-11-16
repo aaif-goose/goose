@@ -19,7 +19,8 @@ pub mod tom;
 
 use std::collections::HashMap;
 
-use crate::agents::mcp_client::McpClientTrait;
+mod client;
+pub use client::PlatformExtension;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -216,11 +217,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
-    /// Sibling access for the two extensions that operate on the running set
-    /// (extension management, code mode). Everything else uses the fields
-    /// below.
-    pub extension_manager:
-        Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
     pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
@@ -307,5 +303,5 @@ pub struct PlatformExtensionDef {
     pub unprefixed_tools: bool,
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
-    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
+    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn PlatformExtension>>,
 }

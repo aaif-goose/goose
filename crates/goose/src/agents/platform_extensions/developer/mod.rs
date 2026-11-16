@@ -5,7 +5,8 @@ mod shell_output_streaming;
 mod shell_process;
 pub mod tree;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -186,7 +187,7 @@ impl DeveloperClient {
 }
 
 #[async_trait]
-impl McpClientTrait for DeveloperClient {
+impl PlatformExtension for DeveloperClient {
     async fn list_tools(
         &self,
         _session_id: &str,
