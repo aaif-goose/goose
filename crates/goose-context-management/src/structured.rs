@@ -197,6 +197,11 @@ impl StructuredSummary {
 /// post-terminator ```json fences (last first) then a leading object, and
 /// finally a leading object of the whole text.
 ///
+/// The shipped prompt no longer asks for an `<analysis>` block (Claude models
+/// refuse prompts that request their reasoning in the output), but terminator
+/// handling stays for older user-overridden templates and models that still
+/// emit one.
+///
 /// Terminators before the last are retried because the summary JSON may
 /// itself quote `</analysis>` (e.g. a session editing compaction prompts),
 /// hiding the real terminator from a plain rfind. Such a candidate is
@@ -326,6 +331,25 @@ in {brace handling} and patched it.
         assert_eq!(
             summary.current_work.as_deref(),
             Some("Writing the regression test in tests/parser.rs")
+        );
+    }
+
+    #[test]
+    fn parses_fenced_json_without_analysis() {
+        // The shipped prompt no longer asks for an `<analysis>` block.
+        let response = FULL_RESPONSE
+            .split_once("</analysis>")
+            .map(|(_, rest)| rest.trim_start())
+            .expect("fixture has an analysis block");
+        assert!(response.starts_with("```json"));
+        let summary = StructuredSummary::parse(response).expect("should parse");
+        assert_eq!(
+            summary.user_intent,
+            vec!["Fix the parser bug", "Add a regression test"]
+        );
+        assert_eq!(
+            summary.next_step.as_deref(),
+            Some("Finish the regression test")
         );
     }
 
