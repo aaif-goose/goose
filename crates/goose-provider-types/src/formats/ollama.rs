@@ -14,7 +14,7 @@ use crate::maybe_send::MaybeSend;
 use crate::{
     conversation::token_usage::ProviderUsage,
     formats::openai::{self, is_valid_function_name},
-    thinking::{split_think_blocks, ThinkFilter},
+    thinking::ThinkFilter,
 };
 use async_stream::try_stream;
 use chrono;
@@ -23,7 +23,6 @@ use regex::Regex;
 use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role};
 use serde_json::Value;
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 pub use crate::formats::openai::{
@@ -37,6 +36,8 @@ pub use crate::formats::openai::{
 /// Returns a tuple of (prefix_text, tool_calls) where prefix_text is any text before the first function tag.
 pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageContentBlock>) {
     let mut tool_calls = Vec::new();
+    // Streamed parameter values arrive with `<` hidden by `ParameterGuard`.
+    let content = &content.replace(GUARDED_PARAMETER_END, PARAMETER_END);
 
     let function_re = Regex::new(r"<function=([^>]+)>([\s\S]*?)</function>").unwrap();
     let param_re = Regex::new(r"<parameter=([^>]+)>([\s\S]*?)</parameter>").unwrap();
@@ -54,7 +55,7 @@ pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageConten
         let mut arguments = serde_json::Map::new();
         for param_cap in param_re.captures_iter(function_body) {
             let param_name = param_cap[1].trim().to_string();
-            let param_value = param_cap[2].trim().to_string();
+            let param_value = param_cap[2].trim().replace(LT_PLACEHOLDER, "<");
             arguments.insert(param_name, serde_json::Value::String(param_value));
         }
 
@@ -127,6 +128,22 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
     Ok(message)
 }
 
+/// Extract text content from a message's content items.
+fn extract_text_from_message(message: &Message) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|c| {
+            if let MessageContentBlock::Text(text) = c {
+                Some(text.text.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 /// Check if a message contains only text content (no tool requests/responses).
 fn is_text_only_message(message: &Message) -> bool {
     message
@@ -135,23 +152,33 @@ fn is_text_only_message(message: &Message) -> bool {
         .all(|c| matches!(c, MessageContentBlock::Text(_)))
 }
 
-const XML_TOOL_CALL_MARKER: &str = "<function=";
+const FUNCTION: &str = "<function=";
+const FUNCTION_END: &str = "</function>";
+const PARAMETER: &str = "<parameter=";
+const PARAMETER_END: &str = "</parameter>";
+// ponytail: a model that writes U+E000 itself in a parameter value gets `<` back.
+const LT_PLACEHOLDER: char = '\u{E000}';
+const GUARDED_PARAMETER_END: &str = "\u{E000}/parameter>";
 
-/// Raw assistant text seen on the stream, before any `<think>` filtering.
+/// Hides every `<` inside XML tool-call parameter values from the OpenAI parser's inline
+/// `<think>` filter, so think tags in tool arguments are not taken as reasoning.
+/// Calls and parameters only open and close at tags the filter leaves outside reasoning.
 #[derive(Default)]
-struct RawContent {
-    text: String,
-    xml_start: Option<usize>,
+struct ParameterGuard {
+    think_filter: ThinkFilter,
+    content_tail: String,
+    /// Raw text since the last `<`, to find tags split across chunks.
+    token: String,
+    in_call: bool,
+    in_parameter: bool,
 }
 
-impl RawContent {
-    /// Records the line's text and withholds everything from the first XML tool call onward,
-    /// so the OpenAI parser's inline `<think>` filter cannot rewrite tool parameter values.
-    fn withhold_xml_tool_calls(&mut self, line: String) -> String {
-        let Some(data) = line.strip_prefix("data:") else {
-            return line;
-        };
-        let Ok(mut chunk) = serde_json::from_str::<Value>(data.trim()) else {
+impl ParameterGuard {
+    fn guard_line(&mut self, line: String) -> String {
+        let Some(mut chunk) = line
+            .strip_prefix("data:")
+            .and_then(|data| serde_json::from_str::<Value>(data.trim()).ok())
+        else {
             return line;
         };
         // The OpenAI parser ignores content on a delta that carries native tool calls.
@@ -162,130 +189,102 @@ impl RawContent {
         {
             return line;
         }
-        let Some(content) = chunk.pointer_mut("/choices/0/delta/content") else {
-            return line;
-        };
-        let texts: Vec<&mut Value> = match content {
-            Value::Array(parts) => parts
+        let texts: Vec<&mut Value> = match chunk.pointer_mut("/choices/0/delta/content") {
+            Some(Value::Array(parts)) => parts
                 .iter_mut()
                 .filter(|part| part["type"] == "text")
                 .filter_map(|part| part.get_mut("text"))
                 .collect(),
-            text => vec![text],
+            Some(text) => vec![text],
+            None => return line,
         };
-
-        let mut withheld = false;
+        let mut changed = false;
         for text in texts {
-            if let Some(kept) = text.as_str().and_then(|t| self.withhold(t)) {
-                *text = Value::String(kept);
-                withheld = true;
-            }
-        }
-        if !withheld {
-            return line;
-        }
-        format!("data: {chunk}")
-    }
-
-    /// Records `text` and, once an XML tool call has started outside `<think>`,
-    /// returns the part of `text` to keep.
-    fn withhold(&mut self, text: &str) -> Option<String> {
-        let chunk_start = self.text.len();
-        self.text.push_str(text);
-        let mut search_from = self
-            .text
-            .floor_char_boundary(chunk_start.saturating_sub(XML_TOOL_CALL_MARKER.len()));
-        while self.xml_start.is_none() {
-            let Some(i) = self
-                .text
-                .get(search_from..)
-                .and_then(|rest| rest.find(XML_TOOL_CALL_MARKER))
-            else {
-                break;
-            };
-            let start = search_from + i;
-            search_from = start + XML_TOOL_CALL_MARKER.len();
-            // A marker inside reasoning is not a tool call, as when the OpenAI parser filtered it out.
-            if self.text.get(..search_from).is_some_and(|upto| {
-                is_outside_think(&mut ThinkFilter::new(), upto, XML_TOOL_CALL_MARKER)
-            }) {
-                self.xml_start = Some(start);
-            }
-        }
-        let xml_start = self.xml_start?;
-        Some(
-            text.get(..xml_start.saturating_sub(chunk_start))
-                .unwrap_or_default()
-                .to_string(),
-        )
-    }
-}
-
-/// Whether `text`, which ends with `marker`, leaves that marker outside `<think>`.
-/// Uses the non-finalized filter so a partial think tag stays pending rather than becoming content.
-fn is_outside_think(think_filter: &mut ThinkFilter, text: &str, marker: &str) -> bool {
-    think_filter.push(text).content.ends_with(marker)
-}
-
-/// Drops reasoning between and inside XML tool calls, keeping each parameter's raw value.
-/// Only tags outside `<think>` open or close a call, and parameter values never reach the filter.
-fn xml_calls_outside_think(xml_raw: &str) -> String {
-    const PARAMETER: &str = "<parameter=";
-    const PARAMETER_END: &str = "</parameter>";
-    const FUNCTION_END: &str = "</function>";
-    let mut calls = String::new();
-    let mut call: Option<String> = None;
-    let mut think_filter = ThinkFilter::new();
-    let mut rest = xml_raw;
-    loop {
-        let tags: &[&str] = if call.is_some() {
-            &[PARAMETER, FUNCTION_END]
-        } else {
-            &[XML_TOOL_CALL_MARKER]
-        };
-        let Some((gap, tag, after)) = tags
-            .iter()
-            .filter_map(|tag| rest.split_once(tag).map(|(gap, after)| (gap, *tag, after)))
-            .min_by_key(|(gap, ..)| gap.len())
-        else {
-            break;
-        };
-        rest = after;
-        if !is_outside_think(&mut think_filter, &format!("{gap}{tag}"), tag) {
-            continue;
-        }
-        match tag {
-            FUNCTION_END => {
-                calls.extend(call.take());
-                calls.push_str(FUNCTION_END);
-            }
-            PARAMETER => {
-                let param = rest
-                    .split_once(PARAMETER_END)
-                    .filter(|(value, _)| !value.contains(FUNCTION_END));
-                if let (Some(body), Some((value, after))) = (call.as_mut(), param) {
-                    body.push_str(&format!("{PARAMETER}{value}{PARAMETER_END}"));
-                    rest = after;
+            if let Some((raw, guarded)) = text.as_str().map(|raw| (raw, self.guard(raw))) {
+                if guarded != raw {
+                    *text = Value::String(guarded);
+                    changed = true;
                 }
             }
-            _ => {
-                let Some((name, after)) = rest.split_once('>') else {
-                    break;
-                };
-                call = Some(format!("{XML_TOOL_CALL_MARKER}{name}>"));
-                rest = after;
-            }
+        }
+        if changed {
+            format!("data: {chunk}")
+        } else {
+            line
         }
     }
-    calls
+
+    fn guard(&mut self, text: &str) -> String {
+        let mut guarded = String::with_capacity(text.len());
+        let mut rest = text;
+        while !rest.is_empty() {
+            // Each piece holds at most one `<`, at its start.
+            let end = rest
+                .match_indices('<')
+                .map(|(i, _)| i)
+                .find(|&i| i > 0)
+                .unwrap_or(rest.len());
+            let (piece, after) = rest.split_at_checked(end).unwrap_or((rest, ""));
+            rest = after;
+            if piece.starts_with('<') {
+                self.token.clear();
+            }
+            let before = self.token.len();
+            self.token.push_str(piece);
+            let completes = |tag: &str| before < tag.len() && self.token.starts_with(tag);
+
+            if self.in_parameter {
+                guarded.extend(
+                    piece
+                        .chars()
+                        .map(|c| if c == '<' { LT_PLACEHOLDER } else { c }),
+                );
+                self.in_parameter = !completes(PARAMETER_END);
+                continue;
+            }
+            let tags: &[&str] = if self.in_call {
+                &[PARAMETER, FUNCTION_END]
+            } else {
+                &[FUNCTION]
+            };
+            let tag = tags.iter().copied().find(|tag| completes(tag));
+            let (head, tail) = tag
+                .and_then(|tag| piece.split_at_checked(tag.len() - before))
+                .unwrap_or(("", piece));
+            guarded.push_str(piece);
+            self.filter(head);
+            if let Some(tag) = tag.filter(|tag| self.content_tail.ends_with(tag)) {
+                self.in_call = tag != FUNCTION_END;
+                self.in_parameter = tag == PARAMETER;
+            }
+            if !self.in_parameter {
+                self.filter(tail);
+            }
+        }
+        guarded
+    }
+
+    /// Feeds raw text outside parameter values to a mirror of the OpenAI parser's filter.
+    fn filter(&mut self, text: &str) {
+        self.content_tail
+            .push_str(&self.think_filter.push(text).content);
+        if let Some((keep, _)) = self
+            .content_tail
+            .char_indices()
+            .rev()
+            .nth(PARAMETER_END.len())
+        {
+            self.content_tail.drain(..keep);
+        }
+    }
 }
 
 /// Streaming message handler with XML tool call post-processing for Ollama.
 ///
 /// This wraps the standard OpenAI streaming handler and post-processes messages
-/// to detect and parse XML tool calls. Text from the first XML tool call onward is
-/// kept back from the OpenAI handler and parsed from the raw stream once it completes,
-/// so tool parameter values arrive exactly as the model wrote them.
+/// to detect and parse XML tool calls. When XML markers are detected in text
+/// messages, it buffers them until the stream completes, then parses and emits
+/// the tool calls.
 ///
 /// This approach avoids exposing any internal types from openai.rs.
 pub fn response_to_streaming_message_ollama<S>(
@@ -294,13 +293,8 @@ pub fn response_to_streaming_message_ollama<S>(
 where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    let raw_content = Arc::new(Mutex::new(RawContent::default()));
-    let tee = Arc::clone(&raw_content);
-    let stream = stream.map_ok(move |line| {
-        tee.lock()
-            .expect("raw content lock poisoned")
-            .withhold_xml_tool_calls(line)
-    });
+    let mut guard = ParameterGuard::default();
+    let stream = stream.map_ok(move |line| guard.guard_line(line));
 
     try_stream! {
         use futures::StreamExt;
@@ -308,51 +302,42 @@ where
         let base_stream = openai::response_to_streaming_message(stream);
         let mut base_stream = std::pin::pin!(base_stream);
 
+        let mut accumulated_text = String::new();
         let mut xml_detected = false;
-        let mut native_tool_call_emitted = false;
         let mut buffered_usage: Option<ProviderUsage> = None;
 
         while let Some(result) = base_stream.next().await {
             let (message_opt, usage) = result?;
-            xml_detected = xml_detected
-                || raw_content
-                    .lock()
-                    .expect("raw content lock poisoned")
-                    .xml_start
-                    .is_some();
+            if usage.is_some() {
+                buffered_usage = usage.clone();
+            }
 
-            if let Some(message) =
-                message_opt.filter(|m| !(xml_detected && is_text_only_message(m)))
-            {
-                native_tool_call_emitted = native_tool_call_emitted
-                    || message
-                        .content
-                        .iter()
-                        .any(|c| matches!(c, MessageContentBlock::ToolRequest(_)));
+            if let Some(message) = message_opt {
+                if is_text_only_message(&message) {
+                    let text = extract_text_from_message(&message);
+                    accumulated_text.push_str(&text);
+
+                    if !xml_detected && accumulated_text.contains("<function=") {
+                        xml_detected = true;
+                    }
+
+                    if xml_detected {
+                        continue;
+                    }
+                }
+
                 yield (Some(message), usage);
-            } else if xml_detected {
-                buffered_usage = usage.or(buffered_usage);
-            } else if usage.is_some() {
+            } else if usage.is_some() && !xml_detected {
                 yield (None, usage);
             }
         }
 
-        let raw = std::mem::take(&mut *raw_content.lock().expect("raw content lock poisoned"));
-        if let Some((leading_raw, xml_raw)) =
-            raw.xml_start.and_then(|i| raw.text.split_at_checked(i))
-        {
-            // Native tool calls take precedence over XML in content, as in `response_to_message`.
-            let xml_tool_calls = if native_tool_call_emitted {
-                Vec::new()
-            } else {
-                parse_xml_tool_calls(&xml_calls_outside_think(xml_raw)).1
-            };
+        if xml_detected && !accumulated_text.is_empty() {
+            let (prefix, xml_tool_calls) = parse_xml_tool_calls(&accumulated_text);
 
             if !xml_tool_calls.is_empty() {
-                let (leading_text, _) = split_think_blocks(leading_raw);
                 let mut contents = Vec::new();
-                let prefix_text = leading_text.trim();
-                if !prefix_text.is_empty() {
+                if let Some(prefix_text) = prefix {
                     contents.push(MessageContentBlock::text(prefix_text));
                 }
                 contents.extend(xml_tool_calls);
@@ -365,30 +350,15 @@ where
 
                 yield (Some(msg), buffered_usage);
             } else {
-                // No tool parameters to protect, so the withheld text is think-filtered as usual;
-                // the leading thinking was already emitted by the OpenAI parser.
-                let mut think_filter = ThinkFilter::new();
-                let mut text = think_filter.push(leading_raw).content;
-                let rest = think_filter.push(xml_raw);
-                let tail = think_filter.finish();
-                text.push_str(&rest.content);
-                text.push_str(&tail.content);
-                let thinking = rest.thinking + &tail.thinking;
-
-                let mut contents = Vec::new();
-                if !thinking.is_empty() {
-                    contents.push(MessageContentBlock::thinking(thinking, ""));
-                }
-                if !text.is_empty() {
-                    contents.push(MessageContentBlock::text(text));
-                }
-                let msg = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), contents)
-                    .with_generated_id();
+                let msg = Message::new(
+                    Role::Assistant,
+                    chrono::Utc::now().timestamp(),
+                    vec![MessageContentBlock::text(accumulated_text.replace(LT_PLACEHOLDER, "<"))],
+                )
+                .with_generated_id();
 
                 yield (Some(msg), buffered_usage);
             }
-        } else if buffered_usage.is_some() {
-            yield (None, buffered_usage);
         }
     }
 }
@@ -671,6 +641,72 @@ data: [DONE]"#;
         );
 
         Ok(())
+    }
+
+    fn chunked_lines(content: &str, size: usize) -> Vec<anyhow::Result<String>> {
+        let chars: Vec<char> = content.chars().collect();
+        let mut lines: Vec<_> = chars
+            .chunks(size)
+            .map(|chunk| {
+                let text: String = chunk.iter().collect();
+                let delta = json!({"choices": [{"delta": {"content": text}, "index": 0}]});
+                Ok(format!("data: {delta}"))
+            })
+            .collect();
+        lines.push(Ok("data: [DONE]".to_string()));
+        lines
+    }
+
+    #[tokio::test]
+    async fn test_streaming_keeps_any_think_tag_in_parameters_at_every_chunk_split() {
+        use futures::StreamExt;
+
+        let open = "a <think> b <think x=\">\"> c <THINKING> d";
+        let close = "e </think> f </parameter g";
+        let content = format!(
+            "<function=edit><parameter=open>{open}</parameter><parameter=close>{close}</parameter></function>"
+        );
+        for size in 1..=content.len() {
+            let messages: Vec<Message> = response_to_streaming_message_ollama(tokio_stream::iter(
+                chunked_lines(&content, size),
+            ))
+            .filter_map(|item| async move { item.unwrap().0 })
+            .collect()
+            .await;
+            let args: Vec<_> = messages
+                .iter()
+                .flat_map(|m| &m.content)
+                .filter_map(|c| match c {
+                    MessageContentBlock::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                    _ => None,
+                })
+                .map(|call| call.arguments.clone().unwrap())
+                .collect();
+            assert_eq!(args.len(), 1, "chunk size {size}");
+            assert_eq!(args[0]["open"], open, "chunk size {size}");
+            assert_eq!(args[0]["close"], close, "chunk size {size}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_streaming_unparsed_call_keeps_think_tags_in_text() {
+        use futures::StreamExt;
+
+        let content = "<function=edit><parameter=text>keep <think> and </think></parameter>";
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(chunked_lines(content, 15)))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+        let text: String = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, content);
     }
 
     #[tokio::test]
