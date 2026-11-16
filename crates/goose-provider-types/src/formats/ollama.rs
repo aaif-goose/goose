@@ -710,6 +710,42 @@ data: [DONE]"#;
     }
 
     #[tokio::test]
+    async fn test_streaming_unparsed_xml_keeps_structured_reasoning_precedence() {
+        use futures::StreamExt;
+
+        for field in ["reasoning_content", "reasoning"] {
+            let reasoning = json!({"choices": [{"delta": {field: "structured plan"}, "index": 0}]});
+            let mut lines = vec![Ok(format!("data: {reasoning}"))];
+            lines.extend(chunked_lines(
+                "Use <function= syntax. <think>plan</think>answer",
+                15,
+            ));
+            let messages: Vec<Message> =
+                response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                    .filter_map(|item| async move { item.unwrap().0 })
+                    .collect()
+                    .await;
+            let blocks: Vec<_> = messages.iter().flat_map(|m| &m.content).collect();
+            let thinking: Vec<_> = blocks
+                .iter()
+                .filter_map(|c| match c {
+                    MessageContentBlock::Thinking(t) => Some(t.thinking.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let text: String = blocks
+                .iter()
+                .filter_map(|c| match c {
+                    MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(thinking, vec!["structured plan"], "{field}");
+            assert_eq!(text, "Use <function= syntax. answer", "{field}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_streaming_prefers_json_over_xml() -> anyhow::Result<()> {
         use futures::StreamExt;
 
