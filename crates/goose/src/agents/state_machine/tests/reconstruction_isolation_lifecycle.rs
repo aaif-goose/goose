@@ -1,7 +1,10 @@
 use anyhow::Result;
 
 use super::calculator_extension::{value, ADD};
-use super::pipeline::MessageKind::{Agent, Error, ToolCall, ToolResponse};
+#[cfg(feature = "tree-sitter")]
+use super::pipeline::MessageKind::Error;
+use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
+#[cfg(feature = "tree-sitter")]
 use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]

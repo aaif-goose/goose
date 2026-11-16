@@ -7,10 +7,9 @@ use super::dummy_api::DummyApi;
 use super::dummy_api::ProviderFeatures;
 #[cfg(feature = "scheduler")]
 use super::pipeline::test_pipeline_with_scheduler;
-use super::pipeline::{
-    test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error,
-    MessageKind::ToolResponse,
-};
+#[cfg(feature = "scheduler")]
+use super::pipeline::MessageKind::ToolResponse;
+use super::pipeline::{test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error};
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 #[cfg(feature = "scheduler")]
