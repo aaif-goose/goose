@@ -157,32 +157,61 @@ impl RawContent {
         let Some(content) = chunk.pointer_mut("/choices/0/delta/content") else {
             return line;
         };
-        let Some(text) = content.as_str() else {
-            return line;
+        let texts: Vec<&mut Value> = match content {
+            Value::Array(parts) => parts
+                .iter_mut()
+                .filter(|part| part["type"] == "text")
+                .filter_map(|part| part.get_mut("text"))
+                .collect(),
+            text => vec![text],
         };
 
+        let mut withheld = false;
+        for text in texts {
+            if let Some(kept) = text.as_str().and_then(|t| self.withhold(t)) {
+                *text = Value::String(kept);
+                withheld = true;
+            }
+        }
+        if !withheld {
+            return line;
+        }
+        format!("data: {chunk}")
+    }
+
+    /// Records `text` and, once an XML tool call has started outside `<think>`,
+    /// returns the part of `text` to keep.
+    fn withhold(&mut self, text: &str) -> Option<String> {
         let chunk_start = self.text.len();
         self.text.push_str(text);
-        if self.xml_start.is_none() {
-            let search_from = self
-                .text
-                .floor_char_boundary(chunk_start.saturating_sub(XML_TOOL_CALL_MARKER.len()));
-            self.xml_start = self
+        let mut search_from = self
+            .text
+            .floor_char_boundary(chunk_start.saturating_sub(XML_TOOL_CALL_MARKER.len()));
+        while self.xml_start.is_none() {
+            let Some(i) = self
                 .text
                 .get(search_from..)
                 .and_then(|rest| rest.find(XML_TOOL_CALL_MARKER))
-                .map(|i| search_from + i);
+            else {
+                break;
+            };
+            let start = search_from + i;
+            search_from = start + XML_TOOL_CALL_MARKER.len();
+            // A marker inside reasoning is not a tool call, as when the OpenAI parser filtered it out.
+            if self
+                .text
+                .get(..search_from)
+                .is_some_and(|upto| split_think_blocks(upto).0.ends_with(XML_TOOL_CALL_MARKER))
+            {
+                self.xml_start = Some(start);
+            }
         }
-        let Some(xml_start) = self.xml_start else {
-            return line;
-        };
-
-        let kept = text
-            .get(..xml_start.saturating_sub(chunk_start))
-            .unwrap_or_default()
-            .to_string();
-        *content = Value::String(kept);
-        format!("data: {chunk}")
+        let xml_start = self.xml_start?;
+        Some(
+            text.get(..xml_start.saturating_sub(chunk_start))
+                .unwrap_or_default()
+                .to_string(),
+        )
     }
 }
 
@@ -298,6 +327,42 @@ where
 mod tests {
     use super::*;
     use serde_json::json;
+
+    async fn streamed_tool_names(lines: Vec<anyhow::Result<String>>) -> Vec<String> {
+        use futures::StreamExt;
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+        messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => Some(match &r.tool_call {
+                    Ok(call) => call.name.to_string(),
+                    Err(e) => format!("ERR: {}", e.message),
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_streaming_marker_inside_think_does_not_swallow_real_call() {
+        let content =
+            "<think>Consider <function=foo but skip it</think><function=real_tool></function>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines = vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        assert_eq!(streamed_tool_names(lines).await, vec!["real_tool"]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_xml_fallback_reads_text_part_arrays() {
+        let delta = json!({"choices": [{"delta": {"content": [{"type": "text", "text": "<function=real_tool></function>"}]}, "index": 0}]});
+        let lines = vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        assert_eq!(streamed_tool_names(lines).await, vec!["real_tool"]);
+    }
 
     #[test]
     fn test_parse_xml_tool_calls_single() {
