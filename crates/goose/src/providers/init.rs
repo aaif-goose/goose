@@ -7,6 +7,7 @@ use super::local_inference::LocalInferenceProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
+    agy_acp::AgyAcpProvider,
     amp_acp::AmpAcpProvider,
     avian::AvianProvider,
     azure::AzureProvider,
@@ -61,6 +62,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new(tls_config).with_providers(|registry| {
         use super::inventory::registrations;
 
+        registry.register_with_inventory::<AgyAcpProvider>(
+            false,
+            Some(registrations::agy_acp_inventory()),
+        );
         registry.register_with_inventory::<AmpAcpProvider>(
             false,
             Some(registrations::amp_acp_inventory()),
