@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension_manager::{requests_can_resolve_a_lease, ToolDisposition};
 use rmcp::model::Tool;
 
 use super::ops_toolcalling::{
-    extension_prompt_parts, pending_advertised_tool_requests, requests_can_resolve_tools,
-    ToolDisposition, ToolExecution,
+    extension_prompt_parts, pending_advertised_tool_requests, ToolExecution,
 };
 use super::{
     messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation, OperationResult,
@@ -96,7 +96,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
             .clone();
         let tools = match tools {
             Some(tools) => tools,
-            None if requests_can_resolve_tools(
+            None if requests_can_resolve_a_lease(
                 messages,
                 pending
                     .iter()

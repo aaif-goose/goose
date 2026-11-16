@@ -2,12 +2,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension_manager::{pending_tool_requests, ToolDisposition};
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::ops_toolcalling::{
-    pending_tool_requests, tool_span, ToolDisposition,
-};
+use crate::agents::state_machine::ops_toolcalling::tool_span;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
