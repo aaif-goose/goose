@@ -730,7 +730,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
         let lease = self.lease(session).await?;
-        let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
+        let mut tools = lease.tools().await;
         if self.defers_tools(&lease) {
             let deferred: HashSet<_> = self
                 .mcp_tools(&lease)
@@ -788,7 +788,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
 
         let mut extensions = lease.instructions().await;
-        extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
         if extensions.is_empty() {
             return Ok(prompt_parts);
         }
@@ -871,7 +870,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         };
 
         let mut known_tools: HashSet<_> = lease
-            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .tools()
             .await
             .into_iter()
             .map(|tool| tool.name.to_string())

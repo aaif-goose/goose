@@ -19,11 +19,12 @@ use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
-    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource,
+    GooseToolApproval, InferenceRunner, Operation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -124,13 +125,16 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
+    let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
+        SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
+    );
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(SkillOperation::new(Arc::clone(&extension_lease))),
+        Arc::clone(&skills),
         Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
@@ -196,8 +200,14 @@ pub(crate) fn build_state_machine(
     );
     let mut steps = Vec::new();
     if crate::agents::execute_commands::slash_commands_enabled() {
+        let mut command_operations: Vec<_> = operations
+            .iter()
+            .filter(|operation| !Arc::ptr_eq(operation, &skills))
+            .cloned()
+            .collect();
+        command_operations.push(Arc::clone(&skills));
         steps.push(Step::Operation(Arc::new(SlashCommandOperation::new(
-            operations.clone(),
+            command_operations,
         ))));
     }
     steps.extend(operations.into_iter().map(Step::Operation));

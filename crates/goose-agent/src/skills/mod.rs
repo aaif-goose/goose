@@ -1,12 +1,14 @@
-//! Application-independent skill argument substitution and rendering.
+//! Application-independent skill argument substitution, rendering and the skill operation.
 //! Native targets also support filesystem discovery under explicit roots.
 
 mod arguments;
 #[cfg(not(target_arch = "wasm32"))]
 mod discovery;
+mod operation;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use discovery::{discover_skills, SkillRoot};
+pub use operation::{SkillOperation, SkillSource, LOAD_SKILL_TOOL_NAME};
 
 use anyhow::Result;
 use arguments::apply_skill_arguments;
