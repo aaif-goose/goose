@@ -19,13 +19,10 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::{
-    tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-};
+use crate::agents::tool_execution::{tool_stream, ToolCallResult, ToolStreamItem};
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::agents::StateMachineServices;
-use crate::config::GooseMode;
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
