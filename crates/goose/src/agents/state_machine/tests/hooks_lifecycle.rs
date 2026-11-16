@@ -1269,3 +1269,121 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
     );
     Ok(())
 }
+
+const BANG_COMMAND_NO_TOOL_RUNS: &str = "!echo hi";
+
+#[tokio::test]
+async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
+    let env = RecordingHookEnv::new(&[
+        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+
+    pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    assert_eq!(env.payloads("result.log").len(), 1);
+    assert_eq!(env.payloads("postfail.log").len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT)]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+
+    let result = pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    result.assert_message(-1, ToolResponse, "blocked by test policy");
+    let response = result
+        .session
+        .conversation
+        .as_ref()
+        .unwrap()
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .find_map(|content| match content {
+            MessageContent::ToolResponse(response) => Some(response.clone()),
+            _ => None,
+        })
+        .expect("the call was answered");
+    assert!(response
+        .metadata
+        .as_ref()
+        .is_none_or(|metadata| !metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_reports_the_current_call_when_a_provider_reuses_its_id() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    api.on("add one").calls([("reused", ADD, value(1))]);
+    api.on("result: 1").reply("done");
+    api.on("add two").calls([("reused", ADD, value(2))]);
+    api.on("result: 3").reply("done");
+
+    pipeline.run(["add one", "add two"]).await?;
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[1]["tool_input"], value(2));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_call_that_finished_before_stop_still_gets_its_post_hook() -> Result<()> {
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+    pipeline.add_extension("developer").await?;
+    let pid_file = pipeline.working_dir().join("shell.pid");
+    api.on("add while the tests run").calls([
+        ("call_add", ADD, value(1)),
+        (
+            "call_tests",
+            "shell",
+            serde_json::json!({ "command": format!("echo $$ > {}; exec sleep 30", pid_file.display()) }),
+        ),
+    ]);
+    let cancel = CancellationToken::new();
+    let stop_once_added_and_running = async {
+        while pipeline.calculator_total() == 0 || !pid_file.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        cancel.cancel();
+    };
+
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            pipeline.run_with_cancel("add while the tests run", cancel.clone()),
+            stop_once_added_and_running
+        )
+    })
+    .await?;
+    result?;
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["tool_call_id"], "call_add");
+    Ok(())
+}

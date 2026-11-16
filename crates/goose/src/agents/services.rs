@@ -1090,6 +1090,12 @@ impl StateMachineServices {
                 steer_queue,
             )
             .await;
+        let hook_manager = self.hook_manager.clone();
+        let extension_lease = self
+            .runtime
+            .confirmations
+            .session(&session_id)
+            .extension_lease();
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -1102,6 +1108,8 @@ impl StateMachineServices {
                         run_goose(
                             &machine,
                             session_manager.as_ref(),
+                            &hook_manager,
+                            &extension_lease,
                             &session_id,
                             &emit,
                         ),

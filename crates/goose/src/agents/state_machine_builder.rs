@@ -130,22 +130,15 @@ pub(crate) fn build_state_machine(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(SkillOperation::new(
-            Arc::clone(&extension_lease),
-            hook_manager.clone(),
-        )),
+        Arc::new(SkillOperation::new(Arc::clone(&extension_lease))),
         Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
-            hook_manager.clone(),
             Arc::clone(&extension_lease),
             defer_tools,
             always_load_tools,
         )),
-        Arc::new(RemainingToolCallsOperation::new(
-            hook_manager.clone(),
-            Arc::clone(&extension_lease),
-        )),
+        Arc::new(RemainingToolCallsOperation),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
             SubagentOperation::new(Arc::new(subagent_runner)).with_max_concurrency(
