@@ -17,6 +17,10 @@ pub const EMPTY_RESPONSE_MESSAGE: &str =
 
 pub struct EmptyResponseOperation;
 
+fn is_hidden_note(message: &Message) -> bool {
+    message.role == Role::User && !message.is_user_visible() && !message.is_tool_response()
+}
+
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S, E> Operation<S, E> for EmptyResponseOperation
@@ -41,7 +45,12 @@ where
         {
             return not_applicable();
         }
-        if ends_with_successful_tool_response(&messages[..messages.len() - 1]) {
+        let before_reply = &messages[..messages.len() - 1];
+        let end = before_reply
+            .iter()
+            .rposition(|message| !is_hidden_note(message))
+            .map_or(0, |index| index + 1);
+        if ends_with_successful_tool_response(&before_reply[..end]) {
             return not_applicable();
         }
 
@@ -50,9 +59,7 @@ where
             .rev()
             .take_while(|message| {
                 (message.role == Role::Assistant && is_empty_response(message))
-                    || (message.role == Role::User
-                        && !message.is_user_visible()
-                        && !message.is_tool_response())
+                    || is_hidden_note(message)
             })
             .filter(|message| message.role == Role::Assistant && is_empty_response(message))
             .count();

@@ -35,13 +35,13 @@ impl MachineSession for Session {
 }
 
 enum Effect {
-    Message(Message),
+    Message(Box<Message>),
     Usage,
 }
 
 impl From<Message> for Effect {
     fn from(message: Message) -> Self {
-        Self::Message(message)
+        Self::Message(Box::new(message))
     }
 }
 
@@ -127,7 +127,7 @@ impl Provider for ScriptedProvider {
 fn apply(session: &mut Session, effects: Vec<Effect>) {
     for effect in effects {
         if let Effect::Message(message) = effect {
-            session.0.push(message);
+            session.0.push(*message);
         }
     }
 }
@@ -228,6 +228,27 @@ async fn successful_tool_completion_does_not_retry() -> Result<()> {
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("hello"),
         Message::user().with_tool_response("call", Ok(CallToolResult::success(Vec::new()))),
+        Message::assistant(),
+    ]);
+    let operation: &dyn Operation<(), Message> = &EmptyResponseOperation;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, CancellationToken::new());
+
+    assert!(matches!(
+        operation.run(&(), &conversation, &emit).await?,
+        OperationResult::NotApplicable
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn successful_tool_completion_before_context_does_not_retry() -> Result<()> {
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("hello"),
+        Message::user().with_tool_response("call", Ok(CallToolResult::success(Vec::new()))),
+        Message::user()
+            .with_text("context")
+            .with_visibility(false, true),
         Message::assistant(),
     ]);
     let operation: &dyn Operation<(), Message> = &EmptyResponseOperation;
