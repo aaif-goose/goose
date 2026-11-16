@@ -12,7 +12,7 @@ use super::pipeline::MessageKind::{Agent, Confirmation, Error, ToolCall, ToolRes
 use super::pipeline::TestPipeline;
 use super::pipeline::MAX_TURNS;
 use super::test_pipeline;
-use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
+use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
@@ -627,7 +627,7 @@ async fn elicitation_accept_decline_and_cancel() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
+async fn tool_availability_tracks_extension_removal() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
 
     #[cfg(feature = "tree-sitter")]
@@ -645,18 +645,11 @@ async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
         assert!(api.calls().last().unwrap().advertises_tool("analyze"));
     }
 
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    api.on("try the tool").call(ADD, value(1));
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("here is the plan");
-
-    let result = pipeline.run(["try the tool"]).await?;
-    result.assert_message(-2, ToolResponse, "chat mode");
-    result.assert_message(-1, Agent, "here is the plan");
+    api.on("before removing the calculator")
+        .reply("calculator present");
+    pipeline.run(["before removing the calculator"]).await?;
     assert!(api.calls().last().unwrap().advertises_tool(ADD));
-    assert_eq!(pipeline.calculator_total(), 0);
 
-    let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     pipeline.remove_extension("calculator").await?;
     api.on("continue without the calculator")
         .reply("calculator removed");

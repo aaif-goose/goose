@@ -21,8 +21,6 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
@@ -370,11 +368,6 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         let mut response = Message::user();
         for (request, disposition) in pending {
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]))
-                }
                 ToolDisposition::Execute => {
                     let Some(session) = leased_session.as_ref() else {
                         response.add_tool_response_with_metadata(

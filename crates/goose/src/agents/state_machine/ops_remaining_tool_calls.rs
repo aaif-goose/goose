@@ -16,8 +16,6 @@ use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_t
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
@@ -84,12 +82,6 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                         true,
                     )
                 }
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => (
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )])),
-                    false,
-                ),
                 ToolDisposition::Execute => {
                     match request.tool_call.as_ref() {
                         Ok(tool_call) => {
@@ -208,14 +200,6 @@ mod tests {
             .map(|payload| payload["tool_call_id"].clone())
             .collect();
         assert_eq!(tool_call_ids, ["missing", "final"]);
-
-        let chat = Session {
-            goose_mode: GooseMode::Chat,
-            ..Session::default()
-        };
-        let env = HookTestEnv::new("PostToolUseFailure", RECORD_AND_ALLOW_SCRIPT);
-        run(&chat, messages(), env.hook_manager()).await?;
-        assert!(env.payloads().is_empty());
         Ok(())
     }
 

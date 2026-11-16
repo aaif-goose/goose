@@ -5350,7 +5350,6 @@ mod tests {
 
     #[test_case(GooseMode::Approve)]
     #[test_case(GooseMode::SmartApprove)]
-    #[test_case(GooseMode::Chat)]
     #[tokio::test]
     async fn test_goose_mode_persists(mode: GooseMode) {
         let temp_dir = TempDir::new().unwrap();
