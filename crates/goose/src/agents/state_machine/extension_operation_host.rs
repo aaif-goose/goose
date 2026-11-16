@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool, ToolAnnotations};
 
+use super::ops_extension_prompts::extension_prompt_parts;
 use super::tool_hook_context::tool_span;
-use crate::agents::extension_config::ExtensionInfo;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::{messages_since_kickoff, Emitter};
 use crate::agents::AgentEvent;
@@ -98,14 +98,6 @@ fn platform_notification(result: &CallToolResult) -> Option<rmcp::model::ServerN
             notification.get("params").cloned(),
         ),
     ))
-}
-
-fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
-    let mut session = session.clone();
-    if let Some(working_dir) = lease.working_dir() {
-        session.working_dir = working_dir.to_path_buf();
-    }
-    session
 }
 
 pub struct GooseExtensionOperationHost {
@@ -212,39 +204,6 @@ pub(super) fn call_will_not_run(
         messages_since_kickoff(conversation)?,
         request,
     ))
-}
-
-/// The extension block, as a header part plus one part per extension. Prompt
-/// extras are joined with a blank line, so this renders the same text as one
-/// combined part while keeping each extension's tokens attributable.
-fn extension_prompt_parts(
-    extensions: &[ExtensionInfo],
-    defer_tools: bool,
-) -> Vec<(String, String)> {
-    let mut parts = vec![(
-        "extensions".to_string(),
-        "# Extensions\n\n\
-         Extensions provide additional tools and context from different data sources and applications.\n\
-         You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
-         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
-            .to_string(),
-    )];
-    if !defer_tools {
-        parts[0].1.push_str(
-            " Each of these extensions provides tools that are in your tool specification.",
-        );
-    }
-    for extension in extensions {
-        let mut lines = vec![format!("## {}", extension.name)];
-        if extension.has_resources {
-            lines.push(format!("{} supports resources.", extension.name));
-        }
-        if !extension.instructions.is_empty() {
-            lines.push(format!("### Instructions\n{}", extension.instructions));
-        }
-        parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
-    }
-    parts
 }
 
 #[async_trait]
@@ -474,6 +433,7 @@ impl goose_agent::extension_manager::ExtensionOperationHost<Session>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::extension_config::ExtensionInfo;
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
 
     #[test]

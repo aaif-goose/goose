@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use rmcp::model::Tool;
 
 use super::extension_operation_host::pending_advertised_tool_requests;
-use super::platform_tool_execution::{extension_prompt_parts, ToolExecution};
+use super::ops_extension_prompts::extension_prompt_parts;
+use super::platform_tool_execution::ToolExecution;
 use super::{
     messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation, OperationResult,
 };

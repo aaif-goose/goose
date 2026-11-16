@@ -257,9 +257,9 @@ are recorded after host transformation but before post-call hooks, so cancellati
 during a hook does not lose a completed response. Goose supplies the MCP lease
 from its advertised tool dispatcher through `ExtensionOperationHost::advertised_lease`,
 so clearing the application snapshot also expires the operation's cached selection.
-Other hosts can use `with_inference_lease` to supply a shared `TurnLease`. Prompt slash commands and subdirectory hints are separate
-Goose operations. Hosts can reject unadvertised requests and claim expired
-requests without starting replacement extensions; only explicitly eligible
+Prompt slash commands and subdirectory hints are separate Goose operations. Hosts
+can reject unadvertised requests and claim expired requests without starting
+replacement extensions; only explicitly eligible
 operation-generated requests may resolve a lease for execution.
 
 The native transports and their additional dependencies are target-gated; the

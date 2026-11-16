@@ -320,7 +320,6 @@ pub struct ExtensionOperation<S> {
     host: Arc<dyn ExtensionOperationHost<S>>,
     lease: TurnLease,
     batch: ToolCallBatch,
-    shared_snapshot: bool,
 }
 
 impl<S: Send + Sync + 'static> ExtensionOperation<S> {
@@ -333,16 +332,7 @@ impl<S: Send + Sync + 'static> ExtensionOperation<S> {
             host,
             lease: TurnLease::default(),
             batch: ToolCallBatch::default(),
-            shared_snapshot: false,
         }
-    }
-
-    /// Use the lease prepared together with the host's inference session snapshot.
-    /// The host must replace this lease before collecting each inference's input.
-    pub fn with_inference_lease(mut self, lease: TurnLease) -> Self {
-        self.lease = lease;
-        self.shared_snapshot = true;
-        self
     }
 
     fn finish<E: From<Message>>(&self, emit: &Emitter) -> Result<OperationResult<E>> {
@@ -393,11 +383,7 @@ where
     }
 
     async fn inference_tools(&self, session: &S) -> Result<Vec<Tool>> {
-        let lease = if self.shared_snapshot {
-            self.current(session).await?
-        } else {
-            self.lease.set(self.host.resolve(session).await?)
-        };
+        let lease = self.lease.set(self.host.resolve(session).await?);
         self.host.tools(session, &lease).await
     }
 

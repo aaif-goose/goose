@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::agents::extension_config::ExtensionInfo;
 use crate::agents::tool_snapshot::ToolSnapshot;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -16,6 +17,39 @@ use crate::agents::StateMachineServices;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
+
+/// The extension block, as a header part plus one part per extension. Prompt
+/// extras are joined with a blank line, so this renders the same text as one
+/// combined part while keeping each extension's tokens attributable.
+pub(super) fn extension_prompt_parts(
+    extensions: &[ExtensionInfo],
+    defer_tools: bool,
+) -> Vec<(String, String)> {
+    let mut parts = vec![(
+        "extensions".to_string(),
+        "# Extensions\n\n\
+         Extensions provide additional tools and context from different data sources and applications.\n\
+         You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
+         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
+            .to_string(),
+    )];
+    if !defer_tools {
+        parts[0].1.push_str(
+            " Each of these extensions provides tools that are in your tool specification.",
+        );
+    }
+    for extension in extensions {
+        let mut lines = vec![format!("## {}", extension.name)];
+        if extension.has_resources {
+            lines.push(format!("{} supports resources.", extension.name));
+        }
+        if !extension.instructions.is_empty() {
+            lines.push(format!("### Instructions\n{}", extension.instructions));
+        }
+        parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
+    }
+    parts
+}
 
 pub struct ExtensionPromptOperation {
     pub manager: Arc<StateMachineServices>,

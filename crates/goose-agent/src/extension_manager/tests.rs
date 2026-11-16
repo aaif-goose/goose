@@ -1050,6 +1050,7 @@ struct OperationHost {
     hook_started: Semaphore,
     resolve_generated: bool,
     skip: bool,
+    advertised: Option<TurnLease>,
 }
 
 impl OperationHost {
@@ -1064,6 +1065,7 @@ impl OperationHost {
             hook_started: Semaphore::new(0),
             resolve_generated: false,
             skip: false,
+            advertised: None,
         }
     }
 }
@@ -1071,6 +1073,9 @@ impl OperationHost {
 #[async_trait]
 impl LeaseResolver<()> for OperationHost {
     async fn resolve(&self, _: &()) -> Result<ExtensionLease> {
+        if let Some(advertised) = &self.advertised {
+            return Ok((*advertised.get().expect("prepared snapshot")).clone());
+        }
         self.resolutions.fetch_add(1, Ordering::SeqCst);
         Ok(self.manager.scope_lease("session").await)
     }
@@ -1078,6 +1083,10 @@ impl LeaseResolver<()> for OperationHost {
 
 #[async_trait]
 impl ExtensionOperationHost<()> for OperationHost {
+    fn advertised_lease(&self, lease: &TurnLease) -> Option<Arc<ExtensionLease>> {
+        self.advertised.as_ref().unwrap_or(lease).get()
+    }
+
     fn skipped_result(&self, _: &()) -> Option<CallToolResult> {
         self.skip
             .then(|| CallToolResult::success(vec![rmcp::model::ContentBlock::text("skipped")]))
@@ -1171,8 +1180,10 @@ async fn extension_operation_uses_prepared_snapshot_without_resolving_again() {
     let snapshot = manager.scope_lease("session").await;
     let shared = TurnLease::default();
     shared.set(snapshot);
-    let host = Arc::new(OperationHost::new(Arc::clone(&manager)));
-    let operation = Op::with_host(host.clone()).with_inference_lease(shared.clone());
+    let mut host = OperationHost::new(Arc::clone(&manager));
+    host.advertised = Some(shared.clone());
+    let host = Arc::new(host);
+    let operation = Op::with_host(host.clone());
     assert_eq!(
         tool_names(
             Operation::<(), Msg>::inference_tools(&operation, &())
@@ -1212,6 +1223,22 @@ async fn extension_operation_uses_prepared_snapshot_without_resolving_again() {
         ),
         ["first__a", "second__b"]
     );
+
+    shared.clear();
+    let responses = response_texts(
+        Operation::<(), Msg>::run(&operation, &(), &turn_requesting(&["first__a"]), &emit)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        responses,
+        [(
+            "call-first__a".to_string(),
+            EXPIRED_TOOL_REQUEST.to_string()
+        )]
+    );
+    assert_eq!(host.resolutions.load(Ordering::SeqCst), 0);
+    assert_eq!(host.completed_hooks.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

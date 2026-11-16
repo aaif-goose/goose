@@ -5,7 +5,6 @@ use futures::FutureExt;
 use goose_agent::extension_manager::{PendingCall, ToolCallBatch};
 use rmcp::model::{CallToolResult, ContentBlock};
 
-use crate::agents::extension::ExtensionInfo;
 use crate::agents::state_machine::{applied, Emitter, GooseEffect, OperationResult};
 use crate::agents::tool_execution::ToolCallResult;
 use crate::agents::AgentEvent;
@@ -57,36 +56,6 @@ fn with_recording(
         action_required_stream: result.action_required_stream,
         result: Box::new(future.boxed()),
     }
-}
-
-pub(super) fn extension_prompt_parts(
-    extensions: &[ExtensionInfo],
-    defer_tools: bool,
-) -> Vec<(String, String)> {
-    let mut parts = vec![(
-        "extensions".to_string(),
-        "# Extensions\n\n\
-         Extensions provide additional tools and context from different data sources and applications.\n\
-         You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
-         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
-            .to_string(),
-    )];
-    if !defer_tools {
-        parts[0].1.push_str(
-            " Each of these extensions provides tools that are in your tool specification.",
-        );
-    }
-    for extension in extensions {
-        let mut lines = vec![format!("## {}", extension.name)];
-        if extension.has_resources {
-            lines.push(format!("{} supports resources.", extension.name));
-        }
-        if !extension.instructions.is_empty() {
-            lines.push(format!("### Instructions\n{}", extension.instructions));
-        }
-        parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
-    }
-    parts
 }
 
 pub(super) struct ToolExecution {
