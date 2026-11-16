@@ -256,6 +256,8 @@ impl ParameterGuard {
             if let Some(tag) = tag.filter(|tag| self.content_tail.ends_with(tag)) {
                 self.in_call = tag != FUNCTION_END;
                 self.in_parameter = tag == PARAMETER;
+                // A later marker counts only if it is emitted outside reasoning afresh.
+                self.content_tail.clear();
             }
             if !self.in_parameter {
                 self.filter(tail);
@@ -312,7 +314,7 @@ where
                 buffered_usage = usage.clone();
             }
 
-            if let Some(message) = message_opt {
+            if let Some(mut message) = message_opt {
                 if is_text_only_message(&message) {
                     let text = extract_text_from_message(&message);
                     accumulated_text.push_str(&text);
@@ -326,6 +328,11 @@ where
                     }
                 }
 
+                for content in &mut message.content {
+                    if let MessageContentBlock::Text(text) = content {
+                        text.text = text.text.replace(LT_PLACEHOLDER, "<");
+                    }
+                }
                 yield (Some(message), usage);
             } else if usage.is_some() && !xml_detected {
                 yield (None, usage);
@@ -892,6 +899,60 @@ data: [DONE]"#;
             .map(|call| call.arguments.as_ref().unwrap().get("command").cloned())
             .collect();
         assert_eq!(commands, vec![Some(json!("pwd"))]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_parameter_marker_in_reasoning_after_parameter_is_not_a_parameter() {
+        use futures::StreamExt;
+
+        let content = "<function=developer__shell><parameter=command>pwd</parameter><think>Use <parameter=other> later</think></function>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines: Vec<anyhow::Result<String>> =
+            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let arguments: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .map(|call| call.arguments.clone())
+            .collect();
+        assert_eq!(arguments, vec![Some(object(json!({"command": "pwd"})))]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_mixed_reasoning_message_keeps_literal_text() {
+        use futures::StreamExt;
+
+        let content = "<function=edit><parameter=text>a < b</parameter></function>";
+        for field in ["reasoning_content", "reasoning"] {
+            let delta =
+                json!({"choices": [{"delta": {field: "plan", "content": content}, "index": 0}]});
+            let lines: Vec<anyhow::Result<String>> =
+                vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+            let messages: Vec<Message> =
+                response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                    .filter_map(|item| async move { item.unwrap().0 })
+                    .collect()
+                    .await;
+
+            let text: String = messages
+                .iter()
+                .flat_map(|m| &m.content)
+                .filter_map(|c| match c {
+                    MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(text, content, "{field}");
+        }
     }
 
     #[tokio::test]
