@@ -2585,7 +2585,10 @@ mod tests {
 
         #[tokio::test]
         async fn test_empty_response_with_steer_persists_empty_message() -> Result<()> {
-            let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
+            let services = StateMachineServices::with_config(StateMachineServicesConfig {
+                disable_session_naming: true,
+                ..StateMachineServicesConfig::cli()
+            });
             let session = services
                 .session_manager
                 .create_session(

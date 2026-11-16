@@ -161,13 +161,14 @@ pub fn chat_span(
 }
 
 pub(crate) fn is_empty_response(message: &Message) -> bool {
-    message.content.iter().all(|content| match content {
-        MessageContent::Text(text) => text.text.trim().is_empty(),
-        MessageContent::Thinking(thinking) => {
-            thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
-        }
-        _ => false,
-    })
+    !message.metadata.output_token_limit_reached
+        && message.content.iter().all(|content| match content {
+            MessageContent::Text(text) => text.text.trim().is_empty(),
+            MessageContent::Thinking(thinking) => {
+                thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
+            }
+            _ => false,
+        })
 }
 
 pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
@@ -551,14 +552,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 }
             }
 
-            let empty_output = {
-                let output = self.output();
-                !output
-                    .accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                    && output.accumulator.iter().all(is_empty_response)
-            };
+            let empty_output = self.output().accumulator.iter().all(is_empty_response);
             if empty_output && !emit.cancel_token().is_cancelled() {
                 self.output().accumulator.clear();
                 let mut message = Message::assistant();

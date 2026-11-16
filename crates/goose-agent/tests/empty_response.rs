@@ -217,7 +217,7 @@ async fn turn_budget_stops_empty_response_retries() -> Result<()> {
 
     assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
-        session.0.last().unwrap().as_concat_text(),
+        session.0.last().unwrap().error().unwrap().message,
         MAX_TURNS_MESSAGE
     );
     Ok(())
