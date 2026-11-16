@@ -193,6 +193,7 @@ impl TestPipeline {
         cancel: CancellationToken,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let services = self.services().await;
+        let chat_mode = self.session().await.expect("session exists").goose_mode == GooseMode::Chat;
         services
             .create_state_machine(
                 self.provider.clone(),
@@ -205,6 +206,7 @@ impl TestPipeline {
                 },
                 cancel,
                 services.runtime.steer_queue(&self.session_id),
+                chat_mode,
             )
             .await
     }

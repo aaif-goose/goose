@@ -147,6 +147,7 @@ impl StateMachineServices {
                 CancellationToken::new(),
                 self.runtime.steer_queue(session_id),
                 extension_lease,
+                session.goose_mode == crate::config::GooseMode::Chat,
             )
             .await;
         let input = machine

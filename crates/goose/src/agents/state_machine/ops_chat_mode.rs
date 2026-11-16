@@ -10,7 +10,6 @@ use crate::agents::state_machine::{
     OperationResult,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::session::Session;
@@ -25,12 +24,9 @@ impl Operation<Session, GooseEffect> for ChatModeOperation {
 
     async fn prompt_parts(
         &self,
-        session: &Session,
+        _session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        if session.goose_mode != GooseMode::Chat {
-            return Ok(Vec::new());
-        }
         Ok(vec![(
             "chat_mode".to_string(),
             "Right now you are in the chat only mode, no access to any tool use and system."
@@ -40,13 +36,10 @@ impl Operation<Session, GooseEffect> for ChatModeOperation {
 
     async fn run(
         &self,
-        session: &Session,
+        _session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if session.goose_mode != GooseMode::Chat {
-            return not_applicable();
-        }
         let messages = messages_since_kickoff(conversation)?;
         let answered: HashSet<&str> = messages
             .iter()

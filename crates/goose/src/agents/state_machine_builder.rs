@@ -57,6 +57,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
     pub(crate) cancel: CancellationToken,
     pub(crate) context_relevance: Option<Arc<dyn DecisionProvider>>,
+    pub(crate) chat_mode: bool,
 }
 
 /// Providers that manage their own context never run the operation, so they
@@ -122,12 +123,16 @@ pub(crate) fn build_state_machine(
         extra_operations,
         cancel,
         context_relevance,
+        chat_mode,
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-        Arc::new(FinalOutputOperation::new(provider.clone())),
-        Arc::new(ChatModeOperation),
+    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> =
+        vec![Arc::new(FinalOutputOperation::new(provider.clone()))];
+    if chat_mode {
+        operations.push(Arc::new(ChatModeOperation));
+    }
+    let tool_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
@@ -159,6 +164,7 @@ pub(crate) fn build_state_machine(
         Arc::new(SteerOperation::new(steer_queue)),
         Arc::new(BangCommandOperation::new("shell", "command")),
     ];
+    operations.extend(tool_operations);
     if !manages_own_context {
         if let Some(decisions) = context_relevance {
             operations.push(Arc::new(ContextRelevanceOperation::new(

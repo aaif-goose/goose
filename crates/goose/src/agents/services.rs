@@ -691,6 +691,7 @@ impl StateMachineServices {
         false
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn create_state_machine(
         self: &Arc<Self>,
         provider: Arc<dyn Provider>,
@@ -699,6 +700,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
+        chat_mode: bool,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let extension_lease = self
             .runtime
@@ -713,6 +715,7 @@ impl StateMachineServices {
             cancel,
             steer_queue,
             extension_lease,
+            chat_mode,
         )
         .await
     }
@@ -727,6 +730,7 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        chat_mode: bool,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
@@ -765,6 +769,7 @@ impl StateMachineServices {
             extra_operations: settings.auto_effort.into_iter().collect(),
             cancel,
             context_relevance: settings.context_relevance,
+            chat_mode,
         })
     }
 
@@ -1088,6 +1093,7 @@ impl StateMachineServices {
                 session_config,
                 cancel.clone(),
                 steer_queue,
+                session.goose_mode == GooseMode::Chat,
             )
             .await;
         let reply_span = tracing::Span::current();
