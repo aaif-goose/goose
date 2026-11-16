@@ -72,7 +72,6 @@ impl ProviderDef for AmpAcpProvider {
                 // "default" prompts before risky actions.
                 (GooseMode::Approve, vec!["default".to_string()]),
                 (GooseMode::SmartApprove, vec!["default".to_string()]),
-                (GooseMode::Chat, vec!["default".to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {

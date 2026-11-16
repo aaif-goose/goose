@@ -2231,12 +2231,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Zelfstandig"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Praat met de gekozen provider, zonder tools of extensies."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Alleen chatten"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Alle tools, extensies en wijzigingen in bestanden moeten door een mens worden goedgekeurd"
   },

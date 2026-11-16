@@ -15,9 +15,7 @@ use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 #[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
-use crate::config::GooseMode;
 use crate::conversation::message::Message;
 #[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
@@ -163,32 +161,7 @@ extensions:
 }
 
 #[tokio::test]
-async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    let recipe = Recipe::builder()
-        .title("Chat recipe")
-        .description("Chat recipe")
-        .prompt("Try to delegate")
-        .extensions(vec![ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        }])
-        .build()
-        .expect("valid recipe");
-    pipeline.set_recipe(recipe).await?;
-    api.on("Try to delegate")
-        .call("delegate", json!({ "instructions": "Do the work" }));
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("delegation stayed in chat");
-
-    let result = pipeline.run(["Try to delegate"]).await?;
-    result.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
-    result.assert_message(-1, Agent, "delegation stayed in chat");
-
+async fn recipe_delegation_respects_child_turn_limit() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     pipeline.remove_extension("todo").await?;
     let host = api.uri();

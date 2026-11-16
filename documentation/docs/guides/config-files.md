@@ -49,7 +49,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOOSE_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
 | `GOOSE_CACHE_TTL` | Anthropic prompt-cache TTL; `1h` keeps the cached prefix alive across idle gaps at a higher cache-write rate. Headless runs always use `5m` | "5m", "1h" | "5m" | No |
-| `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
+| `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
 | `GOOSE_TOOL_DEFERRAL` | Publish MCP tool names up front; enable schemas on demand with `enable_tools` | "lookup" | Disabled when unset | No |
 | `GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD` | Comma-separated exact model-visible tool names to keep eager when deferral is enabled | String (e.g., "serverA__toolA,serverB__toolC") | Empty | No |

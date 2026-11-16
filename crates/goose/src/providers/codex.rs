@@ -100,10 +100,6 @@ impl CodexProvider {
                 // Default codex behavior - interactive approvals
                 // No special flags needed
             }
-            GooseMode::Chat => {
-                // Read-only sandbox mode
-                cmd.arg("--sandbox").arg("read-only");
-            }
         }
         Ok(())
     }
@@ -1364,7 +1360,6 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
     #[test_case(GooseMode::Auto, &["--yolo"] ; "auto_yolo")]
     #[test_case(GooseMode::SmartApprove, &["--full-auto"] ; "smart_approve_full_auto")]
     #[test_case(GooseMode::Approve, &[] as &[&str] ; "approve_no_flags")]
-    #[test_case(GooseMode::Chat, &["--sandbox", "read-only"] ; "chat_read_only")]
     fn test_apply_permission_flags(mode: GooseMode, expected: &[&str]) {
         let mut cmd = tokio::process::Command::new("codex");
         CodexProvider::apply_permission_flags(&mut cmd, mode).unwrap();

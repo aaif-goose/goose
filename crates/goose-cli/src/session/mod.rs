@@ -3238,7 +3238,7 @@ mod tests {
 
         let old = sm.get_session(&old.id, false).await.unwrap();
 
-        let new_id = create_successor_session(&sm, &old, GooseMode::Chat)
+        let new_id = create_successor_session(&sm, &old, GooseMode::SmartApprove)
             .await
             .unwrap();
 
@@ -3250,7 +3250,7 @@ mod tests {
             new_session.model_config.as_ref().map(|m| &m.model_name),
             old.model_config.as_ref().map(|m| &m.model_name)
         );
-        assert_eq!(new_session.goose_mode, GooseMode::Chat);
+        assert_eq!(new_session.goose_mode, GooseMode::SmartApprove);
         assert_eq!(new_session.working_dir, old.working_dir);
         assert_eq!(new_session.session_type, old.session_type);
         assert!(new_session.conversation.unwrap().messages().is_empty());
