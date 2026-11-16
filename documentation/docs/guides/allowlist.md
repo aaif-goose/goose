@@ -1,20 +1,21 @@
 ---
 sidebar_position: 90
-title: goose Extension Allowlist
+title: Desktop Extension Install Allowlist
 sidebar_label: Extension Allowlist
 ---
 
-goose is an extensible framework that, by default, allows you to install any MCP server. However, you may want stricter controls on which MCP servers can be installed as extensions (e.g. in a corporate setting). 
+goose Desktop can receive extension installation requests from `goose://` links. By default, Desktop asks you to confirm each request. You can use an allowlist to block requests whose commands do not match an approved command prefix.
 
-This guide explains how you can create an **allowlist** of safe extensions that work with goose Desktop and CLI. An allowlist lets administrators control which MCP servers can be installed as goose extensions. When enabled, goose will only install extensions that are on the list, and will block installation of any others.
+:::warning Scope
+The allowlist applies only to extension installation links opened in goose Desktop. It does not apply to the CLI, recipes, schedules, extensions in `config.yaml`, `--with-extension`, or extensions that are already installed.
+:::
 
 ## How It Works
 
-1. The allowlist is a YAML file that contains a list of allowed extension commands.
-2. goose fetches the allowlist from a URL specified by the `GOOSE_ALLOWLIST` environment variable.
-3. The allowlist is fetched when first needed and is cached. It is refetched on every restart of goose.
-4. When a user attempts to install an extension, goose checks the MCP server's installation command against the allowlist.
-5. If the command is not in the allowlist, the extension installation is rejected.
+1. The allowlist is a YAML file that contains allowed extension command prefixes.
+2. goose Desktop fetches it from the URL in the `GOOSE_ALLOWLIST` environment variable when it handles an extension installation link.
+3. Desktop compares the requested command with the listed prefixes.
+4. If the command does not start with a listed value, Desktop blocks the installation request.
 
 ## Configuration
 
@@ -33,7 +34,7 @@ extensions:
 
 #### Example
 
-In this example, only the Slack, GitHub, and Jira extensions can be installed: 
+In this example, Desktop accepts installation links whose commands start with one of these values:
 
 ```yaml
 extensions:
@@ -60,16 +61,16 @@ export GOOSE_ALLOWLIST=https://example.com/goose-allowlist.yaml
 You can also add this export to your shell configuration file (On a Mac, it's your `~/.bashrc` or `~/.zshrc` file). 
 
 :::info
-If this environment variable is not set, no allowlist restrictions are applied. With no restrictions, all extensions can be installed.
+If this environment variable is not set, Desktop uses its normal extension installation confirmation.
 :::
 
 
 ## Best Practices
 
-To effectively use the allowlist with exact matching:
+Allowlist entries use prefix matching. Keep each prefix as specific as possible:
 
-1. **Specify commands**: Define the exact command string that you want to allow.
-2. **Include full paths**: If you want to allow a command only from a specific path, include the full path in the allowlist.
+1. **Include expected arguments**: An entry such as `npx` allows every requested command that starts with `npx`. Include the package and arguments needed by the extension.
+2. **Include full paths**: To accept a command only from a specific path, include the full path in the allowlist.
 3. **Audit regularly**: Review your allowlist frequently to ensure it only contains the commands you intend to allow.
 4. **Use HTTPS**: Use an HTTPS URL for your allowlist to prevent man-in-the-middle attacks.
 5. **Restrict edit access**: Ensure that only authorized users can edit the allowlist.
@@ -84,5 +85,5 @@ If extensions are being rejected unexpectedly:
 1. Check if the `GOOSE_ALLOWLIST` environment variable is set correctly.
 2. Verify that the allowlist file is accessible from the server.
 3. Ensure the allowlist file is properly formatted YAML.
-4. Check [server logs](/docs/guides/logs) for any errors related to fetching or parsing the allowlist.
-5. Verify that the command in the extension installations exactly matches what's in the allowlist.
+4. Check [Desktop logs](/docs/guides/logs) for errors related to fetching or parsing the allowlist.
+5. Verify that the command in the installation link starts with a value in the allowlist.
