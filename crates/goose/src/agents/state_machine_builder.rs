@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::{
+    bang_command::BangCommandOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
@@ -16,12 +17,12 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
-    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    CompactionOperation, ContextRelevanceOperation, DoctorOperation, EmptyResponseOperation,
+    FinalOutputOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
+    GooseToolApproval, InferenceRunner, Operation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
     UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -154,7 +155,7 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(BangShellOperation::new()),
+        Arc::new(BangCommandOperation::new("shell", "command")),
     ];
     if !manages_own_context {
         if let Some(decisions) = context_relevance {

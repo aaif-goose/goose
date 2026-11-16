@@ -128,6 +128,12 @@ unknown commands pass through. `with_resolver` replaces the first-match rule.
 Put it before the other operations so a command runs before they see the
 kickoff.
 
+## Bang commands
+
+`bang_command::BangCommandOperation::new(tool_name, argument_name)` turns a
+user message starting with `!` into a request for `tool_name`, with the text
+after `!` as `argument_name`. Put it before inference.
+
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference

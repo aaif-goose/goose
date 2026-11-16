@@ -1,3 +1,4 @@
+pub mod bang_command;
 pub mod command;
 pub mod events;
 pub mod exit_on_error;
