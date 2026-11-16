@@ -30,62 +30,70 @@ pub(crate) async fn fire_tool_hooks(
         .as_ref()
         .map(|conversation| conversation.messages().as_slice())
         .unwrap_or_default();
-    let mut denials = Message::user();
-    for message in effects.iter().filter_map(|effect| match effect {
-        GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
-        _ => None,
-    }) {
-        for content in &message.content {
-            match content {
-                MessageContent::ToolRequest(request) => {
-                    let Ok(tool_call) = &request.tool_call else {
-                        continue;
-                    };
-                    if request.was_executed_externally()
-                        || tool_call.name == FINAL_OUTPUT_TOOL_NAME
-                        || !request_was_advertised(std::slice::from_ref(message), request)
-                    {
-                        continue;
+    let hooks = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
+            _ => None,
+        })
+        .flat_map(|message| {
+            message
+                .content
+                .iter()
+                .map(move |content| (message, content))
+        })
+        .map(|(message, content)| {
+            let working_dir = &working_dir;
+            async move {
+                match content {
+                    MessageContent::ToolRequest(request) => {
+                        let tool_call = request.tool_call.as_ref().ok()?;
+                        if request.was_executed_externally()
+                            || tool_call.name == FINAL_OUTPUT_TOOL_NAME
+                            || !request_was_advertised(std::slice::from_ref(message), request)
+                        {
+                            return None;
+                        }
+                        let denial =
+                            check_pre_tool_hooks(hook_manager, &session.id, working_dir, request)
+                                .await?;
+                        tool_span(&tool_call.name, &request.id, &session.id)
+                            .record("error.type", denial.error_type);
+                        Some((request, denial))
                     }
-                    let Some(denial) =
-                        check_pre_tool_hooks(hook_manager, &session.id, &working_dir, request)
-                            .await
-                    else {
-                        continue;
-                    };
-                    tool_span(&tool_call.name, &request.id, &session.id)
-                        .record("error.type", denial.error_type);
-                    denials.add_tool_response_with_metadata(
-                        request.id.clone(),
-                        Ok(CallToolResult::error(vec![ContentBlock::text(
-                            denial.message,
-                        )])),
-                        request.metadata.as_ref(),
-                    );
-                }
-                MessageContent::ToolResponse(response) => {
-                    let request = earlier
-                        .iter()
-                        .flat_map(|message| &message.content)
-                        .filter_map(MessageContent::as_tool_request)
-                        .find(|request| request.id == response.id);
-                    if let Some(request) = request.filter(|request| {
-                        request_executable(request) == Some(true)
-                            && request_was_advertised(earlier, request)
-                    }) {
+                    MessageContent::ToolResponse(response) => {
+                        let request = earlier
+                            .iter()
+                            .flat_map(|message| &message.content)
+                            .filter_map(MessageContent::as_tool_request)
+                            .find(|request| request.id == response.id)
+                            .filter(|request| {
+                                request_executable(request) == Some(true)
+                                    && request_was_advertised(earlier, request)
+                            })?;
                         emit_post_tool_hooks(
                             hook_manager,
                             &session.id,
-                            &working_dir,
+                            working_dir,
                             request,
                             response,
                         )
                         .await;
+                        None
                     }
+                    _ => None,
                 }
-                _ => {}
             }
-        }
+        });
+    let mut denials = Message::user();
+    for (request, denial) in futures::future::join_all(hooks).await.into_iter().flatten() {
+        denials.add_tool_response_with_metadata(
+            request.id.clone(),
+            Ok(CallToolResult::error(vec![ContentBlock::text(
+                denial.message,
+            )])),
+            request.metadata.as_ref(),
+        );
     }
     (!denials.content.is_empty()).then_some(denials)
 }
