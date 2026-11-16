@@ -926,11 +926,9 @@ impl Provider for AcpProvider {
             .lock()
             .map_err(|_| ProviderError::RequestFailed("goose_mode lock poisoned".into()))?;
 
-        let reject_all_tools = goose_mode == GooseMode::Chat;
         let model_name = model_config.model_name.clone();
 
         Ok(Box::pin(try_stream! {
-            let mut suppress_text = false;
             let mut bare_retry = bare_retry;
             let mut updates_seen = 0usize;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
@@ -942,13 +940,11 @@ impl Provider for AcpProvider {
                 updates_seen += 1;
                 match update {
                     AcpUpdate::Text(text) => {
-                        if !suppress_text {
-                            let (id, ts) = text_run
-                                .get_or_insert_with(fresh_text_run)
-                                .clone();
-                            let message = acp_text_update_message(text, id, ts);
-                            yield (Some(message), None);
-                        }
+                        let (id, ts) = text_run
+                            .get_or_insert_with(fresh_text_run)
+                            .clone();
+                        let message = acp_text_update_message(text, id, ts);
+                        yield (Some(message), None);
                     }
                     AcpUpdate::Thought(text) => {
                         let (id, ts) = thought_run
@@ -963,30 +959,25 @@ impl Provider for AcpProvider {
                     AcpUpdate::ToolCallStart { id, name, kind, raw_input } => {
                         text_run = None;
                         thought_run = None;
-                        if reject_all_tools {
-                            suppress_text = true;
-                            rejected_tool_calls.insert(id);
-                        } else {
-                            let mut params = CallToolRequestParams::new(name);
-                            if let Some(serde_json::Value::Object(map)) = raw_input {
-                                params = params.with_arguments(map);
-                            }
-                            // external_dispatch tells the agent loop not to redispatch this
-                            // call. goose.acp.kind preserves ACP's stable categorization for
-                            // downstream consumers (metrics, observability, icon selection)
-                            // independent of the display title we put in `name`.
-                            let tool_meta = Some(serde_json::json!({
-                                TOOL_META_EXTERNAL_DISPATCH_KEY: true,
-                                "goose.acp.kind": kind,
-                            }));
-                            let message = Message::assistant().with_tool_request_with_metadata(
-                                id,
-                                Ok(params),
-                                None,
-                                tool_meta,
-                            );
-                            yield (Some(message), None);
+                        let mut params = CallToolRequestParams::new(name);
+                        if let Some(serde_json::Value::Object(map)) = raw_input {
+                            params = params.with_arguments(map);
                         }
+                        // external_dispatch tells the agent loop not to redispatch this
+                        // call. goose.acp.kind preserves ACP's stable categorization for
+                        // downstream consumers (metrics, observability, icon selection)
+                        // independent of the display title we put in `name`.
+                        let tool_meta = Some(serde_json::json!({
+                            TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+                            "goose.acp.kind": kind,
+                        }));
+                        let message = Message::assistant().with_tool_request_with_metadata(
+                            id,
+                            Ok(params),
+                            None,
+                            tool_meta,
+                        );
+                        yield (Some(message), None);
                     }
                     AcpUpdate::ToolCallComplete {
                         id,
@@ -997,22 +988,10 @@ impl Provider for AcpProvider {
                         text_run = None;
                         thought_run = None;
                         if rejected_tool_calls.remove(&id) {
-                            // In chat mode no tool_request was emitted (suppressed at
-                            // ToolCallStart), so surface a plain text message. In other
-                            // modes a tool_request WAS emitted, so pair it with an error
-                            // tool_response so downstream consumers see the rejection.
-                            if reject_all_tools {
-                                let message = Message::assistant()
-                                    .with_text("Tool call was denied.")
-                                    .with_generated_id();
-                                yield (Some(message), None);
-                            } else {
-                                let denial = vec![RmcpContent::text("Tool call was denied.")];
-                                let result = CallToolResult::error(denial);
-                                let message =
-                                    Message::user().with_tool_response(id, Ok(result));
-                                yield (Some(message), None);
-                            }
+                            let denial = vec![RmcpContent::text("Tool call was denied.")];
+                            let result = CallToolResult::error(denial);
+                            let message = Message::user().with_tool_response(id, Ok(result));
+                            yield (Some(message), None);
                         } else {
                             let result_content =
                                 acp_tool_call_content_to_rmcp(content, raw_output);
@@ -2392,7 +2371,6 @@ fn resolve_mode(
 fn permission_decision_from_mode(goose_mode: GooseMode) -> Option<PermissionDecision> {
     match goose_mode {
         GooseMode::Auto => Some(PermissionDecision::AllowOnce),
-        GooseMode::Chat => Some(PermissionDecision::RejectOnce),
         GooseMode::Approve | GooseMode::SmartApprove => None,
     }
 }
@@ -2752,74 +2730,6 @@ mod tests {
         assert!(stream.next().await.is_none());
         assert!(rx.try_recv().is_err());
         assert!(!provider.handoff_context_sent.load(Ordering::Acquire));
-    }
-
-    #[tokio::test]
-    async fn chat_mode_denied_tool_messages_get_distinct_provider_ids() {
-        use futures::StreamExt;
-
-        let (tx, mut rx) = mpsc::channel(1);
-        let (provider, model) = test_provider_with_tx(Some(tx));
-        *provider.goose_mode.lock().unwrap() = GooseMode::Chat;
-
-        let messages = vec![Message::user().with_text("inspect src/lib.rs")];
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
-
-        let response_tx = match rx.recv().await.expect("expected ACP prompt request") {
-            ClientRequest::Prompt { response_tx, .. } => response_tx,
-            _ => panic!("expected ACP prompt request"),
-        };
-
-        for id in ["call-1", "call-2"] {
-            response_tx
-                .send(AcpUpdate::ToolCallStart {
-                    id: id.to_string(),
-                    name: "read_file".to_string(),
-                    kind: ToolKind::Read,
-                    raw_input: None,
-                })
-                .await
-                .unwrap();
-            response_tx
-                .send(AcpUpdate::ToolCallComplete {
-                    id: id.to_string(),
-                    raw_output: None,
-                    content: None,
-                    is_error: false,
-                })
-                .await
-                .unwrap();
-        }
-        response_tx
-            .send(AcpUpdate::Complete(StopReason::EndTurn, None))
-            .await
-            .unwrap();
-
-        let mut messages = Vec::new();
-        while let Some(item) = stream.next().await {
-            let (message, usage) = item.unwrap();
-            assert!(usage.is_none());
-            if let Some(message) = message {
-                messages.push(message);
-            }
-        }
-
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].as_concat_text(), "Tool call was denied.");
-        assert_eq!(messages[1].as_concat_text(), "Tool call was denied.");
-
-        let first_id = messages[0]
-            .id
-            .as_deref()
-            .expect("first denial should have a provider message ID");
-        let second_id = messages[1]
-            .id
-            .as_deref()
-            .expect("second denial should have a provider message ID");
-
-        assert!(first_id.starts_with("msg_"));
-        assert!(second_id.starts_with("msg_"));
-        assert_ne!(first_id, second_id);
     }
 
     #[test]
@@ -4079,7 +3989,6 @@ mod tests {
     #[test_case(GooseMode::Auto)]
     #[test_case(GooseMode::Approve)]
     #[test_case(GooseMode::SmartApprove)]
-    #[test_case(GooseMode::Chat)]
     fn initial_mode_candidates_empty_when_mode_negotiation_disabled(mode: GooseMode) {
         let config = test_acp_config(HashMap::new(), None);
         assert!(initial_mode_candidates(&config, Some(mode)).is_empty());
@@ -4095,7 +4004,7 @@ mod tests {
             vec!["bypassPermissions".to_string()]
         );
         assert_eq!(
-            initial_mode_candidates(&config, Some(GooseMode::Chat)),
+            initial_mode_candidates(&config, Some(GooseMode::Approve)),
             vec!["default".to_string()]
         );
     }
@@ -4156,23 +4065,23 @@ mod tests {
         let (provider, _) = test_provider_with_tx(Some(tx));
 
         provider
-            .update_mode("session", GooseMode::Chat)
+            .update_mode("session", GooseMode::Approve)
             .await
             .unwrap();
 
         assert!(rx.try_recv().is_err());
-        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
+        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Approve);
     }
 
     #[tokio::test]
     async fn update_mode_with_mapping_sends_set_mode() {
         let (tx, mut rx) = mpsc::channel(1);
         let (mut provider, _) = test_provider_with_tx(Some(tx));
-        provider.mode_mapping = HashMap::from([(GooseMode::Chat, vec!["plan".to_string()])]);
+        provider.mode_mapping = HashMap::from([(GooseMode::Approve, vec!["plan".to_string()])]);
 
         let handle = tokio::spawn(async move {
             provider
-                .update_mode("session", GooseMode::Chat)
+                .update_mode("session", GooseMode::Approve)
                 .await
                 .unwrap();
             provider
@@ -4191,7 +4100,7 @@ mod tests {
         }
 
         let provider = handle.await.unwrap();
-        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
+        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Approve);
     }
 
     #[tokio::test]
@@ -4234,11 +4143,12 @@ mod tests {
     async fn update_mode_errors_when_no_candidate_offered() {
         let (tx, mut rx) = mpsc::channel(1);
         let (mut provider, _) = test_provider_with_tx(Some(tx));
-        provider.mode_mapping = HashMap::from([(GooseMode::Chat, vec!["read-only".to_string()])]);
+        provider.mode_mapping =
+            HashMap::from([(GooseMode::Approve, vec!["read-only".to_string()])]);
         provider.session.lock().unwrap().response = NewSessionResponse::new("test-session")
             .modes(mode_state("agent", &["agent", "agent-full-access"]));
 
-        let result = provider.update_mode("session", GooseMode::Chat).await;
+        let result = provider.update_mode("session", GooseMode::Approve).await;
 
         assert!(result.is_err());
         assert!(rx.try_recv().is_err());
@@ -4406,7 +4316,6 @@ mod tests {
     }
 
     #[test_case(GooseMode::Auto => Some(PermissionDecision::AllowOnce) ; "auto allows")]
-    #[test_case(GooseMode::Chat => Some(PermissionDecision::RejectOnce) ; "chat rejects")]
     #[test_case(GooseMode::Approve => None ; "approve defers")]
     #[test_case(GooseMode::SmartApprove => None ; "smart_approve defers")]
     fn test_permission_decision_from_mode(mode: GooseMode) -> Option<PermissionDecision> {
@@ -4418,13 +4327,11 @@ mod tests {
             (GooseMode::Auto, vec!["yolo".to_string()]),
             (GooseMode::Approve, vec!["default".to_string()]),
             (GooseMode::SmartApprove, vec!["auto_edit".to_string()]),
-            (GooseMode::Chat, vec!["plan".to_string()]),
         ]),
         HashMap::from([
             ("yolo".to_string(), vec![GooseMode::Auto]),
             ("default".to_string(), vec![GooseMode::Approve]),
             ("auto_edit".to_string(), vec![GooseMode::SmartApprove]),
-            ("plan".to_string(), vec![GooseMode::Chat]),
         ])
         ; "gemini provider mapping"
     )]
@@ -4433,13 +4340,11 @@ mod tests {
             (GooseMode::Auto, vec!["bypassPermissions".to_string()]),
             (GooseMode::Approve, vec!["default".to_string()]),
             (GooseMode::SmartApprove, vec!["acceptEdits".to_string()]),
-            (GooseMode::Chat, vec!["plan".to_string()]),
         ]),
         HashMap::from([
             ("bypassPermissions".to_string(), vec![GooseMode::Auto]),
             ("default".to_string(), vec![GooseMode::Approve]),
             ("acceptEdits".to_string(), vec![GooseMode::SmartApprove]),
-            ("plan".to_string(), vec![GooseMode::Chat]),
         ])
         ; "claude provider mapping"
     )]
@@ -4448,12 +4353,11 @@ mod tests {
             (GooseMode::Auto, vec!["full-access".to_string(), "agent-full-access".to_string()]),
             (GooseMode::Approve, vec!["read-only".to_string()]),
             (GooseMode::SmartApprove, vec!["auto".to_string(), "agent".to_string()]),
-            (GooseMode::Chat, vec!["read-only".to_string()]),
         ]),
         HashMap::from([
             ("full-access".to_string(), vec![GooseMode::Auto]),
             ("agent-full-access".to_string(), vec![GooseMode::Auto]),
-            ("read-only".to_string(), vec![GooseMode::Approve, GooseMode::Chat]),
+            ("read-only".to_string(), vec![GooseMode::Approve]),
             ("auto".to_string(), vec![GooseMode::SmartApprove]),
             ("agent".to_string(), vec![GooseMode::SmartApprove]),
         ])
@@ -4522,7 +4426,7 @@ mod tests {
             ("full-access".to_string(), vec![GooseMode::Auto]),
             (
                 "read-only".to_string(),
-                vec![GooseMode::Approve, GooseMode::Chat],
+                vec![GooseMode::Approve, GooseMode::SmartApprove],
             ),
             ("auto".to_string(), vec![GooseMode::SmartApprove]),
         ])
@@ -4537,8 +4441,8 @@ mod tests {
         ; "duplicate prefers current when current is Approve"
     )]
     #[test_case(
-        "read-only", GooseMode::Chat, Some(GooseMode::Chat)
-        ; "duplicate prefers current when current is Chat"
+        "read-only", GooseMode::SmartApprove, Some(GooseMode::SmartApprove)
+        ; "duplicate prefers current when current is SmartApprove"
     )]
     #[test_case(
         "read-only", GooseMode::Auto, Some(GooseMode::Approve)
@@ -4553,7 +4457,7 @@ mod tests {
         let current = Arc::new(Mutex::new(current));
         let result = resolve_mode(&reverse_modes, mode_id, &current);
         if mode_id == "read-only" && expected == Some(GooseMode::Approve) {
-            assert!(result == Some(GooseMode::Approve) || result == Some(GooseMode::Chat));
+            assert!(result == Some(GooseMode::Approve) || result == Some(GooseMode::SmartApprove));
         } else {
             assert_eq!(result, expected);
         }

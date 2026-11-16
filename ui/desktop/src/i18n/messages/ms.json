@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Autonomi"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Berinteraksi dengan penyedia yang dipilih tanpa menggunakan alat atau sambungan."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Sembang sahaja"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Semua alat, sambungan dan pengubahsuaian fail akan memerlukan kelulusan manusia"
   },

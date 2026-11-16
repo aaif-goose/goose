@@ -362,7 +362,6 @@ impl ClaudeCodeProvider {
                 cmd.arg("--permission-prompt-tool").arg("stdio");
                 Ok(true)
             }
-            GooseMode::Chat => Ok(false),
         }
     }
 

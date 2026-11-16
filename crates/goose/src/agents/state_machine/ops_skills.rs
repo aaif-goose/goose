@@ -19,8 +19,6 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
@@ -150,16 +148,25 @@ fn load_supporting_file(
     skill_name: &str,
     relative_path: &str,
 ) -> CallToolResult {
-    let skill_dir = PathBuf::from(&skill.path);
+    let listed_skill_dir = PathBuf::from(&skill.path);
+    let load_skill_dir = match listed_skill_dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) => {
+            return CallToolResult::error(vec![ContentBlock::text(format!(
+                "Failed to resolve '{}': {}",
+                skill.name, error
+            ))]);
+        }
+    };
     for file_path in &skill.supporting_files {
         let file_path = Path::new(file_path);
-        let Ok(relative) = file_path.strip_prefix(&skill_dir) else {
+        let Ok(relative) = file_path.strip_prefix(&listed_skill_dir) else {
             continue;
         };
         if relative.to_string_lossy().replace('\\', "/") != relative_path {
             continue;
         }
-        return match crate::skills::load_supporting_file(&skill_dir, relative, skill_name) {
+        return match crate::skills::load_supporting_file(&load_skill_dir, relative, skill_name) {
             Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to read '{skill_name}': {error}"
@@ -172,7 +179,7 @@ fn load_supporting_file(
         .iter()
         .filter_map(|file| {
             Path::new(file)
-                .strip_prefix(&skill_dir)
+                .strip_prefix(&listed_skill_dir)
                 .ok()
                 .map(|relative| relative.to_string_lossy().replace('\\', "/"))
         })
@@ -351,11 +358,6 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         let mut response = Message::user();
         for (request, disposition) in pending {
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]))
-                }
                 ToolDisposition::Execute => {
                     let Some(session) = leased_session.as_ref() else {
                         response.add_tool_response_with_metadata(
@@ -423,5 +425,50 @@ mod tests {
         assert_eq!(result.is_error, Some(false));
         let text = result.content[0].as_text().expect("expected text");
         assert!(text.text.contains("Nested guidance."));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn supporting_file_loader_reads_file_under_symlinked_directory() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tempdir.path()).unwrap();
+
+        let real_skills = root.join("real-skills");
+        std::fs::create_dir(&real_skills).unwrap();
+        let skill_dir = real_skills.join("test-skill");
+        let references = skill_dir.join("references");
+        std::fs::create_dir_all(&references).unwrap();
+        let file = references.join("guide.md");
+        std::fs::write(&file, "Symlinked guidance.").unwrap();
+
+        let linked_skills = root.join("linked-skills");
+        std::os::unix::fs::symlink(&real_skills, &linked_skills).unwrap();
+        let linked_skill_dir = linked_skills.join("test-skill");
+
+        let skill = SourceEntry {
+            source_type: SourceType::Skill,
+            name: "test-skill".to_string(),
+            description: String::new(),
+            content: String::new(),
+            path: linked_skill_dir.to_string_lossy().into_owned(),
+            global: false,
+            writable: true,
+            supporting_files: vec![linked_skill_dir
+                .join("references")
+                .join("guide.md")
+                .to_string_lossy()
+                .into_owned()],
+            properties: HashMap::new(),
+        };
+
+        let result = load_supporting_file(
+            &skill,
+            "test-skill/references/guide.md",
+            "references/guide.md",
+        );
+
+        assert_eq!(result.is_error, Some(false));
+        let text = result.content[0].as_text().expect("expected text");
+        assert!(text.text.contains("Symlinked guidance."));
     }
 }

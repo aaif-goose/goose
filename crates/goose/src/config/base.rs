@@ -1503,12 +1503,7 @@ mod tests {
             Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
 
         assert_eq!(config.resolve_goose_mode().unwrap(), GooseMode::Auto);
-        for mode in [
-            GooseMode::Auto,
-            GooseMode::SmartApprove,
-            GooseMode::Approve,
-            GooseMode::Chat,
-        ] {
+        for mode in [GooseMode::Auto, GooseMode::SmartApprove, GooseMode::Approve] {
             config.set_goose_mode(mode).unwrap();
             assert_eq!(config.resolve_goose_mode().unwrap(), mode);
         }

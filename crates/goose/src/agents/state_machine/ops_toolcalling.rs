@@ -19,11 +19,8 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::{
-    tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-};
+use crate::agents::tool_execution::{tool_stream, ToolCallResult, ToolStreamItem};
 use crate::agents::AgentEvent;
-use crate::config::GooseMode;
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
@@ -574,15 +571,6 @@ pub(super) fn pending_advertised_tool_requests(
         .collect()
 }
 
-pub(super) fn call_will_not_run(
-    session: &Session,
-    conversation: &Conversation,
-    request: &ToolRequest,
-) -> Result<bool> {
-    let messages = messages_since_kickoff(conversation)?;
-    Ok(session.goose_mode == GooseMode::Chat || !request_was_advertised(messages, request))
-}
-
 pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
     let Some(tool_call) = request.tool_call.as_ref().ok() else {
         return true;
@@ -899,29 +887,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         });
         if pending.is_empty() {
             return not_applicable();
-        }
-
-        if session.goose_mode == GooseMode::Chat {
-            let mut response = Message::user();
-            for (request, disposition) in &pending {
-                let result = match disposition {
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}."
-                        ))])
-                    }
-                    _ => CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]),
-                };
-                response.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
         }
 
         let call_session = session_in_lease(&lease, session);

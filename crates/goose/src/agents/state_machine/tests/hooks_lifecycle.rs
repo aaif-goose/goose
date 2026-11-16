@@ -996,56 +996,6 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn chat_mode_accepts_recipe_final_output() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    let result = pipeline.run(["produce the answer"]).await?;
-
-    assert_eq!(api.call_count(), 1);
-    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
-    Ok(())
-}
-
-#[tokio::test]
-async fn chat_mode_rejects_unadvertised_unknown_tool_without_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
-        .await;
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("hidden tool rejected");
-
-    let result = pipeline.run(["try the missing tool"]).await?;
-
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
-    result.assert_message(-1, Agent, "hidden tool rejected");
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn unadvertised_unknown_tool_skips_permission_and_tool_hooks() -> Result<()> {
     let env = RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
@@ -1324,29 +1274,25 @@ const BANG_COMMAND_NO_TOOL_RUNS: &str = "!echo hi";
 
 #[tokio::test]
 async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
-    for (mode, fired) in [(GooseMode::Auto, true), (GooseMode::Chat, false)] {
-        let env = RecordingHookEnv::new(&[
-            ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-            (
-                "PostToolUseFailure",
-                "",
-                "postfail.sh",
-                RECORD_POST_FAILURE_SCRIPT,
-            ),
-        ]);
-        let (pipeline, _) = test_pipeline().await?;
-        let pipeline = pipeline
-            .with_hook_manager(env.hook_manager())
-            .with_goose_mode(mode)
-            .await;
+    let env = RecordingHookEnv::new(&[
+        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
 
-        pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+    pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
 
-        let events = |log| env.payloads(log).len();
-        let expected = usize::from(fired);
-        assert_eq!(events("result.log"), expected, "{mode:?}");
-        assert_eq!(events("postfail.log"), expected, "{mode:?}");
-    }
+    assert_eq!(env.payloads("result.log").len(), 1);
+    assert_eq!(env.payloads("postfail.log").len(), 1);
     Ok(())
 }
 
