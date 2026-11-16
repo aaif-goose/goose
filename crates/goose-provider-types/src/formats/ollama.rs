@@ -23,6 +23,8 @@ use regex::Regex;
 use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role};
 use serde_json::Value;
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub use crate::formats::openai::{
@@ -166,11 +168,15 @@ const GUARDED_PARAMETER_END: &str = "\u{E000}/parameter>";
 #[derive(Default)]
 struct ParameterGuard {
     think_filter: ThinkFilter,
+    /// A trailing bare `<` or `</`, which `ThinkFilter` would flush before it can see `think>`.
+    pending: String,
     content_tail: String,
     /// Raw text since the last `<`, to find tags split across chunks.
     token: String,
     in_call: bool,
     in_parameter: bool,
+    /// Set once a placeholder is emitted, so text is only decoded when it may hold one.
+    hid_lt: Arc<AtomicBool>,
 }
 
 impl ParameterGuard {
@@ -208,6 +214,7 @@ impl ParameterGuard {
             }
         }
         if changed {
+            self.hid_lt.store(true, Ordering::Relaxed);
             format!("data: {chunk}")
         } else {
             line
@@ -268,8 +275,15 @@ impl ParameterGuard {
 
     /// Feeds raw text outside parameter values to a mirror of the OpenAI parser's filter.
     fn filter(&mut self, text: &str) {
+        self.pending.push_str(text);
+        let held = ["</", "<"]
+            .into_iter()
+            .find(|prefix| self.pending.ends_with(prefix))
+            .map_or(0, str::len);
+        let held = self.pending.split_off(self.pending.len() - held);
+        let ready = std::mem::replace(&mut self.pending, held);
         self.content_tail
-            .push_str(&self.think_filter.push(text).content);
+            .push_str(&self.think_filter.push(&ready).content);
         if let Some((keep, _)) = self
             .content_tail
             .char_indices()
@@ -296,6 +310,7 @@ where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     let mut guard = ParameterGuard::default();
+    let hid_lt = guard.hid_lt.clone();
     let stream = stream.map_ok(move |line| guard.guard_line(line));
 
     try_stream! {
@@ -328,9 +343,11 @@ where
                     }
                 }
 
-                for content in &mut message.content {
-                    if let MessageContentBlock::Text(text) = content {
-                        text.text = text.text.replace(LT_PLACEHOLDER, "<");
+                if hid_lt.load(Ordering::Relaxed) {
+                    for content in &mut message.content {
+                        if let MessageContentBlock::Text(text) = content {
+                            text.text = text.text.replace(LT_PLACEHOLDER, "<");
+                        }
                     }
                 }
                 yield (Some(message), usage);
@@ -357,10 +374,13 @@ where
 
                 yield (Some(msg), buffered_usage);
             } else {
+                if hid_lt.load(Ordering::Relaxed) {
+                    accumulated_text = accumulated_text.replace(LT_PLACEHOLDER, "<");
+                }
                 let msg = Message::new(
                     Role::Assistant,
                     chrono::Utc::now().timestamp(),
-                    vec![MessageContentBlock::text(accumulated_text.replace(LT_PLACEHOLDER, "<"))],
+                    vec![MessageContentBlock::text(accumulated_text)],
                 )
                 .with_generated_id();
 
@@ -1036,5 +1056,63 @@ data: [DONE]"#;
         }
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_bare_lt_before_split_think_tag_keeps_call() {
+        use futures::StreamExt;
+
+        let lines: Vec<anyhow::Result<String>> = [
+            "<function=developer__shell><parameter=command>pwd</parameter><",
+            "think>Use <parameter=other> later</think></function>",
+        ]
+        .iter()
+        .map(|content| {
+            let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+            Ok(format!("data: {delta}"))
+        })
+        .chain([Ok("data: [DONE]".to_string())])
+        .collect();
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let arguments: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .map(|call| call.arguments.as_ref().unwrap().get("command").cloned())
+            .collect();
+        assert_eq!(arguments, vec![Some(json!("pwd"))]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_text_keeps_private_use_character() {
+        use futures::StreamExt;
+
+        let content = "Glyph \u{E000} stays.";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines: Vec<anyhow::Result<String>> =
+            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let text: String = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, content);
     }
 }
