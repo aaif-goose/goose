@@ -5,9 +5,8 @@ use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-use crate::agents::state_machine::ops_toolcalling::{
-    advertised_working_dir, request_was_advertised, tool_span,
-};
+use crate::agents::state_machine::extension_operation_host::request_was_advertised;
+use crate::agents::state_machine::tool_hook_context::{advertised_working_dir, tool_span};
 use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
