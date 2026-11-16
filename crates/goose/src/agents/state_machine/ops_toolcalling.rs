@@ -887,22 +887,6 @@ impl ToolExecution {
         session: &Session,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if session.goose_mode == GooseMode::Chat {
-            let mut response = Message::user();
-            for (request, _) in &calls {
-                let result = CallToolResult::success(vec![ContentBlock::text(
-                    CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                )]);
-                response.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
-        }
-
         let mut tool_streams = Vec::new();
         for (request, result) in calls {
             let tool_call = request
