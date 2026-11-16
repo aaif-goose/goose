@@ -1284,13 +1284,15 @@ async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
         ),
     ]);
     let (pipeline, _) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
 
     pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
 
-    let events = |log| env.payloads(log).len();
-    assert_eq!(events("result.log"), 1);
-    assert_eq!(events("postfail.log"), 1);
+    assert_eq!(env.payloads("result.log").len(), 1);
+    assert_eq!(env.payloads("postfail.log").len(), 1);
     Ok(())
 }
 
