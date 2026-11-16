@@ -554,11 +554,9 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let empty_output = self.output().accumulator.iter().all(is_empty_response);
             if empty_output && !emit.cancel_token().is_cancelled() {
-                self.output().accumulator.clear();
                 let mut message = Message::assistant();
                 attach_operation_logs(&mut message, &mut operation_logs);
-                self.output().accumulator.push(message);
-                return applied(self.take_output());
+                self.output().accumulator = Conversation::new_unvalidated([message]);
             }
             applied(self.take_output())
         }

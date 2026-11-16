@@ -65,9 +65,7 @@ where
             .count();
 
         if empty_responses <= MAX_RETRIES {
-            let retry = Message::user()
-                .with_text(RETRY_MESSAGE)
-                .with_visibility(false, true);
+            let retry = Message::user().with_text(RETRY_MESSAGE).agent_only();
             return applied([retry.into()]);
         }
 
