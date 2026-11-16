@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use goose_agent::{
     bang_command::BangCommandOperation,
+    empty_response::EmptyResponseOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
@@ -17,13 +18,12 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    CompactionOperation, ContextRelevanceOperation, DoctorOperation, EmptyResponseOperation,
-    FinalOutputOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    GooseToolApproval, InferenceRunner, Operation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
-    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnhandledToolCallsOperation,
+    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
+    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;

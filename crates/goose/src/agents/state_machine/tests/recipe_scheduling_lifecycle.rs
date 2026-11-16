@@ -475,7 +475,9 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
         .build()
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
+    let calls_before = api.call_count();
     let passed = pipeline.run(["check the work"]).await?;
+    assert_eq!(api.call_count() - calls_before, 1);
     assert!(!shows_empty_fallback(passed.conversation()));
 
     let (pipeline, api) = test_pipeline().await?;
