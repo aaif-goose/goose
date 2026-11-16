@@ -12,7 +12,7 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::state_machine::tool_hooks::fire_tool_hooks;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
@@ -191,9 +191,12 @@ impl TestPipeline {
         emit: &Emitter,
     ) {
         let lease = self.extension_lease(self.services().await);
-        if let Some(denials) = fire_tool_hooks(&self.hook_manager, &lease, session, effects).await {
+        if let Some(denials) =
+            fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
+        {
             effects.push(emit.message(denials).into());
         }
+        fire_post_tool_hooks(&self.hook_manager, &lease, session, effects).await;
     }
 
     async fn start_new_turn(&self) {

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::tool_hooks::fire_tool_hooks;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -183,6 +183,8 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
 
 struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
+    hook_manager: &'a HookManager,
+    extension_lease: &'a StdMutex<Option<Arc<ExtensionLease>>>,
     usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
 }
 
@@ -204,6 +206,7 @@ impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
         self.session_manager
             .apply_effects(session, effects, emit)
             .await?;
+        fire_post_tool_hooks(self.hook_manager, self.extension_lease, session, effects).await;
         let mut turn_usage = self.usage.lock().unwrap();
         for effect in effects.iter() {
             if let Some(usage) = self.session_manager.usage(effect) {
@@ -286,13 +289,19 @@ pub(crate) async fn run(
 
     let runtime = TurnRuntime {
         session_manager: runtime,
+        hook_manager,
+        extension_lease,
         usage: Default::default(),
     };
     loop {
         let session = runtime.load(session_id).await?;
         let mut result = machine.step(&session, emit).await?;
-        if let Some(denials) =
-            fire_tool_hooks(hook_manager, extension_lease, &session, &result.effects).await
+        let pre_tool_hooks =
+            fire_pre_tool_hooks(hook_manager, extension_lease, &session, &result.effects);
+        if let Some(Some(denials)) = emit
+            .cancel_token()
+            .run_until_cancelled(pre_tool_hooks)
+            .await
         {
             result.effects.push(emit.message(denials).into());
         }

@@ -9,13 +9,13 @@ use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::ops_toolcalling::{
     leased_working_dir, request_was_advertised, tool_span,
 };
-use crate::agents::state_machine::{ConversationEffect, GooseEffect};
+use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
 use crate::session::Session;
 
-pub(crate) async fn fire_tool_hooks(
+pub(crate) async fn fire_pre_tool_hooks(
     hook_manager: &HookManager,
     extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
     session: &Session,
@@ -25,68 +25,37 @@ pub(crate) async fn fire_tool_hooks(
         return None;
     }
     let working_dir = leased_working_dir(extension_lease, session);
-    let earlier = session
-        .conversation
-        .as_ref()
-        .map(|conversation| conversation.messages().as_slice())
-        .unwrap_or_default();
-    let hooks = effects
-        .iter()
-        .filter_map(|effect| match effect {
-            GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
-            _ => None,
-        })
+    let checks = appended_messages(effects)
         .flat_map(|message| {
             message
                 .content
                 .iter()
-                .map(move |content| (message, content))
+                .filter_map(MessageContent::as_tool_request)
+                .filter(move |request| {
+                    !request.was_executed_externally()
+                        && request_was_advertised(std::slice::from_ref(message), request)
+                })
         })
-        .map(|(message, content)| {
+        .map(|request| {
             let working_dir = &working_dir;
             async move {
-                match content {
-                    MessageContent::ToolRequest(request) => {
-                        let tool_call = request.tool_call.as_ref().ok()?;
-                        if request.was_executed_externally()
-                            || tool_call.name == FINAL_OUTPUT_TOOL_NAME
-                            || !request_was_advertised(std::slice::from_ref(message), request)
-                        {
-                            return None;
-                        }
-                        let denial =
-                            check_pre_tool_hooks(hook_manager, &session.id, working_dir, request)
-                                .await?;
-                        tool_span(&tool_call.name, &request.id, &session.id)
-                            .record("error.type", denial.error_type);
-                        Some((request, denial))
-                    }
-                    MessageContent::ToolResponse(response) => {
-                        let request = earlier
-                            .iter()
-                            .flat_map(|message| &message.content)
-                            .filter_map(MessageContent::as_tool_request)
-                            .find(|request| request.id == response.id)
-                            .filter(|request| {
-                                request_executable(request) == Some(true)
-                                    && request_was_advertised(earlier, request)
-                            })?;
-                        emit_post_tool_hooks(
-                            hook_manager,
-                            &session.id,
-                            working_dir,
-                            request,
-                            response,
-                        )
-                        .await;
-                        None
-                    }
-                    _ => None,
+                let tool_call = request.tool_call.as_ref().ok()?;
+                if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
+                    return None;
                 }
+                let denial =
+                    check_pre_tool_hooks(hook_manager, &session.id, working_dir, request).await?;
+                tool_span(&tool_call.name, &request.id, &session.id)
+                    .record("error.type", denial.error_type);
+                Some((request, denial))
             }
         });
     let mut denials = Message::user();
-    for (request, denial) in futures::future::join_all(hooks).await.into_iter().flatten() {
+    for (request, denial) in futures::future::join_all(checks)
+        .await
+        .into_iter()
+        .flatten()
+    {
         denials.add_tool_response_with_metadata(
             request.id.clone(),
             Ok(CallToolResult::error(vec![ContentBlock::text(
@@ -96,6 +65,56 @@ pub(crate) async fn fire_tool_hooks(
         );
     }
     (!denials.content.is_empty()).then_some(denials)
+}
+
+pub(crate) async fn fire_post_tool_hooks(
+    hook_manager: &HookManager,
+    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    session: &Session,
+    effects: &[GooseEffect],
+) {
+    if session.goose_mode == GooseMode::Chat {
+        return;
+    }
+    let working_dir = leased_working_dir(extension_lease, session);
+    let turn = session
+        .conversation
+        .as_ref()
+        .and_then(|conversation| messages_since_kickoff(conversation).ok())
+        .unwrap_or_default();
+    let hooks = appended_messages(effects)
+        .flat_map(|message| {
+            message
+                .content
+                .iter()
+                .filter_map(MessageContent::as_tool_response)
+        })
+        .filter_map(|response| {
+            let request = turn
+                .iter()
+                .flat_map(|message| &message.content)
+                .filter_map(MessageContent::as_tool_request)
+                .find(|request| request.id == response.id)
+                .filter(|request| {
+                    request_executable(request) == Some(true)
+                        && request_was_advertised(turn, request)
+                })?;
+            Some(emit_post_tool_hooks(
+                hook_manager,
+                &session.id,
+                &working_dir,
+                request,
+                response,
+            ))
+        });
+    futures::future::join_all(hooks).await;
+}
+
+fn appended_messages(effects: &[GooseEffect]) -> impl Iterator<Item = &Message> {
+    effects.iter().filter_map(|effect| match effect {
+        GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
+        _ => None,
+    })
 }
 
 async fn check_pre_tool_hooks(
