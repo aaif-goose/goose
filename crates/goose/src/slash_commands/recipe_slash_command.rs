@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -57,17 +57,16 @@ pub fn set_recipe_slash_command(recipe_path: PathBuf, command: Option<String>) -
     save_slash_commands(commands)
 }
 
-pub fn get_recipe_for_command(command: &str) -> Option<PathBuf> {
-    let normalized = command.trim_start_matches('/').to_lowercase();
-    let commands = list_commands();
-    commands
+pub fn runnable_recipes() -> Vec<(String, PathBuf)> {
+    list_commands()
         .into_iter()
-        .find(|mapping| mapping.command == normalized)
-        .map(|mapping| PathBuf::from(mapping.recipe_path))
-}
-
-pub(super) fn get_existing_recipe_for_command(command: &str) -> Option<PathBuf> {
-    get_recipe_for_command(command).filter(|recipe_path| recipe_path.exists())
+        .filter_map(|mapping| {
+            let name = normalize_command_name(&mapping.command);
+            let recipe_path = PathBuf::from(mapping.recipe_path);
+            (!name.is_empty() && !is_builtin_command(&name) && recipe_path.exists())
+                .then_some((name, recipe_path))
+        })
+        .collect()
 }
 
 pub(super) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<SlashCommandEntry> {
@@ -79,7 +78,7 @@ pub(super) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<
                 return None;
             }
 
-            let metadata = recipe_entry(&mapping.recipe_path)?;
+            let metadata = recipe_entry(Path::new(&mapping.recipe_path))?;
 
             Some(SlashCommandEntry {
                 name,
@@ -92,18 +91,13 @@ pub(super) fn commands_from_mappings(mappings: Vec<SlashCommandMapping>) -> Vec<
         .collect()
 }
 
-struct RecipeCommandMetadata {
-    description: String,
-    input_hint: Option<String>,
+pub struct RecipeCommandMetadata {
+    pub description: String,
+    pub input_hint: Option<String>,
 }
 
-fn recipe_entry(recipe_path: &str) -> Option<RecipeCommandMetadata> {
-    let recipe_path = PathBuf::from(recipe_path);
-    if !recipe_path.exists() {
-        return None;
-    }
-
-    let recipe_content = std::fs::read_to_string(&recipe_path).ok()?;
+pub fn recipe_entry(recipe_path: &Path) -> Option<RecipeCommandMetadata> {
+    let recipe_content = std::fs::read_to_string(recipe_path).ok()?;
     let recipe_dir = recipe_path.parent()?;
     let recipe_dir_str = recipe_dir.display().to_string();
     let validation_result = crate::recipe::validate_recipe::validate_recipe_template_from_content(
@@ -151,19 +145,13 @@ fn invalid_recipe_msg(command: &str, reason: impl std::fmt::Display) -> String {
     format!("Recipe /{} is not valid: {}", command, reason)
 }
 
-pub fn resolve_command(
+pub fn build_recipe(
     command: &str,
+    recipe_path: &Path,
     params_str: &str,
-) -> Result<Option<(Recipe, String)>, String> {
-    if is_builtin_command(command) {
-        return Ok(None);
-    }
-    let Some(recipe_path) = get_existing_recipe_for_command(command) else {
-        return Ok(None);
-    };
-
+) -> Result<(Recipe, String), String> {
     let recipe_content =
-        std::fs::read_to_string(&recipe_path).map_err(|e| invalid_recipe_msg(command, e))?;
+        std::fs::read_to_string(recipe_path).map_err(|e| invalid_recipe_msg(command, e))?;
 
     let recipe_dir = recipe_path
         .parent()
@@ -224,7 +212,7 @@ pub fn resolve_command(
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    Ok(Some((recipe, prompt)))
+    Ok((recipe, prompt))
 }
 
 fn parse_recipe_args(
