@@ -47,7 +47,7 @@ indoc = { version = "2", default-features = false }
 iroh = { version = "1.2.0", default-features = false }
 iroh-relay = { version = "1", default-features = false }
 keyring = { version = "3.6.3", default-features = false, features = ["vendored"] }
-lru = { version = "0.18", default-features = false }
+lru = { version = "0.19", default-features = false }
 once_cell = { version = "1.21.3", default-features = false, features = ["std"] }
 rand = "0.10.1"
 regex = { version = "1.12.3", default-features = false, features = ["std"] }
