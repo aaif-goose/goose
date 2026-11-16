@@ -112,6 +112,28 @@ before the boundary if it should recover from context-length errors.
 
 At exhaustion, the operation appends a user-visible `ResourceExhausted` error and yields. The operation also contributes a `moim_parts` budget reminder once half the limit is used. Hosts must render these parts in their request preparer; `IdentityInferenceRequestPreparer` does not include them.
 
+## Slash commands
+
+Operations offer commands through `Operation::commands`. A `command::Command`
+holds its name, aliases, description, input hint, host metadata and the action
+that runs it, so listing a command and running it read the same object.
+`StateMachine::commands` returns every command the steps offer, duplicates
+included.
+
+`slash_command::SlashCommandOperation` is one way to run them. On a fresh
+kickoff that starts with `/`, it lowercases the name that follows, collects
+commands from its operations and runs the first one whose name or alias matches,
+so name commands in lowercase. Ordinary messages and
+unknown commands pass through. `with_resolver` replaces the first-match rule.
+Put it before the other operations so a command runs before they see the
+kickoff.
+
+## Bang commands
+
+`bang_command::BangCommandOperation::new(tool_name, argument_name)` turns a
+user message starting with `!` into a request for `tool_name`, with the text
+after `!` as `argument_name`. Put it before inference.
+
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference

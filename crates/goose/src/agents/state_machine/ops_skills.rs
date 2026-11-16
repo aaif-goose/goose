@@ -18,8 +18,8 @@ use crate::agents::state_machine::ops_toolcalling::{
 };
 use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
+    Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
@@ -27,6 +27,7 @@ use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
+use crate::slash_commands::skill_slash_command::{format_installed_skills, runnable_skills};
 
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
@@ -248,39 +249,23 @@ impl SkillOperation {
             response.into(),
         ])
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for SkillOperation {
-    fn name(&self) -> &'static str {
-        "skills"
-    }
-
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
+    fn run_skill(
+        skill: &SourceEntry,
+        arguments: &str,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command == "skills" {
-            return Self::command_response(
-                conversation,
-                crate::slash_commands::skill_slash_command::format_installed_skills(Some(
-                    &session.working_dir,
-                )),
-                emit,
-            );
-        }
-
-        let prompt = match crate::slash_commands::skill_slash_command::resolve_command(
-            command.command,
-            command.params_str,
-            Some(&session.working_dir),
-        ) {
-            Ok(Some(prompt)) => prompt,
-            Ok(None) => return not_applicable(),
-            Err(error) => return Self::command_response(conversation, error, emit),
+        let arguments = (!arguments.is_empty()).then_some(arguments);
+        let prompt = match crate::skills::loaded_skill_context_with_args(skill, arguments) {
+            Ok(prompt) => prompt,
+            Err(error) => {
+                return Self::command_response(
+                    conversation,
+                    format!("Skill /{}: {error}", skill.name),
+                    emit,
+                )
+            }
         };
         let command_message = messages_since_kickoff(conversation)?
             .first()
@@ -301,6 +286,40 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                 .with_visibility(false, true)
                 .into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for SkillOperation {
+    fn name(&self) -> &'static str {
+        "skills"
+    }
+
+    async fn commands(&self, session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        let mut commands = vec![Command::<Session, GooseEffect>::new(
+            "skills",
+            "List installed skills and other available sources",
+            |call| {
+                Box::pin(async move {
+                    Self::command_response(
+                        call.conversation,
+                        format_installed_skills(Some(&call.session.working_dir)),
+                        call.emit,
+                    )
+                })
+            },
+        )];
+        for (name, skill) in runnable_skills(Some(&session.working_dir)) {
+            let description = skill.description.clone();
+            let input_hint = crate::skills::skill_argument_hint(&skill);
+            let mut command = Command::new(name, description, move |call| {
+                let result = Self::run_skill(&skill, call.arguments, call.conversation, call.emit);
+                Box::pin(async move { result })
+            });
+            command.input_hint = input_hint;
+            commands.push(command);
+        }
+        Ok(commands)
     }
 
     async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
