@@ -22,12 +22,13 @@ use crate::agents::state_machine::{
     GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
     InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
     RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnhandledToolCallsOperation,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::config::Config;
+use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
@@ -45,10 +46,12 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
+    pub(crate) hook_manager: HookManager,
     pub(crate) steer_queue: SteerQueue,
     pub(crate) subagent_runner: ForegroundSubagentRunner,
     pub(crate) retry_timeout: Duration,
     pub(crate) on_failure_timeout: Duration,
+    pub(crate) stop_hook_block_cap: u32,
     pub(crate) max_turns: u32,
     pub(crate) extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
     pub(crate) cancel: CancellationToken,
@@ -108,10 +111,12 @@ pub(crate) fn build_state_machine(
         extension_manager,
         extension_lease,
         tool_inspection_manager,
+        hook_manager,
         steer_queue,
         subagent_runner,
         retry_timeout,
         on_failure_timeout,
+        stop_hook_block_cap,
         max_turns,
         extra_operations,
         cancel,
@@ -171,6 +176,7 @@ pub(crate) fn build_state_machine(
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
+        Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
         Arc::new(StatusOperation::new(provider.clone(), model_config.clone())),

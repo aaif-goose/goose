@@ -1320,20 +1320,9 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
     Ok(())
 }
 
-fn offered_call(tool_name: &str) -> Message {
-    Message::assistant().with_tool_request_with_metadata(
-        "offered",
-        Ok(rmcp::model::CallToolRequestParams::new(
-            tool_name.to_string(),
-        )),
-        None,
-        Some(serde_json::json!({ goose_agent::tool_call_state::EXECUTABLE_KEY: true })),
-    )
-}
-
-/// An offered call that no operation runs still passes the pre-tool decision and
-/// gets a failed post event, so every allowed call is closed by a post event. In
-/// chat mode nothing would run the call, so no tool hook fires.
+/// A bang command offers `shell`, which the test session does not have, so no
+/// operation runs it. The call still passes the pre-tool decision and gets a
+/// failed post event; in chat mode nothing would run it, so no tool hook fires.
 #[tokio::test]
 async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
     for (mode, fired) in [(GooseMode::Auto, true), (GooseMode::Chat, false)] {
@@ -1346,31 +1335,18 @@ async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
                 RECORD_POST_FAILURE_SCRIPT,
             ),
         ]);
-        let (pipeline, api) = test_pipeline().await?;
+        let (pipeline, _) = test_pipeline().await?;
         let pipeline = pipeline
             .with_hook_manager(env.hook_manager())
             .with_goose_mode(mode)
             .await;
-        api.on("not available").reply("understood");
-        api.on("chat mode").reply("understood");
-        pipeline
-            .seed([
-                Message::user().with_text("go"),
-                offered_call("missing_tool"),
-            ])
-            .await?;
 
-        pipeline.resume().await?;
+        pipeline.run(["!echo hi"]).await?;
 
-        let ids = |log| -> Vec<Value> {
-            env.payloads(log)
-                .iter()
-                .map(|payload| payload["tool_call_id"].clone())
-                .collect()
-        };
-        let expected: &[&str] = if fired { &["offered"] } else { &[] };
-        assert_eq!(ids("result.log"), expected, "{mode:?}");
-        assert_eq!(ids("postfail.log"), expected, "{mode:?}");
+        let events = |log| env.payloads(log).len();
+        let expected = usize::from(fired);
+        assert_eq!(events("result.log"), expected, "{mode:?}");
+        assert_eq!(events("postfail.log"), expected, "{mode:?}");
     }
     Ok(())
 }
@@ -1378,19 +1354,12 @@ async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
 #[tokio::test]
 async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Result<()> {
     let env = RecordingHookEnv::new(&[("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT)]);
-    let (pipeline, api) = test_pipeline().await?;
+    let (pipeline, _) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("denied by policy hook").reply("understood");
-    pipeline
-        .seed([
-            Message::user().with_text("go"),
-            offered_call("missing_tool"),
-        ])
-        .await?;
 
-    let result = pipeline.resume().await?;
+    let result = pipeline.run(["!echo hi"]).await?;
 
-    result.assert_message(-2, ToolResponse, "blocked by test policy");
+    result.assert_message(-1, ToolResponse, "blocked by test policy");
     let response = result
         .session
         .conversation

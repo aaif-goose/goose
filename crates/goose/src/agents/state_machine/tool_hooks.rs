@@ -1,11 +1,96 @@
 use std::path::Path;
+use std::sync::{Arc, Mutex as StdMutex};
 
-use rmcp::model::{CallToolResult, ErrorData};
+use goose_agent::tool_call_state::request_executable;
+use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
-use crate::conversation::message::{ToolRequest, ToolResponse};
+use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+use crate::agents::state_machine::ops_toolcalling::{
+    leased_working_dir, request_was_advertised, tool_span,
+};
+use crate::agents::state_machine::{ConversationEffect, GooseEffect};
+use crate::config::GooseMode;
+use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
+use crate::session::Session;
 
-pub(super) async fn check_pre_tool_hooks(
+pub(crate) async fn fire_tool_hooks(
+    hook_manager: &HookManager,
+    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    session: &Session,
+    effects: &[GooseEffect],
+) -> Option<Message> {
+    if session.goose_mode == GooseMode::Chat {
+        return None;
+    }
+    let working_dir = leased_working_dir(extension_lease, session);
+    let earlier = session
+        .conversation
+        .as_ref()
+        .map(|conversation| conversation.messages().as_slice())
+        .unwrap_or_default();
+    let mut denials = Message::user();
+    for message in effects.iter().filter_map(|effect| match effect {
+        GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
+        _ => None,
+    }) {
+        for content in &message.content {
+            match content {
+                MessageContent::ToolRequest(request) => {
+                    let Ok(tool_call) = &request.tool_call else {
+                        continue;
+                    };
+                    if request.was_executed_externally()
+                        || tool_call.name == FINAL_OUTPUT_TOOL_NAME
+                        || !request_was_advertised(std::slice::from_ref(message), request)
+                    {
+                        continue;
+                    }
+                    let Some(denial) =
+                        check_pre_tool_hooks(hook_manager, &session.id, &working_dir, request)
+                            .await
+                    else {
+                        continue;
+                    };
+                    tool_span(&tool_call.name, &request.id, &session.id)
+                        .record("error.type", denial.error_type);
+                    denials.add_tool_response_with_metadata(
+                        request.id.clone(),
+                        Ok(CallToolResult::error(vec![ContentBlock::text(
+                            denial.message,
+                        )])),
+                        request.metadata.as_ref(),
+                    );
+                }
+                MessageContent::ToolResponse(response) => {
+                    let request = earlier
+                        .iter()
+                        .flat_map(|message| &message.content)
+                        .filter_map(MessageContent::as_tool_request)
+                        .find(|request| request.id == response.id);
+                    if let Some(request) = request.filter(|request| {
+                        request_executable(request) == Some(true)
+                            && request_was_advertised(earlier, request)
+                    }) {
+                        emit_post_tool_hooks(
+                            hook_manager,
+                            &session.id,
+                            &working_dir,
+                            request,
+                            response,
+                        )
+                        .await;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    (!denials.content.is_empty()).then_some(denials)
+}
+
+async fn check_pre_tool_hooks(
     hook_manager: &HookManager,
     session_id: &str,
     working_dir: &Path,
@@ -110,7 +195,7 @@ async fn emit_extended_pre_hooks(
     }
 }
 
-pub(super) async fn emit_post_tool_hooks(
+async fn emit_post_tool_hooks(
     hook_manager: &HookManager,
     session_id: &str,
     working_dir: &Path,

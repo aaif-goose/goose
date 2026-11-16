@@ -1,12 +1,16 @@
+use std::sync::{Arc, Mutex as StdMutex};
+
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::turn_hooks::TurnHooks;
+use crate::agents::state_machine::tool_hooks::fire_tool_hooks;
 use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::hooks::HookManager;
 use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
 use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
@@ -253,7 +257,8 @@ impl EffectUsage<GooseEffect> for SessionManager {
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
-    mut hooks: TurnHooks,
+    hook_manager: &HookManager,
+    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
@@ -283,10 +288,17 @@ pub(crate) async fn run(
         session_manager: runtime,
         usage: Default::default(),
     };
-    hooks.start_turn(&entry_session).await;
     loop {
         let session = runtime.load(session_id).await?;
-        let result = hooks.step(machine, &runtime, &session, emit).await?;
+        let mut result = machine.step(&session, emit).await?;
+        if let Some(denials) =
+            fire_tool_hooks(hook_manager, extension_lease, &session, &result.effects).await
+        {
+            result.effects.push(emit.message(denials).into());
+        }
+        machine
+            .apply(&runtime, &session, &mut result.effects, emit)
+            .await?;
         if result.status != RunStatus::Continuing {
             break;
         }

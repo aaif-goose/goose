@@ -12,8 +12,9 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::tool_hooks::fire_tool_hooks;
 use crate::agents::state_machine::{
-    messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine, TurnHooks,
+    messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
 use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
@@ -183,6 +184,18 @@ impl TestPipeline {
             .extension_lease()
     }
 
+    async fn fire_tool_hooks(
+        &self,
+        session: &Session,
+        effects: &mut Vec<GooseEffect>,
+        emit: &Emitter,
+    ) {
+        let lease = self.extension_lease(self.services().await);
+        if let Some(denials) = fire_tool_hooks(&self.hook_manager, &lease, session, effects).await {
+            effects.push(emit.message(denials).into());
+        }
+    }
+
     async fn start_new_turn(&self) {
         let services = self.services().await;
         *self.extension_lease(services).lock().unwrap() = None;
@@ -191,7 +204,7 @@ impl TestPipeline {
     pub(super) async fn machine(
         &self,
         cancel: CancellationToken,
-    ) -> (StateMachine<'_, Session, GooseEffect>, TurnHooks) {
+    ) -> StateMachine<'_, Session, GooseEffect> {
         let services = self.services().await;
         services
             .create_state_machine(
@@ -531,16 +544,22 @@ impl TestPipeline {
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
-        let (_, mut hooks) = self.machine(cancel.clone()).await;
-        hooks.start_turn(&self.session().await?).await;
 
         loop {
             let session = self.session().await?;
-            let (machine, _) = self.machine(cancel.clone()).await;
-            let result = hooks
-                .step(&machine, self.session_manager.as_ref(), &session, &emit)
-                .await?;
+            let machine = self.machine(cancel.clone()).await;
+            let mut result = machine.step(&session, &emit).await?;
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+            machine
+                .apply(
+                    self.session_manager.as_ref(),
+                    &session,
+                    &mut result.effects,
+                    &emit,
+                )
+                .await?;
             if result.applied_step.is_some() {
                 applied_steps += 1;
             }
@@ -577,7 +596,10 @@ impl TestPipeline {
         self.session_manager
             .add_message(&self.session_id, message)
             .await?;
-        Ok(())
+        self.services()
+            .await
+            .emit_hooks_for_saved_prompt(&self.session_id)
+            .await
     }
 
     pub(super) async fn resume(&self) -> Result<TestRun> {
@@ -658,13 +680,14 @@ impl TestPipeline {
     }
 
     async fn run_turn(&self, cancel: CancellationToken) -> Result<TestRun> {
-        let (machine, hooks) = self.machine(cancel.clone()).await;
+        let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let session = crate::agents::state_machine::session::run(
             &machine,
             self.session_manager.as_ref(),
-            hooks,
+            &self.hook_manager,
+            &self.extension_lease(self.services().await),
             &self.session_id,
             &emit,
         )
@@ -685,18 +708,17 @@ impl TestPipeline {
     ) -> Result<TestRun> {
         self.send(&Message::user().with_text(message)).await?;
         let cancel = CancellationToken::new();
-        let (machine, mut hooks) = self.machine(cancel.clone()).await;
+        let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
-        hooks.start_turn(&self.session().await?).await;
 
         loop {
             let session = self.session().await?;
-            let step = hooks.step(&machine, self.session_manager.as_ref(), &session, &emit);
+            let step = machine.step(&session, &emit);
             tokio::pin!(step);
-            let result = loop {
+            let mut result = loop {
                 tokio::select! {
                     result = &mut step => break result?,
                     Some(event) = rx.recv() => {
@@ -744,7 +766,17 @@ impl TestPipeline {
                     }
                 }
             };
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+            machine
+                .apply(
+                    self.session_manager.as_ref(),
+                    &session,
+                    &mut result.effects,
+                    &emit,
+                )
+                .await?;
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
             }
@@ -1219,8 +1251,7 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 7] = [
-    "pre_tool_hooks",
+const TOOL_OPERATIONS: [&str; 6] = [
     "final_output",
     "tool_approval",
     "skills",
@@ -1262,17 +1293,25 @@ fn has_open_tool_call(turn: &[Message]) -> bool {
 
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
     let cancel = CancellationToken::new();
-    let (machine, mut hooks) = pipeline.machine(cancel.clone()).await;
+    let machine = pipeline.machine(cancel.clone()).await;
     let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
-    hooks.start_turn(&pipeline.session().await?).await;
     loop {
         let session = pipeline.session().await?;
-        let result = hooks
-            .step(&machine, pipeline.session_manager.as_ref(), &session, &emit)
-            .await?;
+        let mut result = machine.step(&session, &emit).await?;
+        pipeline
+            .fire_tool_hooks(&session, &mut result.effects, &emit)
+            .await;
         assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+        machine
+            .apply(
+                pipeline.session_manager.as_ref(),
+                &session,
+                &mut result.effects,
+                &emit,
+            )
+            .await?;
         while let Ok(event) = rx.try_recv() {
             events.push(event);
         }
