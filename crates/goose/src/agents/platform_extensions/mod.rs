@@ -311,7 +311,7 @@ pub struct PlatformExtensionDef {
 
 /// Returns true if the named extension is a first-class platform extension
 /// whose tools are exposed unprefixed and remain visible during code execution mode.
-pub fn is_first_class_extension(name: &str) -> bool {
+pub fn is_unprefixed_extension(name: &str) -> bool {
     PLATFORM_EXTENSIONS
         .get(crate::config::extensions::name_to_key(name).as_str())
         .is_some_and(|def| def.unprefixed_tools)
