@@ -5,15 +5,16 @@ use crate::agents::tool_execution::ToolCallContext;
 use async_trait::async_trait;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
 
@@ -65,19 +66,9 @@ impl SummarizeClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SummarizeClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+impl PlatformExtension for SummarizeClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(

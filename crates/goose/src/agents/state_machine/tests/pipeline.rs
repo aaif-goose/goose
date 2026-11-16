@@ -10,12 +10,12 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
@@ -173,15 +173,15 @@ impl TestPipeline {
             .await
     }
 
-    fn extension_lease(
+    fn tool_snapshot(
         &self,
         services: &StateMachineServices,
-    ) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
+    ) -> Arc<StdMutex<Option<Arc<ToolSnapshot>>>> {
         services
             .runtime
             .confirmations
             .session(&self.session_id)
-            .extension_lease()
+            .tool_snapshot()
     }
 
     async fn fire_tool_hooks(
@@ -190,7 +190,7 @@ impl TestPipeline {
         effects: &mut Vec<GooseEffect>,
         emit: &Emitter,
     ) {
-        let lease = self.extension_lease(self.services().await);
+        let lease = self.tool_snapshot(self.services().await);
         if let Some(denials) =
             fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
         {
@@ -201,7 +201,7 @@ impl TestPipeline {
 
     async fn start_new_turn(&self) {
         let services = self.services().await;
-        *self.extension_lease(services).lock().unwrap() = None;
+        *self.tool_snapshot(services).lock().unwrap() = None;
     }
 
     pub(super) async fn machine(
@@ -381,8 +381,7 @@ impl TestPipeline {
         for extension in recipe.extensions.clone().unwrap_or_default() {
             self.services()
                 .await
-                .extension_manager
-                .enable(&self.session_id, extension)
+                .enable_extension(&self.session_id, extension)
                 .await?;
         }
         Ok(())
@@ -452,7 +451,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::mcp_client::McpCallContext> {
         self.calculator.contexts()
     }
 
@@ -471,12 +470,12 @@ impl TestPipeline {
         pipeline.turn_settings = self.turn_settings.clone();
         pipeline.max_turns = self.max_turns;
         let lease = self
-            .extension_lease(self.services().await)
+            .tool_snapshot(self.services().await)
             .lock()
             .unwrap()
             .clone();
         *pipeline
-            .extension_lease(pipeline.services().await)
+            .tool_snapshot(pipeline.services().await)
             .lock()
             .unwrap() = lease;
         Ok(pipeline)
@@ -631,8 +630,7 @@ impl TestPipeline {
         Ok(self
             .services()
             .await
-            .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
             .configs()
             .iter()
@@ -652,8 +650,7 @@ impl TestPipeline {
     pub(super) async fn add_extension(&self, name: &str) -> Result<()> {
         self.services()
             .await
-            .extension_manager
-            .enable(
+            .enable_extension(
                 &self.session_id,
                 ExtensionConfig::Platform {
                     name: name.to_string(),
@@ -690,7 +687,7 @@ impl TestPipeline {
             &machine,
             self.session_manager.as_ref(),
             &self.hook_manager,
-            &self.extension_lease(self.services().await),
+            &self.tool_snapshot(self.services().await),
             &self.session_id,
             &emit,
         )
@@ -992,10 +989,7 @@ async fn enable_session_extensions(
                 )
                 .await;
         } else {
-            services
-                .extension_manager
-                .enable(&session.id, extension)
-                .await?;
+            services.enable_extension(&session.id, extension).await?;
         }
     }
 
@@ -1254,11 +1248,12 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 6] = [
+const TOOL_OPERATIONS: [&str; 7] = [
     "final_output",
     "tool_approval",
     "skills",
     "tool_execution",
+    "platform_extensions",
     "remaining_tool_calls",
     "unhandled_tool_calls",
 ];

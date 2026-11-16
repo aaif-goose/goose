@@ -1796,8 +1796,7 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
     let extension_config = get_extension_by_name(&selected_extension_name);
     if let Some(config) = extension_config.as_ref() {
         services
-            .extension_manager
-            .enable(&session.id, config.clone())
+            .enable_extension(&session.id, config.clone())
             .await
             .unwrap_or_else(|_| {
                 println!(

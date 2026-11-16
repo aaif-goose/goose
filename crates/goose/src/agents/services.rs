@@ -5,15 +5,19 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use goose_agent::steer::SteerQueue;
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
-use crate::agents::provider_manager::ProviderManager;
+use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionResult};
+use crate::agents::extension_manager::{
+    ClientContext, ExtensionManager, ExtensionMutation, ExtensionSet,
+};
+use crate::agents::platform_extensions::{PlatformExtensionContext, PlatformExtensions};
+use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -22,11 +26,14 @@ use crate::agents::state_machine::{
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::tool_execution::ToolCallResult;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionManager;
+use crate::config::{extensions::name_to_key, get_extension_by_name};
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
@@ -44,6 +51,7 @@ use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use rmcp::model::{ElicitationAction, Tool};
+use rmcp::model::{ErrorCode, ErrorData};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -330,6 +338,7 @@ pub struct StateMachineServices {
     pub runtime: SessionRuntime,
 
     pub extension_manager: Arc<ExtensionManager>,
+    pub platform_extensions: PlatformExtensions,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
@@ -355,17 +364,189 @@ fn agent_visible_message_text(message: &Message) -> String {
 }
 
 impl StateMachineServices {
+    pub(crate) async fn release_tool_session(&self, session_id: &str) {
+        self.platform_extensions.release(session_id);
+        self.extension_manager.release(session_id).await;
+    }
+
+    pub fn platform_context(&self) -> PlatformExtensionContext {
+        PlatformExtensionContext {
+            providers: Arc::clone(&self.providers),
+            session_manager: Arc::clone(&self.session_manager),
+            scheduler: self.scheduler.clone(),
+        }
+    }
+
+    pub async fn resolve_tools(&self, set: &ExtensionSet) -> ToolSnapshot {
+        let configs = set
+            .extensions()
+            .iter()
+            .filter(|config| !crate::agents::platform_extensions::is_platform(config))
+            .cloned()
+            .collect();
+        let mcp = ExtensionSet::new(set.scope_id(), set.working_dir.clone(), configs)
+            .expect("selection already validated")
+            .with_container(set.container.clone());
+        ToolSnapshot::new(
+            self.extension_manager.resolve(&mcp).await,
+            self.platform_extensions.select(
+                set.scope_id(),
+                set.working_dir.clone(),
+                set.extensions(),
+                &self.platform_context(),
+            ),
+        )
+    }
+
+    pub async fn enable_extension(
+        &self,
+        session_id: &str,
+        config: ExtensionConfig,
+    ) -> ExtensionResult<()> {
+        if crate::agents::platform_extensions::is_platform(&config) {
+            self.extension_manager.select(session_id, config).await
+        } else {
+            self.extension_manager.enable(session_id, config).await
+        }
+    }
+
+    pub async fn current_tools(&self, session_id: &str) -> Result<ToolSnapshot> {
+        let session = self.session_manager.get_session(session_id, false).await?;
+        self.session_tools(&session).await
+    }
+
+    pub async fn current_session_snapshot(
+        &self,
+        session: &Session,
+    ) -> Result<(Session, ToolSnapshot)> {
+        let session = self
+            .session_manager
+            .get_session(&session.id, session.conversation.is_some())
+            .await?;
+        let lease = self.session_tools(&session).await?;
+        Ok((session, lease))
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn scope_tools(&self, scope_id: &str) -> ToolSnapshot {
+        let configs = self
+            .session_manager
+            .get_session(scope_id, false)
+            .await
+            .map(|session| selection(&session))
+            .unwrap_or_default();
+        let configs: Vec<_> = configs
+            .into_iter()
+            .filter(|config| self.platform_extensions.contains(scope_id, &config.key()))
+            .collect();
+        ToolSnapshot::new(
+            self.extension_manager.scope_lease(scope_id).await,
+            self.platform_extensions
+                .select(scope_id, None, &configs, &self.platform_context()),
+        )
+    }
+
+    async fn session_tools(&self, session: &Session) -> Result<ToolSnapshot> {
+        // A pinned provider may not be in the registry at all, so it answers
+        // for itself when there is one.
+        let provider_runs_tool_loop = match self.providers.pinned(session).await {
+            Some(provider) => provider.manages_own_context(),
+            None => match provider_name_for(session) {
+                Ok(name) => crate::providers::get_from_registry(&name)
+                    .await
+                    .is_ok_and(|entry| entry.runs_own_tool_loop()),
+                Err(_) => false,
+            },
+        };
+        let extensions = selection(session)
+            .into_iter()
+            .filter(|config| {
+                !(provider_runs_tool_loop
+                    && matches!(
+                        config,
+                        ExtensionConfig::External(
+                            goose_agent::extension::ExtensionConfig::Stdio { .. }
+                        ) | ExtensionConfig::External(
+                            goose_agent::extension::ExtensionConfig::StreamableHttp { .. }
+                        )
+                    ))
+            })
+            .collect();
+        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)?
+            .with_container(session.container.clone());
+        Ok(self.resolve_tools(&set).await)
+    }
+
+    pub async fn apply_extension_mutation(
+        self: &Arc<Self>,
+        mutation: ExtensionMutation,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        match mutation {
+            ExtensionMutation::Enable { name } => {
+                let config = get_extension_by_name(&name).ok_or_else(|| {
+                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
+                })?;
+                self.enable_extension(session_id, config).await
+            }
+            ExtensionMutation::Disable { name } => {
+                self.extension_manager
+                    .disable(session_id, &name_to_key(&name))
+                    .await?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn applying_mutation(
+        self: &Arc<Self>,
+        result: ToolCallResult,
+        session_id: &str,
+    ) -> ToolCallResult {
+        let services = Arc::clone(self);
+        let session_id = session_id.to_string();
+        let inner = result.result;
+        ToolCallResult {
+            result: Box::new(
+                async move {
+                    let mut result = inner.await?;
+                    if let Some(mutation) = ExtensionMutation::take(&mut result) {
+                        services
+                            .apply_extension_mutation(mutation, &session_id)
+                            .await
+                            .map_err(|e| {
+                                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                            })?;
+                    }
+                    Ok(result)
+                }
+                .boxed(),
+            ),
+            ..result
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tool_tests(data_dir: std::path::PathBuf) -> Arc<Self> {
+        Self::with_config(StateMachineServicesConfig::new(
+            Arc::new(SessionManager::new(data_dir.clone())),
+            Arc::new(PermissionManager::new(data_dir)),
+            None,
+            true,
+            GoosePlatform::GooseCli,
+        ))
+    }
+
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
         let mut default_client = ClientContext::new(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
             extension_manager: Arc::new(ExtensionManager::new(
-                config.providers.clone(),
                 config.session_manager.clone(),
-                config.scheduler_service.clone(),
                 default_client,
             )),
+            platform_extensions: PlatformExtensions::default(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
                 config.permission_manager.clone(),
                 config.providers.clone(),
@@ -528,7 +709,7 @@ impl StateMachineServices {
         self.session_manager
             .action_required()
             .forget_forwarded_from(session_id);
-        self.extension_manager.release(session_id).await;
+        self.release_tool_session(session_id).await;
         self.providers.release(session_id);
     }
 
@@ -595,7 +776,7 @@ impl StateMachineServices {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
-        let lease = self.extension_manager.current_lease(session_id).await?;
+        let lease = self.current_tools(session_id).await?;
         Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
@@ -700,11 +881,11 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let extension_lease = self
+        let tool_snapshot = self
             .runtime
             .confirmations
             .session(&session_config.id)
-            .extension_lease();
+            .tool_snapshot();
         self.create_state_machine_with_lease(
             provider,
             model_config,
@@ -712,7 +893,7 @@ impl StateMachineServices {
             session_config,
             cancel,
             steer_queue,
-            extension_lease,
+            tool_snapshot,
         )
         .await
     }
@@ -726,7 +907,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
@@ -752,8 +933,8 @@ impl StateMachineServices {
             defer_tools: settings.defer_tools,
             always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),
-            extension_manager: Arc::clone(&self.extension_manager),
-            extension_lease,
+            services: Arc::clone(self),
+            tool_snapshot,
             tool_inspection_manager: &self.tool_inspection_manager,
             hook_manager: self.hook_manager.clone(),
             steer_queue,
@@ -1091,11 +1272,11 @@ impl StateMachineServices {
             )
             .await;
         let hook_manager = self.hook_manager.clone();
-        let extension_lease = self
+        let tool_snapshot = self
             .runtime
             .confirmations
             .session(&session_id)
-            .extension_lease();
+            .tool_snapshot();
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -1109,7 +1290,7 @@ impl StateMachineServices {
                             &machine,
                             session_manager.as_ref(),
                             &hook_manager,
-                            &extension_lease,
+                            &tool_snapshot,
                             &session_id,
                             &emit,
                         ),
@@ -1374,6 +1555,12 @@ impl Drop for TurnEnd {
     }
 }
 
+fn selection(session: &Session) -> Vec<ExtensionConfig> {
+    crate::session::EnabledExtensionsState::from_extension_data(&session.extension_data)
+        .map(|state| state.extensions)
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1464,11 +1651,10 @@ mod tests {
             session.id
         }
 
-        async fn use_session(services: &StateMachineServices, session_id: &str) {
+        async fn use_session(services: &Arc<StateMachineServices>, session_id: &str) {
             services.touch_session(session_id).await;
             services
-                .extension_manager
-                .current_lease(session_id)
+                .current_tools(session_id)
                 .await
                 .unwrap()
                 .start()

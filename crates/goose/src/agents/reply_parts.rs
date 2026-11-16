@@ -193,7 +193,7 @@ pub(crate) fn prepare_inference_tools(
                 && (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
                     || tool.name == goose_agent::skills::LOAD_SKILL_TOOL_NAME))
                 || owner.is_some_and(|owner| {
-                    crate::agents::extension_manager::is_first_class_extension(&owner)
+                    crate::agents::platform_extensions::is_unprefixed_extension(&owner)
                 })
                 || crate::agents::extension_manager::get_tool_resource_uri(tool).is_some()
         });

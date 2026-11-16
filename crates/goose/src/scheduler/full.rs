@@ -893,10 +893,7 @@ async fn execute_job(
             ));
         }
         for ext in &extensions {
-            services
-                .extension_manager
-                .enable(&session.id, ext.clone())
-                .await?;
+            services.enable_extension(&session.id, ext.clone()).await?;
         }
 
         services
