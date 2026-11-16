@@ -12,6 +12,7 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
@@ -181,6 +182,21 @@ impl TestPipeline {
             .confirmations
             .session(&self.session_id)
             .extension_lease()
+    }
+
+    async fn fire_tool_hooks(
+        &self,
+        session: &Session,
+        effects: &mut Vec<GooseEffect>,
+        emit: &Emitter,
+    ) {
+        let lease = self.extension_lease(self.services().await);
+        if let Some(denials) =
+            fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
+        {
+            effects.push(emit.message(denials).into());
+        }
+        fire_post_tool_hooks(&self.hook_manager, &lease, session, effects).await;
     }
 
     async fn start_new_turn(&self) {
@@ -536,6 +552,8 @@ impl TestPipeline {
             let session = self.session().await?;
             let machine = self.machine(cancel.clone()).await;
             let mut result = machine.step(&session, &emit).await?;
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
@@ -671,6 +689,8 @@ impl TestPipeline {
         let session = crate::agents::state_machine::session::run(
             &machine,
             self.session_manager.as_ref(),
+            &self.hook_manager,
+            &self.extension_lease(self.services().await),
             &self.session_id,
             &emit,
         )
@@ -749,6 +769,8 @@ impl TestPipeline {
                     }
                 }
             };
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
@@ -1281,6 +1303,9 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
     loop {
         let session = pipeline.session().await?;
         let mut result = machine.step(&session, &emit).await?;
+        pipeline
+            .fire_tool_hooks(&session, &mut result.effects, &emit)
+            .await;
         assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
         machine
             .apply(

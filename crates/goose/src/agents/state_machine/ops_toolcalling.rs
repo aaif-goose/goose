@@ -15,7 +15,6 @@ use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
@@ -26,11 +25,10 @@ use crate::agents::tool_execution::{
 use crate::agents::AgentEvent;
 use crate::config::GooseMode;
 use crate::conversation::message::{
-    ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest, ToolResponse,
+    ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
-use crate::hooks::HookManager;
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
@@ -154,32 +152,16 @@ impl ToolBatch {
     }
 }
 
-fn with_hooks_and_recording(
+fn with_recording(
     batch: &Arc<StdMutex<ToolBatch>>,
     result: ToolCallResult,
     span: tracing::Span,
     request: &ToolRequest,
-    hook_manager: &HookManager,
-    session: &Session,
 ) -> ToolCallResult {
     let batch = Arc::clone(batch);
-    let hook_manager = hook_manager.clone();
-    let session_id = session.id.clone();
-    let working_dir = session.working_dir.clone();
-    let request = request.clone();
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
     let future = async move {
-        if let Some(denied) =
-            check_pre_tool_hooks(&hook_manager, &session_id, &working_dir, &request).await
-        {
-            let denied = Ok(denied);
-            batch
-                .lock()
-                .unwrap()
-                .record(&tool_call_id, denied.clone(), metadata.as_ref());
-            return denied;
-        }
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
         batch
@@ -196,19 +178,6 @@ fn with_hooks_and_recording(
             }
             _ => {}
         }
-        let response = ToolResponse {
-            id: tool_call_id,
-            tool_result: result.clone(),
-            metadata,
-        };
-        emit_post_tool_hooks(
-            &hook_manager,
-            &session_id,
-            &working_dir,
-            &request,
-            &response,
-        )
-        .await;
         result
     }
     .instrument(span);
@@ -242,7 +211,6 @@ fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
 
 pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
-    hook_manager: HookManager,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
@@ -252,14 +220,12 @@ pub struct ToolExecutionOperation {
 impl ToolExecutionOperation {
     pub fn new(
         extension_manager: Arc<ExtensionManager>,
-        hook_manager: HookManager,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         defer_tools: bool,
         always_load_tools: Vec<String>,
     ) -> Self {
         Self {
             extension_manager,
-            hook_manager,
             lease,
             batch: Arc::default(),
             defer_tools,
@@ -373,14 +339,7 @@ impl ToolExecutionOperation {
             let result = self
                 .extension_manager
                 .applying_mutation(result, &session.id);
-            with_hooks_and_recording(
-                &self.batch,
-                result,
-                result_span,
-                request,
-                &self.hook_manager,
-                session,
-            )
+            with_recording(&self.batch, result, result_span, request)
         }
         .instrument(span)
         .await
