@@ -180,8 +180,8 @@ pub trait LeaseResolver<S>: Send + Sync {
 /// customize advertisement and decorate calls without implementing another executor.
 #[async_trait]
 pub trait ExtensionOperationHost<S: Sync>: LeaseResolver<S> {
-    fn advertised_lease(&self) -> Option<Arc<ExtensionLease>> {
-        None
+    fn advertised_lease(&self, lease: &TurnLease) -> Option<Arc<ExtensionLease>> {
+        lease.get()
     }
 
     fn name(&self) -> &'static str {
@@ -361,7 +361,7 @@ impl<S: Send + Sync + 'static> ExtensionOperation<S> {
     }
 
     fn advertised(&self) -> Option<Arc<ExtensionLease>> {
-        self.host.advertised_lease().or_else(|| self.lease.get())
+        self.host.advertised_lease(&self.lease)
     }
 
     async fn current(&self, session: &S) -> Result<Arc<ExtensionLease>> {

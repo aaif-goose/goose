@@ -263,7 +263,10 @@ impl goose_agent::extension_manager::LeaseResolver<Session> for GooseExtensionOp
 impl goose_agent::extension_manager::ExtensionOperationHost<Session>
     for GooseExtensionOperationHost
 {
-    fn advertised_lease(&self) -> Option<Arc<ExtensionLease>> {
+    fn advertised_lease(
+        &self,
+        _lease: &goose_agent::extension_manager::TurnLease,
+    ) -> Option<Arc<ExtensionLease>> {
         self.tools
             .lock()
             .unwrap()

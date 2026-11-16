@@ -167,8 +167,9 @@ discovery is not a secure file-open API.
 
 ## Extension runtime
 
-On native targets, `extension_manager` owns extension slots, leases, tool
-catalogs, dispatch, and MCP transports. Its supporting transport configuration,
+On native targets, `extension_manager` owns MCP extension slots, leases, tool
+catalogs, dispatch, and transports. Goose-owned platform clients run in a separate
+Goose operation and never become runtime registrations or slots. Its supporting transport configuration,
 MCP client, tool-call, elicitation, malware-checking, and subprocess types live in
 this crate too. Consumers import the moved types directly from `goose_agent`.
 
@@ -197,10 +198,9 @@ The extraction preserves the runtime's behavior, with these necessary boundaries
   sharing serialization, environment filtering, and secret resolution rather than
   copying them. The GDK's transport `ExtensionConfig` accepts only stdio and HTTP;
   `manager.registration(config)` constructs a registration for those transports.
-- Registrations carry connector revisions, tool filters, and optional opaque host
-  metadata. Goose uses that metadata to persist its unchanged config schema.
-  Trusted in-process registrations can preserve host-reserved result metadata and
-  opt out of working-directory restarts; external registrations cannot.
+- Registrations carry an opaque reuse identity and tool filters. Application
+  configs remain in Goose; reuse identity is not a persistence or metadata API.
+  Platform trust, naming, state, and MOIM stay outside the MCP runtime.
 
 Goose's mutation commands, private MCP App result attachments, and resource-tool
 visibility rules live in its adapter. `ExtensionToolPolicy::exposes_tool` filters the
@@ -215,10 +215,10 @@ Transports are opt-in Cargo features (native only):
 - `extension-malware-check` — OSV lookup for packages run by stdio `npx`/`uvx`.
 
 A config whose transport is not enabled fails to start with a configuration error.
-In-process extensions need no transport feature. Builtin registries and Docker
+Custom MCP connectors need no built-in transport feature. Builtin registries and Docker
 command construction live in goose's connectors. The runtime has no container
 placement or builtin/platform callback API. For external configs,
-`Registration::from_config_with_command` accepts a `StdioCommand` that only builds
+`Registration::from_config` accepts a `StdioCommand` that only builds
 the host's local/container command; GDK still owns secret resolution and refresh,
 working-directory/timeout setup, malware checks, MCP negotiation, and supervision.
 `ExtensionEnvironment::connection_working_dir` supplies a host-specific fallback without
@@ -254,9 +254,10 @@ Goose uses `ExtensionOperation` directly, with an `ExtensionOperationHost` for
 advertisement policy, deferred tools, chat mode, result processing, hooks and
 telemetry. The operation owns dispatch, batch recording and cancellation. Results
 are recorded after host transformation but before post-call hooks, so cancellation
-during a hook does not lose a completed response. `with_inference_lease` shares the
-lease prepared alongside Goose's inference session snapshot instead of resolving
-a second snapshot. Prompt slash commands and subdirectory hints are separate
+during a hook does not lose a completed response. Goose supplies the MCP lease
+from its advertised tool dispatcher through `ExtensionOperationHost::advertised_lease`,
+so clearing the application snapshot also expires the operation's cached selection.
+Other hosts can use `with_inference_lease` to supply a shared `TurnLease`. Prompt slash commands and subdirectory hints are separate
 Goose operations. Hosts can reject unadvertised requests and claim expired
 requests without starting replacement extensions; only explicitly eligible
 operation-generated requests may resolve a lease for execution.
