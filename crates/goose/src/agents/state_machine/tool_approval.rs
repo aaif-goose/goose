@@ -4,7 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::tool_approval::{ApprovalDecision, ToolApproval};
 
-use crate::agents::state_machine::ops_toolcalling::call_will_not_run;
+use crate::agents::state_machine::messages_since_kickoff;
+use crate::agents::state_machine::ops_toolcalling::request_was_advertised;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::ToolRequest;
@@ -35,12 +36,12 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
         conversation: &Conversation,
         requests: &[&ToolRequest],
     ) -> Result<Vec<ApprovalDecision>> {
-        let mut to_inspect = Vec::new();
-        for request in requests {
-            if !call_will_not_run(session, conversation, request)? {
-                to_inspect.push((*request).clone());
-            }
-        }
+        let messages = messages_since_kickoff(conversation)?;
+        let to_inspect: Vec<ToolRequest> = requests
+            .iter()
+            .filter(|request| request_was_advertised(messages, request))
+            .map(|request| (*request).clone())
+            .collect();
         if to_inspect.is_empty() {
             return Ok(requests.iter().map(|_| ApprovalDecision::Allow).collect());
         }

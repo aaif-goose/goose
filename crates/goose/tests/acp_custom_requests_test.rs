@@ -1213,7 +1213,7 @@ fn test_app_tool_call_requires_auto_mode() {
     run_test(async move {
         let mcp = McpFixture::new().await;
 
-        for mode in ["approve", "smart_approve", "chat"] {
+        for mode in ["approve", "smart_approve"] {
             let (conn, session_id) = connect_with_mcp_fixture(&mcp.url, mode).await;
             let error = call_app_tool(&conn, &session_id)
                 .await

@@ -10,7 +10,6 @@ use crate::agents::state_machine::ops_toolcalling::{
     leased_working_dir, request_was_advertised, tool_span,
 };
 use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
-use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
 use crate::session::Session;
@@ -21,9 +20,6 @@ pub(crate) async fn fire_pre_tool_hooks(
     session: &Session,
     effects: &[GooseEffect],
 ) -> Option<Message> {
-    if session.goose_mode == GooseMode::Chat {
-        return None;
-    }
     let working_dir = leased_working_dir(extension_lease, session);
     let checks = appended_messages(effects)
         .flat_map(|message| {
@@ -73,9 +69,6 @@ pub(crate) async fn fire_post_tool_hooks(
     session: &Session,
     effects: &[GooseEffect],
 ) {
-    if session.goose_mode == GooseMode::Chat {
-        return;
-    }
     let working_dir = leased_working_dir(extension_lease, session);
     let turn = session
         .conversation

@@ -6,13 +6,11 @@ use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    pending_tool_requests, request_was_advertised, tool_span, ToolDisposition,
+    pending_tool_requests, tool_span, ToolDisposition,
 };
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
@@ -54,17 +52,6 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     ))])),
                     false,
                 ),
-                ToolDisposition::Execute
-                    if session.goose_mode == GooseMode::Chat
-                        && request_was_advertised(messages, &request) =>
-                {
-                    (
-                        Ok(CallToolResult::success(vec![ContentBlock::text(
-                            CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                        )])),
-                        false,
-                    )
-                }
                 ToolDisposition::Execute => {
                     span.record("error.type", "tool_not_available");
                     (

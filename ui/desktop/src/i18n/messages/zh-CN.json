@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "自主"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "仅与所选提供商交互，不使用工具或扩展。"
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "仅聊天"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "所有工具、扩展和文件修改都需要人工批准"
   },
