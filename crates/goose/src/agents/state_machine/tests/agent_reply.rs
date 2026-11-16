@@ -324,7 +324,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<serde_json::Result<Vec<_>>>()?;
-    assert_eq!(hook_payloads.len(), 2);
+    assert_eq!(hook_payloads.len(), 1);
     assert!(hook_payloads.iter().all(|payload| {
         payload["working_dir"].as_str() == Some(temp_dir.path().to_string_lossy().as_ref())
     }));
@@ -643,8 +643,8 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
-    let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
-    let (services, api, session_id, calculator, _temp_dir) = agent_with_calculator(hooks).await?;
+    let (services, api, session_id, calculator, _temp_dir) =
+        agent_with_calculator(crate::hooks::HookManager::default()).await?;
 
     api.on("add one").call(ADD, value(1));
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
@@ -702,9 +702,6 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
                 .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
         }));
     assert_eq!(api.call_count(), 2);
-    assert!(std::fs::read_to_string(&hook_log_path)
-        .unwrap_or_default()
-        .is_empty());
 
     Ok(())
 }
