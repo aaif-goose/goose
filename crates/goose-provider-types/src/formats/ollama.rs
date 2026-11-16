@@ -227,38 +227,57 @@ fn is_outside_think(think_filter: &mut ThinkFilter, text: &str, marker: &str) ->
     think_filter.push(text).content.ends_with(marker)
 }
 
-/// Each `open`...`close` span of `text` whose `open` lies outside `<think>`, as the model wrote it.
-fn spans_outside_think<'a>(text: &'a str, open: &str, close: &str) -> Vec<&'a str> {
-    let mut spans = Vec::new();
+/// Drops reasoning between and inside XML tool calls, keeping each parameter's raw value.
+/// Only tags outside `<think>` open or close a call, and parameter values never reach the filter.
+fn xml_calls_outside_think(xml_raw: &str) -> String {
+    const PARAMETER: &str = "<parameter=";
+    const PARAMETER_END: &str = "</parameter>";
+    const FUNCTION_END: &str = "</function>";
+    let mut calls = String::new();
+    let mut call: Option<String> = None;
     let mut think_filter = ThinkFilter::new();
-    let mut rest = text;
-    while let Some((gap, span)) = rest.find(open).and_then(|i| rest.split_at_checked(i)) {
-        let outside = is_outside_think(&mut think_filter, &format!("{gap}{open}"), open);
-        rest = span.strip_prefix(open).unwrap_or_default();
-        if outside {
-            let Some((span, after)) = span
-                .find(close)
-                .and_then(|i| span.split_at_checked(i + close.len()))
-            else {
-                break;
-            };
-            spans.push(span);
-            rest = after;
+    let mut rest = xml_raw;
+    loop {
+        let tags: &[&str] = if call.is_some() {
+            &[PARAMETER, FUNCTION_END]
+        } else {
+            &[XML_TOOL_CALL_MARKER]
+        };
+        let Some((gap, tag, after)) = tags
+            .iter()
+            .filter_map(|tag| rest.split_once(tag).map(|(gap, after)| (gap, *tag, after)))
+            .min_by_key(|(gap, ..)| gap.len())
+        else {
+            break;
+        };
+        rest = after;
+        if !is_outside_think(&mut think_filter, &format!("{gap}{tag}"), tag) {
+            continue;
+        }
+        match tag {
+            FUNCTION_END => {
+                calls.extend(call.take());
+                calls.push_str(FUNCTION_END);
+            }
+            PARAMETER => {
+                let param = rest
+                    .split_once(PARAMETER_END)
+                    .filter(|(value, _)| !value.contains(FUNCTION_END));
+                if let (Some(body), Some((value, after))) = (call.as_mut(), param) {
+                    body.push_str(&format!("{PARAMETER}{value}{PARAMETER_END}"));
+                    rest = after;
+                }
+            }
+            _ => {
+                let Some((name, after)) = rest.split_once('>') else {
+                    break;
+                };
+                call = Some(format!("{XML_TOOL_CALL_MARKER}{name}>"));
+                rest = after;
+            }
         }
     }
-    spans
-}
-
-/// Drops reasoning between and inside XML tool calls, keeping each parameter's raw value.
-fn xml_calls_outside_think(xml_raw: &str) -> String {
-    spans_outside_think(xml_raw, XML_TOOL_CALL_MARKER, "</function>")
-        .into_iter()
-        .map(|call| {
-            let (head, body) = call.split_once('>').unwrap_or((call, ""));
-            let params = spans_outside_think(body, "<parameter=", "</parameter>").concat();
-            format!("{head}>{params}</function>")
-        })
-        .collect()
+    calls
 }
 
 /// Streaming message handler with XML tool call post-processing for Ollama.
@@ -775,6 +794,32 @@ data: [DONE]"#;
             .map(|call| call.arguments.as_ref().unwrap()["command"].clone())
             .collect();
         assert_eq!(commands, vec![json!("pwd")]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_closing_tag_in_call_reasoning_does_not_end_call() {
+        use futures::StreamExt;
+
+        let content = "<function=developer__shell><think>Close with </function> after the arguments.</think><parameter=command>pwd</parameter></function>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines: Vec<anyhow::Result<String>> =
+            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let commands: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .map(|call| call.arguments.as_ref().unwrap().get("command").cloned())
+            .collect();
+        assert_eq!(commands, vec![Some(json!("pwd"))]);
     }
 
     #[tokio::test]
