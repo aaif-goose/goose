@@ -154,6 +154,14 @@ impl RawContent {
         let Ok(mut chunk) = serde_json::from_str::<Value>(data.trim()) else {
             return line;
         };
+        // The OpenAI parser ignores content on a delta that carries native tool calls.
+        if chunk
+            .pointer("/choices/0/delta/tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|calls| !calls.is_empty())
+        {
+            return line;
+        }
         let Some(content) = chunk.pointer_mut("/choices/0/delta/content") else {
             return line;
         };
@@ -198,11 +206,9 @@ impl RawContent {
             let start = search_from + i;
             search_from = start + XML_TOOL_CALL_MARKER.len();
             // A marker inside reasoning is not a tool call, as when the OpenAI parser filtered it out.
-            if self
-                .text
-                .get(..search_from)
-                .is_some_and(|upto| is_outside_think(&mut ThinkFilter::new(), upto))
-            {
+            if self.text.get(..search_from).is_some_and(|upto| {
+                is_outside_think(&mut ThinkFilter::new(), upto, XML_TOOL_CALL_MARKER)
+            }) {
                 self.xml_start = Some(start);
             }
         }
@@ -215,40 +221,44 @@ impl RawContent {
     }
 }
 
-/// Whether `text`, which ends with an XML tool call marker, leaves that marker outside `<think>`.
+/// Whether `text`, which ends with `marker`, leaves that marker outside `<think>`.
 /// Uses the non-finalized filter so a partial think tag stays pending rather than becoming content.
-fn is_outside_think(think_filter: &mut ThinkFilter, text: &str) -> bool {
-    think_filter
-        .push(text)
-        .content
-        .ends_with(XML_TOOL_CALL_MARKER)
+fn is_outside_think(think_filter: &mut ThinkFilter, text: &str, marker: &str) -> bool {
+    think_filter.push(text).content.ends_with(marker)
 }
 
-/// Drops reasoning between XML tool calls, keeping each call's raw text.
-fn xml_calls_outside_think(xml_raw: &str) -> String {
-    const CALL_END: &str = "</function>";
-    let mut calls = String::new();
+/// Each `open`...`close` span of `text` whose `open` lies outside `<think>`, as the model wrote it.
+fn spans_outside_think<'a>(text: &'a str, open: &str, close: &str) -> Vec<&'a str> {
+    let mut spans = Vec::new();
     let mut think_filter = ThinkFilter::new();
-    let mut rest = xml_raw;
-    while let Some((gap, call)) = rest
-        .find(XML_TOOL_CALL_MARKER)
-        .and_then(|i| rest.split_at_checked(i))
-    {
-        let outside = is_outside_think(&mut think_filter, &format!("{gap}{XML_TOOL_CALL_MARKER}"));
-        rest = call.strip_prefix(XML_TOOL_CALL_MARKER).unwrap_or_default();
+    let mut rest = text;
+    while let Some((gap, span)) = rest.find(open).and_then(|i| rest.split_at_checked(i)) {
+        let outside = is_outside_think(&mut think_filter, &format!("{gap}{open}"), open);
+        rest = span.strip_prefix(open).unwrap_or_default();
         if outside {
-            let Some((body, after)) = rest
-                .find(CALL_END)
-                .and_then(|i| rest.split_at_checked(i + CALL_END.len()))
+            let Some((span, after)) = span
+                .find(close)
+                .and_then(|i| span.split_at_checked(i + close.len()))
             else {
                 break;
             };
-            calls.push_str(XML_TOOL_CALL_MARKER);
-            calls.push_str(body);
+            spans.push(span);
             rest = after;
         }
     }
-    calls
+    spans
+}
+
+/// Drops reasoning between and inside XML tool calls, keeping each parameter's raw value.
+fn xml_calls_outside_think(xml_raw: &str) -> String {
+    spans_outside_think(xml_raw, XML_TOOL_CALL_MARKER, "</function>")
+        .into_iter()
+        .map(|call| {
+            let (head, body) = call.split_once('>').unwrap_or((call, ""));
+            let params = spans_outside_think(body, "<parameter=", "</parameter>").concat();
+            format!("{head}>{params}</function>")
+        })
+        .collect()
 }
 
 /// Streaming message handler with XML tool call post-processing for Ollama.
@@ -309,10 +319,15 @@ where
         }
 
         let raw = std::mem::take(&mut *raw_content.lock().expect("raw content lock poisoned"));
-        // Native tool calls take precedence over XML in content, as in `response_to_message`.
-        let xml_start = raw.xml_start.filter(|_| !native_tool_call_emitted);
-        if let Some((leading_raw, xml_raw)) = xml_start.and_then(|i| raw.text.split_at_checked(i)) {
-            let (_, xml_tool_calls) = parse_xml_tool_calls(&xml_calls_outside_think(xml_raw));
+        if let Some((leading_raw, xml_raw)) =
+            raw.xml_start.and_then(|i| raw.text.split_at_checked(i))
+        {
+            // Native tool calls take precedence over XML in content, as in `response_to_message`.
+            let xml_tool_calls = if native_tool_call_emitted {
+                Vec::new()
+            } else {
+                parse_xml_tool_calls(&xml_calls_outside_think(xml_raw)).1
+            };
 
             if !xml_tool_calls.is_empty() {
                 let (leading_text, _) = split_think_blocks(leading_raw);
@@ -682,6 +697,11 @@ data: [DONE]"#;
             })
             .collect();
         assert_eq!(tool_names, vec!["correct_tool"]);
+        assert!(!items
+            .iter()
+            .filter_map(|(message, _)| message.as_ref())
+            .flat_map(|m| &m.content)
+            .any(|c| matches!(c, MessageContentBlock::Text(_))));
 
         Ok(())
     }
@@ -729,6 +749,75 @@ data: [DONE]"#;
         assert_eq!(text, "answer");
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_reasoning_in_call_body_cannot_override_parameters() {
+        use futures::StreamExt;
+
+        let content = "<function=developer__shell><parameter=command>pwd</parameter><think>Reject <parameter=command>echo rejected</parameter></think></function>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines: Vec<anyhow::Result<String>> =
+            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let commands: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .map(|call| call.arguments.as_ref().unwrap()["command"].clone())
+            .collect();
+        assert_eq!(commands, vec![json!("pwd")]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_native_call_keeps_text_mentioning_xml_marker() {
+        use futures::StreamExt;
+
+        let text = json!({"choices": [{"delta": {"content": "Native calls replace <function= markup."}, "index": 0}]});
+        let native = json!({"choices": [{"delta": {"tool_calls": [{
+            "index": 0,
+            "id": "call_123",
+            "type": "function",
+            "function": {"name": "correct_tool", "arguments": "{\"a\": \"b\"}"}
+        }]}, "index": 0, "finish_reason": "tool_calls"}]});
+        let lines: Vec<anyhow::Result<String>> = vec![
+            Ok(format!("data: {text}")),
+            Ok(format!("data: {native}")),
+            Ok("data: [DONE]".to_string()),
+        ];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let blocks: Vec<_> = messages.iter().flat_map(|m| &m.content).collect();
+        let text: String = blocks
+            .iter()
+            .filter_map(|c| match c {
+                MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let tool_names: Vec<_> = blocks
+            .iter()
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(r) => {
+                    Some(r.tool_call.as_ref().unwrap().name.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Native calls replace <function= markup.");
+        assert_eq!(tool_names, vec!["correct_tool"]);
     }
 
     #[test]
