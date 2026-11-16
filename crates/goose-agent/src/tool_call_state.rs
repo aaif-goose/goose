@@ -13,6 +13,7 @@ pub const EXECUTABLE_KEY: &str = "goose.executable";
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ToolCallState<'a> {
     Responded(&'a ToolResponse),
+    External,
     Unchecked,
     Executable,
     Blocked,
@@ -22,7 +23,7 @@ pub(crate) enum ToolCallState<'a> {
 
 impl ToolCallState<'_> {
     pub(crate) fn is_open(&self) -> bool {
-        !matches!(self, ToolCallState::Responded(_))
+        !matches!(self, ToolCallState::Responded(_) | ToolCallState::External)
     }
 }
 
@@ -61,6 +62,7 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
             let id = request.id.as_str();
             let state = match (tool_responses_by_id.get(id), request_executable(request)) {
                 (Some(response), _) => ToolCallState::Responded(response),
+                (None, _) if request.was_executed_externally() => ToolCallState::External,
                 (None, Some(true)) => ToolCallState::Executable,
                 (None, None) => ToolCallState::Unchecked,
                 (None, Some(false)) if !confirmation_requests.contains(id) => {
@@ -73,6 +75,14 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
             };
             (request, state)
         })
+        .collect()
+}
+
+pub fn open_tool_requests(messages: &[Message]) -> Vec<&ToolRequest> {
+    tool_calls(messages)
+        .into_iter()
+        .filter(|(_, state)| state.is_open())
+        .map(|(request, _)| request)
         .collect()
 }
 

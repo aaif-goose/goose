@@ -336,9 +336,8 @@ where
         let pending = tool_calls(turn)
             .into_iter()
             .filter(|(request, state)| {
-                !request.was_executed_externally()
-                    && (*state == ToolCallState::Executable
-                        || (*state == ToolCallState::Unchecked && request.tool_call.is_err()))
+                *state == ToolCallState::Executable
+                    || (*state == ToolCallState::Unchecked && request.tool_call.is_err())
             })
             .map(|(request, _)| request.clone())
             .collect::<Vec<_>>();

@@ -12,7 +12,7 @@ use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
     Operation, OperationResult, RunStatus, StepResult,
 };
-use crate::tool_call_state::tool_calls;
+use crate::tool_call_state::{tool_calls, ToolCallState};
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
@@ -75,7 +75,7 @@ fn empty_result<E>(status: RunStatus) -> StepResult<E> {
 fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
     let mut tool_responses = Message::user();
     for (request, state) in tool_calls(messages) {
-        if state.is_open() {
+        if !matches!(state, ToolCallState::Responded(_)) {
             tool_responses.add_tool_response_with_metadata(
                 request.id.clone(),
                 Ok(rmcp::model::CallToolResult::error(vec![

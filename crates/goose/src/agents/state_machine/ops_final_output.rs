@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::tool_call_state::open_tool_requests;
 use rmcp::model::{ErrorCode, ErrorData, Role, Tool};
 use tracing_futures::Instrument;
 
@@ -32,22 +32,13 @@ fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
 }
 
 fn pending_final_output_request(messages: &[Message]) -> Option<ToolRequest> {
-    let answered: HashSet<&str> = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect();
-    messages
-        .iter()
-        .filter(|message| message.role == Role::Assistant)
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
+    open_tool_requests(messages)
+        .into_iter()
         .find(|request| {
-            !answered.contains(request.id.as_str())
-                && !request.was_executed_externally()
-                && request
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
+            request
+                .tool_call
+                .as_ref()
+                .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
                 && request_was_advertised(messages, request)
         })
         .cloned()

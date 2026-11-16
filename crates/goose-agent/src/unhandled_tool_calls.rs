@@ -59,7 +59,7 @@ where
     ) -> Result<OperationResult<E>> {
         let open_calls: Vec<_> = tool_calls(messages_since_kickoff(conversation)?)
             .into_iter()
-            .filter(|(request, state)| state.is_open() && !request.was_executed_externally())
+            .filter(|(_, state)| state.is_open())
             .collect();
         if let Some(tool_responses) = respond_to_unhandled_calls(&open_calls, emit) {
             return applied([E::from(ConversationEffect::AppendMessage(tool_responses))]);

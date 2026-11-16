@@ -1,8 +1,7 @@
-use std::collections::HashSet;
-
 use anyhow::Result;
 use async_trait::async_trait;
-use rmcp::model::{CallToolResult, ContentBlock, Role};
+use goose_agent::tool_call_state::open_tool_requests;
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::agents::state_machine::ops_toolcalling::request_was_advertised;
 use crate::agents::state_machine::{
@@ -10,7 +9,7 @@ use crate::agents::state_machine::{
     OperationResult,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
 
@@ -41,22 +40,10 @@ impl Operation<Session, GooseEffect> for ChatModeOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        let answered: HashSet<&str> = messages
-            .iter()
-            .flat_map(Message::get_tool_response_ids)
-            .collect();
-
         let mut response = Message::user();
-        for request in messages
-            .iter()
-            .filter(|message| message.role == Role::Assistant)
-            .flat_map(|message| &message.content)
-            .filter_map(MessageContent::as_tool_request)
-            .filter(|request| {
-                !answered.contains(request.id.as_str())
-                    && !request.was_executed_externally()
-                    && request_was_advertised(messages, request)
-            })
+        for request in open_tool_requests(messages)
+            .into_iter()
+            .filter(|request| request_was_advertised(messages, request))
         {
             let result = match &request.tool_call {
                 Ok(_) => CallToolResult::success(vec![ContentBlock::text(

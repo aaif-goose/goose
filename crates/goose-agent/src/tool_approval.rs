@@ -166,7 +166,6 @@ where
     ) -> Result<OperationResult<E>> {
         let calls: Vec<_> = tool_calls(messages_since_kickoff(conversation)?)
             .into_iter()
-            .filter(|(request, _)| !request.was_executed_externally())
             .filter_map(|(request, state)| Some((request, request.tool_call.as_ref().ok()?, state)))
             .collect();
 

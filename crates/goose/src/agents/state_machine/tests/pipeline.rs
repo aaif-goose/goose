@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
@@ -25,6 +24,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
+use goose_agent::tool_call_state::open_tool_requests;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -1254,25 +1254,9 @@ fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step
         .expect("session has a conversation");
     let turn = messages_since_kickoff(conversation).expect("conversation has a turn");
     assert!(
-        TOOL_OPERATIONS.contains(&step) || !has_open_tool_call(turn),
+        TOOL_OPERATIONS.contains(&step) || open_tool_requests(turn).is_empty(),
         "{step} acted while a tool call was open"
     );
-}
-
-fn has_open_tool_call(turn: &[Message]) -> bool {
-    let mut open = HashSet::new();
-    for content in turn.iter().flat_map(|message| &message.content) {
-        match content {
-            MessageContent::ToolRequest(request) if !request.was_executed_externally() => {
-                open.insert(request.id.as_str());
-            }
-            MessageContent::ToolResponse(response) => {
-                open.remove(response.id.as_str());
-            }
-            _ => {}
-        }
-    }
-    !open.is_empty()
 }
 
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
