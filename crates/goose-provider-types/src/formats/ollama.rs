@@ -201,7 +201,7 @@ impl RawContent {
             if self
                 .text
                 .get(..search_from)
-                .is_some_and(|upto| split_think_blocks(upto).0.ends_with(XML_TOOL_CALL_MARKER))
+                .is_some_and(|upto| is_outside_think(&mut ThinkFilter::new(), upto))
             {
                 self.xml_start = Some(start);
             }
@@ -213,6 +213,42 @@ impl RawContent {
                 .to_string(),
         )
     }
+}
+
+/// Whether `text`, which ends with an XML tool call marker, leaves that marker outside `<think>`.
+/// Uses the non-finalized filter so a partial think tag stays pending rather than becoming content.
+fn is_outside_think(think_filter: &mut ThinkFilter, text: &str) -> bool {
+    think_filter
+        .push(text)
+        .content
+        .ends_with(XML_TOOL_CALL_MARKER)
+}
+
+/// Drops reasoning between XML tool calls, keeping each call's raw text.
+fn xml_calls_outside_think(xml_raw: &str) -> String {
+    const CALL_END: &str = "</function>";
+    let mut calls = String::new();
+    let mut think_filter = ThinkFilter::new();
+    let mut rest = xml_raw;
+    while let Some((gap, call)) = rest
+        .find(XML_TOOL_CALL_MARKER)
+        .and_then(|i| rest.split_at_checked(i))
+    {
+        let outside = is_outside_think(&mut think_filter, &format!("{gap}{XML_TOOL_CALL_MARKER}"));
+        rest = call.strip_prefix(XML_TOOL_CALL_MARKER).unwrap_or_default();
+        if outside {
+            let Some((body, after)) = rest
+                .find(CALL_END)
+                .and_then(|i| rest.split_at_checked(i + CALL_END.len()))
+            else {
+                break;
+            };
+            calls.push_str(XML_TOOL_CALL_MARKER);
+            calls.push_str(body);
+            rest = after;
+        }
+    }
+    calls
 }
 
 /// Streaming message handler with XML tool call post-processing for Ollama.
@@ -276,7 +312,7 @@ where
         // Native tool calls take precedence over XML in content, as in `response_to_message`.
         let xml_start = raw.xml_start.filter(|_| !native_tool_call_emitted);
         if let Some((leading_raw, xml_raw)) = xml_start.and_then(|i| raw.text.split_at_checked(i)) {
-            let (_, xml_tool_calls) = parse_xml_tool_calls(xml_raw);
+            let (_, xml_tool_calls) = parse_xml_tool_calls(&xml_calls_outside_think(xml_raw));
 
             if !xml_tool_calls.is_empty() {
                 let (leading_text, _) = split_think_blocks(leading_raw);
@@ -362,6 +398,23 @@ mod tests {
         let delta = json!({"choices": [{"delta": {"content": [{"type": "text", "text": "<function=real_tool></function>"}]}, "index": 0}]});
         let lines = vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
         assert_eq!(streamed_tool_names(lines).await, vec!["real_tool"]);
+    }
+    #[tokio::test]
+    async fn test_streaming_skips_reasoning_calls_after_first_call() {
+        let content =
+            "<function=read></function><think>Do not call <function=delete></function></think>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines = vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        assert_eq!(streamed_tool_names(lines).await, vec!["read"]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_marker_in_think_attribute_is_not_a_call() {
+        let content =
+            "<think example=\"<function=wrong></function>\">plan</think><function=real></function>";
+        let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+        let lines = vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        assert_eq!(streamed_tool_names(lines).await, vec!["real"]);
     }
 
     #[test]
