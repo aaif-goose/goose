@@ -14,14 +14,16 @@ use crate::maybe_send::MaybeSend;
 use crate::{
     conversation::token_usage::ProviderUsage,
     formats::openai::{self, is_valid_function_name},
+    thinking::split_think_blocks,
 };
 use async_stream::try_stream;
 use chrono;
-use futures::Stream;
+use futures::{Stream, TryStreamExt};
 use regex::Regex;
 use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role};
 use serde_json::Value;
 use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 pub use crate::formats::openai::{
@@ -125,22 +127,6 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
     Ok(message)
 }
 
-/// Extract text content from a message's content items.
-fn extract_text_from_message(message: &Message) -> String {
-    message
-        .content
-        .iter()
-        .filter_map(|c| {
-            if let MessageContentBlock::Text(text) = c {
-                Some(text.text.as_str())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
 /// Check if a message contains only text content (no tool requests/responses).
 fn is_text_only_message(message: &Message) -> bool {
     message
@@ -149,12 +135,63 @@ fn is_text_only_message(message: &Message) -> bool {
         .all(|c| matches!(c, MessageContentBlock::Text(_)))
 }
 
+const XML_TOOL_CALL_MARKER: &str = "<function=";
+
+/// Raw assistant text seen on the stream, before any `<think>` filtering.
+#[derive(Default)]
+struct RawContent {
+    text: String,
+    xml_start: Option<usize>,
+}
+
+impl RawContent {
+    /// Records the line's text and withholds everything from the first XML tool call onward,
+    /// so the OpenAI parser's inline `<think>` filter cannot rewrite tool parameter values.
+    fn withhold_xml_tool_calls(&mut self, line: String) -> String {
+        let Some(data) = line.strip_prefix("data:") else {
+            return line;
+        };
+        let Ok(mut chunk) = serde_json::from_str::<Value>(data.trim()) else {
+            return line;
+        };
+        let Some(content) = chunk.pointer_mut("/choices/0/delta/content") else {
+            return line;
+        };
+        let Some(text) = content.as_str() else {
+            return line;
+        };
+
+        let chunk_start = self.text.len();
+        self.text.push_str(text);
+        if self.xml_start.is_none() {
+            let search_from = self
+                .text
+                .floor_char_boundary(chunk_start.saturating_sub(XML_TOOL_CALL_MARKER.len()));
+            self.xml_start = self
+                .text
+                .get(search_from..)
+                .and_then(|rest| rest.find(XML_TOOL_CALL_MARKER))
+                .map(|i| search_from + i);
+        }
+        let Some(xml_start) = self.xml_start else {
+            return line;
+        };
+
+        let kept = text
+            .get(..xml_start.saturating_sub(chunk_start))
+            .unwrap_or_default()
+            .to_string();
+        *content = Value::String(kept);
+        format!("data: {chunk}")
+    }
+}
+
 /// Streaming message handler with XML tool call post-processing for Ollama.
 ///
 /// This wraps the standard OpenAI streaming handler and post-processes messages
-/// to detect and parse XML tool calls. When XML markers are detected in text
-/// messages, it buffers them until the stream completes, then parses and emits
-/// the tool calls.
+/// to detect and parse XML tool calls. Text from the first XML tool call onward is
+/// kept back from the OpenAI handler and parsed from the raw stream once it completes,
+/// so tool parameter values arrive exactly as the model wrote them.
 ///
 /// This approach avoids exposing any internal types from openai.rs.
 pub fn response_to_streaming_message_ollama<S>(
@@ -163,13 +200,20 @@ pub fn response_to_streaming_message_ollama<S>(
 where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
+    let raw_content = Arc::new(Mutex::new(RawContent::default()));
+    let tee = Arc::clone(&raw_content);
+    let stream = stream.map_ok(move |line| {
+        tee.lock()
+            .expect("raw content lock poisoned")
+            .withhold_xml_tool_calls(line)
+    });
+
     try_stream! {
         use futures::StreamExt;
 
         let base_stream = openai::response_to_streaming_message(stream);
         let mut base_stream = std::pin::pin!(base_stream);
 
-        let mut accumulated_text = String::new();
         let mut xml_detected = false;
         let mut buffered_usage: Option<ProviderUsage> = None;
 
@@ -178,19 +222,16 @@ where
             if usage.is_some() {
                 buffered_usage = usage.clone();
             }
+            xml_detected = xml_detected
+                || raw_content
+                    .lock()
+                    .expect("raw content lock poisoned")
+                    .xml_start
+                    .is_some();
 
             if let Some(message) = message_opt {
-                if is_text_only_message(&message) {
-                    let text = extract_text_from_message(&message);
-                    accumulated_text.push_str(&text);
-
-                    if !xml_detected && accumulated_text.contains("<function=") {
-                        xml_detected = true;
-                    }
-
-                    if xml_detected {
-                        continue;
-                    }
+                if xml_detected && is_text_only_message(&message) {
+                    continue;
                 }
 
                 yield (Some(message), usage);
@@ -199,12 +240,15 @@ where
             }
         }
 
-        if xml_detected && !accumulated_text.is_empty() {
-            let (prefix, xml_tool_calls) = parse_xml_tool_calls(&accumulated_text);
+        let raw = std::mem::take(&mut *raw_content.lock().expect("raw content lock poisoned"));
+        if let Some((leading_raw, xml_raw)) = raw.xml_start.and_then(|i| raw.text.split_at_checked(i)) {
+            let (leading_text, _) = split_think_blocks(leading_raw);
+            let (_, xml_tool_calls) = parse_xml_tool_calls(xml_raw);
 
             if !xml_tool_calls.is_empty() {
                 let mut contents = Vec::new();
-                if let Some(prefix_text) = prefix {
+                let prefix_text = leading_text.trim();
+                if !prefix_text.is_empty() {
                     contents.push(MessageContentBlock::text(prefix_text));
                 }
                 contents.extend(xml_tool_calls);
@@ -220,7 +264,7 @@ where
                 let msg = Message::new(
                     Role::Assistant,
                     chrono::Utc::now().timestamp(),
-                    vec![MessageContentBlock::text(&accumulated_text)],
+                    vec![MessageContentBlock::text(leading_text + xml_raw)],
                 )
                 .with_generated_id();
 
@@ -405,6 +449,54 @@ data: [DONE]"#;
             .expect("invalid XML fallback message should have an ID");
         assert!(message_id.starts_with("msg_"));
         assert!(messages.next().await.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_xml_fallback_keeps_think_tags_in_parameters() -> anyhow::Result<()> {
+        use futures::StreamExt;
+
+        let content = "<think>plan</think>Writing it.\n<function=developer__write>\n<parameter=path>tags.js</parameter>\n<parameter=content>const openTag = '<think>';\nconst closeTag = '</think>';</parameter>\n</function>";
+        let mut lines: Vec<anyhow::Result<String>> = content
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(5)
+            .map(|chunk| {
+                let delta = json!({"choices": [{"delta": {"content": chunk.iter().collect::<String>()}, "index": 0}]});
+                Ok(format!("data: {delta}"))
+            })
+            .collect();
+        lines.push(Ok("data: [DONE]".to_string()));
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let thinking: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::Thinking(t) => Some(t.thinking.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking, vec!["plan"]);
+
+        let tool_call = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .find_map(|c| match c {
+                MessageContentBlock::ToolRequest(request) => request.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .expect("expected an XML tool call");
+        let args = tool_call.arguments.as_ref().unwrap();
+        assert_eq!(
+            args.get("content").unwrap(),
+            "const openTag = '<think>';\nconst closeTag = '</think>';"
+        );
 
         Ok(())
     }
