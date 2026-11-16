@@ -76,15 +76,6 @@ impl PlatformExtensions {
     }
 
     #[cfg(test)]
-    pub(crate) fn client(&self, scope: &str, key: &str) -> Option<Arc<dyn PlatformExtension>> {
-        self.clients
-            .lock()
-            .unwrap()
-            .get(&(scope.to_string(), key.to_string()))
-            .cloned()
-    }
-
-    #[cfg(test)]
     pub(crate) fn contains(&self, scope: &str, key: &str) -> bool {
         self.clients
             .lock()
