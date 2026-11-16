@@ -15,7 +15,7 @@ use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_to
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
@@ -173,15 +173,15 @@ impl TestPipeline {
             .await
     }
 
-    fn tool_dispatcher(
+    fn tool_snapshot(
         &self,
         services: &StateMachineServices,
-    ) -> Arc<StdMutex<Option<Arc<ToolDispatcher>>>> {
+    ) -> Arc<StdMutex<Option<Arc<ToolSnapshot>>>> {
         services
             .runtime
             .confirmations
             .session(&self.session_id)
-            .tool_dispatcher()
+            .tool_snapshot()
     }
 
     async fn fire_tool_hooks(
@@ -201,7 +201,7 @@ impl TestPipeline {
 
     async fn start_new_turn(&self) {
         let services = self.services().await;
-        *self.tool_dispatcher(services).lock().unwrap() = None;
+        *self.tool_snapshot(services).lock().unwrap() = None;
     }
 
     pub(super) async fn machine(
@@ -381,8 +381,7 @@ impl TestPipeline {
         for extension in recipe.extensions.clone().unwrap_or_default() {
             self.services()
                 .await
-                .extension_manager
-                .enable(&self.session_id, extension)
+                .enable_extension(&self.session_id, extension)
                 .await?;
         }
         Ok(())
@@ -471,12 +470,12 @@ impl TestPipeline {
         pipeline.turn_settings = self.turn_settings.clone();
         pipeline.max_turns = self.max_turns;
         let lease = self
-            .tool_dispatcher(self.services().await)
+            .tool_snapshot(self.services().await)
             .lock()
             .unwrap()
             .clone();
         *pipeline
-            .tool_dispatcher(pipeline.services().await)
+            .tool_snapshot(pipeline.services().await)
             .lock()
             .unwrap() = lease;
         Ok(pipeline)
@@ -631,7 +630,6 @@ impl TestPipeline {
         Ok(self
             .services()
             .await
-            .extension_manager
             .current_tools(&self.session_id)
             .await?
             .configs()
@@ -652,8 +650,7 @@ impl TestPipeline {
     pub(super) async fn add_extension(&self, name: &str) -> Result<()> {
         self.services()
             .await
-            .extension_manager
-            .enable(
+            .enable_extension(
                 &self.session_id,
                 ExtensionConfig::Platform {
                     name: name.to_string(),
@@ -992,10 +989,7 @@ async fn enable_session_extensions(
                 )
                 .await;
         } else {
-            services
-                .extension_manager
-                .enable(&session.id, extension)
-                .await?;
+            services.enable_extension(&session.id, extension).await?;
         }
     }
 

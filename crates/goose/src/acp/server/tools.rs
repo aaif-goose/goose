@@ -122,7 +122,6 @@ impl AcpConnection {
         let container = session.container;
         let tool_result = self
             .services
-            .extension_manager
             .current_tools(session_id)
             .await
             .internal_err()?
@@ -139,7 +138,6 @@ impl AcpConnection {
 
         let result = self
             .services
-            .extension_manager
             .applying_mutation(tool_result, session_id)
             .result
             .await

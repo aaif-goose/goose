@@ -242,7 +242,6 @@ async fn load_extensions(
     session_id: &str,
 ) -> anyhow::Result<Vec<ExtensionFailure>> {
     Ok(services
-        .extension_manager
         .current_tools(session_id)
         .await?
         .start()

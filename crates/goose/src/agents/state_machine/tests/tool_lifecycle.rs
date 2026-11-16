@@ -745,10 +745,7 @@ async fn platform_and_mcp_operations_answer_the_same_model_batch() -> Result<()>
     assert_eq!(pipeline.calculator_total(), 3);
     assert!(api.calls().last().unwrap().answers_every_tool_call_next());
     let services = pipeline.services().await;
-    let lease = services
-        .extension_manager
-        .current_tools(&pipeline.session_id)
-        .await?;
+    let lease = services.current_tools(&pipeline.session_id).await?;
     assert!(lease
         .mcp
         .configs()

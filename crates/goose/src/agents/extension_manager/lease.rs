@@ -40,8 +40,8 @@ use crate::conversation::message::Message;
 #[derive(Debug)]
 pub struct ExtensionSet {
     scope_id: String,
-    pub(super) working_dir: Option<PathBuf>,
-    pub(super) container: Option<Container>,
+    pub(crate) working_dir: Option<PathBuf>,
+    pub(crate) container: Option<Container>,
     extensions: Vec<ExtensionConfig>,
 }
 

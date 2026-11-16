@@ -464,8 +464,7 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         for config in configs {
             self.services
-                .extension_manager
-                .enable(&self.session_id, config)
+                .enable_extension(&self.session_id, config)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to start extension: {}", e))?;
         }
@@ -500,7 +499,6 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         let prompts = self
             .services
-            .extension_manager
             .current_tools(&self.session_id)
             .await?
             .mcp
@@ -529,7 +527,6 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         let prompts = self
             .services
-            .extension_manager
             .current_tools(&self.session_id)
             .await?
             .mcp
@@ -553,11 +550,7 @@ impl CliSession {
 
     pub async fn get_prompt(&mut self, name: &str, arguments: Value) -> Result<Vec<PromptMessage>> {
         self.ensure_extensions_loaded(true).await?;
-        let lease = self
-            .services
-            .extension_manager
-            .current_tools(&self.session_id)
-            .await?;
+        let lease = self.services.current_tools(&self.session_id).await?;
         let extension = lease
             .mcp
             .list_prompts(CancellationToken::default())
@@ -1196,7 +1189,6 @@ impl CliSession {
         let mut unavailable = Vec::new();
         for result in self
             .services
-            .extension_manager
             .current_tools(&self.session_id)
             .await?
             .start()
@@ -1838,7 +1830,6 @@ impl CliSession {
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
         let prompts = services
-            .extension_manager
             .current_tools(session_id)
             .await?
             .mcp

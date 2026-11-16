@@ -1107,7 +1107,6 @@ impl AcpConnection {
         // what lets the session response report extensions that fail.
         let extension_results = self
             .services
-            .extension_manager
             .current_tools(&session.id)
             .await
             .internal_err()?

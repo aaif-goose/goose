@@ -8,119 +8,63 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension::{ExtensionConfig, ExtensionInfo};
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
-use crate::agents::extension_manager::{CallRequest, ExtensionLoadResult, ExtensionManager};
-use crate::agents::platform_extensions::{PlatformExtension, PLATFORM_EXTENSIONS};
+use crate::agents::extension_manager::{CallRequest, ExtensionLoadResult};
+use crate::agents::platform_extensions::PlatformExtension;
+#[cfg(test)]
+use crate::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
+use crate::agents::StateMachineServices;
 use crate::config::extensions::name_to_key;
 
-pub(crate) type PlatformClients =
-    std::collections::HashMap<(String, String), Arc<dyn PlatformExtension>>;
-
-pub(crate) fn is_platform(config: &ExtensionConfig) -> bool {
-    matches!(
-        config,
-        ExtensionConfig::Builtin { .. } | ExtensionConfig::Platform { .. }
-    ) && PLATFORM_EXTENSIONS.contains_key(name_to_key(&config.name()).as_str())
+#[derive(Clone)]
+pub(crate) struct PlatformEntry {
+    pub(crate) key: String,
+    pub(crate) config: ExtensionConfig,
+    pub(crate) client: Arc<dyn PlatformExtension>,
+    pub(crate) unprefixed: bool,
 }
 
 #[derive(Clone)]
-struct PlatformEntry {
-    key: String,
-    config: ExtensionConfig,
-    client: Arc<dyn PlatformExtension>,
-    unprefixed: bool,
-}
-
-#[derive(Clone)]
-struct PlatformTool {
+pub(crate) struct PlatformTool {
     tool: Tool,
     server_name: String,
     entry: usize,
 }
 
 pub(crate) struct PlatformTools {
-    entries: Vec<PlatformEntry>,
-    catalog: OnceCell<Vec<PlatformTool>>,
-    session_id: String,
-    working_dir: Option<std::path::PathBuf>,
+    pub(crate) entries: Vec<PlatformEntry>,
+    pub(crate) catalog: OnceCell<Vec<PlatformTool>>,
+    pub(crate) session_id: String,
+    pub(crate) working_dir: Option<std::path::PathBuf>,
 }
 
-/// Application routing for advertised tools; connection leases belong only to MCP.
+/// The platform instances and MCP lease advertised to an inference request.
 #[derive(Clone)]
-pub struct ToolDispatcher {
+pub struct ToolSnapshot {
     pub mcp: crate::agents::extension_manager::McpLease,
     pub(crate) platform: Arc<PlatformTools>,
-    manager: Arc<ExtensionManager>,
 }
 
-impl ToolDispatcher {
+impl ToolSnapshot {
     pub(crate) async fn for_session(
         current: &Mutex<Option<Arc<Self>>>,
-        manager: &Arc<ExtensionManager>,
+        services: &Arc<StateMachineServices>,
         session_id: &str,
     ) -> anyhow::Result<Arc<Self>> {
-        let tools = current.lock().expect("tool dispatcher unavailable").clone();
+        let tools = current.lock().expect("tool snapshot unavailable").clone();
         if let Some(tools) = tools.filter(|tools| tools.scope_id() == session_id) {
             return Ok(tools);
         }
-        let tools = Arc::new(manager.current_tools(session_id).await?);
-        *current.lock().expect("tool dispatcher unavailable") = Some(Arc::clone(&tools));
+        let tools = Arc::new(services.current_tools(session_id).await?);
+        *current.lock().expect("tool snapshot unavailable") = Some(Arc::clone(&tools));
         Ok(tools)
     }
 
     pub(crate) fn new(
-        manager: &Arc<ExtensionManager>,
         mcp: crate::agents::extension_manager::McpLease,
-        configs: &[ExtensionConfig],
+        platform: Arc<PlatformTools>,
     ) -> Self {
-        let scope = mcp.scope_id();
-        let manager = Arc::clone(manager);
-        let context = manager.get_context().clone();
-        let selected: std::collections::HashSet<_> = configs
-            .iter()
-            .filter(|config| is_platform(config))
-            .map(ExtensionConfig::key)
-            .collect();
-        let mut clients = manager
-            .platform_clients
-            .lock()
-            .expect("platform clients unavailable");
-        clients.retain(|(session, key), _| session != scope || selected.contains(key));
-        let entries = configs
-            .iter()
-            .filter(|config| is_platform(config))
-            .filter_map(|config| {
-                let key = name_to_key(&config.name());
-                let definition = PLATFORM_EXTENSIONS.get(key.as_str())?;
-                let cache_key = (scope.to_string(), key.clone());
-                let client = match clients.get(&cache_key) {
-                    Some(client) => Arc::clone(client),
-                    None => {
-                        let client: Arc<dyn PlatformExtension> =
-                            Arc::from((definition.client_factory)(context.clone())?);
-                        clients.insert(cache_key, Arc::clone(&client));
-                        client
-                    }
-                };
-                Some(PlatformEntry {
-                    key,
-                    config: config.clone(),
-                    client,
-                    unprefixed: definition.unprefixed_tools,
-                })
-            })
-            .collect();
-        drop(clients);
-        Self {
-            platform: Arc::new(PlatformTools {
-                entries,
-                catalog: OnceCell::new(),
-                session_id: scope.to_string(),
-                working_dir: mcp.working_dir().map(Path::to_path_buf),
-            }),
-            mcp,
-            manager,
-        }
+        Self { mcp, platform }
     }
 
     pub fn scope_id(&self) -> &str {
@@ -280,6 +224,7 @@ impl ToolDispatcher {
         tool_call: CallToolRequestParams,
         request: CallRequest,
         cancellation_token: CancellationToken,
+        services: &Arc<StateMachineServices>,
     ) -> Result<ToolCallResult, ErrorData> {
         let catalog = self.platform_catalog().await;
         let item = catalog
@@ -303,6 +248,7 @@ impl ToolDispatcher {
                 request,
                 cancellation_token,
                 Arc::new(self.clone()),
+                Arc::clone(services),
             ),
             None => {
                 self.mcp
@@ -310,7 +256,7 @@ impl ToolDispatcher {
                     .await?
             }
         };
-        Ok(self.manager.applying_mutation(result, self.scope_id()))
+        Ok(services.applying_mutation(result, self.scope_id()))
     }
 
     pub async fn list_tools_from_extension(
@@ -479,23 +425,6 @@ impl ToolDispatcher {
     }
 }
 
-#[cfg(feature = "code-mode")]
-#[async_trait::async_trait]
-impl crate::agents::tool_execution::ToolAccess for ToolDispatcher {
-    async fn tools(&self) -> Vec<Tool> {
-        self.tools().await
-    }
-
-    async fn call(
-        &self,
-        call: CallToolRequestParams,
-        request: CallRequest,
-        cancellation: CancellationToken,
-    ) -> Result<ToolCallResult, ErrorData> {
-        self.call(call, request, cancellation).await
-    }
-}
-
 impl PlatformTools {
     async fn build_catalog(&self, has_resources: bool) -> Vec<PlatformTool> {
         let mut catalog = Vec::new();
@@ -573,7 +502,8 @@ impl PlatformTools {
         tool_call: CallToolRequestParams,
         request: CallRequest,
         cancellation_token: CancellationToken,
-        dispatcher: Arc<ToolDispatcher>,
+        snapshot: Arc<ToolSnapshot>,
+        services: Arc<StateMachineServices>,
     ) -> ToolCallResult {
         let client = Arc::clone(&self.entries[item.entry].client);
         let (sender, receiver) = tokio::sync::mpsc::channel(32);
@@ -586,7 +516,8 @@ impl PlatformTools {
             request.tool_call_id,
         )
         .with_container(request.container)
-        .with_tool_dispatcher(dispatcher)
+        .with_tool_snapshot(snapshot)
+        .with_services(services)
         .with_notification_emitter(emitter);
         let server_name = item.server_name.clone();
         ToolCallResult {
@@ -618,12 +549,13 @@ impl PlatformTools {
 
     pub(crate) async fn prepare(
         &self,
-        dispatcher: &Arc<ToolDispatcher>,
+        snapshot: &Arc<ToolSnapshot>,
         requests: Vec<crate::conversation::message::ToolRequest>,
         session: &crate::session::Session,
         cancellation: CancellationToken,
+        services: &Arc<StateMachineServices>,
     ) -> Vec<(crate::conversation::message::ToolRequest, ToolCallResult)> {
-        let catalog = dispatcher.platform_catalog().await;
+        let catalog = snapshot.platform_catalog().await;
         requests
             .into_iter()
             .filter_map(|request| {
@@ -638,12 +570,10 @@ impl PlatformTools {
                     call.clone(),
                     CallRequest::new(request.id.clone()).with_container(session.container.clone()),
                     cancellation.clone(),
-                    dispatcher.clone(),
+                    snapshot.clone(),
+                    Arc::clone(services),
                 );
-                Some((
-                    request,
-                    dispatcher.manager.applying_mutation(result, &session.id),
-                ))
+                Some((request, services.applying_mutation(result, &session.id)))
             })
             .collect()
     }

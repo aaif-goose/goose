@@ -1,5 +1,5 @@
-use crate::agents::extension_manager::ExtensionManager;
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::agents::StateMachineServices;
 use crate::conversation::message::{Message, MessageMetadata};
 use crate::conversation::{CURRENT_TIME_TAG, TURN_CONTEXT_TAG, WORKING_DIRECTORY_TAG};
 use std::path::{Path, PathBuf};
@@ -36,8 +36,8 @@ pub fn system_prompt_block() -> Option<String> {
 
 pub async fn turn_context_message(
     session_id: &str,
-    extension_manager: &ExtensionManager,
-    lease: &ToolDispatcher,
+    services: &StateMachineServices,
+    lease: &ToolSnapshot,
     turns_taken: u32,
     max_turns: u32,
     turn_start: chrono::DateTime<chrono::Local>,
@@ -46,8 +46,7 @@ pub async fn turn_context_message(
         return None;
     }
 
-    let session = extension_manager
-        .get_context()
+    let session = services
         .session_manager
         .get_session(session_id, false)
         .await
@@ -57,12 +56,7 @@ pub async fn turn_context_message(
         .and_then(|session| session.model_config.clone());
     let context_limit = match (session.as_ref(), session_model_config.as_ref()) {
         (Some(session), Some(model_config)) => {
-            match extension_manager
-                .get_context()
-                .providers
-                .provider_for(session)
-                .await
-            {
+            match services.providers.provider_for(session).await {
                 Ok(provider) => crate::context_limit::get_context_limit(
                     provider.as_ref(),
                     &model_config.model_name,
@@ -213,13 +207,11 @@ mod tests {
         }
     }
 
-    async fn session_and_manager() -> (String, Arc<ExtensionManager>, tempfile::TempDir) {
+    async fn session_and_manager() -> (String, Arc<StateMachineServices>, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let em = Arc::new(ExtensionManager::with_data_dir(
-            temp_dir.path().to_path_buf(),
-        ));
+        let em = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
         let session = em
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 PathBuf::from("/test/dir"),
@@ -298,7 +290,9 @@ mod tests {
         let (session_id, em, _tmp) = session_and_manager().await;
         let advertised_working_dir = PathBuf::from("/leased/dir");
         let lease = em
-            .resolve(&ExtensionSet::new(&session_id, Some(advertised_working_dir), vec![]).unwrap())
+            .resolve_tools(
+                &ExtensionSet::new(&session_id, Some(advertised_working_dir), vec![]).unwrap(),
+            )
             .await;
 
         let message = turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now())

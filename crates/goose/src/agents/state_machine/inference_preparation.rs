@@ -1,8 +1,8 @@
 //! Goose-specific inference request preparation.
 
-use crate::agents::extension_manager::ExtensionManager;
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::PromptManager;
+use crate::agents::StateMachineServices;
 use crate::config::GooseMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
@@ -15,8 +15,8 @@ use goose_providers::conversation::Conversation;
 use std::sync::{Arc, Mutex as StdMutex};
 
 pub struct GooseInferenceRequestPreparer<'a> {
-    pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) tool_dispatcher: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>,
+    pub(crate) services: Arc<StateMachineServices>,
+    pub(crate) tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) context_limit: usize,
 }
@@ -24,14 +24,11 @@ pub struct GooseInferenceRequestPreparer<'a> {
 #[async_trait]
 impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
     async fn prepare_session(&self, session: &Session) -> Result<Option<Session>> {
-        let (session, lease) = self
-            .extension_manager
-            .current_session_snapshot(session)
-            .await?;
+        let (session, lease) = self.services.current_session_snapshot(session).await?;
         *self
-            .tool_dispatcher
+            .tool_snapshot
             .lock()
-            .expect("tool dispatcher unavailable") = Some(Arc::new(lease));
+            .expect("tool snapshot unavailable") = Some(Arc::new(lease));
         Ok(Some(session))
     }
 
@@ -43,9 +40,9 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
     ) -> Result<PreparedInferenceRequest> {
         #[cfg(feature = "code-mode")]
         let code_execution_mode = self
-            .tool_dispatcher
+            .tool_snapshot
             .lock()
-            .expect("tool dispatcher unavailable")
+            .expect("tool snapshot unavailable")
             .as_ref()
             .is_some_and(|lease| {
                 lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)

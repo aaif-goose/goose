@@ -11,24 +11,24 @@ use super::ops_toolcalling::{
 use super::{
     messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::extension_manager::ExtensionManager;
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::agents::StateMachineServices;
 use crate::conversation::Conversation;
 use crate::session::Session;
 
 pub(crate) struct PlatformExtensionOperation {
-    manager: Arc<ExtensionManager>,
-    tools: Arc<Mutex<Option<Arc<ToolDispatcher>>>>,
+    services: Arc<StateMachineServices>,
+    tools: Arc<Mutex<Option<Arc<ToolSnapshot>>>>,
     execution: ToolExecution,
 }
 
 impl PlatformExtensionOperation {
     pub(crate) fn new(
-        manager: Arc<ExtensionManager>,
-        tools: Arc<Mutex<Option<Arc<ToolDispatcher>>>>,
+        services: Arc<StateMachineServices>,
+        tools: Arc<Mutex<Option<Arc<ToolSnapshot>>>>,
     ) -> Self {
         Self {
-            manager,
+            services,
             tools,
             execution: ToolExecution::new(),
         }
@@ -42,7 +42,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let tools = ToolDispatcher::for_session(&self.tools, &self.manager, &session.id).await?;
+        let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
         Ok(tools
             .platform_tools()
             .await
@@ -61,7 +61,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        let tools = ToolDispatcher::for_session(&self.tools, &self.manager, &session.id).await?;
+        let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
         #[cfg(feature = "code-mode")]
         if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(Vec::new());
@@ -82,7 +82,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
         _conversation: &Conversation,
     ) -> Result<Vec<String>> {
         Ok(
-            ToolDispatcher::for_session(&self.tools, &self.manager, &session.id)
+            ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
                 .await?
                 .moim()
                 .await,
@@ -103,7 +103,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
         let tools = self
             .tools
             .lock()
-            .expect("tool dispatcher unavailable")
+            .expect("tool snapshot unavailable")
             .clone();
         let tools = match tools {
             Some(tools) => tools,
@@ -115,7 +115,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
                     .map(|(request, _)| request),
             ) =>
             {
-                ToolDispatcher::for_session(&self.tools, &self.manager, &session.id).await?
+                ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?
             }
             None => return not_applicable(),
         };
@@ -126,6 +126,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
                 pending.into_iter().map(|(request, _)| request).collect(),
                 session,
                 emit.cancel_token().clone(),
+                &self.services,
             )
             .await;
         if calls.is_empty() {

@@ -1,3 +1,6 @@
+mod registry;
+pub(crate) use registry::is_platform;
+pub use registry::PlatformExtensions;
 #[cfg(feature = "tree-sitter")]
 pub mod analyze;
 #[cfg(feature = "platform-apps")]
@@ -304,4 +307,18 @@ pub struct PlatformExtensionDef {
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
     pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn PlatformExtension>>,
+}
+
+/// Returns true if the named extension is a first-class platform extension
+/// whose tools are exposed unprefixed and remain visible during code execution mode.
+pub fn is_first_class_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.unprefixed_tools)
+}
+
+pub fn is_hidden_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.hidden)
 }

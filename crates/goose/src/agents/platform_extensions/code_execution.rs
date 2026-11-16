@@ -300,7 +300,7 @@ impl PlatformExtension for CodeExecutionClient {
 mod tests {
     use super::*;
     use crate::agents::extension::ExtensionConfig;
-    use crate::agents::extension_manager::ExtensionManager;
+    use crate::agents::StateMachineServices;
     use rmcp::model::{
         Annotations, EmbeddedResource, ListToolsResult, MetaObject, ResourceContents, TextContent,
     };
@@ -397,9 +397,9 @@ mod tests {
         use futures::FutureExt;
 
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -412,6 +412,7 @@ mod tests {
         let started = Arc::new(tokio::sync::Notify::new());
         let released = Arc::new(tokio::sync::Notify::new());
         manager
+            .extension_manager
             .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
@@ -430,7 +431,9 @@ mod tests {
             )
             .await;
         let lease = Arc::new(manager.scope_tools(&session.id).await);
-        let ctx = ToolCallContext::new(session.id, None, None).with_tool_dispatcher(lease);
+        let ctx = ToolCallContext::new(session.id, None, None)
+            .with_tool_snapshot(lease)
+            .with_services(Arc::clone(&manager));
         let dispatch = CancellationToken::new();
         let mut callback = dispatch_tool(
             ctx,
@@ -530,8 +533,9 @@ mod tests {
     #[tokio::test]
     async fn catalog_excludes_tools_hidden_from_model() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         manager
+            .extension_manager
             .install_test_client(
                 "test-session",
                 ExtensionConfig::Builtin {
@@ -563,9 +567,9 @@ mod tests {
     #[tokio::test]
     async fn catalog_leaves_delegate_to_direct_tool_calls() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -576,7 +580,7 @@ mod tests {
             .await
             .unwrap();
         manager
-            .enable(
+            .enable_extension(
                 &session.id,
                 ExtensionConfig::Platform {
                     name: super::super::summon::EXTENSION_NAME.to_string(),
@@ -603,9 +607,9 @@ mod tests {
     #[tokio::test]
     async fn callback_uses_lease_and_applies_extension_mutation() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -616,7 +620,7 @@ mod tests {
             .await
             .unwrap();
         manager
-            .enable(
+            .enable_extension(
                 &session.id,
                 ExtensionConfig::Platform {
                     name: "extensionmanager".to_string(),
@@ -630,6 +634,7 @@ mod tests {
             .unwrap();
         let lease = Arc::new(manager.current_tools(&session.id).await.unwrap());
         manager
+            .extension_manager
             .disable(&session.id, "extensionmanager")
             .await
             .unwrap();
@@ -646,8 +651,9 @@ mod tests {
             Some(session.working_dir.clone()),
             Some("manage".into()),
         )
-        .with_tool_dispatcher(lease);
-        let context = manager.get_context().clone();
+        .with_tool_snapshot(lease)
+        .with_services(Arc::clone(&manager));
+        let context = manager.platform_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
         let result = client
@@ -662,12 +668,13 @@ mod tests {
         assert_ne!(result.is_error, Some(true), "{result:?}");
 
         assert!(manager
+            .extension_manager
             .list_extensions(&session.id)
             .await
             .unwrap()
             .contains(&"todo".to_string()));
         let stored_session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .get_session(&session.id, false)
             .await
@@ -684,9 +691,9 @@ mod tests {
     #[tokio::test]
     async fn discovery_and_execution_share_the_lease_snapshot() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -697,6 +704,7 @@ mod tests {
             .await
             .unwrap();
         manager
+            .extension_manager
             .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
@@ -713,8 +721,9 @@ mod tests {
             .await;
         let lease = Arc::new(manager.scope_tools(&session.id).await);
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
-            .with_tool_dispatcher(lease.clone());
-        let context = manager.get_context().clone();
+            .with_tool_snapshot(lease.clone())
+            .with_services(Arc::clone(&manager));
+        let context = manager.platform_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
             .call_tool(&ctx, "list_functions", None, CancellationToken::new())
@@ -727,7 +736,11 @@ mod tests {
             .iter()
             .any(|tool| tool["name"] == "visibility__ordinary"));
         assert!(!listed.to_string().contains("app_only"));
-        manager.disable(&session.id, "visibility").await.unwrap();
+        manager
+            .extension_manager
+            .disable(&session.id, "visibility")
+            .await
+            .unwrap();
         let details = client
             .call_tool(
                 &ctx,
@@ -786,8 +799,8 @@ mod tests {
     #[tokio::test]
     async fn moim_provides_guidance_and_advertises_only_three_tools() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = ExtensionManager::with_data_dir(temp.path().join("manager"));
-        let client = CodeExecutionClient::new(manager.get_context().clone()).unwrap();
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
+        let client = CodeExecutionClient::new(manager.platform_context().clone()).unwrap();
         assert_eq!(
             client.get_moim("session").await.as_deref(),
             Some(INSTRUCTIONS)

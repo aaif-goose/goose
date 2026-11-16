@@ -12,16 +12,20 @@ use rmcp::model::{
 };
 
 use crate::agents::extension::ExtensionInfo;
-use crate::agents::extension_manager::{CallRequest, ExtensionManager};
+use crate::agents::extension_manager::CallRequest;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_dispatcher::ToolDispatcher;
-use crate::agents::tool_execution::{tool_stream, ToolCallResult, ToolStreamItem};
+use crate::agents::tool_execution::{
+    tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
+};
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
+use crate::agents::StateMachineServices;
+use crate::config::GooseMode;
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
@@ -186,19 +190,19 @@ fn with_recording(
 }
 
 pub(super) fn advertised_working_dir(
-    tool_dispatcher: &StdMutex<Option<Arc<ToolDispatcher>>>,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session: &Session,
 ) -> PathBuf {
-    tool_dispatcher
+    tool_snapshot
         .lock()
-        .expect("tool dispatcher unavailable")
+        .expect("tool snapshot unavailable")
         .as_ref()
         .filter(|tools| tools.scope_id() == session.id)
         .and_then(|tools| tools.working_dir())
         .map_or_else(|| session.working_dir.clone(), Path::to_path_buf)
 }
 
-fn advertised_session(tools: &ToolDispatcher, session: &Session) -> Session {
+fn advertised_session(tools: &ToolSnapshot, session: &Session) -> Session {
     let mut session = session.clone();
     if let Some(working_dir) = tools.working_dir() {
         session.working_dir = working_dir.to_path_buf();
@@ -207,8 +211,8 @@ fn advertised_session(tools: &ToolDispatcher, session: &Session) -> Session {
 }
 
 pub struct ToolExecutionOperation {
-    extension_manager: Arc<ExtensionManager>,
-    tools: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>,
+    services: Arc<StateMachineServices>,
+    tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     execution: ToolExecution,
     defer_tools: bool,
     always_load_tools: HashSet<String>,
@@ -216,13 +220,13 @@ pub struct ToolExecutionOperation {
 
 impl ToolExecutionOperation {
     pub fn new(
-        extension_manager: Arc<ExtensionManager>,
-        tools: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>,
+        services: Arc<StateMachineServices>,
+        tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
         defer_tools: bool,
         always_load_tools: Vec<String>,
     ) -> Self {
         Self {
-            extension_manager,
+            services,
             tools,
             execution: ToolExecution::new(),
             defer_tools,
@@ -230,7 +234,7 @@ impl ToolExecutionOperation {
         }
     }
 
-    async fn execution_tools(&self, tools: &ToolDispatcher) -> Vec<Tool> {
+    async fn execution_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
         let platform_names: HashSet<_> = tools
             .platform_tools()
             .await
@@ -246,7 +250,7 @@ impl ToolExecutionOperation {
             .collect()
     }
 
-    fn defers_tools(&self, tools: &ToolDispatcher) -> bool {
+    fn defers_tools(&self, tools: &ToolSnapshot) -> bool {
         #[cfg(feature = "code-mode")]
         if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return false;
@@ -255,7 +259,7 @@ impl ToolExecutionOperation {
         self.defer_tools
     }
 
-    async fn mcp_tools(&self, tools: &ToolDispatcher) -> Vec<Tool> {
+    async fn mcp_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
         tools
             .mcp
             .tools()
@@ -267,7 +271,7 @@ impl ToolExecutionOperation {
 
     async fn enable_tools(
         &self,
-        tools: &ToolDispatcher,
+        tools: &ToolSnapshot,
         call: &CallToolRequestParams,
     ) -> CallToolResult {
         let params = serde_json::from_value::<EnableToolsParams>(serde_json::Value::Object(
@@ -329,12 +333,11 @@ impl ToolExecutionOperation {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let prompts =
-            ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id)
-                .await?
-                .mcp
-                .list_prompts(emit.cancel_token().clone())
-                .await;
+        let prompts = ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
+            .await?
+            .mcp
+            .list_prompts(emit.cancel_token().clone())
+            .await;
         let extension_filter = arguments.split_whitespace().next();
         if let Some(filter) = extension_filter {
             if !prompts.contains_key(filter) {
@@ -381,12 +384,11 @@ impl ToolExecutionOperation {
                 emit,
             );
         };
-        let prompts =
-            ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id)
-                .await?
-                .mcp
-                .list_prompts(emit.cancel_token().clone())
-                .await;
+        let prompts = ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
+            .await?
+            .mcp
+            .list_prompts(emit.cancel_token().clone())
+            .await;
         let found = prompts.iter().find_map(|(extension, prompts)| {
             prompts
                 .iter()
@@ -426,23 +428,22 @@ impl ToolExecutionOperation {
             .filter_map(|param| param.split_once('='))
             .map(|(key, value)| (key.to_string(), value.trim_matches('"').to_string()))
             .collect();
-        let result =
-            match ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id)
-                .await?
-                .mcp
-                .get_prompt(
-                    &extension,
-                    prompt_name,
-                    serde_json::to_value(arguments)?,
-                    emit.cancel_token().clone(),
-                )
-                .await
-            {
-                Ok(result) => result,
-                Err(error) => {
-                    return Self::command_response(conversation, error.to_string(), emit);
-                }
-            };
+        let result = match ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
+            .await?
+            .mcp
+            .get_prompt(
+                &extension,
+                prompt_name,
+                serde_json::to_value(arguments)?,
+                emit.cancel_token().clone(),
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                return Self::command_response(conversation, error.to_string(), emit);
+            }
+        };
 
         let command_message = messages_since_kickoff(conversation)?
             .first()
@@ -674,12 +675,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let dispatcher =
-            ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id).await?;
-        let mut tools = self.execution_tools(&dispatcher).await;
-        if self.defers_tools(&dispatcher) {
+        let snapshot = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
+        let mut tools = self.execution_tools(&snapshot).await;
+        if self.defers_tools(&snapshot) {
             let deferred: HashSet<_> = self
-                .mcp_tools(&dispatcher)
+                .mcp_tools(&snapshot)
                 .await
                 .into_iter()
                 .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
@@ -719,8 +719,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         let mut prompt_parts = hints.load_new_hints(&session.working_dir);
 
-        let tools =
-            ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id).await?;
+        let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
         #[cfg(feature = "code-mode")]
         if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(prompt_parts);
@@ -769,7 +768,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         let tools = self
             .tools
             .lock()
-            .expect("tool dispatcher unavailable")
+            .expect("tool snapshot unavailable")
             .clone();
         let tools = match tools {
             Some(tools) => Some(tools),
@@ -781,10 +780,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     .map(|(request, _)| request),
             ) =>
             {
-                Some(
-                    ToolDispatcher::for_session(&self.tools, &self.extension_manager, &session.id)
-                        .await?,
-                )
+                Some(ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?)
             }
             None => None,
         };
@@ -850,8 +846,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     )
                     .await
                     .unwrap_or_else(|error| ToolCallResult::from(Err(error)));
-                self.extension_manager
-                    .applying_mutation(result, &session.id)
+                self.services.applying_mutation(result, &session.id)
             };
             calls.push((request, result));
         }

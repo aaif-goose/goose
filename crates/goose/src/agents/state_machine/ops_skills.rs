@@ -18,7 +18,7 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
@@ -27,7 +27,7 @@ use crate::slash_commands::skill_slash_command::{format_installed_skills, runnab
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
-    tool_dispatcher: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>,
+    tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -199,15 +199,15 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(tool_dispatcher: Arc<StdMutex<Option<Arc<ToolDispatcher>>>>) -> Self {
-        Self { tool_dispatcher }
+    pub fn new(tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>) -> Self {
+        Self { tool_snapshot }
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
         let lease = self
-            .tool_dispatcher
+            .tool_snapshot
             .lock()
-            .expect("tool dispatcher unavailable")
+            .expect("tool snapshot unavailable")
             .clone()?;
         if lease.scope_id() != session.id.as_str() {
             return None;

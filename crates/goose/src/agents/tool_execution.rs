@@ -47,8 +47,9 @@ pub struct ToolCallContext {
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
     container: Option<Container>,
-    tool_dispatcher: Option<Arc<ToolDispatcher>>,
+    tool_snapshot: Option<Arc<ToolSnapshot>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
+    services: Option<Arc<StateMachineServices>>,
 }
 
 impl ToolCallContext {
@@ -62,7 +63,8 @@ impl ToolCallContext {
             working_dir,
             tool_call_request_id,
             container: None,
-            tool_dispatcher: None,
+            tool_snapshot: None,
+            services: None,
             notification_emitter: None,
         }
     }
@@ -76,20 +78,23 @@ impl ToolCallContext {
         self.container.as_ref()
     }
 
-    pub(crate) fn with_tool_dispatcher(mut self, tool_dispatcher: Arc<ToolDispatcher>) -> Self {
-        self.tool_dispatcher = Some(tool_dispatcher);
+    pub(crate) fn with_services(mut self, services: Arc<StateMachineServices>) -> Self {
+        self.services = Some(services);
         self
     }
 
-    pub(crate) fn tool_dispatcher(&self) -> Option<&Arc<ToolDispatcher>> {
-        self.tool_dispatcher.as_ref()
+    pub(crate) fn with_tool_snapshot(mut self, tool_snapshot: Arc<ToolSnapshot>) -> Self {
+        self.tool_snapshot = Some(tool_snapshot);
+        self
+    }
+
+    pub(crate) fn tool_snapshot(&self) -> Option<&Arc<ToolSnapshot>> {
+        self.tool_snapshot.as_ref()
     }
 
     #[cfg(feature = "code-mode")]
     pub(crate) fn tools(&self) -> &dyn ToolAccess {
-        self.tool_dispatcher
-            .as_deref()
-            .expect("platform calls carry tool access")
+        self
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -127,7 +132,7 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
     }
 }
 
-use crate::agents::tool_dispatcher::ToolDispatcher;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::StateMachineServices;
 
 pub(super) enum ToolStreamItem<T> {
@@ -171,4 +176,40 @@ pub const DECLINED_RESPONSE: &str = "The user has declined to run this tool. \
     DO NOT attempt to call this tool again. \
     If there are no alternative methods to proceed, clearly explain the situation and STOP.";
 
-impl StateMachineServices {}
+pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool call was skipped in goose chat mode. \
+                                        DO NOT apologize for skipping the tool call. DO NOT say sorry. \
+                                        Provide an explanation of what the tool call would do, structured as a \
+                                        plan for the user. Again, DO NOT apologize. \
+                                        **Example Plan:**\n \
+                                        1. **Identify Task Scope** - Determine the purpose and expected outcome.\n \
+                                        2. **Outline Steps** - Break down the steps.\n \
+                                        If needed, adjust the explanation based on user preferences or questions.";
+
+#[cfg(feature = "code-mode")]
+#[async_trait::async_trait]
+impl ToolAccess for ToolCallContext {
+    async fn tools(&self) -> Vec<rmcp::model::Tool> {
+        self.tool_snapshot
+            .as_ref()
+            .expect("platform calls carry a snapshot")
+            .tools()
+            .await
+    }
+
+    async fn call(
+        &self,
+        call: rmcp::model::CallToolRequestParams,
+        request: crate::agents::extension_manager::CallRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<ToolCallResult, rmcp::model::ErrorData> {
+        let services = self
+            .services
+            .as_ref()
+            .expect("platform calls carry services");
+        self.tool_snapshot
+            .as_ref()
+            .expect("platform calls carry a snapshot")
+            .call(call, request, cancellation, services)
+            .await
+    }
+}

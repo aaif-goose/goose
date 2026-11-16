@@ -10,7 +10,6 @@ impl AcpConnection {
         let cancel_token = CancellationToken::new();
         let result = self
             .services
-            .extension_manager
             .current_tools(session_id)
             .await
             .internal_err()?
