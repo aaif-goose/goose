@@ -193,21 +193,22 @@ impl StructuredSummary {
 }
 
 /// Candidate JSON documents in the model's response, tried in order until one
-/// parses: after each `</analysis>` terminator (last first) the
-/// post-terminator ```json fences (last first) then a leading object, and
-/// finally a leading object of the whole text.
+/// parses: after each `</analysis>` terminator (last first), then from the
+/// start of the text, the ```json fences (last first) then a leading object,
+/// and finally a leading object of the whole text.
 ///
 /// The shipped prompt no longer asks for an `<analysis>` block (Claude models
 /// refuse prompts that request their reasoning in the output), but terminator
 /// handling stays for older user-overridden templates and models that still
 /// emit one.
 ///
-/// Terminators before the last are retried because the summary JSON may
-/// itself quote `</analysis>` (e.g. a session editing compaction prompts),
-/// hiding the real terminator from a plain rfind. Such a candidate is
-/// accepted only if it contains every later terminator occurrence - proof
-/// they were quoted inside it - so a fenced example inside the scratchpad,
-/// which precedes the real terminator, can never leak through.
+/// Terminators before the last, and the start of the text, are retried
+/// because the summary JSON may itself quote `</analysis>` (e.g. a session
+/// editing compaction prompts), hiding the real terminator from a plain rfind
+/// or, with no analysis block at all, hiding the JSON entirely. Such a
+/// candidate is accepted only if it contains every later terminator
+/// occurrence - proof they were quoted inside it - so a fenced example inside
+/// the scratchpad, which precedes the real terminator, can never leak through.
 ///
 /// Every candidate must sit directly at its marker and brace-balance to a
 /// close. Anything looser erodes the lossless fallback: JSON merely quoted in
@@ -221,13 +222,12 @@ impl StructuredSummary {
 fn json_candidates(text: &str) -> Vec<&str> {
     const TERMINATOR: &str = "</analysis>";
 
-    let mut cuts: Vec<usize> = text
-        .match_indices(TERMINATOR)
-        .map(|(idx, _)| idx + TERMINATOR.len())
+    let cuts: Vec<usize> = std::iter::once(0)
+        .chain(
+            text.match_indices(TERMINATOR)
+                .map(|(idx, _)| idx + TERMINATOR.len()),
+        )
         .collect();
-    if cuts.is_empty() {
-        cuts.push(0);
-    }
 
     let mut candidates: Vec<&str> = Vec::new();
     for &cut in cuts.iter().rev() {
@@ -407,6 +407,17 @@ in {brace handling} and patched it.
         assert_eq!(
             summary.files[0].summary,
             "Tightened the <analysis>...</analysis> instructions"
+        );
+    }
+
+    #[test]
+    fn quoted_terminator_without_analysis_block_does_not_hide_json() {
+        let text = "```json\n{\"user_intent\": [\"Rework the scratchpad prompt\"], \"files\": [{\"path\": \"prompts/compact.md\", \"summary\": \"Removed the <analysis>...</analysis> instructions\"}]}\n```";
+        let summary = StructuredSummary::parse(text).expect("should parse");
+        assert_eq!(summary.user_intent, vec!["Rework the scratchpad prompt"]);
+        assert_eq!(
+            summary.files[0].summary,
+            "Removed the <analysis>...</analysis> instructions"
         );
     }
 
