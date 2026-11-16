@@ -13,6 +13,7 @@ mod ops_context_relevance;
 mod ops_doctor;
 mod ops_final_output;
 mod ops_llm;
+mod ops_platform_extensions;
 mod ops_project;
 mod ops_recipe;
 mod ops_remaining_tool_calls;
@@ -60,6 +61,7 @@ pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDec
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_final_output::FinalOutputOperation;
 pub(super) use ops_llm::{enrich_unclaimed_tool_errors, GooseInferenceProvider, InferenceRunner};
+pub(super) use ops_platform_extensions::PlatformExtensionOperation;
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
 pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;

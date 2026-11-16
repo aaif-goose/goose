@@ -110,10 +110,7 @@ impl StateMachineServices {
         )
         .await?;
 
-        let (session, lease) = self
-            .extension_manager
-            .current_session_snapshot(&session)
-            .await?;
+        let (session, lease) = self.current_session_snapshot(&session).await?;
         let code_execution_active = {
             #[cfg(feature = "code-mode")]
             {
@@ -124,7 +121,7 @@ impl StateMachineServices {
                 false
             }
         };
-        let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
+        let tool_snapshot = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
 
         let mut next_messages = session
             .conversation
@@ -146,7 +143,7 @@ impl StateMachineServices {
                 },
                 CancellationToken::new(),
                 self.runtime.steer_queue(session_id),
-                extension_lease,
+                tool_snapshot,
             )
             .await;
         let input = machine

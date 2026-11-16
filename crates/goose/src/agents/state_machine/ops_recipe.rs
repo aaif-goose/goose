@@ -6,12 +6,12 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
-use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, yielded_with, Command, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult,
 };
+use crate::agents::StateMachineServices;
 use crate::config::extensions::is_extension_available;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -49,12 +49,12 @@ pub(super) fn command_error(
 }
 
 pub struct RecipeOperation {
-    extension_manager: Arc<ExtensionManager>,
+    services: Arc<StateMachineServices>,
 }
 
 impl RecipeOperation {
-    pub fn new(extension_manager: Arc<ExtensionManager>) -> Self {
-        Self { extension_manager }
+    pub fn new(services: Arc<StateMachineServices>) -> Self {
+        Self { services }
     }
 
     async fn run_recipe(
@@ -84,8 +84,8 @@ impl RecipeOperation {
             .filter(|extension| is_extension_available(extension))
         {
             if let Err(error) = self
-                .extension_manager
-                .enable(&session.id, extension.clone())
+                .services
+                .enable_extension(&session.id, extension.clone())
                 .await
             {
                 return command_error(

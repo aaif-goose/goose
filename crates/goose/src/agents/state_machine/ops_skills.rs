@@ -11,7 +11,6 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
@@ -19,6 +18,7 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
@@ -27,7 +27,7 @@ use crate::slash_commands::skill_slash_command::{format_installed_skills, runnab
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
-    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -199,15 +199,15 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>) -> Self {
-        Self { extension_lease }
+    pub fn new(tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>) -> Self {
+        Self { tool_snapshot }
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
         let lease = self
-            .extension_lease
+            .tool_snapshot
             .lock()
-            .expect("extension lease unavailable")
+            .expect("tool snapshot unavailable")
             .clone()?;
         if lease.scope_id() != session.id.as_str() {
             return None;

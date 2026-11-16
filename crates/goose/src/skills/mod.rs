@@ -1,5 +1,5 @@
 //! Everything specific to skills: filesystem discovery (`SKILL.md` walking +
-//! built-ins) and the runtime MCP client (`client` submodule). User-facing
+//! built-ins) and the platform extension (`client` submodule). User-facing
 //! CRUD lives in `crate::sources`, which generalizes across source types.
 
 mod builtin;

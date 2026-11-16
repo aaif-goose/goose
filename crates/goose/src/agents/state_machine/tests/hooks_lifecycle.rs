@@ -1349,38 +1349,34 @@ async fn a_call_that_finished_before_stop_still_gets_its_post_hook() -> Result<(
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
 
+    use super::calculator_extension::REQUEST_VALUE;
+
     let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline
         .with_hook_manager(env.hook_manager())
         .with_goose_mode(GooseMode::Auto)
         .await;
-    pipeline.add_extension("developer").await?;
-    let pid_file = pipeline.working_dir().join("shell.pid");
-    api.on("add while the tests run").calls([
+    api.on("add while waiting for input").calls([
         ("call_add", ADD, value(1)),
-        (
-            "call_tests",
-            "shell",
-            serde_json::json!({ "command": format!("echo $$ > {}; exec sleep 30", pid_file.display()) }),
-        ),
+        ("call_input", REQUEST_VALUE, serde_json::json!({})),
     ]);
     let cancel = CancellationToken::new();
-    let stop_once_added_and_running = async {
-        while pipeline.calculator_total() == 0 || !pid_file.exists() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+    let stop_once_added = async {
+        pipeline.wait_for_calculator_result().await;
         cancel.cancel();
     };
 
     let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
         tokio::join!(
-            pipeline.run_with_cancel("add while the tests run", cancel.clone()),
-            stop_once_added_and_running
+            pipeline.run_with_cancel("add while waiting for input", cancel.clone()),
+            stop_once_added
         )
     })
     .await?;
-    result?;
+    let result = result?;
+    result.assert_message(-2, ToolResponse, "result: 1");
+    assert_eq!(pipeline.calculator_total(), 1);
 
     let posts = env.payloads("post.log");
     assert_eq!(posts.len(), 1);

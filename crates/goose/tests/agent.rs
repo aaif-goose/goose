@@ -140,8 +140,7 @@ mod tests {
                 .await
                 .unwrap();
             services
-                .extension_manager
-                .enable(
+                .enable_extension(
                     &session.id,
                     ExtensionConfig::Platform {
                         name: SCHEDULER_EXTENSION_NAME.to_string(),
@@ -937,8 +936,7 @@ mod tests {
             };
 
             services
-                .extension_manager
-                .enable(&session_id, ext_config)
+                .enable_extension(&session_id, ext_config)
                 .await
                 .expect("Failed to add extension manager");
             (services, session_id, temp_dir)
@@ -2235,10 +2233,7 @@ mod tests {
                     &session_id,
                 )
                 .await?;
-            services
-                .extension_manager
-                .enable(&session_id, extension)
-                .await?;
+            services.enable_extension(&session_id, extension).await?;
 
             let stream = services
                 .reply(

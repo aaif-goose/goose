@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::usage;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
@@ -184,7 +184,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
 struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
     hook_manager: &'a HookManager,
-    extension_lease: &'a StdMutex<Option<Arc<ExtensionLease>>>,
+    tool_snapshot: &'a StdMutex<Option<Arc<ToolSnapshot>>>,
     usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
 }
 
@@ -206,7 +206,7 @@ impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
         self.session_manager
             .apply_effects(session, effects, emit)
             .await?;
-        fire_post_tool_hooks(self.hook_manager, self.extension_lease, session, effects).await;
+        fire_post_tool_hooks(self.hook_manager, self.tool_snapshot, session, effects).await;
         let mut turn_usage = self.usage.lock().unwrap();
         for effect in effects.iter() {
             if let Some(usage) = self.session_manager.usage(effect) {
@@ -261,7 +261,7 @@ pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
     hook_manager: &HookManager,
-    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
@@ -290,14 +290,14 @@ pub(crate) async fn run(
     let runtime = TurnRuntime {
         session_manager: runtime,
         hook_manager,
-        extension_lease,
+        tool_snapshot,
         usage: Default::default(),
     };
     loop {
         let session = runtime.load(session_id).await?;
         let mut result = machine.step(&session, emit).await?;
         let pre_tool_hooks =
-            fire_pre_tool_hooks(hook_manager, extension_lease, &session, &result.effects);
+            fire_pre_tool_hooks(hook_manager, tool_snapshot, &session, &result.effects);
         if let Some(Some(denials)) = emit
             .cancel_token()
             .run_until_cancelled(pre_tool_hooks)

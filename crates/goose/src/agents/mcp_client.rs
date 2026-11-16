@@ -1,5 +1,5 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::tool_execution::ToolCallContext;
+
 use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
 #[expect(deprecated)]
 use rmcp::model::{
@@ -28,7 +28,7 @@ use rmcp::{
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
@@ -73,6 +73,44 @@ impl GooseMcpHostInfo {
     }
 }
 
+#[derive(Clone)]
+pub struct McpCallContext {
+    pub session_id: String,
+    pub working_dir: Option<PathBuf>,
+    pub tool_call_request_id: Option<String>,
+    notification_emitter: Option<crate::agents::tool_execution::ToolCallNotificationEmitter>,
+}
+
+impl McpCallContext {
+    pub fn new(
+        session_id: String,
+        working_dir: Option<PathBuf>,
+        tool_call_request_id: Option<String>,
+    ) -> Self {
+        Self {
+            session_id,
+            working_dir,
+            tool_call_request_id,
+            notification_emitter: None,
+        }
+    }
+    pub fn working_dir_str(&self) -> Option<&str> {
+        self.working_dir.as_ref().and_then(|path| path.to_str())
+    }
+    pub(crate) fn with_notification_emitter(
+        mut self,
+        emitter: crate::agents::tool_execution::ToolCallNotificationEmitter,
+    ) -> Self {
+        self.notification_emitter = Some(emitter);
+        self
+    }
+    pub(crate) fn notification_emitter(
+        &self,
+    ) -> Option<&crate::agents::tool_execution::ToolCallNotificationEmitter> {
+        self.notification_emitter.as_ref()
+    }
+}
+
 #[async_trait::async_trait]
 pub trait McpClientTrait: Send + Sync {
     async fn list_tools(
@@ -84,17 +122,13 @@ pub trait McpClientTrait: Send + Sync {
 
     async fn call_tool(
         &self,
-        ctx: &ToolCallContext,
+        ctx: &McpCallContext,
         name: &str,
         arguments: Option<JsonObject>,
         cancel_token: CancellationToken,
     ) -> Result<CallToolResult, Error>;
 
     fn get_info(&self) -> Option<&InitializeResult>;
-
-    async fn get_instructions(&self, _session_id: &str, _working_dir: &Path) -> Option<String> {
-        self.get_info().and_then(|info| info.instructions.clone())
-    }
 
     async fn list_resources(
         &self,
@@ -135,10 +169,6 @@ pub trait McpClientTrait: Send + Sync {
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
         mpsc::channel(1).1
-    }
-
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
-        None
     }
 }
 
@@ -747,7 +777,7 @@ impl McpClientTrait for McpClient {
 
     async fn call_tool(
         &self,
-        ctx: &ToolCallContext,
+        ctx: &McpCallContext,
         name: &str,
         arguments: Option<JsonObject>,
         cancel_token: CancellationToken,

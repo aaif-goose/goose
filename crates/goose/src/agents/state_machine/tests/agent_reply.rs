@@ -137,8 +137,7 @@ async fn agent_with_calculator(
 
 async fn enable_developer(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
     services
-        .extension_manager
-        .enable(
+        .enable_extension(
             session_id,
             ExtensionConfig::Platform {
                 name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
@@ -464,7 +463,7 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() -> Result<()> {
+async fn pre_tool_use_reports_the_advertised_working_dir_after_a_mid_run_change() -> Result<()> {
     let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
     let (services, api, session_id, calculator, temp_dir) = agent_with_calculator(hooks).await?;
     services
@@ -503,7 +502,7 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
     changed?;
 
     assert_eq!(calculator.total(), 1);
-    let leased_working_dir = temp_dir.path().to_string_lossy().to_string();
+    let advertised_working_dir = temp_dir.path().to_string_lossy().to_string();
     assert!(calculator
         .contexts()
         .iter()
@@ -515,12 +514,12 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
                 .map(|payload| payload["working_dir"].as_str().map(str::to_string))
         })
         .collect::<serde_json::Result<Vec<_>>>()?;
-    assert_eq!(working_dirs, vec![Some(leased_working_dir)]);
+    assert_eq!(working_dirs, vec![Some(advertised_working_dir)]);
     Ok(())
 }
 
 #[tokio::test]
-async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
+async fn state_machine_skill_approval_uses_its_advertised_working_dir() -> Result<()> {
     let (services, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
     install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
     services
@@ -622,7 +621,7 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
         .runtime
         .confirmations
         .session(&session_config.id)
-        .clear_extension_lease();
+        .clear_tool_snapshot();
     services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -678,7 +677,7 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         .runtime
         .confirmations
         .session(&session_config.id)
-        .clear_extension_lease();
+        .clear_tool_snapshot();
     services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -742,7 +741,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
         .runtime
         .confirmations
         .session(&session_config.id)
-        .clear_extension_lease();
+        .clear_tool_snapshot();
     services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -1062,12 +1061,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         std::slice::from_ref(subagent_id)
     );
     assert!(!services.tracks_confirmations_for(subagent_id));
-    assert!(services
-        .extension_manager
-        .scope_lease(subagent_id)
-        .await
-        .configs()
-        .is_empty());
+    assert!(services.scope_tools(subagent_id).await.configs().is_empty());
     Ok(())
 }
 
@@ -1269,10 +1263,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
             available_tools: Vec::new(),
         },
     ] {
-        services
-            .extension_manager
-            .enable(&session_id, config)
-            .await?;
+        services.enable_extension(&session_id, config).await?;
     }
 
     api.on("hand this off").call(
@@ -1521,12 +1512,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         loop {
             if let [subagent_id] = hook_sessions(&hook_log, "SessionEnd").as_slice() {
                 if !services.tracks_confirmations_for(subagent_id)
-                    && services
-                        .extension_manager
-                        .scope_lease(subagent_id)
-                        .await
-                        .configs()
-                        .is_empty()
+                    && services.scope_tools(subagent_id).await.configs().is_empty()
                 {
                     return subagent_id.clone();
                 }
@@ -1550,8 +1536,7 @@ fn openai_env_for(api: &DummyApi) -> env_lock::EnvGuard<'static> {
 
 async fn enable_summon(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
     services
-        .extension_manager
-        .enable(
+        .enable_extension(
             session_id,
             ExtensionConfig::Platform {
                 name: "summon".to_string(),
@@ -1739,8 +1724,7 @@ async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resum
     tokio::time::timeout(Duration::from_secs(1), async {
         while services.tracks_confirmations_for(&subagent_id)
             || !services
-                .extension_manager
-                .scope_lease(&subagent_id)
+                .scope_tools(&subagent_id)
                 .await
                 .configs()
                 .is_empty()
