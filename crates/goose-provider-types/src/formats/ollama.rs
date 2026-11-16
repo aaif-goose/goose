@@ -14,7 +14,7 @@ use crate::maybe_send::MaybeSend;
 use crate::{
     conversation::token_usage::ProviderUsage,
     formats::openai::{self, is_valid_function_name},
-    thinking::split_think_blocks,
+    thinking::{split_think_blocks, ThinkFilter},
 };
 use async_stream::try_stream;
 use chrono;
@@ -220,9 +220,6 @@ where
 
         while let Some(result) = base_stream.next().await {
             let (message_opt, usage) = result?;
-            if usage.is_some() {
-                buffered_usage = usage.clone();
-            }
             xml_detected = xml_detected
                 || raw_content
                     .lock()
@@ -230,18 +227,18 @@ where
                     .xml_start
                     .is_some();
 
-            if let Some(message) = message_opt {
-                if xml_detected && is_text_only_message(&message) {
-                    continue;
-                }
-
+            if let Some(message) =
+                message_opt.filter(|m| !(xml_detected && is_text_only_message(m)))
+            {
                 native_tool_call_emitted = native_tool_call_emitted
                     || message
                         .content
                         .iter()
                         .any(|c| matches!(c, MessageContentBlock::ToolRequest(_)));
                 yield (Some(message), usage);
-            } else if usage.is_some() && !xml_detected {
+            } else if xml_detected {
+                buffered_usage = usage.or(buffered_usage);
+            } else if usage.is_some() {
                 yield (None, usage);
             }
         }
@@ -250,10 +247,10 @@ where
         // Native tool calls take precedence over XML in content, as in `response_to_message`.
         let xml_start = raw.xml_start.filter(|_| !native_tool_call_emitted);
         if let Some((leading_raw, xml_raw)) = xml_start.and_then(|i| raw.text.split_at_checked(i)) {
-            let (leading_text, _) = split_think_blocks(leading_raw);
             let (_, xml_tool_calls) = parse_xml_tool_calls(xml_raw);
 
             if !xml_tool_calls.is_empty() {
+                let (leading_text, _) = split_think_blocks(leading_raw);
                 let mut contents = Vec::new();
                 let prefix_text = leading_text.trim();
                 if !prefix_text.is_empty() {
@@ -269,15 +266,30 @@ where
 
                 yield (Some(msg), buffered_usage);
             } else {
-                let msg = Message::new(
-                    Role::Assistant,
-                    chrono::Utc::now().timestamp(),
-                    vec![MessageContentBlock::text(leading_text + xml_raw)],
-                )
-                .with_generated_id();
+                // No tool parameters to protect, so the withheld text is think-filtered as usual;
+                // the leading thinking was already emitted by the OpenAI parser.
+                let mut think_filter = ThinkFilter::new();
+                let mut text = think_filter.push(leading_raw).content;
+                let rest = think_filter.push(xml_raw);
+                let tail = think_filter.finish();
+                text.push_str(&rest.content);
+                text.push_str(&tail.content);
+                let thinking = rest.thinking + &tail.thinking;
+
+                let mut contents = Vec::new();
+                if !thinking.is_empty() {
+                    contents.push(MessageContentBlock::thinking(thinking, ""));
+                }
+                if !text.is_empty() {
+                    contents.push(MessageContentBlock::text(text));
+                }
+                let msg = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), contents)
+                    .with_generated_id();
 
                 yield (Some(msg), buffered_usage);
             }
+        } else if buffered_usage.is_some() {
+            yield (None, buffered_usage);
         }
     }
 }
@@ -522,16 +534,27 @@ data: [DONE]"#;
                 "function": {"name": "correct_tool", "arguments": "{\"a\": \"b\"}"}
             }]
         }, "index": 0, "finish_reason": "tool_calls"}]});
-        let lines: Vec<anyhow::Result<String>> =
-            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
-        let messages: Vec<Message> =
-            response_to_streaming_message_ollama(tokio_stream::iter(lines))
-                .filter_map(|item| async move { item.unwrap().0 })
-                .collect()
-                .await;
+        let usage_frame = json!({"model": "test-model", "choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}});
+        let lines: Vec<anyhow::Result<String>> = vec![
+            Ok(format!("data: {delta}")),
+            Ok(format!("data: {usage_frame}")),
+            Ok("data: [DONE]".to_string()),
+        ];
+        let items: Vec<_> = response_to_streaming_message_ollama(tokio_stream::iter(lines))
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<anyhow::Result<_>>()?;
 
-        let tool_names: Vec<_> = messages
+        let input_tokens: Vec<_> = items
             .iter()
+            .filter_map(|(_, usage)| usage.as_ref()?.usage.input_tokens)
+            .collect();
+        assert_eq!(input_tokens, vec![10]);
+
+        let tool_names: Vec<_> = items
+            .iter()
+            .filter_map(|(message, _)| message.as_ref())
             .flat_map(|m| &m.content)
             .filter_map(|c| match c {
                 MessageContentBlock::ToolRequest(request) => {
@@ -541,6 +564,51 @@ data: [DONE]"#;
             })
             .collect();
         assert_eq!(tool_names, vec!["correct_tool"]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_unparsed_xml_inside_think_stays_thinking() -> anyhow::Result<()> {
+        use futures::StreamExt;
+
+        let deltas = [
+            "<think>Consider ",
+            "<function=foo but ",
+            "skip it</th",
+            "ink>answer",
+        ];
+        let mut lines: Vec<anyhow::Result<String>> = deltas
+            .iter()
+            .map(|content| {
+                let delta = json!({"choices": [{"delta": {"content": content}, "index": 0}]});
+                Ok(format!("data: {delta}"))
+            })
+            .collect();
+        lines.push(Ok("data: [DONE]".to_string()));
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let blocks: Vec<_> = messages.iter().flat_map(|m| &m.content).collect();
+        let thinking: String = blocks
+            .iter()
+            .filter_map(|c| match c {
+                MessageContentBlock::Thinking(t) => Some(t.thinking.as_str()),
+                _ => None,
+            })
+            .collect();
+        let text: String = blocks
+            .iter()
+            .filter_map(|c| match c {
+                MessageContentBlock::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking, "Consider <function=foo but skip it");
+        assert_eq!(text, "answer");
 
         Ok(())
     }
