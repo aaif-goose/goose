@@ -10,22 +10,19 @@ use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Value;
-use tracing_futures::Instrument;
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::tool_hooks::{check_pre_tool_hooks, emit_post_tool_hooks};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
     Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, ToolResponse};
+use crate::conversation::message::Message;
 use crate::conversation::Conversation;
-use crate::hooks::HookManager;
 use crate::session::Session;
 use crate::slash_commands::skill_slash_command::{format_installed_skills, runnable_skills};
 
@@ -33,7 +30,6 @@ pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    hook_manager: HookManager,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -196,14 +192,8 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-        hook_manager: HookManager,
-    ) -> Self {
-        Self {
-            extension_lease,
-            hook_manager,
-        }
+    pub fn new(extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>) -> Self {
+        Self { extension_lease }
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
@@ -381,22 +371,6 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
-                    if let Some(denied) = check_pre_tool_hooks(
-                        &self.hook_manager,
-                        &session.id,
-                        &session.working_dir,
-                        &request,
-                    )
-                    .instrument(span.clone())
-                    .await
-                    {
-                        response.add_tool_response_with_metadata(
-                            request.id,
-                            Ok(denied),
-                            request.metadata.as_ref(),
-                        );
-                        continue;
-                    }
                     let result = {
                         let _entered = span.enter();
                         execute_skill(&session.working_dir, tool_call.arguments.clone())
@@ -404,21 +378,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     if result.is_error == Some(true) {
                         span.record("error.type", "tool_error");
                     }
-                    let response = ToolResponse {
-                        id: request.id.clone(),
-                        tool_result: Ok(result),
-                        metadata: request.metadata.clone(),
-                    };
-                    emit_post_tool_hooks(
-                        &self.hook_manager,
-                        &session.id,
-                        &session.working_dir,
-                        &request,
-                        &response,
-                    )
-                    .instrument(span)
-                    .await;
-                    response.tool_result
+                    Ok(result)
                 }
                 ToolDisposition::ParseError(error) => {
                     Ok(CallToolResult::error(vec![ContentBlock::text(format!(

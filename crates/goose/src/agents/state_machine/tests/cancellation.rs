@@ -16,9 +16,12 @@ use tracing::Instrument;
 
 use super::test_pipeline;
 use crate::agents::gen_ai_telemetry::test_support::SpanFieldCapture;
-use crate::agents::state_machine::{Emitter, GooseEffect, StateMachine, Step};
+use crate::agents::state_machine::{
+    Emitter, GooseEffect, StateMachine, Step, TurnHooks, DEFAULT_BLOCK_CAP,
+};
 use crate::agents::AgentEvent;
 use crate::conversation::message::Message;
+use crate::hooks::HookManager;
 use crate::session::Session;
 
 struct InterruptedProvider {
@@ -96,6 +99,7 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
         crate::agents::state_machine::session::run(
             &machine,
             pipeline.session_manager.as_ref(),
+            TurnHooks::new(HookManager::default(), Arc::default(), DEFAULT_BLOCK_CAP),
             &pipeline.session_id,
             &emit,
         )

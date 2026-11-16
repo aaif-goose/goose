@@ -1,16 +1,16 @@
 use std::path::Path;
 
-use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
+use rmcp::model::{CallToolResult, ErrorData};
 
 use crate::conversation::message::{ToolRequest, ToolResponse};
-use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
+use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
 
 pub(super) async fn check_pre_tool_hooks(
     hook_manager: &HookManager,
     session_id: &str,
     working_dir: &Path,
     request: &ToolRequest,
-) -> Option<CallToolResult> {
+) -> Option<HookDenial> {
     let tool_call = request.tool_call.as_ref().ok()?;
     let tool_input = tool_call
         .arguments
@@ -43,10 +43,7 @@ pub(super) async fn check_pre_tool_hooks(
     .await;
 
     if let Some(denial) = outcome.denial() {
-        tracing::Span::current().record("error.type", denial.error_type);
-        return Some(CallToolResult::error(vec![ContentBlock::text(
-            denial.message,
-        )]));
+        return Some(denial);
     }
     emit_extended_pre_hooks(
         hook_manager,

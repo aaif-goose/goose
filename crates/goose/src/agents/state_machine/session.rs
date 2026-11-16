@@ -2,13 +2,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::agents::state_machine::effects::GooseEffect;
+use crate::agents::state_machine::turn_hooks::TurnHooks;
 use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
+use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
 
 use super::ops_auto_effort::current_turn_effort;
 
@@ -252,6 +253,7 @@ impl EffectUsage<GooseEffect> for SessionManager {
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
+    mut hooks: TurnHooks,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
@@ -281,7 +283,15 @@ pub(crate) async fn run(
         session_manager: runtime,
         usage: Default::default(),
     };
-    let session = machine.run(&runtime, session_id, emit).await?;
+    hooks.start_turn(&entry_session).await;
+    loop {
+        let session = runtime.load(session_id).await?;
+        let result = hooks.step(machine, &runtime, &session, emit).await?;
+        if result.status != RunStatus::Continuing {
+            break;
+        }
+    }
+    let session = machine.finalize(&runtime, session_id, emit).await?;
     let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()

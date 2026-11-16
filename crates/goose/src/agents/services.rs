@@ -18,7 +18,7 @@ use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, DEFAULT_BLOCK_CAP,
+    Operation, StateMachine, TurnHooks, DEFAULT_BLOCK_CAP,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -394,10 +394,7 @@ impl StateMachineServices {
     }
 
     pub async fn steer(&self, session_id: &str, message: Message) -> Result<()> {
-        let session = self.session_manager.get_session(session_id, false).await?;
-        let prompt = agent_visible_message_text(&message);
         self.runtime.steer(session_id, message).await;
-        self.emit_user_prompt_submit(&session, prompt).await;
         Ok(())
     }
 
@@ -699,7 +696,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> (StateMachine<'_, Session, GooseEffect>, TurnHooks) {
         let extension_lease = self
             .runtime
             .confirmations
@@ -727,7 +724,7 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> (StateMachine<'_, Session, GooseEffect>, TurnHooks) {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
@@ -742,7 +739,12 @@ impl StateMachineServices {
             crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
         });
 
-        build_state_machine(StateMachineConfig {
+        let hooks = TurnHooks::new(
+            self.hook_manager.clone(),
+            Arc::clone(&extension_lease),
+            settings.stop_hook_block_cap,
+        );
+        let machine = build_state_machine(StateMachineConfig {
             provider,
             model_config,
             context_limit,
@@ -755,17 +757,16 @@ impl StateMachineServices {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             tool_inspection_manager: &self.tool_inspection_manager,
-            hook_manager: self.hook_manager.clone(),
             steer_queue,
             subagent_runner: ForegroundSubagentRunner::new(Arc::clone(self)),
             retry_timeout: settings.retry_timeout,
             on_failure_timeout: settings.on_failure_timeout,
-            stop_hook_block_cap: settings.stop_hook_block_cap,
             max_turns,
             extra_operations: settings.auto_effort.into_iter().collect(),
             cancel,
             context_relevance: settings.context_relevance,
-        })
+        });
+        (machine, hooks)
     }
 
     #[instrument(
@@ -889,7 +890,6 @@ impl StateMachineServices {
         session_manager
             .add_message(&session_config.id, &user_message)
             .await?;
-        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
 
         if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
@@ -927,7 +927,6 @@ impl StateMachineServices {
             .session(&session_config.id)
             .try_start_turn()?;
         turn_guard.state().start_new_turn();
-        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
         Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
@@ -1080,7 +1079,7 @@ impl StateMachineServices {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.runtime.steer_queue(&session_id);
-        let machine = self
+        let (machine, hooks) = self
             .create_state_machine(
                 provider,
                 model_config,
@@ -1102,6 +1101,7 @@ impl StateMachineServices {
                         run_goose(
                             &machine,
                             session_manager.as_ref(),
+                            hooks,
                             &session_id,
                             &emit,
                         ),

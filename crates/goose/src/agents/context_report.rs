@@ -134,7 +134,7 @@ impl StateMachineServices {
             .collect::<Vec<_>>();
         next_messages.push(Message::user().with_text(NEXT_PROMPT_STAND_IN));
         let next_conversation = Conversation::new_unvalidated(next_messages);
-        let machine = self
+        let (machine, _) = self
             .create_state_machine_with_lease(
                 provider.clone(),
                 model_config.clone(),
