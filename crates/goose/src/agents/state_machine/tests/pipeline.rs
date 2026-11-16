@@ -190,7 +190,7 @@ impl TestPipeline {
         effects: &mut Vec<GooseEffect>,
         emit: &Emitter,
     ) {
-        let lease = self.extension_lease(self.services().await);
+        let lease = self.tool_snapshot(self.services().await);
         if let Some(denials) =
             fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
         {
@@ -687,7 +687,7 @@ impl TestPipeline {
             &machine,
             self.session_manager.as_ref(),
             &self.hook_manager,
-            &self.extension_lease(self.services().await),
+            &self.tool_snapshot(self.services().await),
             &self.session_id,
             &emit,
         )

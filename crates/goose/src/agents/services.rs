@@ -1272,11 +1272,11 @@ impl StateMachineServices {
             )
             .await;
         let hook_manager = self.hook_manager.clone();
-        let extension_lease = self
+        let tool_snapshot = self
             .runtime
             .confirmations
             .session(&session_id)
-            .extension_lease();
+            .tool_snapshot();
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -1290,7 +1290,7 @@ impl StateMachineServices {
                             &machine,
                             session_manager.as_ref(),
                             &hook_manager,
-                            &extension_lease,
+                            &tool_snapshot,
                             &session_id,
                             &emit,
                         ),

@@ -4,23 +4,23 @@ use std::sync::{Arc, Mutex as StdMutex};
 use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::ops_toolcalling::{
-    leased_working_dir, request_was_advertised, tool_span,
+    advertised_working_dir, request_was_advertised, tool_span,
 };
 use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
 use crate::session::Session;
 
 pub(crate) async fn fire_pre_tool_hooks(
     hook_manager: &HookManager,
-    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session: &Session,
     effects: &[GooseEffect],
 ) -> Option<Message> {
-    let working_dir = leased_working_dir(extension_lease, session);
+    let working_dir = advertised_working_dir(tool_snapshot, session);
     let checks = appended_messages(effects)
         .flat_map(|message| {
             message
@@ -65,11 +65,11 @@ pub(crate) async fn fire_pre_tool_hooks(
 
 pub(crate) async fn fire_post_tool_hooks(
     hook_manager: &HookManager,
-    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session: &Session,
     effects: &[GooseEffect],
 ) {
-    let working_dir = leased_working_dir(extension_lease, session);
+    let working_dir = advertised_working_dir(tool_snapshot, session);
     let turn = session
         .conversation
         .as_ref()
