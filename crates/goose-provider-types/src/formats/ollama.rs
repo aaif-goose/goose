@@ -215,6 +215,7 @@ where
         let mut base_stream = std::pin::pin!(base_stream);
 
         let mut xml_detected = false;
+        let mut native_tool_call_emitted = false;
         let mut buffered_usage: Option<ProviderUsage> = None;
 
         while let Some(result) = base_stream.next().await {
@@ -234,6 +235,11 @@ where
                     continue;
                 }
 
+                native_tool_call_emitted = native_tool_call_emitted
+                    || message
+                        .content
+                        .iter()
+                        .any(|c| matches!(c, MessageContentBlock::ToolRequest(_)));
                 yield (Some(message), usage);
             } else if usage.is_some() && !xml_detected {
                 yield (None, usage);
@@ -241,7 +247,9 @@ where
         }
 
         let raw = std::mem::take(&mut *raw_content.lock().expect("raw content lock poisoned"));
-        if let Some((leading_raw, xml_raw)) = raw.xml_start.and_then(|i| raw.text.split_at_checked(i)) {
+        // Native tool calls take precedence over XML in content, as in `response_to_message`.
+        let xml_start = raw.xml_start.filter(|_| !native_tool_call_emitted);
+        if let Some((leading_raw, xml_raw)) = xml_start.and_then(|i| raw.text.split_at_checked(i)) {
             let (leading_text, _) = split_think_blocks(leading_raw);
             let (_, xml_tool_calls) = parse_xml_tool_calls(xml_raw);
 
@@ -497,6 +505,42 @@ data: [DONE]"#;
             args.get("content").unwrap(),
             "const openTag = '<think>';\nconst closeTag = '</think>';"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_prefers_json_over_xml() -> anyhow::Result<()> {
+        use futures::StreamExt;
+
+        let delta = json!({"choices": [{"delta": {
+            "content": "<function=wrong_tool>\n<parameter=x>y</parameter>\n</function>",
+            "tool_calls": [{
+                "index": 0,
+                "id": "call_123",
+                "type": "function",
+                "function": {"name": "correct_tool", "arguments": "{\"a\": \"b\"}"}
+            }]
+        }, "index": 0, "finish_reason": "tool_calls"}]});
+        let lines: Vec<anyhow::Result<String>> =
+            vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
+        let messages: Vec<Message> =
+            response_to_streaming_message_ollama(tokio_stream::iter(lines))
+                .filter_map(|item| async move { item.unwrap().0 })
+                .collect()
+                .await;
+
+        let tool_names: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContentBlock::ToolRequest(request) => {
+                    Some(request.tool_call.as_ref().unwrap().name.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_names, vec!["correct_tool"]);
 
         Ok(())
     }
