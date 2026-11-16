@@ -154,9 +154,6 @@ fn load_supporting_file(
     relative_path: &str,
 ) -> CallToolResult {
     let listed_skill_dir = PathBuf::from(&skill.path);
-    // The confined reader opens every component of the skill directory
-    // without following symlinks, so a skill that lives under a symlinked
-    // directory has to be resolved first. This mirrors the SkillsClient.
     let load_skill_dir = match listed_skill_dir.canonicalize() {
         Ok(path) => path,
         Err(error) => {
@@ -461,8 +458,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn supporting_file_loader_reads_file_under_symlinked_directory() {
-        let root = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(root.path()).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tempdir.path()).unwrap();
 
         let real_skills = root.join("real-skills");
         std::fs::create_dir(&real_skills).unwrap();
@@ -472,8 +469,6 @@ mod tests {
         let file = references.join("guide.md");
         std::fs::write(&file, "Symlinked guidance.").unwrap();
 
-        // The skill is listed under a symlinked directory, the way a plugin
-        // points at a checkout it is developed in.
         let linked_skills = root.join("linked-skills");
         std::os::unix::fs::symlink(&real_skills, &linked_skills).unwrap();
         let linked_skill_dir = linked_skills.join("test-skill");
