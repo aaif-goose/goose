@@ -27,7 +27,7 @@ anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
 async-stream = { version = "0.3.6", default-features = false }
 async-trait = { version = "0.1.89", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
-axum-server = { version = "0.8", default-features = false }
+axum-server = { version = "0.9", default-features = false }
 base64 = { version = "0.23.0", default-features = false, features = ["std"] }
 bytes = { version = "1.10.1", default-features = false, features = ["std"] }
 candle-core = { version = "0.11", default-features = false }
