@@ -47,7 +47,7 @@ strsim = "0.11"
 tempfile = { workspace = true }
 etcetera = { workspace = true }
 rand = { workspace = true }
-rustyline = { version = "18", default-features = false, features = ["custom-bindings", "with-dirs", "with-file-history"] }
+rustyline = { version = "19", default-features = false, features = ["custom-bindings", "with-dirs", "with-file-history"] }
 tracing = { workspace = true }
 chrono = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time"] }
