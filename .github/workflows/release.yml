@@ -170,7 +170,8 @@ jobs:
           pattern: '!internal-*'
           merge-multiple: true
 
-      - name: Move lean goose-acp aside; Release lean goose-acp already published it, so only stable gets it here
+      # Release lean goose-acp already published these; re-uploading could change pinned hashes.
+      - name: Keep lean goose-acp off the versioned release
         run: mkdir lean-goose-acp && mv goose-acp-* lean-goose-acp/
 
       - name: Generate macOS update manifest
