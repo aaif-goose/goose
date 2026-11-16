@@ -8,8 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool, ToolAnnotations,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -123,18 +123,8 @@ impl TodoClient {
 
 #[async_trait]
 impl PlatformExtension for TodoClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(
@@ -163,7 +153,7 @@ impl PlatformExtension for TodoClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, session_id: &str, _tools: &[Tool]) -> Option<String> {
+    async fn get_moim(&self, session_id: &str) -> Option<String> {
         let metadata = self
             .context
             .session_manager

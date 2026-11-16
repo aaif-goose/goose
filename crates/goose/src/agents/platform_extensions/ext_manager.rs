@@ -12,8 +12,7 @@ use async_trait::async_trait;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
-    JsonObject, ListResourcesResult, ListToolsResult, ReadResourceResult, ServerCapabilities, Tool,
-    ToolAnnotations,
+    JsonObject, ServerCapabilities, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -347,31 +346,7 @@ impl ExtensionManagerClient {
 
 #[async_trait]
 impl PlatformExtension for ExtensionManagerClient {
-    async fn list_resources(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListResourcesResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn read_resource(
-        &self,
-        _session_id: &str,
-        _uri: &str,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ReadResourceResult, Error> {
-        // Extension manager doesn't expose resources directly
-        Err(Error::TransportClosed)
-    }
-
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+    async fn list_tools(&self, session_id: &str) -> Result<Vec<Tool>, Error> {
         let can_manage_extensions = self
             .context
             .session_manager
@@ -379,12 +354,7 @@ impl PlatformExtension for ExtensionManagerClient {
             .await
             .is_ok_and(|session| session.session_type != SessionType::SubAgent);
 
-        Ok(ListToolsResult {
-            tools: self.get_tools(can_manage_extensions),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(self.get_tools(can_manage_extensions))
     }
 
     async fn call_tool(
@@ -621,26 +591,17 @@ mod tests {
         let user_id = create_session(&manager, SessionType::User).await;
         let subagent_id = create_session(&manager, SessionType::SubAgent).await;
 
-        let user_tools = client
-            .list_tools(&user_id, None, CancellationToken::default())
-            .await
-            .unwrap();
+        let user_tools = client.list_tools(&user_id).await.unwrap();
         assert!(user_tools
-            .tools
             .iter()
             .any(|tool| tool.name == MANAGE_EXTENSIONS_TOOL_NAME));
 
         for session_id in [&subagent_id, "missing-session"] {
-            let tools = client
-                .list_tools(session_id, None, CancellationToken::default())
-                .await
-                .unwrap();
+            let tools = client.list_tools(session_id).await.unwrap();
             assert!(tools
-                .tools
                 .iter()
                 .any(|tool| tool.name == SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME));
             assert!(tools
-                .tools
                 .iter()
                 .all(|tool| tool.name != MANAGE_EXTENSIONS_TOOL_NAME));
         }

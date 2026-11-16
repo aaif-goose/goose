@@ -5,9 +5,9 @@ use crate::agents::tool_execution::ToolCallContext;
 use crate::config::Config;
 use anyhow::Result;
 use async_trait::async_trait;
+use rmcp::model::Tool;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
 };
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
@@ -33,18 +33,8 @@ impl TomClient {
 
 #[async_trait]
 impl PlatformExtension for TomClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: vec![],
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(vec![])
     }
 
     async fn call_tool(
@@ -63,7 +53,7 @@ impl PlatformExtension for TomClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str) -> Option<String> {
         let mut parts = Vec::new();
 
         if let Ok(text) = Config::global().get_param::<String>("GOOSE_MOIM_MESSAGE_TEXT") {

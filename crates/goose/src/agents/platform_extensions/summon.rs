@@ -19,8 +19,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    MetaObject, ServerCapabilities, Tool,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, MetaObject,
+    ServerCapabilities, Tool,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -1442,12 +1442,7 @@ impl SummonClient {
 
 #[async_trait]
 impl PlatformExtension for SummonClient {
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+    async fn list_tools(&self, session_id: &str) -> Result<Vec<Tool>, Error> {
         let is_subagent = self
             .context
             .session_manager
@@ -1462,12 +1457,7 @@ impl PlatformExtension for SummonClient {
             tools.push(self.create_delegate_tool());
         }
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(tools)
     }
 
     async fn call_tool(
@@ -2459,11 +2449,8 @@ You review code."#;
     async fn test_client_tools_and_unknown_tool() {
         let client = SummonClient::new(create_test_context()).unwrap();
 
-        let result = client
-            .list_tools("test", None, CancellationToken::new())
-            .await
-            .unwrap();
-        let names: Vec<_> = result.tools.iter().map(|t| t.name.as_ref()).collect();
+        let result = client.list_tools("test").await.unwrap();
+        let names: Vec<_> = result.iter().map(|t| t.name.as_ref()).collect();
         assert!(names.contains(&"load") && names.contains(&"delegate"));
 
         let ctx = ToolCallContext::new("test".to_string(), None, None);

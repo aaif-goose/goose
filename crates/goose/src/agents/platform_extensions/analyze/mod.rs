@@ -14,8 +14,8 @@ use indoc::indoc;
 use parser::{FileAnalysis, Parser};
 use rayon::prelude::*;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool, ToolAnnotations,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
@@ -211,12 +211,7 @@ impl AnalyzeClient {
 
 #[async_trait]
 impl PlatformExtension for AnalyzeClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
         let tool = Tool::new(
             "analyze".to_string(),
             "Analyze code structure in 3 modes: 1) Directory overview - file tree with LOC/function/class counts to max_depth. 2) File details - functions, classes, imports. 3) Symbol focus - call graphs across directory to max_depth (requires file or directory path, case-sensitive). Typical flow: directory → files → symbols. Functions called >3x show •N.".to_string(),
@@ -230,12 +225,7 @@ impl PlatformExtension for AnalyzeClient {
             Some(false),
         ));
 
-        Ok(ListToolsResult {
-            tools: vec![tool],
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(vec![tool])
     }
 
     async fn call_tool(

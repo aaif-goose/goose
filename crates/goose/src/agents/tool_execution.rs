@@ -28,6 +28,18 @@ impl ToolCallNotificationEmitter {
     }
 }
 
+#[cfg(feature = "code-mode")]
+#[async_trait::async_trait]
+pub(crate) trait ToolAccess: Send + Sync {
+    async fn tools(&self) -> Vec<rmcp::model::Tool>;
+    async fn call(
+        &self,
+        call: rmcp::model::CallToolRequestParams,
+        request: crate::agents::extension_manager::CallRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<ToolCallResult, rmcp::model::ErrorData>;
+}
+
 /// Context passed through the tool call dispatch chain.
 #[derive(Clone)]
 pub struct ToolCallContext {
@@ -71,6 +83,13 @@ impl ToolCallContext {
 
     pub(crate) fn tool_dispatcher(&self) -> Option<&Arc<ToolDispatcher>> {
         self.tool_dispatcher.as_ref()
+    }
+
+    #[cfg(feature = "code-mode")]
+    pub(crate) fn tools(&self) -> &dyn ToolAccess {
+        self.tool_dispatcher
+            .as_deref()
+            .expect("platform calls carry tool access")
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {

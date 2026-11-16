@@ -10,9 +10,9 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
-    ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, GetPromptResult,
+    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ServerNotification,
+    Tool,
 };
 use rmcp::service::ServiceError;
 use serde_json::Value;
@@ -36,23 +36,6 @@ use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
-
-fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
-    let value = value.get(name).ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} is required"),
-            None,
-        )
-    })?;
-    value.as_str().ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} must be a string"),
-            None,
-        )
-    })
-}
 
 #[derive(Debug)]
 pub struct ExtensionSet {
@@ -252,28 +235,10 @@ impl McpLease {
     }
 
     pub async fn tools(&self) -> Vec<Tool> {
-        self.tools_where(|_| true).await
-    }
-
-    pub async fn tools_for(&self, extension: &str) -> Vec<Tool> {
-        let key = name_to_key(extension);
-        self.tools_where(|extension| extension.key == key).await
-    }
-
-    pub async fn tools_excluding(&self, extension: &str) -> Vec<Tool> {
-        let key = name_to_key(extension);
-        self.tools_where(|extension| extension.key != key).await
-    }
-
-    pub(in crate::agents) async fn tools_where(
-        &self,
-        predicate: impl Fn(&Extension) -> bool,
-    ) -> Vec<Tool> {
         self.tool_catalog()
             .await
             .entries
             .iter()
-            .filter(|entry| predicate(&entry.extension))
             .map(|entry| entry.tool.clone())
             .collect()
     }
@@ -285,29 +250,6 @@ impl McpLease {
 
     pub fn configs(&self) -> Vec<ExtensionConfig> {
         self.slots.iter().map(|slot| slot.config.clone()).collect()
-    }
-
-    pub async fn read_resource_tool(
-        &self,
-        params: Value,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let uri = require_str_parameter(&params, "uri")?;
-        let extension_name = require_str_parameter(&params, "extension_name")?;
-        let read_result = self
-            .read_resource(uri, extension_name, cancellation_token)
-            .await?;
-
-        Ok(read_result
-            .contents
-            .into_iter()
-            .filter_map(|content| match content {
-                ResourceContents::TextResourceContents { text, .. } => {
-                    Some(ContentBlock::text(format!("{uri}\n\n{text}")))
-                }
-                _ => None,
-            })
-            .collect())
     }
 
     pub async fn read_resource(
@@ -477,60 +419,6 @@ impl McpLease {
                     None,
                 )
             })
-    }
-
-    async fn list_resources_from_extension(
-        &self,
-        extension_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.list_resources_result_from_extension(extension_name, cancellation_token)
-            .await
-            .map(|result| {
-                let resources = result
-                    .resources
-                    .into_iter()
-                    .map(|resource| {
-                        format!(
-                            "{extension_name} - {}, uri: ({})",
-                            resource.name, resource.uri
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                vec![ContentBlock::text(resources)]
-            })
-    }
-
-    pub async fn list_resources(
-        &self,
-        params: Value,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        if let Some(extension_name) = params.get("extension_name").and_then(Value::as_str) {
-            return self
-                .list_resources_from_extension(extension_name, cancellation_token)
-                .await;
-        }
-
-        let running = self.start_extensions().await;
-        let results = futures::future::join_all(
-            running
-                .iter()
-                .filter(|extension| extension.supports_resources())
-                .map(|extension| {
-                    self.list_resources_from_extension(&extension.key, cancellation_token.clone())
-                }),
-        )
-        .await;
-        let mut resources = Vec::new();
-        for result in results {
-            match result {
-                Ok(content) => resources.extend(content),
-                Err(error) => warn!(?error, "failed to list resources"),
-            }
-        }
-        Ok(resources)
     }
 
     pub async fn instructions(&self) -> Vec<ExtensionInfo> {

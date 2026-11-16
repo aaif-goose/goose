@@ -6,12 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 #[async_trait::async_trait]
 pub trait PlatformExtension: Send + Sync {
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        next_cursor: Option<String>,
-        cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error>;
+    async fn list_tools(&self, session_id: &str) -> Result<Vec<Tool>, Error>;
 
     async fn call_tool(
         &self,
@@ -45,7 +40,7 @@ pub trait PlatformExtension: Send + Sync {
         Err(Error::TransportClosed)
     }
 
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str) -> Option<String> {
         None
     }
 }

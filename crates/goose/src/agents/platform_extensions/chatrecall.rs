@@ -8,8 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
 use rmcp::model::{
-    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListToolsResult, Role, ServerCapabilities, TextContent, Tool, ToolAnnotations,
+    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, Role,
+    ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -299,18 +299,8 @@ impl ChatRecallClient {
 
 #[async_trait]
 impl PlatformExtension for ChatRecallClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(

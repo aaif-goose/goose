@@ -756,3 +756,36 @@ async fn platform_and_mcp_operations_answer_the_same_model_batch() -> Result<()>
         .all(|registration| registration.key() != "todo"));
     Ok(())
 }
+
+#[tokio::test]
+async fn platform_call_keeps_its_advertised_instance_across_approval() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("todo").await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    api.on("remember this").call(
+        "todo__todo_write",
+        json!({"content": "approved platform task"}),
+    );
+    pipeline.run(["remember this"]).await?;
+    let services = pipeline.services().await;
+    services
+        .extension_manager
+        .disable(&pipeline.session_id, "todo")
+        .await?;
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("approved platform task").reply("remembered");
+    let request_id = pipeline
+        .session()
+        .await?
+        .conversation
+        .unwrap()
+        .messages()
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .find_map(|content| content.as_tool_request().map(|request| request.id.clone()))
+        .unwrap();
+    pipeline.confirm(&request_id, Permission::AllowOnce).await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Agent, "remembered");
+    Ok(())
+}

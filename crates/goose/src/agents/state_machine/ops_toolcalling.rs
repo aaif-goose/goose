@@ -831,29 +831,31 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
 
         let call_session = advertised_session(&tools, session);
-        let mut results = HashMap::new();
-        if self.defers_tools(&tools) {
-            for (request, _) in &pending {
-                if let Ok(call) = &request.tool_call {
-                    if call.name == ENABLE_TOOLS {
-                        results.insert(
-                            request.id.clone(),
-                            ToolCallResult::from(Ok(self.enable_tools(&tools, call).await)),
-                        );
-                    }
-                }
-            }
+        let mut calls = Vec::new();
+        for (request, _) in pending {
+            let call = request
+                .tool_call
+                .as_ref()
+                .expect("selected calls are parsed");
+            let result = if self.defers_tools(&tools) && call.name == ENABLE_TOOLS {
+                ToolCallResult::from(Ok(self.enable_tools(&tools, call).await))
+            } else {
+                let result = tools
+                    .mcp
+                    .call(
+                        call.clone(),
+                        CallRequest::new(request.id.clone())
+                            .with_container(session.container.clone()),
+                        emit.cancel_token().clone(),
+                    )
+                    .await
+                    .unwrap_or_else(|error| ToolCallResult::from(Err(error)));
+                self.extension_manager
+                    .applying_mutation(result, &session.id)
+            };
+            calls.push((request, result));
         }
-        self.execution
-            .run(
-                &self.extension_manager,
-                &tools,
-                pending,
-                results,
-                &call_session,
-                emit,
-            )
-            .await
+        self.execution.run(calls, &call_session, emit).await
     }
 }
 
@@ -886,26 +888,16 @@ impl ToolExecution {
 
     pub(super) async fn run(
         &self,
-        manager: &Arc<ExtensionManager>,
-        tools: &ToolDispatcher,
-        pending: Vec<(ToolRequest, ToolDisposition)>,
-        mut results: HashMap<String, ToolCallResult>,
+        calls: Vec<(ToolRequest, ToolCallResult)>,
         session: &Session,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         if session.goose_mode == GooseMode::Chat {
             let mut response = Message::user();
-            for (request, disposition) in &pending {
-                let result = match disposition {
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}."
-                        ))])
-                    }
-                    _ => CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]),
-                };
+            for (request, _) in &calls {
+                let result = CallToolResult::success(vec![ContentBlock::text(
+                    CHAT_MODE_TOOL_SKIPPED_RESPONSE,
+                )]);
                 response.add_tool_response_with_metadata(
                     request.id.clone(),
                     Ok(result),
@@ -917,30 +909,14 @@ impl ToolExecution {
         }
 
         let mut tool_streams = Vec::new();
-        for (request, disposition) in &pending {
-            if *disposition != ToolDisposition::Execute {
-                continue;
-            }
+        for (request, result) in calls {
             let tool_call = request
                 .tool_call
-                .clone()
-                .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
-            let result = match results.remove(&request.id) {
-                Some(result) => result,
-                None => tools
-                    .call(
-                        tool_call.clone(),
-                        CallRequest::new(request.id.clone())
-                            .with_container(session.container.clone()),
-                        emit.cancel_token().clone(),
-                    )
-                    .await
-                    .unwrap_or_else(|error| ToolCallResult::from(Err(error))),
-            };
+                .as_ref()
+                .expect("selected calls are parsed");
             let span = tool_span(&tool_call.name, &request.id, &session.id);
-            crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
-            let result = manager.applying_mutation(result, &session.id);
-            let result = with_recording(&self.batch, result, span, request);
+            crate::agents::gen_ai_telemetry::record_tool_arguments(&span, tool_call);
+            let result = with_recording(&self.batch, result, span, &request);
 
             let req_id = request.id.clone();
             let stream = tool_stream(
@@ -957,23 +933,6 @@ impl ToolExecution {
         }
 
         let mut combined = futures::stream::select_all(tool_streams);
-        for (request, disposition) in &pending {
-            let mut batch = self.batch.lock().unwrap();
-            match disposition {
-                ToolDisposition::Execute => {}
-                ToolDisposition::ParseError(parse_error) => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}. \
-                             Correct the arguments and try again."
-                        ))])),
-                        request.metadata.as_ref(),
-                    );
-                }
-            }
-        }
-
         while let Some((request_id, item)) = combined.next().await {
             match item {
                 ToolStreamItem::Result(Ok(result)) => {

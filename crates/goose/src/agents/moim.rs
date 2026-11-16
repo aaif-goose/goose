@@ -171,7 +171,7 @@ mod tests {
     use crate::agents::platform_extensions::PlatformExtension;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
-    use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
+    use rmcp::model::{CallToolResult, InitializeResult, JsonObject, Tool};
     use rmcp::ServiceError;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
@@ -180,13 +180,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl PlatformExtension for MoimClient {
-        async fn list_tools(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancel_token: CancellationToken,
-        ) -> Result<ListToolsResult, ServiceError> {
-            Ok(ListToolsResult::default())
+        async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, ServiceError> {
+            Ok(Vec::new())
         }
 
         async fn call_tool(
@@ -203,11 +198,7 @@ mod tests {
             None
         }
 
-        async fn get_moim(
-            &self,
-            _session_id: &str,
-            _tools: &[rmcp::model::Tool],
-        ) -> Option<String> {
+        async fn get_moim(&self, _session_id: &str) -> Option<String> {
             Some(self.0.to_string())
         }
     }

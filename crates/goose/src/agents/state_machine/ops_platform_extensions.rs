@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -43,20 +42,18 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(
-            ToolDispatcher::for_session(&self.tools, &self.manager, &session.id)
-                .await?
-                .platform_tools()
-                .await
-                .into_iter()
-                .filter(|tool| {
-                    !crate::agents::extension_manager::is_tool_owned_by_extension(
-                        tool,
-                        crate::skills::EXTENSION_NAME,
-                    )
-                })
-                .collect(),
-        )
+        let tools = ToolDispatcher::for_session(&self.tools, &self.manager, &session.id).await?;
+        Ok(tools
+            .platform_tools()
+            .await
+            .into_iter()
+            .filter(|tool| {
+                !crate::agents::extension_manager::is_tool_owned_by_extension(
+                    tool,
+                    crate::skills::EXTENSION_NAME,
+                )
+            })
+            .collect())
     }
 
     async fn prompt_parts(
@@ -69,7 +66,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
         if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(Vec::new());
         }
-        let mut extensions = tools.platform_instructions().await;
+        let mut extensions = tools.platform.instructions().await;
         extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(if extensions.is_empty() {
@@ -122,44 +119,23 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
             }
             None => return not_applicable(),
         };
-        let names: HashSet<_> = tools
-            .platform_tools()
-            .await
-            .into_iter()
-            .filter(|tool| {
-                !crate::agents::extension_manager::is_tool_owned_by_extension(
-                    tool,
-                    crate::skills::EXTENSION_NAME,
-                )
-            })
-            .map(|tool| tool.name.to_string())
-            .collect();
-        let pending: Vec<_> = pending
-            .into_iter()
-            .filter(|(request, _)| {
-                request
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|call| names.contains(call.name.as_ref()))
-            })
-            .collect();
-        if pending.is_empty() {
+        let calls = tools
+            .platform
+            .prepare(
+                &tools,
+                pending.into_iter().map(|(request, _)| request).collect(),
+                session,
+                emit.cancel_token().clone(),
+            )
+            .await;
+        if calls.is_empty() {
             return not_applicable();
         }
         let mut session = session.clone();
         if let Some(directory) = tools.working_dir() {
             session.working_dir = directory.to_path_buf();
         }
-        self.execution
-            .run(
-                &self.manager,
-                &tools,
-                pending,
-                HashMap::new(),
-                &session,
-                emit,
-            )
-            .await
+        self.execution.run(calls, &session, emit).await
     }
 
     async fn finalize_cancellation(

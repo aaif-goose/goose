@@ -533,13 +533,11 @@ async fn dispatch_keeps_subagent_session_id_from_platform_extensions() {
     struct PlatformSubagentMeta;
     #[async_trait::async_trait]
     impl PlatformExtension for PlatformSubagentMeta {
-        async fn list_tools(
-            &self,
-            scope: &str,
-            cursor: Option<String>,
-            cancel: CancellationToken,
-        ) -> Result<ListToolsResult, Error> {
-            SubagentMetaClient.list_tools(scope, cursor, cancel).await
+        async fn list_tools(&self, scope: &str) -> Result<Vec<Tool>, Error> {
+            Ok(SubagentMetaClient
+                .list_tools(scope, None, CancellationToken::new())
+                .await?
+                .tools)
         }
         async fn call_tool(
             &self,

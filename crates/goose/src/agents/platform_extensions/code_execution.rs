@@ -6,13 +6,12 @@ use crate::agents::extension_manager::{
 use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::is_tool_visible_to_model;
-use crate::agents::tool_dispatcher::ToolDispatcher;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
-    JsonObject, ListToolsResult, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
+    JsonObject, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -105,8 +104,7 @@ impl CodeExecutionClient {
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, String> {
         let input: ExecuteWithToolGraph = parse_arguments(arguments)?;
-        let catalog = callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
-        let manager = tool_dispatcher(ctx).manager();
+        let catalog = callable_catalog(ctx.tools().tools().await);
         let dispatch = cancellation_token.child_token();
         let callback: ToolCallback = Arc::new({
             let ctx = ctx.clone();
@@ -119,14 +117,7 @@ impl CodeExecutionClient {
                 if dispatch.is_cancelled() {
                     return Box::pin(async { Err("Execution cancelled".into()) });
                 }
-                dispatch_tool(
-                    ctx.clone(),
-                    name,
-                    manager.clone(),
-                    dispatch.clone(),
-                    rt.clone(),
-                    args,
-                )
+                dispatch_tool(ctx.clone(), name, dispatch.clone(), rt.clone(), args)
             }
         });
         let output = javascript::execute(
@@ -159,15 +150,9 @@ fn execution_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-fn tool_dispatcher(ctx: &ToolCallContext) -> &ToolDispatcher {
-    ctx.tool_dispatcher()
-        .expect("platform tool calls carry the advertised tool dispatcher")
-}
-
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::extension_manager::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
     args: Value,
@@ -180,7 +165,8 @@ fn dispatch_tool(
         let tool_call = CallToolRequestParams::new(full_name).with_arguments(arguments);
         let handle = rt.spawn(async move {
             let execution = async {
-                let dispatch_result = tool_dispatcher(&ctx)
+                let dispatch_result = ctx
+                    .tools()
                     .call(
                         tool_call,
                         CallRequest::from(&ctx),
@@ -188,19 +174,13 @@ fn dispatch_tool(
                     )
                     .await;
                 match dispatch_result {
-                    Ok(dispatch_result) => {
-                        match manager
-                            .applying_mutation(dispatch_result, &ctx.session_id)
-                            .result
-                            .await
-                        {
-                            Ok(result) if result.is_error == Some(true) => {
-                                Err(callback_result_to_value(&result).to_string())
-                            }
-                            Ok(result) => Ok(callback_result_to_value(&result)),
-                            Err(e) => Err(format!("Tool error: {}", e.message)),
+                    Ok(dispatch_result) => match dispatch_result.result.await {
+                        Ok(result) if result.is_error == Some(true) => {
+                            Err(callback_result_to_value(&result).to_string())
                         }
-                    }
+                        Ok(result) => Ok(callback_result_to_value(&result)),
+                        Err(e) => Err(format!("Tool error: {}", e.message)),
+                    },
                     Err(e) => Err(format!("Dispatch error: {e}")),
                 }
             };
@@ -254,12 +234,7 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 
 #[async_trait]
 impl PlatformExtension for CodeExecutionClient {
-    async fn list_tools(
-        &self,
-        _: &str,
-        _: Option<String>,
-        _: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+    async fn list_tools(&self, _: &str) -> Result<Vec<McpTool>, Error> {
         fn schema<T: JsonSchema>() -> JsonObject {
             serde_json::to_value(schema_for!(T))
                 .expect("valid schema")
@@ -269,14 +244,11 @@ impl PlatformExtension for CodeExecutionClient {
         }
         let read_only =
             ToolAnnotations::from_raw(None, Some(true), Some(false), Some(true), Some(false));
-        Ok(ListToolsResult {
-            tools: vec![
+        Ok(vec![
                 McpTool::new("list_functions", "List callable tools with their exact Goose names and short descriptions. Inspect unfamiliar parameters with get_function_details before calling tools.", json!({"type":"object","properties":{}}).as_object().unwrap().clone()).annotate(read_only.clone()),
                 McpTool::new("get_function_details", "Get descriptions and original JSON input/output schemas for exact tool names returned by list_functions. Schemas are data, including recursive references.", schema::<GetFunctionDetailsInput>()).annotate(read_only),
                 McpTool::new("execute_javascript", format!("Execute JavaScript and return captured console output, the JSON result, or an error. {INSTRUCTIONS}"), schema::<ExecuteWithToolGraph>()).annotate(ToolAnnotations::from_raw(Some("Execute JavaScript".into()), Some(false), Some(true), Some(false), Some(true))),
-            ],
-            ..Default::default()
-        })
+            ])
     }
 
     async fn call_tool(
@@ -288,8 +260,7 @@ impl PlatformExtension for CodeExecutionClient {
     ) -> Result<CallToolResult, Error> {
         let result = match name {
             "list_functions" => {
-                let catalog =
-                    callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
+                let catalog = callable_catalog(ctx.tools().tools().await);
                 let functions: Vec<_> = catalog.iter().map(|tool| json!({
                     "name": tool.name,
                     "description": tool.description.as_deref().unwrap_or("").lines().next().unwrap_or("").chars().take(240).collect::<String>()
@@ -297,8 +268,7 @@ impl PlatformExtension for CodeExecutionClient {
                 Ok(vec![ContentBlock::text(json!(functions).to_string())])
             }
             "get_function_details" => {
-                let catalog =
-                    callable_catalog(tool_dispatcher(ctx).tools_excluding(EXTENSION_NAME).await);
+                let catalog = callable_catalog(ctx.tools().tools().await);
                 parse_arguments::<GetFunctionDetailsInput>(arguments)
                     .and_then(|input| function_details(&catalog, &input.functions))
                     .map(|details| vec![ContentBlock::text(details.to_string())])
@@ -321,8 +291,8 @@ impl PlatformExtension for CodeExecutionClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, _: &str, tools: &[McpTool]) -> Option<String> {
-        Some(format!("{} callable tools are available through execute_javascript in this snapshot. {INSTRUCTIONS}", callable_catalog(tools.to_vec()).len()))
+    async fn get_moim(&self, _: &str) -> Option<String> {
+        Some(INSTRUCTIONS.to_string())
     }
 }
 
@@ -331,7 +301,9 @@ mod tests {
     use super::*;
     use crate::agents::extension::ExtensionConfig;
     use crate::agents::extension_manager::ExtensionManager;
-    use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
+    use rmcp::model::{
+        Annotations, EmbeddedResource, ListToolsResult, MetaObject, ResourceContents, TextContent,
+    };
 
     #[test]
     fn callback_result_ignores_hidden_structured_content_and_meta() {
@@ -463,7 +435,6 @@ mod tests {
         let mut callback = dispatch_tool(
             ctx,
             "pending__ordinary".into(),
-            manager.clone(),
             dispatch.clone(),
             tokio::runtime::Handle::current(),
             json!({}),
@@ -813,26 +784,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moim_uses_supplied_snapshot_and_advertises_only_three_tools() {
+    async fn moim_provides_guidance_and_advertises_only_three_tools() {
         let temp = tempfile::tempdir().unwrap();
         let manager = ExtensionManager::with_data_dir(temp.path().join("manager"));
         let client = CodeExecutionClient::new(manager.get_context().clone()).unwrap();
-        let tool = McpTool::new("leased__tool", "Leased tool", JsonObject::new());
-        assert!(client
-            .get_moim("session", &[tool])
-            .await
-            .unwrap()
-            .contains("1 callable tools"));
-        assert!(client
-            .get_moim("session", &[])
-            .await
-            .unwrap()
-            .contains("0 callable tools"));
+        assert_eq!(
+            client.get_moim("session").await.as_deref(),
+            Some(INSTRUCTIONS)
+        );
         let names = client
-            .list_tools("session", None, CancellationToken::new())
+            .list_tools("session")
             .await
             .unwrap()
-            .tools
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect::<Vec<_>>();

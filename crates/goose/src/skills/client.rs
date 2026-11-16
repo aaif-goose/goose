@@ -7,8 +7,8 @@ use crate::config::Config;
 use async_trait::async_trait;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool,
 };
 use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
@@ -60,12 +60,7 @@ impl SkillsClient {
 
 #[async_trait]
 impl PlatformExtension for SkillsClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
         let schema = serde_json::json!({
             "type": "object",
             "required": ["name"],
@@ -94,12 +89,7 @@ impl PlatformExtension for SkillsClient {
             schema.as_object().unwrap().clone(),
         );
 
-        Ok(ListToolsResult {
-            tools: vec![tool],
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(vec![tool])
     }
 
     async fn call_tool(
