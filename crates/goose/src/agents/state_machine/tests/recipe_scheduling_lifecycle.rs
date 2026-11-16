@@ -264,6 +264,56 @@ settings:
 }
 
 #[tokio::test]
+async fn chat_mode_skips_skill_loading_and_delegation() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
+    let skill_dir = pipeline.working_dir().join(".agents/skills/review");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: review\ndescription: Review code\n---\nSKILL_BODY_LOADED",
+    )?;
+    let recipe = Recipe::builder()
+        .title("Chat recipe")
+        .description("Chat recipe")
+        .prompt("Review and delegate")
+        .extensions(vec![ExtensionConfig::Platform {
+            name: "summon".to_string(),
+            description: "Delegate work".to_string(),
+            display_name: None,
+            bundled: None,
+            available_tools: vec![],
+        }])
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    api.on("Review and delegate").calls([
+        ("call_skill", "load_skill", json!({ "name": "review" })),
+        (
+            "call_delegate",
+            "delegate",
+            json!({ "instructions": "SUBAGENT_TASK" }),
+        ),
+    ]);
+    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
+        .reply("stayed in chat");
+
+    let result = pipeline.run(["Review and delegate"]).await?;
+
+    result.assert_message(-1, Agent, "stayed in chat");
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0].system_contains("chat only mode"));
+    assert!(calls[1].answers_every_tool_call_next());
+    assert_eq!(
+        calls[1].input_occurrences(CHAT_MODE_TOOL_SKIPPED_RESPONSE),
+        2
+    );
+    assert!(!calls[1].input_contains("SKILL_BODY_LOADED"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_max_turns(2);

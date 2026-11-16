@@ -1232,8 +1232,9 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 6] = [
+const TOOL_OPERATIONS: [&str; 7] = [
     "final_output",
+    "chat_mode",
     "tool_approval",
     "skills",
     "tool_execution",

@@ -18,12 +18,13 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
-    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    ChatModeOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
+    FinalOutputOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
+    GooseToolApproval, InferenceRunner, Operation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -126,6 +127,7 @@ pub(crate) fn build_state_machine(
 
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
+        Arc::new(ChatModeOperation),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
