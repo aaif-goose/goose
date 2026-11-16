@@ -13,9 +13,7 @@ use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionResult};
-use crate::agents::extension_manager::{
-    ClientContext, ExtensionManager, ExtensionMutation, ExtensionSet,
-};
+use crate::agents::extension_manager::{ExtensionManager, ExtensionMutation, ExtensionSet};
 use crate::agents::platform_extensions::{PlatformExtensionContext, PlatformExtensions};
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
@@ -378,24 +376,35 @@ impl StateMachineServices {
     }
 
     pub async fn resolve_tools(&self, set: &ExtensionSet) -> ToolSnapshot {
-        let configs = set
-            .extensions()
+        ToolSnapshot::new(
+            self.extension_manager.resolve(set).await,
+            self.platform_extensions.select(
+                set.runtime.scope_id(),
+                set.runtime.working_dir().map(std::path::Path::to_path_buf),
+                &set.configs,
+                &self.platform_context(),
+            ),
+        )
+    }
+
+    pub fn extension_set(
+        &self,
+        scope: &str,
+        cwd: Option<std::path::PathBuf>,
+        configs: Vec<ExtensionConfig>,
+        container: Option<crate::agents::container::Container>,
+    ) -> Result<ExtensionSet> {
+        crate::agents::extension_config::check_unique_keys(&configs)?;
+        let mcp = configs
             .iter()
             .filter(|config| !crate::agents::platform_extensions::is_platform(config))
             .cloned()
             .collect();
-        let mcp = ExtensionSet::new(set.scope_id(), set.working_dir.clone(), configs)
-            .expect("selection already validated")
-            .with_container(set.container.clone());
-        ToolSnapshot::new(
-            self.extension_manager.resolve(&mcp).await,
-            self.platform_extensions.select(
-                set.scope_id(),
-                set.working_dir.clone(),
-                set.extensions(),
-                &self.platform_context(),
-            ),
-        )
+        let mut set = self
+            .extension_manager
+            .extension_set(scope, cwd, mcp, container)?;
+        set.configs = configs;
+        Ok(set)
     }
 
     pub async fn enable_extension(
@@ -472,8 +481,12 @@ impl StateMachineServices {
                     ))
             })
             .collect();
-        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)?
-            .with_container(session.container.clone());
+        let set = self.extension_set(
+            &session.id,
+            Some(session.working_dir.clone()),
+            extensions,
+            session.container.clone(),
+        )?;
         Ok(self.resolve_tools(&set).await)
     }
 
@@ -538,7 +551,8 @@ impl StateMachineServices {
     }
 
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
-        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        let mut default_client =
+            crate::agents::extension_manager::client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
@@ -1692,7 +1706,7 @@ mod tests {
         }
 
         fn attachment(name: &str) -> crate::agents::Attachment {
-            let mut client = crate::agents::extension_manager::ClientContext::new(
+            let mut client = crate::agents::extension_manager::client_context(
                 &GoosePlatform::GooseDesktop,
                 None,
             );

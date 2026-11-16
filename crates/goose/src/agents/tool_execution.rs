@@ -3,30 +3,16 @@ use rmcp::model::CallToolResult;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 use std::path::PathBuf;
 
-use crate::agents::container::Container;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use rmcp::model::ServerNotification;
 
-#[derive(Clone)]
-pub(crate) struct ToolCallNotificationEmitter {
-    sender: mpsc::Sender<ServerNotification>,
-}
-
-impl ToolCallNotificationEmitter {
-    pub(crate) fn new(sender: mpsc::Sender<ServerNotification>) -> Self {
-        Self { sender }
-    }
-
-    pub(crate) fn emit_best_effort(&self, notification: ServerNotification) {
-        // Do not let a slow notification consumer delay tool execution.
-        let _ = self.sender.try_send(notification);
-    }
-}
+pub use crate::agents::extension_runtime::tool_execution::{
+    ToolCallNotificationEmitter, ToolCallResult,
+};
 
 #[cfg(feature = "code-mode")]
 #[async_trait::async_trait]
@@ -46,7 +32,6 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
-    container: Option<Container>,
     tool_snapshot: Option<Arc<ToolSnapshot>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
     services: Option<Arc<StateMachineServices>>,
@@ -62,20 +47,10 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
-            container: None,
             tool_snapshot: None,
             services: None,
             notification_emitter: None,
         }
-    }
-
-    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
-        self.container = container;
-        self
-    }
-
-    pub(crate) fn container(&self) -> Option<&Container> {
-        self.container.as_ref()
     }
 
     pub(crate) fn with_services(mut self, services: Arc<StateMachineServices>) -> Self {
@@ -111,24 +86,6 @@ impl ToolCallContext {
 
     pub(crate) fn notification_emitter(&self) -> Option<&ToolCallNotificationEmitter> {
         self.notification_emitter.as_ref()
-    }
-}
-
-// ToolCallResult combines the result of a tool call with an optional notification stream that
-// can be used to receive notifications from the tool.
-pub struct ToolCallResult {
-    pub result: Box<dyn Future<Output = ToolResult<rmcp::model::CallToolResult>> + Send + Unpin>,
-    pub notification_stream: Option<Box<dyn Stream<Item = ServerNotification> + Send + Unpin>>,
-    pub action_required_stream: Option<Box<dyn Stream<Item = Message> + Send + Unpin>>,
-}
-
-impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
-    fn from(result: ToolResult<rmcp::model::CallToolResult>) -> Self {
-        Self {
-            result: Box::new(futures::future::ready(result)),
-            notification_stream: None,
-            action_required_stream: None,
-        }
     }
 }
 
@@ -202,5 +159,14 @@ impl ToolAccess for ToolCallContext {
             .expect("platform calls carry a snapshot")
             .call(call, request, cancellation, services)
             .await
+    }
+}
+
+impl From<&ToolCallContext> for crate::agents::extension_runtime::CallRequest {
+    fn from(context: &ToolCallContext) -> Self {
+        Self {
+            tool_call_id: context.tool_call_request_id.clone(),
+            notification_emitter: context.notification_emitter().cloned(),
+        }
     }
 }

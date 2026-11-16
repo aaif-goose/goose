@@ -451,7 +451,9 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::mcp_client::McpCallContext> {
+    pub(super) fn tool_contexts(
+        &self,
+    ) -> Vec<crate::agents::extension_runtime::tool_execution::ToolCallContext> {
         self.calculator.contexts()
     }
 
@@ -632,10 +634,7 @@ impl TestPipeline {
             .await
             .current_tools(&self.session_id)
             .await?
-            .configs()
-            .iter()
-            .map(ExtensionConfig::key)
-            .collect())
+            .enabled_names())
     }
 
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {

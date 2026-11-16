@@ -160,15 +160,6 @@ impl ToolSnapshot {
             .collect()
     }
 
-    pub fn configs(&self) -> Vec<ExtensionConfig> {
-        self.platform
-            .entries
-            .iter()
-            .map(|entry| entry.config.clone())
-            .chain(self.mcp.configs())
-            .collect()
-    }
-
     pub fn is_enabled(&self, extension: &str) -> bool {
         let key = name_to_key(extension);
         self.platform.entries.iter().any(|entry| entry.key == key) || self.mcp.is_enabled(extension)
@@ -181,9 +172,9 @@ impl ToolSnapshot {
             .map(|entry| entry.key.clone())
             .chain(
                 self.mcp
-                    .configs()
+                    .registrations()
                     .iter()
-                    .map(|registration| registration.key()),
+                    .map(|registration| registration.key().to_string()),
             )
             .collect()
     }
@@ -515,7 +506,6 @@ impl PlatformTools {
             self.working_dir.clone(),
             request.tool_call_id,
         )
-        .with_container(request.container)
         .with_tool_snapshot(snapshot)
         .with_services(services)
         .with_notification_emitter(emitter);
@@ -564,7 +554,7 @@ impl PlatformTools {
                 let result = self.call(
                     item,
                     call.clone(),
-                    CallRequest::new(request.id.clone()).with_container(session.container.clone()),
+                    CallRequest::new(request.id.clone()),
                     cancellation.clone(),
                     snapshot.clone(),
                     Arc::clone(services),

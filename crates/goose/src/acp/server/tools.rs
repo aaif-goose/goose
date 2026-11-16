@@ -120,12 +120,10 @@ impl AcpConnection {
                 .data("app tool calls require auto mode"));
         }
 
-        let container = session.container;
         let tool_result = snapshot
             .call(
                 tool_call,
-                crate::agents::extension_manager::CallRequest::default()
-                    .with_container(container.clone()),
+                crate::agents::extension_manager::CallRequest::default(),
                 CancellationToken::new(),
                 &self.services,
             )

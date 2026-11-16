@@ -132,14 +132,7 @@ impl EnabledExtensionsState {
     }
 
     pub fn check_unique_keys(extensions: &[ExtensionConfig]) -> Result<()> {
-        let mut keys = std::collections::HashSet::new();
-        match extensions.iter().find(|config| !keys.insert(config.key())) {
-            Some(config) => Err(anyhow::anyhow!(
-                "extension '{}' appears twice in the selection",
-                config.name()
-            )),
-            None => Ok(()),
-        }
+        crate::agents::extension_config::check_unique_keys(extensions)
     }
 
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {

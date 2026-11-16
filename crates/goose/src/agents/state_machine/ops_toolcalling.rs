@@ -837,8 +837,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     .mcp
                     .call(
                         call.clone(),
-                        CallRequest::new(request.id.clone())
-                            .with_container(session.container.clone()),
+                        CallRequest::new(request.id.clone()),
                         emit.cancel_token().clone(),
                     )
                     .await

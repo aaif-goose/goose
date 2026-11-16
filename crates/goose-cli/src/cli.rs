@@ -156,7 +156,10 @@ pub struct StreamableHttpOptions {
 
 fn parse_streamable_http_extension(input: &str) -> Result<StreamableHttpOptions, String> {
     let mut input_iter = input.split_whitespace();
-    let (mut url, mut timeout) = (String::new(), goose::config::DEFAULT_EXTENSION_TIMEOUT);
+    let (mut url, mut timeout) = (
+        String::new(),
+        goose::agents::extension_config::DEFAULT_EXTENSION_TIMEOUT,
+    );
 
     if let Some(url_str) = input_iter.next() {
         url.push_str(url_str);
@@ -1394,7 +1397,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     {
         crate::session::CliSession::parse_streamable_http_extension(
             &extension_command,
-            goose::config::DEFAULT_EXTENSION_TIMEOUT,
+            goose::agents::extension_config::DEFAULT_EXTENSION_TIMEOUT,
         )
     } else {
         crate::session::CliSession::parse_stdio_extension(&extension_command)?

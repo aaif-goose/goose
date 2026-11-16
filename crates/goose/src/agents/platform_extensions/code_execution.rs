@@ -371,7 +371,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _: &crate::agents::mcp_client::McpCallContext,
+            _: &crate::agents::extension_runtime::tool_execution::ToolCallContext,
             _: &str,
             _: Option<JsonObject>,
             _: CancellationToken,
@@ -499,7 +499,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _ctx: &crate::agents::mcp_client::McpCallContext,
+            _ctx: &crate::agents::extension_runtime::tool_execution::ToolCallContext,
             _name: &str,
             arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,
