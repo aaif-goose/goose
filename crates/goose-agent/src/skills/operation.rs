@@ -9,7 +9,9 @@ use goose_provider_types::conversation::message::{Message, ToolRequest};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool};
+use rmcp::schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{loaded_skill_context, skill_content_with_args};
@@ -156,37 +158,23 @@ impl<'a, S> SkillOperation<'a, S> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct LoadSkillParams {
+    /// Name of the skill to load. Use "skill-name/path" to load a supporting file.
     name: String,
+    /// Optional arguments to provide when loading the skill.
     #[serde(default)]
     args: Option<String>,
 }
 
 fn load_skill_tool() -> Tool {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "name": {
-                "type": "string",
-                "description": "Name of the skill to load. Use \"skill-name/path\" to load a supporting file."
-            },
-            "args": {
-                "type": ["string", "null"],
-                "description": "Optional arguments to provide when loading the skill."
-            }
-        },
-        "required": ["name"]
-    });
-    let serde_json::Value::Object(schema) = schema else {
-        unreachable!()
-    };
     Tool::new(
         LOAD_SKILL_TOOL_NAME,
         "Load a skill's full content into your context so you can follow its instructions.\n\n\
          Skills are listed in your system instructions. When you need to use one, \
          load it first to get the detailed instructions.",
-        schema,
+        schema_for_type::<LoadSkillParams>(),
     )
 }
 
