@@ -119,7 +119,7 @@ static CHATGPT_CODEX_AUTH_STATE: LazyLock<Arc<ChatGptCodexAuthState>> =
     LazyLock::new(|| Arc::new(ChatGptCodexAuthState::new()));
 
 const SUPPORTED_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+const MAX_IMAGE_URL_LEN: usize = 20 * 1024 * 1024;
 
 fn image_placeholder(mime_type: &str) -> Value {
     json!({ "type": "input_text", "text": format!("[Image: {mime_type}]") })
@@ -128,50 +128,74 @@ fn image_placeholder(mime_type: &str) -> Value {
 fn oversized_image_placeholder(len: usize) -> Value {
     json!({
         "type": "input_text",
-        "text": format!("image is too large: {len} bytes exceeds {MAX_IMAGE_BYTES} byte limit")
+        "text": format!("image data URL is too large: {len} bytes exceeds {MAX_IMAGE_URL_LEN} byte limit")
     })
 }
 
-fn has_supported_image_magic(bytes: &[u8]) -> bool {
-    matches!(
-        bytes.get(..4),
-        Some([0x89, 0x50, 0x4E, 0x47])
-            | Some([0xFF, 0xD8, 0xFF, _])
-            | Some([0x47, 0x49, 0x46, 0x38])
-    ) || matches!(
-        (bytes.get(..4), bytes.get(8..12)),
-        (Some(b"RIFF"), Some(b"WEBP"))
-    )
+fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
+    let format = image::guess_format(bytes).ok()?;
+    let detected_mime = match format {
+        image::ImageFormat::Png => "image/png",
+        image::ImageFormat::Jpeg => "image/jpeg",
+        image::ImageFormat::Gif => "image/gif",
+        image::ImageFormat::WebP => "image/webp",
+        _ => return None,
+    };
+    if !detected_mime.eq_ignore_ascii_case(declared_mime) {
+        return None;
+    }
+
+    if format == image::ImageFormat::Gif {
+        use image::AnimationDecoder;
+
+        let decoder = image::codecs::gif::GifDecoder::new(io::Cursor::new(bytes)).ok()?;
+        let mut frames = decoder.into_frames();
+        frames.next()?.ok()?;
+        if frames.next().is_some() {
+            return None;
+        }
+    } else {
+        image::load_from_memory_with_format(bytes, format).ok()?;
+    }
+
+    Some(detected_mime)
 }
 
 fn tool_result_image(data: &str, mime_type: &str) -> Value {
-    let (declared_mime, payload) = match data.strip_prefix("data:") {
-        Some(rest) => (
-            rest.split([';', ',']).next().unwrap_or_default(),
-            rest.split_once(',').map_or("", |(_, payload)| payload),
-        ),
-        None => (mime_type, data),
+    let (declared_mime, payload) = if data
+        .get(.."data:".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+    {
+        let Some(rest) = data.get("data:".len()..) else {
+            return image_placeholder(mime_type);
+        };
+        let Some((metadata, payload)) = rest.split_once(',') else {
+            return image_placeholder(mime_type);
+        };
+        let mut metadata = metadata.split(';');
+        let declared_mime = metadata.next().unwrap_or_default();
+        if !metadata.any(|parameter| parameter.eq_ignore_ascii_case("base64")) {
+            return image_placeholder(declared_mime);
+        }
+        (declared_mime, payload)
+    } else {
+        (mime_type, data)
     };
     if !SUPPORTED_IMAGE_TYPES.contains(&declared_mime.to_ascii_lowercase().as_str()) {
         return image_placeholder(declared_mime);
     }
-    if payload.len() > MAX_IMAGE_BYTES * 4 / 3 + 4 {
-        return oversized_image_placeholder(payload.len() / 4 * 3);
+
+    let image_url_len = "data:".len() + declared_mime.len() + ";base64,".len() + payload.len();
+    if image_url_len > MAX_IMAGE_URL_LEN {
+        return oversized_image_placeholder(image_url_len);
     }
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
         return image_placeholder(declared_mime);
     };
-    if bytes.len() > MAX_IMAGE_BYTES {
-        return oversized_image_placeholder(bytes.len());
-    }
-    if !has_supported_image_magic(&bytes) {
+    let Some(mime_type) = image_mime_type(&bytes, declared_mime) else {
         return image_placeholder(declared_mime);
-    }
-    let image_url = if data.starts_with("data:") {
-        data.to_string()
-    } else {
-        format!("data:{declared_mime};base64,{payload}")
     };
+    let image_url = format!("data:{mime_type};base64,{payload}");
     json!({ "type": "input_image", "image_url": image_url })
 }
 
@@ -1269,7 +1293,8 @@ mod tests {
 
     #[test]
     fn test_tool_response_oversized_image() {
-        let data = "A".repeat(MAX_IMAGE_BYTES * 4 / 3 + 5);
+        let data = "A".repeat(MAX_IMAGE_URL_LEN);
+        let image_url_len = "data:".len() + "image/png".len() + ";base64,".len() + data.len();
         let messages = vec![Message::user().with_tool_response(
             "call-1",
             Ok(CallToolResult::success(vec![ContentBlock::image(
@@ -1283,23 +1308,15 @@ mod tests {
             &json!([{
                 "type": "input_text",
                 "text": format!(
-                    "image is too large: {} bytes exceeds {MAX_IMAGE_BYTES} byte limit",
-                    data.len() / 4 * 3
+                    "image data URL is too large: {image_url_len} bytes exceeds {MAX_IMAGE_URL_LEN} byte limit"
                 )
             }])
         );
     }
 
     #[test]
-    fn test_tool_response_image_at_size_limit_not_false_oversized() {
-        let mut bytes = vec![0u8; MAX_IMAGE_BYTES];
-        bytes[..4].copy_from_slice(&[0x89, 0x50, 0x4E, 0x47]);
-        let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        assert!(
-            data.len() <= MAX_IMAGE_BYTES * 4 / 3 + 4,
-            "exact-limit encoding must pass the encoded-length preflight"
-        );
-
+    fn test_tool_response_data_url_normalized() {
+        let data = format!("DATA:IMAGE/PNG;BASE64,{TEST_IMAGE_B64}");
         let messages = vec![Message::user().with_tool_response(
             "call-1",
             Ok(CallToolResult::success(vec![ContentBlock::image(
@@ -1308,7 +1325,90 @@ mod tests {
             )])),
         )];
         let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
-        assert_eq!(output[0]["type"], "input_image");
+        assert_eq!(
+            output[0],
+            json!({
+                "type": "input_image",
+                "image_url": format!("data:image/png;base64,{TEST_IMAGE_B64}")
+            })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_data_url_requires_base64_marker() {
+        let data = format!("data:image/png,{TEST_IMAGE_B64}");
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/png]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_truncated_image() {
+        let data = base64::engine::general_purpose::STANDARD.encode([0x89, 0x50, 0x4e, 0x47]);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/png]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_animated_gif() {
+        let mut gif = Vec::new();
+        {
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut gif);
+            encoder
+                .encode_frames([
+                    image::Frame::new(image::RgbaImage::new(1, 1)),
+                    image::Frame::new(image::RgbaImage::new(1, 1)),
+                ])
+                .unwrap();
+        }
+        let data = base64::engine::general_purpose::STANDARD.encode(gif);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/gif",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/gif]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_mismatched_mime_type() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                TEST_IMAGE_B64,
+                "image/jpeg",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/jpeg]" })
+        );
     }
 
     #[test]
