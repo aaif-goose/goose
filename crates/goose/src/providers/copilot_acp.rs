@@ -19,7 +19,6 @@ const COPILOT_ACP_DOC_URL: &str = "https://github.com/github/copilot-cli";
 pub(crate) const COPILOT_ACP_BINARY: &str = "copilot";
 
 const MODE_AGENT: &str = "https://agentclientprotocol.com/protocol/session-modes#agent";
-const MODE_PLAN: &str = "https://agentclientprotocol.com/protocol/session-modes#plan";
 
 pub struct CopilotAcpProvider;
 
@@ -80,7 +79,6 @@ impl CopilotAcpProvider {
                 (GooseMode::Auto, vec![MODE_AGENT.to_string()]),
                 (GooseMode::Approve, vec![MODE_AGENT.to_string()]),
                 (GooseMode::SmartApprove, vec![MODE_AGENT.to_string()]),
-                (GooseMode::Chat, vec![MODE_PLAN.to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {

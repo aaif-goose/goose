@@ -147,7 +147,10 @@ tools, provider, or subagent runner:
 | [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
 | [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
+| [`EmptyResponseOperation`](https://docs.rs/goose-agent/latest/goose_agent/empty_response/struct.EmptyResponseOperation.html) | Retry empty provider responses before exposing the failure. |
 | [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
+| [`SlashCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/slash_command/struct.SlashCommandOperation.html) | Run the command named by a kickoff message that starts with `/`, using the commands its operations offer. |
+| [`BangCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/bang_command/struct.BangCommandOperation.html) | Turn a user message beginning with `!` into a call to a tool you name, without inference. |
 
 ### Operations in goose
 
@@ -165,16 +168,13 @@ your application.
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |
 | `SkillOperation`              | Discover and load skills, contribute their context, and handle skill commands.                    |
 | `RecipeOperation`             | Apply recipe instructions and handle recipe commands.                                             |
-| `BangShellOperation`          | Turn a user message beginning with `!` into a direct shell tool request.                          |
 | `CompactionOperation`         | Compact conversation history automatically or through a command.                                  |
 | `ToolPairCompactionOperation` | Summarize older tool request/response pairs to reduce context size.                               |
 | `DoctorOperation`             | Run session diagnostics and provide repair context through `/doctor`.                             |
 | `ProjectOperation`            | Contribute the selected project's instructions to the model request.                              |
 | `RetryOperation`              | Evaluate recipe success checks and goal/grind continuation or retry behavior.                     |
-| `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
-| `SlashCommandOperation`       | Route a recognized slash command to operations' command handlers.                                 |
 | `StatusOperation`             | Report the current session, model, and usage through `/status`.                                   |
 
 The [state machine builder](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/state_machine_builder.rs)

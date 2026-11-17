@@ -149,7 +149,7 @@ else
     echo "Step 2: Sending manual compaction trigger..."
 
     # Send the manual compact trigger prompt
-    (cd "$TESTDIR" && "$GOOSE_BIN" run --resume --session-id "$SESSION_ID" --text "Please compact this conversation" 2>&1) | tee -a "$OUTPUT"
+    (cd "$TESTDIR" && "$GOOSE_BIN" run --resume --session-id "$SESSION_ID" --text "/compact" 2>&1) | tee -a "$OUTPUT"
 
     echo ""
     echo "Checking for compaction evidence..."

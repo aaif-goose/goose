@@ -1,14 +1,21 @@
+use std::sync::{Arc, Mutex as StdMutex};
+
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::write_integrity::{WriteIntegrityChecker, WritePolicyConfig};
 
 use crate::agents::state_machine::effects::GooseEffect;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::usage;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
+use crate::config::Config;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::hooks::HookManager;
 use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
+use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
 
 use super::ops_auto_effort::current_turn_effort;
 
@@ -178,6 +185,8 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
 
 struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
+    hook_manager: &'a HookManager,
+    tool_snapshot: &'a StdMutex<Option<Arc<ToolSnapshot>>>,
     usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
 }
 
@@ -199,6 +208,7 @@ impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
         self.session_manager
             .apply_effects(session, effects, emit)
             .await?;
+        fire_post_tool_hooks(self.hook_manager, self.tool_snapshot, session, effects).await;
         let mut turn_usage = self.usage.lock().unwrap();
         for effect in effects.iter() {
             if let Some(usage) = self.session_manager.usage(effect) {
@@ -252,9 +262,27 @@ impl EffectUsage<GooseEffect> for SessionManager {
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
+    hook_manager: &HookManager,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
+    let write_integrity = Config::global()
+        .get_param::<String>("GOOSE_WRITE_POLICY_FILE")
+        .ok()
+        .map(|path| match WritePolicyConfig::load_from_file(std::path::Path::new(&path)) {
+            Ok(config) => Arc::new(WriteIntegrityChecker::new(Arc::new(config))),
+            Err(error) => {
+                tracing::error!(
+                    "write policy config file {path} failed to load ({error}); denying all tool calls"
+                );
+                Arc::new(WriteIntegrityChecker::new(Arc::new(
+                    WritePolicyConfig::unavailable(format!(
+                        "Write policy config file {path} failed to load: {error}. Fix or unset GOOSE_WRITE_POLICY_FILE."
+                    )),
+                )))
+            }
+        });
     let entry_session = runtime.load(session_id).await?;
     tracing::Span::current().record(
         "gen_ai.agent.name",
@@ -279,9 +307,35 @@ pub(crate) async fn run(
 
     let runtime = TurnRuntime {
         session_manager: runtime,
+        hook_manager,
+        tool_snapshot,
         usage: Default::default(),
     };
-    let session = machine.run(&runtime, session_id, emit).await?;
+    loop {
+        let session = runtime.load(session_id).await?;
+        let mut result = machine.step(&session, emit).await?;
+        let pre_tool_hooks = fire_pre_tool_hooks(
+            hook_manager,
+            tool_snapshot,
+            write_integrity.as_deref(),
+            &session,
+            &result.effects,
+        );
+        if let Some(Some(denials)) = emit
+            .cancel_token()
+            .run_until_cancelled(pre_tool_hooks)
+            .await
+        {
+            result.effects.push(emit.message(denials).into());
+        }
+        machine
+            .apply(&runtime, &session, &mut result.effects, emit)
+            .await?;
+        if result.status != RunStatus::Continuing {
+            break;
+        }
+    }
+    let session = machine.finalize(&runtime, session_id, emit).await?;
     let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()

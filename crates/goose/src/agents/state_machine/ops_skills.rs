@@ -5,38 +5,29 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::write_integrity::WriteIntegrityChecker;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Value;
-use tracing_futures::Instrument;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
-use crate::agents::state_machine::tool_hooks::{
-    check_pre_tool_hooks, check_write_integrity, emit_post_tool_hooks,
-};
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
+    Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
-use crate::conversation::message::{Message, ToolResponse};
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::conversation::message::Message;
 use crate::conversation::Conversation;
-use crate::hooks::HookManager;
 use crate::session::Session;
+use crate::slash_commands::skill_slash_command::{format_installed_skills, runnable_skills};
 
 pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
-    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    hook_manager: HookManager,
-    write_integrity: Option<Arc<WriteIntegrityChecker>>,
+    tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -157,16 +148,25 @@ fn load_supporting_file(
     skill_name: &str,
     relative_path: &str,
 ) -> CallToolResult {
-    let skill_dir = PathBuf::from(&skill.path);
+    let listed_skill_dir = PathBuf::from(&skill.path);
+    let load_skill_dir = match listed_skill_dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) => {
+            return CallToolResult::error(vec![ContentBlock::text(format!(
+                "Failed to resolve '{}': {}",
+                skill.name, error
+            ))]);
+        }
+    };
     for file_path in &skill.supporting_files {
         let file_path = Path::new(file_path);
-        let Ok(relative) = file_path.strip_prefix(&skill_dir) else {
+        let Ok(relative) = file_path.strip_prefix(&listed_skill_dir) else {
             continue;
         };
         if relative.to_string_lossy().replace('\\', "/") != relative_path {
             continue;
         }
-        return match crate::skills::load_supporting_file(&skill_dir, relative, skill_name) {
+        return match crate::skills::load_supporting_file(&load_skill_dir, relative, skill_name) {
             Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to read '{skill_name}': {error}"
@@ -179,7 +179,7 @@ fn load_supporting_file(
         .iter()
         .filter_map(|file| {
             Path::new(file)
-                .strip_prefix(&skill_dir)
+                .strip_prefix(&listed_skill_dir)
                 .ok()
                 .map(|relative| relative.to_string_lossy().replace('\\', "/"))
         })
@@ -199,27 +199,15 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-        hook_manager: HookManager,
-    ) -> Self {
-        Self {
-            extension_lease,
-            hook_manager,
-            write_integrity: None,
-        }
-    }
-
-    pub fn with_write_integrity(mut self, checker: Arc<WriteIntegrityChecker>) -> Self {
-        self.write_integrity = Some(checker);
-        self
+    pub fn new(tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>) -> Self {
+        Self { tool_snapshot }
     }
 
     fn leased_session(&self, session: &Session) -> Option<Session> {
         let lease = self
-            .extension_lease
+            .tool_snapshot
             .lock()
-            .expect("extension lease unavailable")
+            .expect("tool snapshot unavailable")
             .clone()?;
         if lease.scope_id() != session.id.as_str() {
             return None;
@@ -258,39 +246,23 @@ impl SkillOperation {
             response.into(),
         ])
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for SkillOperation {
-    fn name(&self) -> &'static str {
-        "skills"
-    }
-
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
+    fn run_skill(
+        skill: &SourceEntry,
+        arguments: &str,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command == "skills" {
-            return Self::command_response(
-                conversation,
-                crate::slash_commands::skill_slash_command::format_installed_skills(Some(
-                    &session.working_dir,
-                )),
-                emit,
-            );
-        }
-
-        let prompt = match crate::slash_commands::skill_slash_command::resolve_command(
-            command.command,
-            command.params_str,
-            Some(&session.working_dir),
-        ) {
-            Ok(Some(prompt)) => prompt,
-            Ok(None) => return not_applicable(),
-            Err(error) => return Self::command_response(conversation, error, emit),
+        let arguments = (!arguments.is_empty()).then_some(arguments);
+        let prompt = match crate::skills::loaded_skill_context_with_args(skill, arguments) {
+            Ok(prompt) => prompt,
+            Err(error) => {
+                return Self::command_response(
+                    conversation,
+                    format!("Skill /{}: {error}", skill.name),
+                    emit,
+                )
+            }
         };
         let command_message = messages_since_kickoff(conversation)?
             .first()
@@ -311,6 +283,40 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                 .with_visibility(false, true)
                 .into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for SkillOperation {
+    fn name(&self) -> &'static str {
+        "skills"
+    }
+
+    async fn commands(&self, session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        let mut commands = vec![Command::<Session, GooseEffect>::new(
+            "skills",
+            "List installed skills and other available sources",
+            |call| {
+                Box::pin(async move {
+                    Self::command_response(
+                        call.conversation,
+                        format_installed_skills(Some(&call.session.working_dir)),
+                        call.emit,
+                    )
+                })
+            },
+        )];
+        for (name, skill) in runnable_skills(Some(&session.working_dir)) {
+            let description = skill.description.clone();
+            let input_hint = crate::skills::skill_argument_hint(&skill);
+            let mut command = Command::new(name, description, move |call| {
+                let result = Self::run_skill(&skill, call.arguments, call.conversation, call.emit);
+                Box::pin(async move { result })
+            });
+            command.input_hint = input_hint;
+            commands.push(command);
+        }
+        Ok(commands)
     }
 
     async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
@@ -352,11 +358,6 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         let mut response = Message::user();
         for (request, disposition) in pending {
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]))
-                }
                 ToolDisposition::Execute => {
                     let Some(session) = leased_session.as_ref() else {
                         response.add_tool_response_with_metadata(
@@ -372,34 +373,6 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
-                    if let Some(denied) = check_write_integrity(
-                        self.write_integrity.as_deref(),
-                        conversation,
-                        &request,
-                    ) {
-                        response.add_tool_response_with_metadata(
-                            request.id,
-                            Ok(denied),
-                            request.metadata.as_ref(),
-                        );
-                        continue;
-                    }
-                    if let Some(denied) = check_pre_tool_hooks(
-                        &self.hook_manager,
-                        &session.id,
-                        &session.working_dir,
-                        &request,
-                    )
-                    .instrument(span.clone())
-                    .await
-                    {
-                        response.add_tool_response_with_metadata(
-                            request.id,
-                            Ok(denied),
-                            request.metadata.as_ref(),
-                        );
-                        continue;
-                    }
                     let result = {
                         let _entered = span.enter();
                         execute_skill(&session.working_dir, tool_call.arguments.clone())
@@ -407,21 +380,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     if result.is_error == Some(true) {
                         span.record("error.type", "tool_error");
                     }
-                    let response = ToolResponse {
-                        id: request.id.clone(),
-                        tool_result: Ok(result),
-                        metadata: request.metadata.clone(),
-                    };
-                    emit_post_tool_hooks(
-                        &self.hook_manager,
-                        &session.id,
-                        &session.working_dir,
-                        &request,
-                        &response,
-                    )
-                    .instrument(span)
-                    .await;
-                    response.tool_result
+                    Ok(result)
                 }
                 ToolDisposition::ParseError(error) => {
                     Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -466,5 +425,50 @@ mod tests {
         assert_eq!(result.is_error, Some(false));
         let text = result.content[0].as_text().expect("expected text");
         assert!(text.text.contains("Nested guidance."));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn supporting_file_loader_reads_file_under_symlinked_directory() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tempdir.path()).unwrap();
+
+        let real_skills = root.join("real-skills");
+        std::fs::create_dir(&real_skills).unwrap();
+        let skill_dir = real_skills.join("test-skill");
+        let references = skill_dir.join("references");
+        std::fs::create_dir_all(&references).unwrap();
+        let file = references.join("guide.md");
+        std::fs::write(&file, "Symlinked guidance.").unwrap();
+
+        let linked_skills = root.join("linked-skills");
+        std::os::unix::fs::symlink(&real_skills, &linked_skills).unwrap();
+        let linked_skill_dir = linked_skills.join("test-skill");
+
+        let skill = SourceEntry {
+            source_type: SourceType::Skill,
+            name: "test-skill".to_string(),
+            description: String::new(),
+            content: String::new(),
+            path: linked_skill_dir.to_string_lossy().into_owned(),
+            global: false,
+            writable: true,
+            supporting_files: vec![linked_skill_dir
+                .join("references")
+                .join("guide.md")
+                .to_string_lossy()
+                .into_owned()],
+            properties: HashMap::new(),
+        };
+
+        let result = load_supporting_file(
+            &skill,
+            "test-skill/references/guide.md",
+            "references/guide.md",
+        );
+
+        assert_eq!(result.is_error, Some(false));
+        let text = result.content[0].as_text().expect("expected text");
+        assert!(text.text.contains("Symlinked guidance."));
     }
 }

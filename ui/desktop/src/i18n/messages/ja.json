@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "自律"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "ツールや拡張機能を使わず、選択したプロバイダーとやり取りします。"
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "チャットのみ"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "すべてのツール、拡張機能、ファイル変更には人による承認が必要です"
   },

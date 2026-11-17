@@ -73,22 +73,6 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-pub const EMPTY_RESPONSE_MESSAGE: &str =
-    "The model returned an empty response. Please resend your message to continue.";
-const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
-const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
-const EMPTY_RESPONSE_NOTE: &str = "empty_response";
-
-/// The model's response stayed empty after retries. The fallback message is stored
-/// hidden so that operations owning the end of a turn (recipe retries, final output)
-/// can take over; when none does, it is revealed to the user.
-pub fn is_empty_response_marker(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
-        .is_some()
-}
-
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
         content,
@@ -176,14 +160,15 @@ pub fn chat_span(
     span
 }
 
-fn is_empty_response(message: &Message) -> bool {
-    message.content.iter().all(|content| match content {
-        MessageContent::Text(text) => text.text.trim().is_empty(),
-        MessageContent::Thinking(thinking) => {
-            thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
-        }
-        _ => false,
-    })
+pub(crate) fn is_empty_response(message: &Message) -> bool {
+    !message.metadata.output_token_limit_reached
+        && message.content.iter().all(|content| match content {
+            MessageContent::Text(text) => text.text.trim().is_empty(),
+            MessageContent::Thinking(thinking) => {
+                thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
+            }
+            _ => false,
+        })
 }
 
 pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
@@ -504,10 +489,6 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
-            let successful_tool_response =
-                ends_with_successful_tool_response(conversation.messages());
-            let mut empty_responses = 0;
-            let empty_output = loop {
             let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
@@ -571,54 +552,11 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 }
             }
 
-            let empty_output = {
-                let output = self.output();
-                !output
-                    .accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                    && output.accumulator.iter().all(is_empty_response)
-            };
-            if !empty_output || successful_tool_response || emit.cancel_token().is_cancelled() {
-                break empty_output;
-            }
-            self.output().accumulator.clear();
-            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
-                empty_responses += 1;
-                tracing::warn!(
-                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
-                );
-                continue;
-            }
-            let mut marker = Message::assistant()
-                .with_text(EMPTY_RESPONSE_MESSAGE)
-                .with_visibility(false, false);
-            attach_operation_logs(&mut marker, &mut operation_logs);
-            marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
-                EMPTY_RESPONSE_NOTE,
-                serde_json::Value::Bool(true),
-            );
-            self.output().accumulator.push(marker);
-            return applied(self.take_output());
-            };
-
-            if empty_output && successful_tool_response {
-                let message = {
-                    let mut output = self.output();
-                    let mut message = output
-                        .accumulator
-                        .last()
-                        .cloned()
-                        .unwrap_or_else(Message::assistant);
-                    message.content.clear();
-                    message.metadata.user_visible = false;
-                    message.metadata.agent_visible = true;
-                    attach_operation_logs(&mut message, &mut operation_logs);
-                    output.accumulator.clear();
-                    message
-                };
-                self.emit_message(message, emit);
+            let empty_output = self.output().accumulator.iter().all(is_empty_response);
+            if empty_output && !emit.cancel_token().is_cancelled() {
+                let mut message = Message::assistant();
+                attach_operation_logs(&mut message, &mut operation_logs);
+                self.output().accumulator = Conversation::new_unvalidated([message]);
             }
             applied(self.take_output())
         }

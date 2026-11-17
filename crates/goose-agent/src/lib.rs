@@ -1,3 +1,6 @@
+pub mod bang_command;
+pub mod command;
+pub mod empty_response;
 pub mod events;
 pub mod exit_on_error;
 #[cfg(not(target_arch = "wasm32"))]
@@ -7,6 +10,7 @@ pub mod machine;
 pub mod max_turns;
 pub mod operation;
 pub mod skills;
+pub mod slash_command;
 pub mod steer;
 pub mod subagent;
 pub mod tool;

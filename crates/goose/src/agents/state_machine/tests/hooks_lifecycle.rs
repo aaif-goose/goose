@@ -996,56 +996,6 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn chat_mode_accepts_recipe_final_output() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    let result = pipeline.run(["produce the answer"]).await?;
-
-    assert_eq!(api.call_count(), 1);
-    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
-    Ok(())
-}
-
-#[tokio::test]
-async fn chat_mode_rejects_unadvertised_unknown_tool_without_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
-        .await;
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("hidden tool rejected");
-
-    let result = pipeline.run(["try the missing tool"]).await?;
-
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
-    result.assert_message(-1, Agent, "hidden tool rejected");
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn unadvertised_unknown_tool_skips_permission_and_tool_hooks() -> Result<()> {
     let env = RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
@@ -1317,5 +1267,119 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
         tool_error.ends_with(HOOK_FAILURE_REFUSAL),
         "expected the shared refusal, got {tool_error}"
     );
+    Ok(())
+}
+
+const BANG_COMMAND_NO_TOOL_RUNS: &str = "!echo hi";
+
+#[tokio::test]
+async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
+    let env = RecordingHookEnv::new(&[
+        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+
+    pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    assert_eq!(env.payloads("result.log").len(), 1);
+    assert_eq!(env.payloads("postfail.log").len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT)]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+
+    let result = pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    result.assert_message(-1, ToolResponse, "blocked by test policy");
+    let response = result
+        .session
+        .conversation
+        .as_ref()
+        .unwrap()
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .find_map(|content| match content {
+            MessageContent::ToolResponse(response) => Some(response.clone()),
+            _ => None,
+        })
+        .expect("the call was answered");
+    assert!(response
+        .metadata
+        .as_ref()
+        .is_none_or(|metadata| !metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_reports_the_current_call_when_a_provider_reuses_its_id() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    api.on("add one").calls([("reused", ADD, value(1))]);
+    api.on("result: 1").reply("done");
+    api.on("add two").calls([("reused", ADD, value(2))]);
+    api.on("result: 3").reply("done");
+
+    pipeline.run(["add one", "add two"]).await?;
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[1]["tool_input"], value(2));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_call_that_finished_before_stop_still_gets_its_post_hook() -> Result<()> {
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    use super::calculator_extension::REQUEST_VALUE;
+
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+    api.on("add while waiting for input").calls([
+        ("call_add", ADD, value(1)),
+        ("call_input", REQUEST_VALUE, serde_json::json!({})),
+    ]);
+    let cancel = CancellationToken::new();
+    let stop_once_added = async {
+        pipeline.wait_for_calculator_result().await;
+        cancel.cancel();
+    };
+
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            pipeline.run_with_cancel("add while waiting for input", cancel.clone()),
+            stop_once_added
+        )
+    })
+    .await?;
+    let result = result?;
+    result.assert_message(-2, ToolResponse, "result: 1");
+    assert_eq!(pipeline.calculator_total(), 1);
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["tool_call_id"], "call_add");
     Ok(())
 }

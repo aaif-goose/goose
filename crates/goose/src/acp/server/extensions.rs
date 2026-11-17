@@ -13,8 +13,7 @@ impl AcpConnection {
         let config = goose_extension_to_config_without_secrets(req.extension)?;
         self.open_session(&req.session_id).await?;
         self.services
-            .extension_manager
-            .enable(session_id, config)
+            .enable_extension(session_id, config)
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
@@ -45,7 +44,7 @@ impl AcpConnection {
         let extensions = crate::config::extensions::get_all_extensions()
             .into_iter()
             .filter(|ext| {
-                !crate::agents::extension_manager::is_hidden_extension(&ext.config.name())
+                !crate::agents::platform_extensions::is_hidden_extension(&ext.config.name())
             })
             .collect::<Vec<_>>();
         let warnings = crate::config::extensions::get_warnings();

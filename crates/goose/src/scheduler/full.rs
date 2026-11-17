@@ -893,10 +893,7 @@ async fn execute_job(
             ));
         }
         for ext in &extensions {
-            services
-                .extension_manager
-                .enable(&session.id, ext.clone())
-                .await?;
+            services.enable_extension(&session.id, ext.clone()).await?;
         }
 
         services
@@ -1364,7 +1361,7 @@ mod tests {
         let _guard = env_lock::lock_env([
             ("GOOSE_PROVIDER", Some("openai")),
             ("GOOSE_MODEL", Some("gpt-4o")),
-            ("GOOSE_MODE", Some("chat")),
+            ("GOOSE_MODE", Some("approve")),
             ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
             ("OPENAI_CUSTOM_HEADERS", Some("")),
         ]);

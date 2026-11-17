@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use rmcp::model::Role;
 
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, yielded_with, Command, ConversationEffect, Emitter,
+    GooseEffect, Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -22,25 +22,13 @@ impl DoctorOperation {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
         Self { session_manager }
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for DoctorOperation {
-    fn name(&self) -> &'static str {
-        "doctor"
-    }
-
-    async fn run_command(
+    async fn doctor(
         &self,
-        command: &SlashCommand<'_>,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command != "doctor" {
-            return not_applicable();
-        }
-
         let command_message = messages_since_kickoff(conversation)?
             .first()
             .cloned()
@@ -79,5 +67,20 @@ impl Operation<Session, GooseEffect> for DoctorOperation {
             .into(),
             result.with_visibility(false, true).into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for DoctorOperation {
+    fn name(&self) -> &'static str {
+        "doctor"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(vec![Command::new(
+            "doctor",
+            "Check that your Goose setup is working",
+            move |call| Box::pin(self.doctor(call.session, call.conversation, call.emit)),
+        )])
     }
 }

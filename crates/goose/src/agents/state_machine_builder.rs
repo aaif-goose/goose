@@ -1,13 +1,13 @@
 use std::num::NonZeroUsize;
-use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::{
+    bang_command::BangCommandOperation,
+    empty_response::EmptyResponseOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
-    write_integrity::{WriteIntegrityChecker, WritePolicyConfig},
 };
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
@@ -15,19 +15,19 @@ use goose_providers::model::ModelConfig;
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
-use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    EmptyResponseOperation, FinalOutputOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, GooseToolApproval, InferenceRunner, Operation, ProjectOperation,
-    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnhandledToolCallsOperation,
+    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
+    InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnavailableDecisions, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::agents::StateMachineServices;
 use crate::config::Config;
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
@@ -44,8 +44,8 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) defer_tools: bool,
     pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
-    pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    pub(crate) services: Arc<StateMachineServices>,
+    pub(crate) tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) hook_manager: HookManager,
     pub(crate) steer_queue: SteerQueue,
@@ -96,25 +96,6 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
     Ok(Arc::new(TypeSafeProvider::new(client)))
 }
 
-fn load_write_policy() -> Option<Arc<WriteIntegrityChecker>> {
-    let path = Config::global()
-        .get_param::<String>("GOOSE_WRITE_POLICY_FILE")
-        .ok()?;
-    match WritePolicyConfig::load_from_file(Path::new(&path)) {
-        Ok(config) => Some(Arc::new(WriteIntegrityChecker::new(Arc::new(config)))),
-        Err(error) => {
-            tracing::error!(
-                "write policy config file {path} failed to load ({error}); denying all tool calls"
-            );
-            Some(Arc::new(WriteIntegrityChecker::new(Arc::new(
-                WritePolicyConfig::unavailable(format!(
-                    "Write policy config file {path} failed to load: {error}. Fix or unset GOOSE_WRITE_POLICY_FILE."
-                )),
-            ))))
-        }
-    }
-}
-
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
 ) -> StateMachine<'_, Session, GooseEffect> {
@@ -128,8 +109,8 @@ pub(crate) fn build_state_machine(
         defer_tools,
         always_load_tools,
         session_manager,
-        extension_manager,
-        extension_lease,
+        services,
+        tool_snapshot,
         tool_inspection_manager,
         hook_manager,
         steer_queue,
@@ -144,35 +125,25 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let write_integrity = load_write_policy();
-    let mut skill_operation =
-        SkillOperation::new(Arc::clone(&extension_lease), hook_manager.clone());
-    let mut tool_execution_operation = ToolExecutionOperation::new(
-        Arc::clone(&extension_manager),
-        hook_manager.clone(),
-        Arc::clone(&extension_lease),
-        defer_tools,
-        always_load_tools,
-    );
-    let mut remaining_tool_calls_operation =
-        RemainingToolCallsOperation::new(hook_manager.clone(), Arc::clone(&extension_lease));
-    if let Some(checker) = write_integrity {
-        skill_operation = skill_operation.with_write_integrity(Arc::clone(&checker));
-        tool_execution_operation =
-            tool_execution_operation.with_write_integrity(Arc::clone(&checker));
-        remaining_tool_calls_operation =
-            remaining_tool_calls_operation.with_write_integrity(checker);
-    }
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(skill_operation),
-        Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
-        Arc::new(tool_execution_operation),
-        Arc::new(remaining_tool_calls_operation),
+        Arc::new(SkillOperation::new(Arc::clone(&tool_snapshot))),
+        Arc::new(RecipeOperation::new(Arc::clone(&services))),
+        Arc::new(PlatformExtensionOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+        )),
+        Arc::new(ToolExecutionOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+            defer_tools,
+            always_load_tools,
+        )),
+        Arc::new(RemainingToolCallsOperation),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
             SubagentOperation::new(Arc::new(subagent_runner)).with_max_concurrency(
@@ -182,7 +153,7 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(BangShellOperation::new()),
+        Arc::new(BangCommandOperation::new("shell", "command")),
     ];
     if !manages_own_context {
         if let Some(decisions) = context_relevance {
@@ -218,8 +189,8 @@ pub(crate) fn build_state_machine(
     operations.extend(remaining_operations);
     operations.extend(extra_operations);
     let request_preparer = GooseInferenceRequestPreparer {
-        extension_manager,
-        extension_lease,
+        services,
+        tool_snapshot,
         tool_inspection_manager,
         context_limit,
     };
@@ -228,13 +199,14 @@ pub(crate) fn build_state_machine(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(operations.clone()));
-    let steps = std::iter::once(command_operation)
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+    let mut steps = Vec::new();
+    if crate::agents::execute_commands::slash_commands_enabled() {
+        steps.push(Step::Operation(Arc::new(SlashCommandOperation::new(
+            operations.clone(),
+        ))));
+    }
+    steps.extend(operations.into_iter().map(Step::Operation));
+    steps.push(Step::Inference(inference));
 
     StateMachine::new(steps, cancel)
 }

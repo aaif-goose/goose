@@ -1,31 +1,139 @@
 use std::path::Path;
+use std::sync::{Arc, Mutex as StdMutex};
 
+use goose_agent::tool_call_state::request_executable;
 use goose_agent::write_integrity::WriteIntegrityChecker;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
-use crate::conversation::message::{ToolRequest, ToolResponse};
-use crate::conversation::Conversation;
-use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
+use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+use crate::agents::state_machine::ops_toolcalling::{
+    advertised_working_dir, request_was_advertised, tool_span,
+};
+use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
+use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
+use crate::session::Session;
 
-pub(super) fn check_write_integrity(
-    checker: Option<&WriteIntegrityChecker>,
-    conversation: &Conversation,
-    request: &ToolRequest,
-) -> Option<CallToolResult> {
-    let checker = checker?;
-    let tool_call = request.tool_call.as_ref().ok()?;
-    checker
-        .check(conversation, &tool_call.name, tool_call.arguments.as_ref())
-        .err()
-        .map(|reason| CallToolResult::error(vec![ContentBlock::text(reason)]))
+pub(crate) async fn fire_pre_tool_hooks(
+    hook_manager: &HookManager,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
+    write_integrity: Option<&WriteIntegrityChecker>,
+    session: &Session,
+    effects: &[GooseEffect],
+) -> Option<Message> {
+    let working_dir = advertised_working_dir(tool_snapshot, session);
+    let checks = appended_messages(effects)
+        .flat_map(|message| {
+            message
+                .content
+                .iter()
+                .filter_map(MessageContent::as_tool_request)
+                .filter(move |request| {
+                    !request.was_executed_externally()
+                        && request_was_advertised(std::slice::from_ref(message), request)
+                })
+        })
+        .map(|request| {
+            let working_dir = &working_dir;
+            async move {
+                let tool_call = request.tool_call.as_ref().ok()?;
+                if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
+                    return None;
+                }
+                let denial = match write_integrity.and_then(|checker| {
+                    checker
+                        .check(
+                            session.conversation()?,
+                            &tool_call.name,
+                            tool_call.arguments.as_ref(),
+                        )
+                        .err()
+                }) {
+                    Some(message) => HookDenial {
+                        message,
+                        error_type: "write_integrity_denied",
+                    },
+                    None => {
+                        check_pre_tool_hooks(hook_manager, &session.id, working_dir, request)
+                            .await?
+                    }
+                };
+                tool_span(&tool_call.name, &request.id, &session.id)
+                    .record("error.type", denial.error_type);
+                Some((request, denial))
+            }
+        });
+    let mut denials = Message::user();
+    for (request, denial) in futures::future::join_all(checks)
+        .await
+        .into_iter()
+        .flatten()
+    {
+        denials.add_tool_response_with_metadata(
+            request.id.clone(),
+            Ok(CallToolResult::error(vec![ContentBlock::text(
+                denial.message,
+            )])),
+            request.metadata.as_ref(),
+        );
+    }
+    (!denials.content.is_empty()).then_some(denials)
 }
 
-pub(super) async fn check_pre_tool_hooks(
+pub(crate) async fn fire_post_tool_hooks(
+    hook_manager: &HookManager,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
+    session: &Session,
+    effects: &[GooseEffect],
+) {
+    let working_dir = advertised_working_dir(tool_snapshot, session);
+    let turn = session
+        .conversation
+        .as_ref()
+        .and_then(|conversation| messages_since_kickoff(conversation).ok())
+        .unwrap_or_default();
+    let hooks = appended_messages(effects)
+        .flat_map(|message| {
+            message
+                .content
+                .iter()
+                .filter_map(MessageContent::as_tool_response)
+        })
+        .filter_map(|response| {
+            let request = turn
+                .iter()
+                .flat_map(|message| &message.content)
+                .filter_map(MessageContent::as_tool_request)
+                .find(|request| request.id == response.id)
+                .filter(|request| {
+                    request_executable(request) == Some(true)
+                        && request_was_advertised(turn, request)
+                })?;
+            Some(emit_post_tool_hooks(
+                hook_manager,
+                &session.id,
+                &working_dir,
+                request,
+                response,
+            ))
+        });
+    futures::future::join_all(hooks).await;
+}
+
+fn appended_messages(effects: &[GooseEffect]) -> impl Iterator<Item = &Message> {
+    effects.iter().filter_map(|effect| match effect {
+        GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => Some(message),
+        _ => None,
+    })
+}
+
+async fn check_pre_tool_hooks(
     hook_manager: &HookManager,
     session_id: &str,
     working_dir: &Path,
     request: &ToolRequest,
-) -> Option<CallToolResult> {
+) -> Option<HookDenial> {
     let tool_call = request.tool_call.as_ref().ok()?;
     let tool_input = tool_call
         .arguments
@@ -58,10 +166,7 @@ pub(super) async fn check_pre_tool_hooks(
     .await;
 
     if let Some(denial) = outcome.denial() {
-        tracing::Span::current().record("error.type", denial.error_type);
-        return Some(CallToolResult::error(vec![ContentBlock::text(
-            denial.message,
-        )]));
+        return Some(denial);
     }
     emit_extended_pre_hooks(
         hook_manager,
@@ -128,7 +233,7 @@ async fn emit_extended_pre_hooks(
     }
 }
 
-pub(super) async fn emit_post_tool_hooks(
+async fn emit_post_tool_hooks(
     hook_manager: &HookManager,
     session_id: &str,
     working_dir: &Path,

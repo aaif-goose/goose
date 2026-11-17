@@ -10,9 +10,9 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
-    ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, GetPromptResult,
+    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ServerNotification,
+    Tool,
 };
 use rmcp::service::ServiceError;
 use serde_json::Value;
@@ -30,37 +30,18 @@ use super::{
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::container::Container;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
+use crate::agents::mcp_client::McpCallContext;
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::platform_extensions::ext_manager::{
-    EXTENSION_NAME as EXTENSION_MANAGER_NAME, LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
-};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
 
-fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
-    let value = value.get(name).ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} is required"),
-            None,
-        )
-    })?;
-    value.as_str().ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} must be a string"),
-            None,
-        )
-    })
-}
-
 #[derive(Debug)]
 pub struct ExtensionSet {
     scope_id: String,
-    pub(super) working_dir: Option<PathBuf>,
-    pub(super) container: Option<Container>,
+    pub(crate) working_dir: Option<PathBuf>,
+    pub(crate) container: Option<Container>,
     extensions: Vec<ExtensionConfig>,
 }
 
@@ -117,10 +98,6 @@ struct ToolCatalog {
 
 impl ToolCatalog {
     async fn build(scope_id: &str, extensions: &[Arc<Extension>]) -> Self {
-        let supports_resources = extensions
-            .iter()
-            .any(|extension| extension.supports_resources());
-        let extension_manager_key = name_to_key(EXTENSION_MANAGER_NAME);
         let lists = futures::future::join_all(
             extensions
                 .iter()
@@ -146,15 +123,6 @@ impl ToolCatalog {
                     .strip_prefix(&format!("{}__", extension.key))
                     .unwrap_or(&tool.name)
                     .to_string();
-                if extension.key == extension_manager_key
-                    && !supports_resources
-                    && matches!(
-                        server_name.as_str(),
-                        LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME
-                    )
-                {
-                    continue;
-                }
                 let mut tool = tool.clone();
                 tool.name = name.clone().into();
                 by_name.insert(name, entries.len());
@@ -192,7 +160,7 @@ fn provider_safe_tool_name(name: &str) -> String {
 }
 
 #[derive(Clone)]
-pub struct ExtensionLease {
+pub struct McpLease {
     id: LeaseId,
     scope_id: String,
     working_dir: Option<PathBuf>,
@@ -208,7 +176,7 @@ struct ResolvedTool<'a> {
     tool: &'a Tool,
 }
 
-impl ExtensionLease {
+impl McpLease {
     pub(super) fn new(
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
@@ -267,28 +235,10 @@ impl ExtensionLease {
     }
 
     pub async fn tools(&self) -> Vec<Tool> {
-        self.tools_where(|_| true).await
-    }
-
-    pub async fn tools_for(&self, extension: &str) -> Vec<Tool> {
-        let key = name_to_key(extension);
-        self.tools_where(|extension| extension.key == key).await
-    }
-
-    pub async fn tools_excluding(&self, extension: &str) -> Vec<Tool> {
-        let key = name_to_key(extension);
-        self.tools_where(|extension| extension.key != key).await
-    }
-
-    pub(in crate::agents) async fn tools_where(
-        &self,
-        predicate: impl Fn(&Extension) -> bool,
-    ) -> Vec<Tool> {
         self.tool_catalog()
             .await
             .entries
             .iter()
-            .filter(|entry| predicate(&entry.extension))
             .map(|entry| entry.tool.clone())
             .collect()
     }
@@ -300,29 +250,6 @@ impl ExtensionLease {
 
     pub fn configs(&self) -> Vec<ExtensionConfig> {
         self.slots.iter().map(|slot| slot.config.clone()).collect()
-    }
-
-    pub async fn read_resource_tool(
-        &self,
-        params: Value,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let uri = require_str_parameter(&params, "uri")?;
-        let extension_name = require_str_parameter(&params, "extension_name")?;
-        let read_result = self
-            .read_resource(uri, extension_name, cancellation_token)
-            .await?;
-
-        Ok(read_result
-            .contents
-            .into_iter()
-            .filter_map(|content| match content {
-                ResourceContents::TextResourceContents { text, .. } => {
-                    Some(ContentBlock::text(format!("{uri}\n\n{text}")))
-                }
-                _ => None,
-            })
-            .collect())
     }
 
     pub async fn read_resource(
@@ -494,60 +421,6 @@ impl ExtensionLease {
             })
     }
 
-    async fn list_resources_from_extension(
-        &self,
-        extension_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.list_resources_result_from_extension(extension_name, cancellation_token)
-            .await
-            .map(|result| {
-                let resources = result
-                    .resources
-                    .into_iter()
-                    .map(|resource| {
-                        format!(
-                            "{extension_name} - {}, uri: ({})",
-                            resource.name, resource.uri
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                vec![ContentBlock::text(resources)]
-            })
-    }
-
-    pub async fn list_resources(
-        &self,
-        params: Value,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        if let Some(extension_name) = params.get("extension_name").and_then(Value::as_str) {
-            return self
-                .list_resources_from_extension(extension_name, cancellation_token)
-                .await;
-        }
-
-        let running = self.start_extensions().await;
-        let results = futures::future::join_all(
-            running
-                .iter()
-                .filter(|extension| extension.supports_resources())
-                .map(|extension| {
-                    self.list_resources_from_extension(&extension.key, cancellation_token.clone())
-                }),
-        )
-        .await;
-        let mut resources = Vec::new();
-        for result in results {
-            match result {
-                Ok(content) => resources.extend(content),
-                Err(error) => warn!(?error, "failed to list resources"),
-            }
-        }
-        Ok(resources)
-    }
-
     pub async fn instructions(&self) -> Vec<ExtensionInfo> {
         let working_dir = self
             .working_dir
@@ -557,9 +430,9 @@ impl ExtensionLease {
         let mut infos = Vec::new();
         for extension in self.start_extensions().await {
             let instructions = extension
-                .client
-                .get_instructions(&self.scope_id, &working_dir)
-                .await
+                .server_info
+                .as_ref()
+                .and_then(|info| info.instructions.clone())
                 .unwrap_or_default();
             infos.push(ExtensionInfo::new(
                 &extension.key,
@@ -568,22 +441,6 @@ impl ExtensionLease {
             ));
         }
         infos
-    }
-
-    pub async fn moim(&self) -> Vec<String> {
-        let mut content = Vec::new();
-        for extension in self
-            .start_extensions()
-            .await
-            .iter()
-            .filter(|extension| extension.is_platform())
-        {
-            let tools = self.tools_excluding(&extension.key).await;
-            if let Some(part) = extension.client.get_moim(&self.scope_id, &tools).await {
-                content.push(part);
-            }
-        }
-        content
     }
 
     async fn resolve_tool(
@@ -687,7 +544,7 @@ impl ExtensionLease {
         let CallRequest {
             tool_call_id,
             notification_emitter,
-            container,
+            container: _,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -696,13 +553,11 @@ impl ExtensionLease {
             notification_emitter,
             tool_call_id.as_deref(),
         );
-        let call_context = ToolCallContext::new(
+        let call_context = McpCallContext::new(
             self.scope_id.clone(),
             self.working_dir.clone(),
             tool_call_id,
-        )
-        .with_container(container)
-        .with_extension_lease(Arc::new(self.clone()));
+        );
         let call_context = match emitter {
             Some(emitter) => call_context.with_notification_emitter(emitter),
             None => call_context,
@@ -710,7 +565,6 @@ impl ExtensionLease {
 
         let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let server_name = resolved.server_name.to_string();
-        let is_platform_extension = resolved.extension.is_platform();
         let session_id = self.scope_id.clone();
         let result = async move {
             let mut result = client
@@ -726,10 +580,8 @@ impl ExtensionLease {
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
             remove_untrusted_mcp_app_meta(&mut result);
-            if !is_platform_extension {
-                ExtensionMutation::take(&mut result);
-                remove_subagent_session_meta(&mut result);
-            }
+            ExtensionMutation::take(&mut result);
+            remove_subagent_session_meta(&mut result);
             if let Some(mcp_app_call) = mcp_app_call {
                 mcp_app_call
                     .attach_resource(&*client, &session_id, &mut result, cancellation_token)
@@ -871,5 +723,15 @@ impl McpAppCall {
             Err(error) => attachment.read_error = Some(error.to_string()),
         }
         insert_trusted_tool_update_meta(result, &attachment);
+    }
+}
+
+impl From<&McpCallContext> for CallRequest {
+    fn from(context: &McpCallContext) -> Self {
+        Self {
+            tool_call_id: context.tool_call_request_id.clone(),
+            notification_emitter: context.notification_emitter().cloned(),
+            container: None,
+        }
     }
 }

@@ -464,8 +464,7 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         for config in configs {
             self.services
-                .extension_manager
-                .enable(&self.session_id, config)
+                .enable_extension(&self.session_id, config)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to start extension: {}", e))?;
         }
@@ -500,9 +499,9 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         let prompts = self
             .services
-            .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
 
@@ -528,9 +527,9 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         let prompts = self
             .services
-            .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
 
@@ -551,12 +550,9 @@ impl CliSession {
 
     pub async fn get_prompt(&mut self, name: &str, arguments: Value) -> Result<Vec<PromptMessage>> {
         self.ensure_extensions_loaded(true).await?;
-        let lease = self
-            .services
-            .extension_manager
-            .current_lease(&self.session_id)
-            .await?;
+        let lease = self.services.current_tools(&self.session_id).await?;
         let extension = lease
+            .mcp
             .list_prompts(CancellationToken::default())
             .await
             .into_iter()
@@ -564,6 +560,7 @@ impl CliSession {
             .map(|(extension, _)| extension)
             .ok_or_else(|| anyhow::anyhow!("Prompt '{}' not found", name))?;
         Ok(lease
+            .mcp
             .get_prompt(&extension, name, arguments, CancellationToken::default())
             .await?
             .messages)
@@ -1192,8 +1189,7 @@ impl CliSession {
         let mut unavailable = Vec::new();
         for result in self
             .services
-            .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
             .start()
             .await
@@ -1834,9 +1830,9 @@ impl CliSession {
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
         let prompts = services
-            .extension_manager
-            .current_lease(session_id)
+            .current_tools(session_id)
             .await?
+            .mcp
             .list_prompts(CancellationToken::default())
             .await;
         let all_providers = goose::providers::providers().await;
@@ -3238,7 +3234,7 @@ mod tests {
 
         let old = sm.get_session(&old.id, false).await.unwrap();
 
-        let new_id = create_successor_session(&sm, &old, GooseMode::Chat)
+        let new_id = create_successor_session(&sm, &old, GooseMode::SmartApprove)
             .await
             .unwrap();
 
@@ -3250,7 +3246,7 @@ mod tests {
             new_session.model_config.as_ref().map(|m| &m.model_name),
             old.model_config.as_ref().map(|m| &m.model_name)
         );
-        assert_eq!(new_session.goose_mode, GooseMode::Chat);
+        assert_eq!(new_session.goose_mode, GooseMode::SmartApprove);
         assert_eq!(new_session.working_dir, old.working_dir);
         assert_eq!(new_session.session_type, old.session_type);
         assert!(new_session.conversation.unwrap().messages().is_empty());
