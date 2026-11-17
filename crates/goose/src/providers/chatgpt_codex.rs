@@ -142,14 +142,7 @@ fn image_decode_limits() -> image::io::Limits {
     limits
 }
 
-fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
-    if bytes.get(..4)? != b"RIFF" || bytes.get(8..12)? != b"WEBP" {
-        return None;
-    }
-
-    let chunk = bytes.get(12..16)?;
-    let chunk_len = u32::from_le_bytes(bytes.get(16..20)?.try_into().ok()?) as usize;
-    let payload = bytes.get(20..20usize.checked_add(chunk_len)?)?;
+fn webp_frame_dimensions(chunk: &[u8], payload: &[u8]) -> Option<(u32, u32)> {
     match chunk {
         b"VP8 " => {
             if payload.get(3..6)? != [0x9d, 0x01, 0x2a] {
@@ -168,23 +161,66 @@ fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
             let height = ((bits >> 14) & 0x3fff) + 1;
             Some((width, height))
         }
-        b"VP8X" => {
-            let flags = *payload.first()?;
-            if flags & 0b1100_0011 != 0 || flags & 0b0000_0010 != 0 {
-                return None;
-            }
-            if payload.get(1..4)? != [0, 0, 0] {
-                return None;
-            }
-            let width_bytes = payload.get(4..7)?;
-            let height_bytes = payload.get(7..10)?;
-            let width = u32::from_le_bytes([width_bytes[0], width_bytes[1], width_bytes[2], 0]) + 1;
-            let height =
-                u32::from_le_bytes([height_bytes[0], height_bytes[1], height_bytes[2], 0]) + 1;
-            Some((width, height))
-        }
         _ => None,
     }
+}
+
+fn webp_chunk(bytes: &[u8], offset: usize) -> Option<(&[u8], &[u8], usize)> {
+    let header_end = offset.checked_add(8)?;
+    let chunk = bytes.get(offset..offset.checked_add(4)?)?;
+    let chunk_len = u32::from_le_bytes(
+        bytes
+            .get(offset.checked_add(4)?..header_end)?
+            .try_into()
+            .ok()?,
+    ) as usize;
+    let payload_end = header_end.checked_add(chunk_len)?;
+    let payload = bytes.get(header_end..payload_end)?;
+    let next_offset = payload_end.checked_add(chunk_len % 2)?;
+    bytes.get(..next_offset)?;
+    Some((chunk, payload, next_offset))
+}
+
+fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.get(..4)? != b"RIFF" || bytes.get(8..12)? != b"WEBP" {
+        return None;
+    }
+    let riff_len = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?) as usize;
+    let bytes = bytes.get(..8usize.checked_add(riff_len)?)?;
+    let (chunk, payload, mut offset) = webp_chunk(bytes, 12)?;
+    if let Some(dimensions) = webp_frame_dimensions(chunk, payload) {
+        return Some(dimensions);
+    }
+    if chunk != b"VP8X" {
+        return None;
+    }
+
+    let flags = *payload.first()?;
+    if flags & 0b1100_0011 != 0 || flags & 0b0000_0010 != 0 || payload.get(1..4)? != [0, 0, 0] {
+        return None;
+    }
+    let width_bytes = payload.get(4..7)?;
+    let height_bytes = payload.get(7..10)?;
+    let dimensions = (
+        u32::from_le_bytes([width_bytes[0], width_bytes[1], width_bytes[2], 0]) + 1,
+        u32::from_le_bytes([height_bytes[0], height_bytes[1], height_bytes[2], 0]) + 1,
+    );
+
+    let mut frame_dimensions = None;
+    while offset < bytes.len() {
+        let (chunk, payload, next_offset) = webp_chunk(bytes, offset)?;
+        if chunk == b"ANIM" || chunk == b"ANMF" {
+            return None;
+        }
+        if let Some(found) = webp_frame_dimensions(chunk, payload) {
+            if frame_dimensions.replace(found).is_some() {
+                return None;
+            }
+        }
+        offset = next_offset;
+    }
+
+    (frame_dimensions == Some(dimensions)).then_some(dimensions)
 }
 
 fn webp_is_safe_to_decode(bytes: &[u8]) -> bool {
@@ -1196,6 +1232,34 @@ mod tests {
             .unwrap_or_default()
     }
 
+    fn extended_webp(
+        canvas_width: u32,
+        canvas_height: u32,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Vec<u8> {
+        let pixels = vec![0; (frame_width * frame_height * 4) as usize];
+        let mut frame = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut frame)
+            .encode(&pixels, frame_width, frame_height, image::ColorType::Rgba8)
+            .unwrap();
+
+        let frame_chunk = &frame[12..];
+        let riff_len = (4 + 18 + frame_chunk.len()) as u32;
+        let width = (canvas_width - 1).to_le_bytes();
+        let height = (canvas_height - 1).to_le_bytes();
+        let mut webp = Vec::new();
+        webp.extend_from_slice(b"RIFF");
+        webp.extend_from_slice(&riff_len.to_le_bytes());
+        webp.extend_from_slice(b"WEBPVP8X");
+        webp.extend_from_slice(&10u32.to_le_bytes());
+        webp.extend_from_slice(&[0, 0, 0, 0]);
+        webp.extend_from_slice(&width[..3]);
+        webp.extend_from_slice(&height[..3]);
+        webp.extend_from_slice(frame_chunk);
+        webp
+    }
+
     #[test]
     #[serial_test::serial]
     fn inventory_configured_uses_oauth_token_cache() {
@@ -1527,6 +1591,40 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("data:image/webp;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_accepts_valid_extended_webp() {
+        let data = base64::engine::general_purpose::STANDARD.encode(extended_webp(2, 2, 2, 2));
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert!(output[0]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/webp;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_rejects_mismatched_webp_dimensions() {
+        let data = base64::engine::general_purpose::STANDARD.encode(extended_webp(1, 1, 2, 2));
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/webp]" })
+        );
     }
 
     #[test]
