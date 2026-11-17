@@ -2,6 +2,7 @@
 //! MCP client. `ExtensionConfig` selections become registrations with a built-in
 //! connector; hosts can register their own transports the same way.
 
+use std::any::Any;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -19,8 +20,19 @@ use super::{
 use crate::agents::mcp_client::{ConnectContext, McpClientTrait};
 use goose_agent::extension::{name_to_key, ExtensionConfig, ExtensionResult};
 
+/// Object-safe typed equality for connection inputs.
+pub trait DynPartialEq: Any {
+    fn dyn_eq(&self, other: &dyn Any) -> bool;
+}
+
+impl<T: Any + PartialEq> DynPartialEq for T {
+    fn dyn_eq(&self, other: &dyn Any) -> bool {
+        other.downcast_ref::<T>().is_some_and(|other| self == other)
+    }
+}
+
 /// Host-specific process placement; transport setup and supervision stay shared.
-pub trait StdioCommand: Send + Sync {
+pub trait StdioCommand: DynPartialEq + Send + Sync {
     fn command(
         &self,
         program: &str,
@@ -31,13 +43,8 @@ pub trait StdioCommand: Send + Sync {
 
 /// Opens the MCP client for one registration.
 #[async_trait]
-pub trait Connector: Send + Sync {
-    /// `Ok(None)` declines: the extension is unavailable here and contributes no
-    /// tools, without counting as a failure.
-    async fn connect(
-        &self,
-        request: &ConnectRequest,
-    ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>>;
+pub trait Connector: DynPartialEq + Send + Sync {
+    async fn connect(&self, request: &ConnectRequest) -> ExtensionResult<Box<dyn McpClientTrait>>;
 }
 
 /// Where and for whom a registration connects.
@@ -94,13 +101,12 @@ impl ConnectRequest {
 }
 
 /// One selectable extension. A lease reuses a running extension only for an
-/// equivalent registration: change its identity when connector inputs change.
+/// equivalent registration, comparing connector inputs through typed equality.
 #[derive(Clone)]
 pub struct Registration {
     pub(super) key: String,
     pub(super) name: String,
     pub(super) connection: Connection,
-    identity: serde_json::Value,
     available_tools: Vec<String>,
 }
 
@@ -123,20 +129,15 @@ impl fmt::Debug for Registration {
 }
 
 impl Registration {
+    /// Connector equality must compare all inputs that affect connection reuse.
     pub fn new(name: impl Into<String>, connector: Arc<dyn Connector>) -> Self {
         let name = name.into();
         Self {
             key: name_to_key(&name),
             name,
             connection: Connection::Custom(connector),
-            identity: serde_json::Value::Null,
             available_tools: Vec::new(),
         }
-    }
-
-    pub fn with_identity(mut self, identity: serde_json::Value) -> Self {
-        self.identity = identity;
-        self
     }
 
     /// Expose only these tools (by server name). Empty exposes all.
@@ -153,6 +154,7 @@ impl Registration {
         &self.key
     }
 
+    /// Command equality must include placement and any other process-launch inputs.
     pub fn from_config(config: ExtensionConfig, command: Option<Arc<dyn StdioCommand>>) -> Self {
         let available_tools = match &config {
             ExtensionConfig::StreamableHttp {
@@ -165,7 +167,6 @@ impl Registration {
         Self {
             key: config.key(),
             name: config.name(),
-            identity: serde_json::to_value(&config).expect("config serializes"),
             connection: Connection::Config {
                 config: Box::new(config),
                 command,
@@ -181,8 +182,27 @@ impl Registration {
     /// Connection inputs and tool policy must both match to reuse a slot.
     pub(super) fn is_equivalent(&self, other: &Registration) -> bool {
         self.key == other.key
-            && std::mem::discriminant(&self.connection) == std::mem::discriminant(&other.connection)
-            && self.identity == other.identity
+            && match (&self.connection, &other.connection) {
+                (
+                    Connection::Config {
+                        config: a,
+                        command: ac,
+                    },
+                    Connection::Config {
+                        config: b,
+                        command: bc,
+                    },
+                ) => {
+                    a == b
+                        && match (ac, bc) {
+                            (Some(a), Some(b)) => a.dyn_eq(b.as_ref()),
+                            (None, None) => true,
+                            _ => false,
+                        }
+                }
+                (Connection::Custom(a), Connection::Custom(b)) => a.dyn_eq(b.as_ref()),
+                _ => false,
+            }
             && self.available_tools == other.available_tools
     }
 }

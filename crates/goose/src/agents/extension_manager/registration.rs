@@ -12,44 +12,29 @@ pub(super) fn registration(
     container: Option<Container>,
     host: Arc<GooseExtensionHost>,
 ) -> Registration {
-    let registration = match &config {
-        ExtensionConfig::External(transport) => Registration::from_config(
-            transport.clone(),
-            Some(Arc::new(GoosePlacement {
-                container: container.clone(),
-                host,
-            })),
-        ),
-        _ => Registration::new(
-            config.name(),
-            Arc::new(GooseConnector {
-                config: config.clone(),
-                container: container.clone(),
-                host,
-            }),
-        ),
-    }
-    .with_identity(
-        serde_json::to_value((&config, container.as_ref().map(|c| c.id())))
-            .expect("config serializes"),
-    );
     let available_tools = match &config {
+        ExtensionConfig::External(transport) => {
+            return Registration::from_config(
+                transport.clone(),
+                Some(Arc::new(GoosePlacement { container, host })),
+            );
+        }
         ExtensionConfig::Builtin {
             available_tools, ..
         }
         | ExtensionConfig::Platform {
             available_tools, ..
-        }
-        | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
-            available_tools,
-            ..
-        })
-        | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
-            available_tools,
-            ..
-        }) => available_tools.clone(),
+        } => available_tools.clone(),
     };
-    registration.with_available_tools(available_tools)
+    Registration::new(
+        config.name(),
+        Arc::new(GooseConnector {
+            config,
+            container,
+            host,
+        }),
+    )
+    .with_available_tools(available_tools)
 }
 
 struct GooseConnector {
@@ -57,12 +42,17 @@ struct GooseConnector {
     container: Option<Container>,
     host: Arc<GooseExtensionHost>,
 }
+impl PartialEq for GooseConnector {
+    fn eq(&self, other: &Self) -> bool {
+        self.config == other.config
+            && self.container == other.container
+            && Arc::ptr_eq(&self.host.session_manager, &other.host.session_manager)
+    }
+}
+
 #[async_trait]
 impl Connector for GooseConnector {
-    async fn connect(
-        &self,
-        request: &ConnectRequest,
-    ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>> {
+    async fn connect(&self, request: &ConnectRequest) -> ExtensionResult<Box<dyn McpClientTrait>> {
         let resolved = &self.config;
         let mut context =
             request.connect_context(None, self.host.connection_working_dir(&request.working_dir));
@@ -80,7 +70,7 @@ impl Connector for GooseConnector {
             }
             ExtensionConfig::External(_) => unreachable!("external configs use the GDK connector"),
         };
-        Ok(Some(client))
+        Ok(client)
     }
 }
 
@@ -88,6 +78,13 @@ struct GoosePlacement {
     container: Option<Container>,
     host: Arc<GooseExtensionHost>,
 }
+impl PartialEq for GoosePlacement {
+    fn eq(&self, other: &Self) -> bool {
+        self.container == other.container
+            && Arc::ptr_eq(&self.host.session_manager, &other.host.session_manager)
+    }
+}
+
 impl crate::agents::extension_runtime::StdioCommand for GoosePlacement {
     fn command(
         &self,

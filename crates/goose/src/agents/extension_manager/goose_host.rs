@@ -103,13 +103,6 @@ impl ExtensionEnvironment for GooseExtensionHost {
 
 #[async_trait]
 impl ExtensionToolPolicy for GooseExtensionHost {
-    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
-        &[
-            super::mutation::EXTENSION_MUTATION_META_KEY,
-            "subagent_session_id",
-        ]
-    }
-
     async fn process_result(
         &self,
         context: crate::agents::extension_runtime::host::ResultContext<'_>,

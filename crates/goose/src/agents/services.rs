@@ -394,17 +394,8 @@ impl StateMachineServices {
         configs: Vec<ExtensionConfig>,
         container: Option<crate::agents::container::Container>,
     ) -> Result<ExtensionSet> {
-        crate::agents::extension_config::check_unique_keys(&configs)?;
-        let mcp = configs
-            .iter()
-            .filter(|config| !crate::agents::platform_extensions::is_platform(config))
-            .cloned()
-            .collect();
-        let mut set = self
-            .extension_manager
-            .extension_set(scope, cwd, mcp, container)?;
-        set.configs = configs;
-        Ok(set)
+        self.extension_manager
+            .extension_set(scope, cwd, configs, container)
     }
 
     pub async fn enable_extension(

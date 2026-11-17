@@ -547,7 +547,7 @@ async fn dispatch_keeps_subagent_session_id_from_platform_extensions() {
         builtin_config("summon", vec![]),
         Arc::new(PlatformSubagentMeta),
     );
-    assert!(lease.mcp.registrations().is_empty());
+    assert!(lease.mcp.enabled_keys().next().is_none());
     let result = lease
         .call(
             CallToolRequestParams::new("delegate"),
@@ -1319,10 +1319,18 @@ impl ExtensionManager {
         client: Arc<dyn McpClientTrait>,
         info: Option<rmcp::model::ServerConfig>,
     ) {
+        let working_dir = self
+            .host
+            .session_manager
+            .get_session(scope, false)
+            .await
+            .map(|session| session.working_dir)
+            .unwrap_or_default();
         self.manager
             .install_client(
                 scope,
-                registration::registration(config, None, self.host()),
+                registration::registration(config, None, Arc::clone(&self.host)),
+                working_dir,
                 client,
                 info,
             )

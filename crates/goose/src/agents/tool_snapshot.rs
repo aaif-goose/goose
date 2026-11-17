@@ -170,12 +170,7 @@ impl ToolSnapshot {
             .entries
             .iter()
             .map(|entry| entry.key.clone())
-            .chain(
-                self.mcp
-                    .registrations()
-                    .iter()
-                    .map(|registration| registration.key().to_string()),
-            )
+            .chain(self.mcp.enabled_keys().map(str::to_owned))
             .collect()
     }
 

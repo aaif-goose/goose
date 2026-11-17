@@ -1,7 +1,7 @@
 use super::*;
 use crate::agents::extension_runtime::tool_execution::ToolCallContext;
 use async_trait::async_trait;
-use rmcp::model::{InitializeResult, JsonObject, ListToolsResult};
+use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
 use rmcp::ServiceError as Error;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::Semaphore;
@@ -16,13 +16,11 @@ fn manager() -> Arc<ExtensionManager> {
     ))
 }
 
+#[derive(PartialEq)]
 struct UnavailableConnector;
 #[async_trait]
 impl Connector for UnavailableConnector {
-    async fn connect(
-        &self,
-        _: &ConnectRequest,
-    ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>> {
+    async fn connect(&self, _: &ConnectRequest) -> ExtensionResult<Box<dyn McpClientTrait>> {
         Err(ExtensionError::ConfigError(
             "unavailable test connector".to_string(),
         ))
@@ -93,6 +91,7 @@ async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         .install_client(
             "session",
             builtin_config("dynamic"),
+            PathBuf::new(),
             tools_client.clone(),
             None,
         )
@@ -218,6 +217,7 @@ async fn a_new_working_dir_restarts_mcp_connections() {
         .install_client(
             "session",
             external.clone(),
+            PathBuf::from("old"),
             Arc::new(StaticToolsClient {
                 tools: Some(vec!["new"]),
             }),
@@ -238,9 +238,22 @@ async fn a_new_working_dir_restarts_mcp_connections() {
         .await;
     let after = manager.scopes.lock().await["session"].clone();
     assert!(!Arc::ptr_eq(&before["developer"], &after["developer"]));
-    assert!(Arc::ptr_eq(&before["external"], &after["external"]));
+    assert!(!Arc::ptr_eq(&before["external"], &after["external"]));
     assert!(!Arc::ptr_eq(&before["builtin"], &after["builtin"]));
     assert_eq!(lease.working_dir(), Some(new_working_dir.as_path()));
+}
+
+#[tokio::test]
+async fn injected_clients_follow_connection_reuse_rules() {
+    let manager = manager();
+    add_static(&manager, "custom", Some(vec!["echo"])).await;
+    let slot = manager.scopes.lock().await["session"]["custom"].clone();
+    let mut client = (*manager.client("session")).clone();
+
+    assert!(slot.reusable_for(&slot.registration, None, &client));
+    assert!(!slot.reusable_for(&slot.registration, Some(Path::new("changed")), &client));
+    client.capabilities.mcpui = !client.capabilities.mcpui;
+    assert!(!slot.reusable_for(&slot.registration, None, &client));
 }
 
 #[tokio::test]
@@ -252,7 +265,7 @@ async fn explicit_sets_need_no_session_lookup() {
             capabilities: Default::default(),
         },
     ));
-    let registration = Registration::new("custom", StaticConnector::new(Some(vec!["echo"])));
+    let registration = Registration::new("custom", StaticConnector::new(vec!["echo"]));
     let lease = manager
         .resolve(&ExtensionSet::new("scope", None, vec![registration]).unwrap())
         .await;
@@ -304,6 +317,7 @@ async fn add_static(manager: &ExtensionManager, name: &str, tools: Option<Vec<&'
         .install_client(
             "session",
             builtin_config(name),
+            PathBuf::new(),
             Arc::new(StaticToolsClient { tools }),
             None,
         )
@@ -350,14 +364,14 @@ async fn colliding_tool_names_keep_the_first_extension() {
     assert_eq!(get_tool_owner(&tools[0]).as_deref(), Some("first"));
 }
 
-/// Hands out `StaticToolsClient`s, counting connections; declines when `tools` is `None`.
+/// Hands out `StaticToolsClient`s, counting connections.
 struct StaticConnector {
-    tools: Option<Vec<&'static str>>,
+    tools: Vec<&'static str>,
     connects: AtomicUsize,
 }
 
 impl StaticConnector {
-    fn new(tools: Option<Vec<&'static str>>) -> Arc<Self> {
+    fn new(tools: Vec<&'static str>) -> Arc<Self> {
         Arc::new(Self {
             tools,
             connects: AtomicUsize::new(0),
@@ -365,16 +379,19 @@ impl StaticConnector {
     }
 }
 
+impl PartialEq for StaticConnector {
+    fn eq(&self, other: &Self) -> bool {
+        self.tools == other.tools
+    }
+}
+
 #[async_trait]
 impl Connector for StaticConnector {
-    async fn connect(
-        &self,
-        request: &ConnectRequest,
-    ) -> ExtensionResult<Option<Box<dyn McpClientTrait>>> {
+    async fn connect(&self, request: &ConnectRequest) -> ExtensionResult<Box<dyn McpClientTrait>> {
         assert_eq!(request.scope_id, "scope");
         self.connects.fetch_add(1, Ordering::SeqCst);
-        Ok(self.tools.clone().map(|tools| {
-            Box::new(StaticToolsClient { tools: Some(tools) }) as Box<dyn McpClientTrait>
+        Ok(Box::new(StaticToolsClient {
+            tools: Some(self.tools.clone()),
         }))
     }
 }
@@ -382,7 +399,7 @@ impl Connector for StaticConnector {
 #[tokio::test]
 async fn host_registrations_connect_through_their_connector() {
     let manager = manager();
-    let connector = StaticConnector::new(Some(vec!["echo", "hidden"]));
+    let connector = StaticConnector::new(vec!["echo", "hidden"]);
     let registration = Registration::new("custom", connector.clone())
         .with_available_tools(vec!["echo".to_string()]);
     let lease = manager
@@ -403,70 +420,37 @@ async fn host_registrations_connect_through_their_connector() {
         .unwrap();
     assert_ne!(result.is_error, Some(true));
 
-    // The same identity reuses the connection; a new one reconnects.
+    // Reconstructed equal connectors reuse the connection; changed inputs reconnect.
     let same = manager
-        .resolve(&ExtensionSet::new("scope", None, vec![registration.clone()]).unwrap())
-        .await;
-    same.tools().await;
-    assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
-    let bumped = manager
-        .resolve(
-            &ExtensionSet::new(
-                "scope",
-                None,
-                vec![registration.with_identity(serde_json::json!("changed"))],
-            )
-            .unwrap(),
-        )
-        .await;
-    bumped.tools().await;
-    assert_eq!(connector.connects.load(Ordering::SeqCst), 2);
-}
-
-#[tokio::test]
-async fn declining_connectors_contribute_no_tools_without_failing() {
-    let manager = manager();
-    let lease = manager
         .resolve(
             &ExtensionSet::new(
                 "scope",
                 None,
                 vec![
-                    Registration::new("declined", StaticConnector::new(None)),
-                    Registration::new("first", StaticConnector::new(Some(vec!["tool"]))),
+                    Registration::new("custom", StaticConnector::new(vec!["echo", "hidden"]))
+                        .with_available_tools(vec!["echo".to_string()]),
                 ],
             )
             .unwrap(),
         )
         .await;
-    assert_eq!(tool_names(lease.tools().await), ["first__tool"]);
-    assert!(lease.start().await.iter().all(|result| result.success));
-}
-
-#[test]
-fn reserved_result_metadata_is_removed_without_touching_other_keys() {
-    let mut result = CallToolResult::success(vec![]);
-    result.meta = Some(MetaObject(
-        serde_json::from_value(serde_json::json!({
-            "host_command": {"action": "enable"}, "other": 1
-        }))
-        .unwrap(),
-    ));
-    remove_reserved_meta(&mut result, &["host_command"]);
-    assert_eq!(
-        result.meta.unwrap().0,
-        serde_json::from_value::<rmcp::model::JsonObject>(serde_json::json!({"other": 1})).unwrap()
-    );
-
-    let mut result = CallToolResult::success(vec![]);
-    result.meta = Some(MetaObject(
-        serde_json::from_value(serde_json::json!({
-            "host_command": true
-        }))
-        .unwrap(),
-    ));
-    remove_reserved_meta(&mut result, &["host_command"]);
-    assert!(result.meta.is_none());
+    same.tools().await;
+    assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
+    let changed = StaticConnector::new(vec!["echo", "changed"]);
+    let bumped = manager
+        .resolve(
+            &ExtensionSet::new(
+                "scope",
+                None,
+                vec![Registration::new("custom", changed.clone())
+                    .with_available_tools(vec!["echo".to_string()])],
+            )
+            .unwrap(),
+        )
+        .await;
+    bumped.tools().await;
+    assert_eq!(connector.connects.load(Ordering::SeqCst), 1);
+    assert_eq!(changed.connects.load(Ordering::SeqCst), 1);
 }
 
 struct ChangingEnvironment {
@@ -499,15 +483,75 @@ fn config_and_custom_connections_are_not_interchangeable() {
             "type": "stdio", "name": "custom", "cmd": "unused", "args": [], "timeout": 30
         }))
         .unwrap();
-    let identity = serde_json::json!("same-inputs");
-    let configured = Registration::from_config(config, None).with_identity(identity.clone());
-    let custom = Registration::new("custom", StaticConnector::new(None)).with_identity(identity);
+    let configured = Registration::from_config(config, None);
+    let custom = Registration::new("custom", StaticConnector::new(vec![]));
     assert!(configured.is_equivalent(&configured.clone()));
     assert!(custom.is_equivalent(&custom.clone()));
     assert!(!configured.is_equivalent(&custom));
 }
 
+#[test]
+fn custom_connection_equality_uses_concrete_type_and_inputs() {
+    let registration = Registration::new("custom", StaticConnector::new(vec![]));
+    let equal = Registration::new("custom", StaticConnector::new(vec![]));
+    let changed = Registration::new("custom", StaticConnector::new(vec!["echo"]));
+    let different_type = Registration::new("custom", Arc::new(UnavailableConnector));
+
+    assert!(registration.is_equivalent(&equal));
+    assert!(!registration.is_equivalent(&changed));
+    assert!(!registration.is_equivalent(&different_type));
+    assert!(!registration.is_equivalent(&equal.with_available_tools(vec!["echo".to_string()])));
+}
+
+#[derive(PartialEq)]
+struct ContainerCommand(&'static str);
+
+impl StdioCommand for ContainerCommand {
+    fn command(
+        &self,
+        _program: &str,
+        _args: &[String],
+        _env: std::collections::HashMap<String, String>,
+    ) -> ExtensionResult<tokio::process::Command> {
+        unreachable!("only used to compare placement")
+    }
+}
+
+#[test]
+fn configured_connection_equality_includes_config_and_placement() {
+    let config = goose_agent::extension::ExtensionConfig::stdio("custom", "server", "", 30_u64);
+    let registration =
+        Registration::from_config(config.clone(), Some(Arc::new(ContainerCommand("first"))));
+    let equal =
+        Registration::from_config(config.clone(), Some(Arc::new(ContainerCommand("first"))));
+    let moved =
+        Registration::from_config(config.clone(), Some(Arc::new(ContainerCommand("second"))));
+    let changed = Registration::from_config(
+        config.clone().with_args(["changed"]),
+        Some(Arc::new(ContainerCommand("first"))),
+    );
+    let no_placement = Registration::from_config(config.clone(), None);
+    let different_type = Registration::from_config(
+        config,
+        Some(Arc::new(RecordingCommand(std::sync::Mutex::new(vec![])))),
+    );
+
+    assert!(registration.is_equivalent(&registration.clone()));
+    assert!(registration.is_equivalent(&equal));
+    assert!(!registration.is_equivalent(&moved));
+    assert!(!registration.is_equivalent(&changed));
+    assert!(!registration.is_equivalent(&no_placement));
+    assert!(!registration.is_equivalent(&different_type));
+    assert!(no_placement.is_equivalent(&no_placement.clone()));
+}
+
 struct RecordingCommand(std::sync::Mutex<Vec<String>>);
+
+impl PartialEq for RecordingCommand {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
 
 impl StdioCommand for RecordingCommand {
     fn command(
@@ -587,7 +631,7 @@ async fn held_lease_survives_release_until_its_last_owner_drops() {
         None,
         vec![Registration::new(
             "custom",
-            StaticConnector::new(Some(vec!["echo"])),
+            StaticConnector::new(vec!["echo"]),
         )],
     )
     .unwrap();
@@ -625,8 +669,8 @@ async fn client_changes_restart_connections_that_negotiate_capabilities() {
         "scope",
         None,
         vec![
-            Registration::new("process", StaticConnector::new(Some(vec!["echo"]))),
-            Registration::new("second", StaticConnector::new(Some(vec!["echo"]))),
+            Registration::new("process", StaticConnector::new(vec!["echo"])),
+            Registration::new("second", StaticConnector::new(vec!["echo"])),
         ],
     )
     .unwrap();
@@ -658,7 +702,7 @@ async fn failed_host_commit_does_not_install_the_started_connection() {
     let result = manager
         .enable(
             "scope",
-            Registration::new("custom", StaticConnector::new(Some(vec!["echo"]))),
+            Registration::new("custom", StaticConnector::new(vec!["echo"])),
             Path::new(""),
             async { Err(ExtensionError::SetupError("selection failed".into())) },
         )
@@ -713,7 +757,13 @@ async fn incomplete_discovery_is_omitted_and_retried_on_the_next_lease() {
     let manager = manager();
     let client = Arc::new(PaginatedToolsClient(AtomicUsize::new(0)));
     manager
-        .install_client("session", builtin_config("paged"), client.clone(), None)
+        .install_client(
+            "session",
+            builtin_config("paged"),
+            PathBuf::new(),
+            client.clone(),
+            None,
+        )
         .await;
     add_static(&manager, "good", Some(vec!["tool"])).await;
     let held = manager.scope_lease("session").await;
@@ -746,6 +796,7 @@ async fn resource_visibility_does_not_depend_on_tool_discovery() {
             .install_client(
                 "session",
                 builtin_config("resources"),
+                PathBuf::new(),
                 client.clone(),
                 Some(InitializeResult::new(capabilities)),
             )

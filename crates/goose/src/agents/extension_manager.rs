@@ -28,15 +28,7 @@ pub use mutation::ExtensionMutation;
 #[derive(Clone)]
 pub struct ExtensionManager {
     manager: Arc<crate::agents::extension_runtime::ExtensionManager>,
-    session_manager: Arc<crate::session::SessionManager>,
-}
-
-impl std::ops::Deref for ExtensionManager {
-    type Target = Arc<crate::agents::extension_runtime::ExtensionManager>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.manager
-    }
+    host: Arc<goose_host::GooseExtensionHost>,
 }
 
 impl ExtensionManager {
@@ -44,25 +36,14 @@ impl ExtensionManager {
         session_manager: Arc<crate::session::SessionManager>,
         client: ClientContext,
     ) -> Self {
-        let host = Arc::new(goose_host::GooseExtensionHost {
-            session_manager: Arc::clone(&session_manager),
-        });
+        let host = Arc::new(goose_host::GooseExtensionHost { session_manager });
         let manager = Arc::new(
             crate::agents::extension_runtime::ExtensionManager::with_services(
                 host.services(),
                 client,
             ),
         );
-        Self {
-            manager,
-            session_manager,
-        }
-    }
-
-    fn host(&self) -> Arc<goose_host::GooseExtensionHost> {
-        Arc::new(goose_host::GooseExtensionHost {
-            session_manager: Arc::clone(&self.session_manager),
-        })
+        Self { manager, host }
     }
 
     pub fn extension_set(
@@ -73,15 +54,15 @@ impl ExtensionManager {
         container: Option<crate::agents::container::Container>,
     ) -> Result<ExtensionSet> {
         crate::agents::extension_config::check_unique_keys(&configs)?;
-        let host = self.host();
         let runtime = crate::agents::extension_runtime::ExtensionSet::new(
             scope,
-            cwd.clone(),
+            cwd,
             configs
                 .iter()
+                .filter(|config| !crate::agents::platform_extensions::is_platform(config))
                 .cloned()
                 .map(|config| {
-                    registration::registration(config, container.clone(), Arc::clone(&host))
+                    registration::registration(config, container.clone(), Arc::clone(&self.host))
                 })
                 .collect(),
         )?;
@@ -92,12 +73,31 @@ impl ExtensionManager {
         self.manager.resolve(&set.runtime).await
     }
 
+    pub fn attach_client(&self, scope: &str, client: ClientContext) {
+        self.manager.attach_client(scope, client);
+    }
+
+    pub async fn release(&self, scope: &str) {
+        self.manager.release(scope).await;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn client(&self, scope: &str) -> Arc<ClientContext> {
+        self.manager.client(scope)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn scope_lease(&self, scope: &str) -> McpLease {
+        self.manager.scope_lease(scope).await
+    }
+
     pub async fn enable(
         &self,
         scope: &str,
         config: crate::agents::extension_config::ExtensionConfig,
     ) -> crate::agents::extension_config::ExtensionResult<()> {
         let session = self
+            .host
             .session_manager
             .get_session(scope, false)
             .await
@@ -105,7 +105,11 @@ impl ExtensionManager {
         self.manager
             .enable(
                 scope,
-                registration::registration(config.clone(), session.container, self.host()),
+                registration::registration(
+                    config.clone(),
+                    session.container,
+                    Arc::clone(&self.host),
+                ),
                 &session.working_dir,
                 self.select(scope, config),
             )
@@ -113,7 +117,8 @@ impl ExtensionManager {
     }
 
     pub(super) async fn select(&self, scope: &str, config: ExtensionConfig) -> ExtensionResult<()> {
-        self.session_manager
+        self.host
+            .session_manager
             .update_enabled_extensions(scope, |extensions| {
                 let key = config.key();
                 match extensions.iter_mut().find(|selected| selected.key() == key) {
@@ -126,7 +131,8 @@ impl ExtensionManager {
     }
 
     pub async fn disable(&self, scope: &str, key: &str) -> ExtensionResult<bool> {
-        self.session_manager
+        self.host
+            .session_manager
             .update_enabled_extensions(scope, |extensions| {
                 let selected = extensions.len();
                 extensions.retain(|config| config.key() != key);
@@ -156,7 +162,7 @@ impl ExtensionManager {
         &self,
         scope: &str,
     ) -> Result<Vec<crate::agents::extension_config::ExtensionConfig>> {
-        let session = self.session_manager.get_session(scope, false).await?;
+        let session = self.host.session_manager.get_session(scope, false).await?;
         Ok(
             EnabledExtensionsState::from_extension_data(&session.extension_data)
                 .map(|state| state.extensions)
@@ -196,21 +202,4 @@ pub fn client_context(
 pub struct ExtensionSet {
     pub(crate) runtime: crate::agents::extension_runtime::ExtensionSet,
     pub(crate) configs: Vec<ExtensionConfig>,
-}
-
-impl ExtensionSet {
-    pub fn new(
-        scope: impl Into<String>,
-        directory: Option<PathBuf>,
-        registrations: Vec<crate::agents::extension_runtime::Registration>,
-    ) -> ExtensionResult<Self> {
-        Ok(Self {
-            runtime: crate::agents::extension_runtime::ExtensionSet::new(
-                scope,
-                directory,
-                registrations,
-            )?,
-            configs: Vec::new(),
-        })
-    }
 }

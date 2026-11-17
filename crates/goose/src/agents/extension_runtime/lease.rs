@@ -22,9 +22,8 @@ use tracing::warn;
 
 use super::host::ExtensionToolPolicy;
 use super::{
-    get_tool_owner, recover_mangled_tool_name, remove_reserved_meta, ActionRequiredStream,
-    ClientContext, Extension, ExtensionLoadResult, ExtensionSlot, Registration,
-    TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    get_tool_owner, recover_mangled_tool_name, ActionRequiredStream, ClientContext, Extension,
+    ExtensionLoadResult, ExtensionSlot, Registration, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::extension_runtime::tool_execution::{
@@ -70,8 +69,8 @@ impl ExtensionSet {
         self.working_dir.as_deref()
     }
 
-    pub fn registrations(&self) -> impl Iterator<Item = Registration> + '_ {
-        self.extensions.iter().cloned()
+    pub fn registrations(&self) -> impl Iterator<Item = &Registration> {
+        self.extensions.iter()
     }
 }
 
@@ -260,11 +259,8 @@ impl ExtensionLease {
         self.slots.iter().any(|slot| slot.key == key)
     }
 
-    pub fn registrations(&self) -> Vec<Registration> {
-        self.slots
-            .iter()
-            .map(|slot| slot.registration.clone())
-            .collect()
+    pub fn enabled_keys(&self) -> impl Iterator<Item = &str> {
+        self.slots.iter().map(|slot| slot.key.as_str())
     }
 
     pub async fn read_resource(
@@ -582,7 +578,6 @@ impl ExtensionLease {
         let client_context = Arc::clone(&self.client_context);
         let policy = Arc::clone(&self.policy);
         let server_name = resolved.server_name.to_string();
-        let reserved_meta = self.policy.reserved_result_meta_keys();
         let session_id = self.scope_id.clone();
         let result = async move {
             let mut result = client
@@ -597,7 +592,6 @@ impl ExtensionLease {
                     ServiceError::McpError(error_data) => error_data,
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
-            remove_reserved_meta(&mut result, reserved_meta);
             policy
                 .process_result(
                     super::host::ResultContext {

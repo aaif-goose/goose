@@ -161,7 +161,6 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension_manager::ExtensionSet;
     use crate::agents::platform_extensions::PlatformExtension;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
@@ -291,7 +290,8 @@ mod tests {
         let advertised_working_dir = PathBuf::from("/leased/dir");
         let lease = em
             .resolve_tools(
-                &ExtensionSet::new(&session_id, Some(advertised_working_dir), vec![]).unwrap(),
+                &em.extension_set(&session_id, Some(advertised_working_dir), vec![], None)
+                    .unwrap(),
             )
             .await;
 

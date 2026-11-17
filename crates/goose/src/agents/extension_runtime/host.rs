@@ -108,11 +108,6 @@ impl ExtensionEnvironment for DefaultExtensionEnvironment {}
 /// Host-owned sanitization and decoration of external tool results.
 #[async_trait]
 pub trait ExtensionToolPolicy: Send + Sync {
-    /// Keys removed from external results before host decoration.
-    fn reserved_result_meta_keys(&self) -> &'static [&'static str] {
-        &[]
-    }
-
     async fn process_result(&self, _context: ResultContext<'_>, _result: &mut CallToolResult) {}
 }
 
