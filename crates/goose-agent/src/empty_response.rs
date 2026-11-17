@@ -11,6 +11,7 @@ use crate::operation::{
 };
 
 const MAX_RETRIES: usize = 3;
+const OPERATION: &str = "empty_response";
 const RETRY_MESSAGE: &str = "The model returned an empty response. Try again.";
 const RETRIED: &str = "retried";
 pub const EMPTY_RESPONSE_MESSAGE: &str =
@@ -30,7 +31,7 @@ where
     E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
-        "empty_response"
+        OPERATION
     }
 
     async fn run(
@@ -67,7 +68,9 @@ where
 
         if empty_responses <= MAX_RETRIES {
             let mut retry = Message::user().with_text(RETRY_MESSAGE).agent_only();
-            self.set_message_meta(&mut retry, RETRIED, serde_json::json!(true));
+            retry
+                .metadata
+                .set_operation_note(OPERATION, RETRIED, serde_json::json!(true));
             return applied([retry.into()]);
         }
 
