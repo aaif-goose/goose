@@ -590,6 +590,7 @@ impl ProviderFixture {
 
         let mut stream = self.services.reply(message, session_config, None).await?;
         let mut saw_action_required = false;
+        let mut answered_ids = std::collections::HashSet::new();
 
         while let Some(event) = stream.next().await {
             let event = event?;
@@ -598,9 +599,15 @@ impl ProviderFixture {
                     if let MessageContent::ActionRequired(ar) = content {
                         if let ActionRequiredData::ToolConfirmation { ref id, .. } = ar.data {
                             saw_action_required = true;
-                            self.services
-                                .submit_tool_confirmation(&self.session_id, id, permission.clone())
-                                .await?;
+                            if answered_ids.insert(id.clone()) {
+                                self.services
+                                    .submit_tool_confirmation(
+                                        &self.session_id,
+                                        id,
+                                        permission.clone(),
+                                    )
+                                    .await?;
+                            }
                         }
                     }
                 }

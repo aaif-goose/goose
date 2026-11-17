@@ -1,7 +1,7 @@
 use agent_client_protocol::schema::v1::McpServer;
 use anyhow::Result;
 use futures::future::BoxFuture;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::acp::{
@@ -153,20 +153,39 @@ fn sanitize_mcp_server_name(name: &str) -> String {
     }
 }
 
+fn unique_mcp_server_name(raw: &str, seen: &mut HashSet<String>) -> String {
+    let base = sanitize_mcp_server_name(raw);
+    if seen.insert(base.clone()) {
+        return base;
+    }
+    let mut index = 2usize;
+    loop {
+        let suffix = format!("_{index}");
+        let prefix_len = 64 - suffix.len();
+        let prefix: String = base.chars().take(prefix_len).collect();
+        let candidate = format!("{prefix}{suffix}");
+        if seen.insert(candidate.clone()) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
 fn sanitize_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServer> {
+    let mut seen = HashSet::new();
     servers
         .into_iter()
         .map(|server| match server {
             McpServer::Stdio(mut s) => {
-                s.name = sanitize_mcp_server_name(&s.name);
+                s.name = unique_mcp_server_name(&s.name, &mut seen);
                 McpServer::Stdio(s)
             }
             McpServer::Http(mut h) => {
-                h.name = sanitize_mcp_server_name(&h.name);
+                h.name = unique_mcp_server_name(&h.name, &mut seen);
                 McpServer::Http(h)
             }
             McpServer::Sse(mut s) => {
-                s.name = sanitize_mcp_server_name(&s.name);
+                s.name = unique_mcp_server_name(&s.name, &mut seen);
                 McpServer::Sse(s)
             }
             other => other,
@@ -212,5 +231,29 @@ mod tests {
             McpServer::Http(h) => assert_eq!(h.name, "My_HTTP"),
             _ => panic!("expected http"),
         }
+    }
+
+    #[test]
+    fn sanitize_mcp_servers_disambiguates_collisions() {
+        let long_a = format!("{}a", "x".repeat(64));
+        let long_b = format!("{}b", "x".repeat(64));
+        let servers = sanitize_mcp_servers(vec![
+            McpServer::Stdio(McpServerStdio::new("Chrome DevTools", "npx")),
+            McpServer::Stdio(McpServerStdio::new("Chrome_DevTools", "npx")),
+            McpServer::Stdio(McpServerStdio::new(long_a, "npx")),
+            McpServer::Stdio(McpServerStdio::new(long_b, "npx")),
+        ]);
+        let names: Vec<&str> = servers
+            .iter()
+            .map(|s| match s {
+                McpServer::Stdio(st) => st.name.as_str(),
+                _ => panic!("expected stdio"),
+            })
+            .collect();
+        assert_eq!(names[0], "Chrome_DevTools");
+        assert_eq!(names[1], "Chrome_DevTools_2");
+        assert_eq!(names[2].len(), 64);
+        assert_eq!(names[3].len(), 64);
+        assert_ne!(names[2], names[3]);
     }
 }
