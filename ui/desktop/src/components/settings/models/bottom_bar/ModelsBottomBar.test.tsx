@@ -52,7 +52,17 @@ vi.mock('../../../ui/dropdown-menu', () => ({
       {children}
     </div>
   ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({
+    children,
+    disabled,
+  }: {
+    children: React.ReactNode;
+    disabled: boolean;
+  }) => (
+    <button aria-label="Model picker" disabled={disabled}>
+      {children}
+    </button>
+  ),
   DropdownMenuContent: ({
     children,
     onCloseAutoFocus,
@@ -105,6 +115,7 @@ describe('ModelsBottomBar', () => {
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
         sessionLoaded={false}
+        disabled={false}
       />
     );
 
@@ -121,6 +132,7 @@ describe('ModelsBottomBar', () => {
         sessionProvider="session-provider"
         onModelChanged={mockOnModelChanged}
         sessionLoaded={true}
+        disabled={false}
       />
     );
 
@@ -135,6 +147,7 @@ describe('ModelsBottomBar', () => {
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
+        disabled={false}
       />
     );
 
@@ -152,6 +165,7 @@ describe('ModelsBottomBar', () => {
         sessionProvider="local"
         onModelChanged={mockOnModelChanged}
         sessionLoaded={true}
+        disabled={false}
       />
     );
 
@@ -179,5 +193,20 @@ describe('ModelsBottomBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
     expect(screen.getByTestId('switch-model-modal')).toBeInTheDocument();
     expect(mockPreventCloseAutoFocus).toHaveBeenCalledOnce();
+  });
+
+  it('disables the model picker trigger', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        disabled
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Model picker' })).toBeDisabled();
   });
 });
