@@ -44,7 +44,7 @@ pub(crate) async fn fire_pre_tool_hooks(
                 let denial = match write_integrity.and_then(|checker| {
                     checker
                         .check(
-                            session.conversation()?,
+                            session.conversation.as_ref()?,
                             &tool_call.name,
                             tool_call.arguments.as_ref(),
                         )
