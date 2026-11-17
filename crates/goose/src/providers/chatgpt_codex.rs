@@ -186,7 +186,9 @@ fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
         return None;
     }
     let riff_len = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?) as usize;
-    let bytes = bytes.get(..8usize.checked_add(riff_len)?)?;
+    if 8usize.checked_add(riff_len)? != bytes.len() {
+        return None;
+    }
     let (chunk, payload, mut offset) = webp_chunk(bytes, 12)?;
     if let Some(dimensions) = webp_frame_dimensions(chunk, payload) {
         return Some(dimensions);
@@ -1625,6 +1627,13 @@ mod tests {
             output[0],
             json!({ "type": "input_text", "text": "[Image: image/webp]" })
         );
+    }
+
+    #[test]
+    fn test_webp_preflight_rejects_trailing_chunks() {
+        let mut webp = extended_webp(1, 1, 1, 1);
+        webp.extend_from_slice(b"ANMF\0\0\0\0");
+        assert!(!webp_is_safe_to_decode(&webp));
     }
 
     #[test]
