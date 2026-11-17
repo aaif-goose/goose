@@ -433,6 +433,9 @@ async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
         Agent,
         "The model finished thinking but did not produce an answer",
     );
+    let fallback = result.conversation().last().expect("fallback message");
+    assert!(fallback.is_user_visible());
+    assert!(!fallback.is_agent_visible());
 
     api.on("after thinking forever").reply("answering again");
     let result = pipeline.run(["after thinking forever"]).await?;
@@ -446,19 +449,15 @@ async fn mixed_empty_and_thinking_only_responses_share_retry_budget() -> Result<
     let (pipeline, api) = test_pipeline().await?;
 
     for _ in 0..2 {
+        api.on("alternate empty and thinking").reply("").times(1);
         api.on("alternate empty and thinking")
             .reasoning("just thinking")
             .times(1);
-        api.on("alternate empty and thinking").reply("").times(1);
     }
 
     let result = pipeline.run(["alternate empty and thinking"]).await?;
     assert_eq!(api.call_count(), 4);
-    result.assert_message(
-        -1,
-        Agent,
-        "The model finished thinking but did not produce an answer",
-    );
+    result.assert_message(-1, Agent, "The model returned an empty response");
 
     Ok(())
 }

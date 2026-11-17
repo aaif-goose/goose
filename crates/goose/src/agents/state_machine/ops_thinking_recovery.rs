@@ -1,5 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::empty_response::{
+    is_answer_content, response_recovery_attempts, RESPONSE_RECOVERY_OPERATION,
+    RESPONSE_RECOVERY_RETRIED,
+};
 use rmcp::model::Role;
 use tracing::warn;
 
@@ -15,21 +19,7 @@ pub(crate) const THINKING_ONLY_CONTINUATION_MESSAGE: &str =
     "You did some thinking but did not produce an answer. Please continue.";
 pub(crate) const THINKING_ONLY_TURN_MESSAGE: &str =
     "The model finished thinking but did not produce an answer. Please resend your message to continue.";
-const MAX_THINKING_RECOVERY_ATTEMPTS: u32 = 3;
-
-const CONTINUED: &str = "continued";
-const EMPTY_RESPONSE_OPERATION: &str = "empty_response";
-const EMPTY_RESPONSE_RETRIED: &str = "retried";
-
-pub(crate) fn is_answer_content(content: &MessageContent) -> bool {
-    match content {
-        MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => false,
-        MessageContent::Text(text) => !text.text.trim().is_empty(),
-        MessageContent::Image(image) => !image.data.is_empty(),
-        MessageContent::SystemNotification(notification) => !notification.msg.is_empty(),
-        _ => true,
-    }
-}
+const MAX_THINKING_RECOVERY_ATTEMPTS: usize = 3;
 
 pub(crate) fn is_thinking_content(content: &MessageContent) -> bool {
     match content {
@@ -76,25 +66,7 @@ impl Operation<Session, GooseEffect> for ThinkingRecoveryOperation {
             return not_applicable();
         }
 
-        let mut attempts = 0u32;
-        for message in conversation.messages().iter().rev() {
-            if self.message_meta(message, CONTINUED).is_some()
-                || message
-                    .metadata
-                    .operation_note(EMPTY_RESPONSE_OPERATION, EMPTY_RESPONSE_RETRIED)
-                    .is_some()
-            {
-                attempts += 1;
-            } else if (message.role == Role::User
-                && !message.is_tool_response()
-                && !message.is_turn_context()
-                && (message.is_user_visible() || message.is_agent_visible()))
-                || (message.role == Role::Assistant
-                    && message.content.iter().any(is_answer_content))
-            {
-                break;
-            }
-        }
+        let attempts = response_recovery_attempts(conversation);
 
         if attempts < MAX_THINKING_RECOVERY_ATTEMPTS {
             warn!(
@@ -105,11 +77,17 @@ impl Operation<Session, GooseEffect> for ThinkingRecoveryOperation {
             let mut continuation = Message::user()
                 .with_text(THINKING_ONLY_CONTINUATION_MESSAGE)
                 .with_visibility(false, true);
-            self.set_message_meta(&mut continuation, CONTINUED, serde_json::json!(true));
+            continuation.metadata.set_operation_note(
+                RESPONSE_RECOVERY_OPERATION,
+                RESPONSE_RECOVERY_RETRIED,
+                serde_json::json!(true),
+            );
             applied([continuation.into()])
         } else {
             warn!("Provider returned a thinking-only response after retries; ending turn");
-            let message = Message::assistant().with_text(THINKING_ONLY_TURN_MESSAGE);
+            let message = Message::assistant()
+                .with_text(THINKING_ONLY_TURN_MESSAGE)
+                .with_visibility(true, false);
             let message = emit.message(message);
             applied([message.into()])
         }

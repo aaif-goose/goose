@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_provider_types::conversation::message::Message;
+use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use rmcp::model::Role;
@@ -13,7 +13,8 @@ use crate::operation::{
 const MAX_RETRIES: usize = 3;
 const OPERATION: &str = "empty_response";
 const RETRY_MESSAGE: &str = "The model returned an empty response. Try again.";
-const RETRIED: &str = "retried";
+pub const RESPONSE_RECOVERY_OPERATION: &str = "response_recovery";
+pub const RESPONSE_RECOVERY_RETRIED: &str = "retried";
 pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
 
@@ -21,6 +22,37 @@ pub struct EmptyResponseOperation;
 
 fn is_hidden_note(message: &Message) -> bool {
     message.role == Role::User && !message.is_user_visible() && !message.is_tool_response()
+}
+
+pub fn is_answer_content(content: &MessageContent) -> bool {
+    match content {
+        MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => false,
+        MessageContent::Text(text) => !text.text.trim().is_empty(),
+        MessageContent::Image(image) => !image.data.is_empty(),
+        MessageContent::SystemNotification(notification) => !notification.msg.is_empty(),
+        _ => true,
+    }
+}
+
+pub fn response_recovery_attempts(conversation: &Conversation) -> usize {
+    let mut attempts = 0;
+    for message in conversation.messages().iter().rev() {
+        if message
+            .metadata
+            .operation_note(RESPONSE_RECOVERY_OPERATION, RESPONSE_RECOVERY_RETRIED)
+            .is_some()
+        {
+            attempts += 1;
+        } else if (message.role == Role::User
+            && !message.is_tool_response()
+            && !message.is_turn_context()
+            && (message.is_user_visible() || message.is_agent_visible()))
+            || (message.role == Role::Assistant && message.content.iter().any(is_answer_content))
+        {
+            break;
+        }
+    }
+    attempts
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -56,21 +88,13 @@ where
             return not_applicable();
         }
 
-        let empty_responses = messages
-            .iter()
-            .rev()
-            .take_while(|message| {
-                (message.role == Role::Assistant && is_empty_response(message))
-                    || is_hidden_note(message)
-            })
-            .filter(|message| message.role == Role::Assistant && is_empty_response(message))
-            .count();
-
-        if empty_responses <= MAX_RETRIES {
+        if response_recovery_attempts(conversation) < MAX_RETRIES {
             let mut retry = Message::user().with_text(RETRY_MESSAGE).agent_only();
-            retry
-                .metadata
-                .set_operation_note(OPERATION, RETRIED, serde_json::json!(true));
+            retry.metadata.set_operation_note(
+                RESPONSE_RECOVERY_OPERATION,
+                RESPONSE_RECOVERY_RETRIED,
+                serde_json::json!(true),
+            );
             return applied([retry.into()]);
         }
 
