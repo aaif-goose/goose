@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_sdk_types::custom_requests::SourceEntry;
 
 use super::recipe_slash_command::runnable_recipes;
 use super::slash_command::is_builtin_command;
@@ -9,37 +9,6 @@ use super::util::normalize_command_name;
 
 pub fn list_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
     commands_from_sources(crate::skills::list_installed_skills(working_dir))
-}
-
-pub fn format_installed_skills(working_dir: Option<&Path>) -> String {
-    let sources = crate::skills::list_installed_skills(working_dir);
-    let skills: Vec<_> = sources
-        .iter()
-        .filter(|s| matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill))
-        .collect();
-
-    let mut output = String::new();
-    if skills.is_empty() {
-        output.push_str("No skills installed.\n\n");
-        output.push_str("Skills are loaded from SKILL.md files in:\n");
-        output.push_str("  - ~/.agents/skills/ (global)\n");
-        output.push_str("  - ~/.agents/plugins/*/skills/ (installed plugins)\n");
-        output.push_str("  - .agents/skills/ (in current project)\n");
-    } else {
-        output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));
-        for skill in &skills {
-            let kind_label = if skill.source_type == SourceType::BuiltinSkill {
-                " *(builtin)*"
-            } else {
-                ""
-            };
-            output.push_str(&format!(
-                "- **{}**{}: {}\n",
-                skill.name, kind_label, skill.description
-            ));
-        }
-    }
-    output
 }
 
 pub fn runnable_skills(working_dir: Option<&Path>) -> Vec<(String, SourceEntry)> {

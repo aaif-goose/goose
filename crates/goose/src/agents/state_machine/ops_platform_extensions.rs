@@ -43,17 +43,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
         let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
-        Ok(tools
-            .platform_tools()
-            .await
-            .into_iter()
-            .filter(|tool| {
-                !crate::agents::extension_manager::is_tool_owned_by_extension(
-                    tool,
-                    crate::skills::EXTENSION_NAME,
-                )
-            })
-            .collect())
+        Ok(tools.platform_tools().await)
     }
 
     async fn prompt_parts(
@@ -67,7 +57,6 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
             return Ok(Vec::new());
         }
         let mut extensions = tools.platform.instructions().await;
-        extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(if extensions.is_empty() {
             Vec::new()

@@ -235,7 +235,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
         .into_iter()
         .find(|skill| skill.name == "auto-effort-review")
         .expect("project skill should be installed");
-    let expanded_skill_prompt = crate::skills::loaded_skill_context_with_args(&skill, None)?;
+    let expanded_skill_prompt = goose_agent::skills::loaded_skill_context(&skill, &skill.content);
 
     let jev = MockServer::start().await;
     for (request, effort) in [

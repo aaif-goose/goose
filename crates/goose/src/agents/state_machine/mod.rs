@@ -54,6 +54,7 @@ pub(crate) use tool_confirmation::{
     persist_tool_confirmation_decision,
 };
 
+pub(super) use goose_agent::skills::SkillOperation;
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
 pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_compaction::CompactionOperation;
@@ -68,7 +69,7 @@ pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;
 #[cfg(test)]
 pub(super) use ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 pub(super) use ops_retry::RetryOperation;
-pub(super) use ops_skills::SkillOperation;
+pub(super) use ops_skills::{GooseSkillSource, NO_SKILLS_HELP};
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_stop_hook::{StopHookOperation, DEFAULT_BLOCK_CAP};
 pub(super) use ops_subagent::DELEGATED_META_KEY;
