@@ -21,8 +21,8 @@ use crate::agents::state_machine::{
     GooseToolApproval, InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation,
     RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
     SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    SubagentOperation, ThinkingRecoveryOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -184,6 +184,7 @@ pub(crate) fn build_state_machine(
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
+        Arc::new(ThinkingRecoveryOperation),
         Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
