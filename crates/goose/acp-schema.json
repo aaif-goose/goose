@@ -25,6 +25,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "builtin"
+            },
             "name": {
               "type": "string"
             },
@@ -62,10 +66,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "builtin"
             }
           },
           "required": [
@@ -76,6 +76,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "platform"
+            },
             "name": {
               "type": "string"
             },
@@ -106,10 +110,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "platform"
             }
           },
           "required": [
@@ -120,6 +120,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "mcp"
+            },
             "server": {
               "$ref": "#/$defs/McpServer"
             },
@@ -184,10 +188,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "mcp"
             }
           },
           "required": [
@@ -1353,6 +1353,13 @@
         "offerSdp": {
           "type": "string"
         },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Added after goose's live voice instructions, including any configured\nones, for this interaction only. Blank text adds nothing."
+        },
         "_meta": {
           "type": [
             "object",
@@ -1365,7 +1372,7 @@
         "sessionId",
         "offerSdp"
       ],
-      "description": "Get a diagnostic report for a session.",
+      "description": "Start a live voice interaction for a session.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/live-voice/start"
     },
@@ -1437,6 +1444,172 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/diagnostics/get"
+    },
+    "ContextReportRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Break down what fills the model's context window if the session were\nprompted right now. Makes no model call.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ContextReportModel"
+        },
+        "totalTokens": {
+          "type": "integer",
+          "description": "Measured with goose's local tokenizer; always the sum of the segments.",
+          "minimum": 0
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextSegment"
+          },
+          "description": "Non-overlapping. Prompt and tool segments come in request order; the\nconversation follows grouped by message kind, with each part labelled\nby its position in the request."
+        },
+        "providerManagesContext": {
+          "type": "boolean",
+          "description": "The provider keeps its own history and only receives the latest prompt\n(Claude Code, Gemini CLI), so goose assembles no request to break down;\n`segments` is empty and `total_tokens` is zero."
+        },
+        "autoCompactionPending": {
+          "type": "boolean",
+          "description": "The session is past the auto-compaction threshold, so the loop compacts\nthe conversation before it sends the next request."
+        }
+      },
+      "required": [
+        "model",
+        "totalTokens",
+        "segments",
+        "providerManagesContext",
+        "autoCompactionPending"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportModel": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "modelName",
+        "contextLimit"
+      ]
+    },
+    "ContextSegment": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/ContextCategory"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Display-only provenance, such as a file path or a tool count."
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Truncated with a trailing `… (+N more chars)` marker. Omitted when\n`parts` carries the previews."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextPart"
+          }
+        }
+      },
+      "required": [
+        "category",
+        "label",
+        "tokenCount"
+      ]
+    },
+    "ContextCategory": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "extension_instructions",
+            "turn_context",
+            "tool_definitions",
+            "compaction_summary",
+            "messages"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "system_prompt",
+          "description": "The base prompt, plus the residual row that reconciles the segments\nwith the request total."
+        },
+        {
+          "type": "string",
+          "const": "additional_instructions",
+          "description": "Hint files, project instructions and other prompt extras."
+        }
+      ]
+    },
+    "ContextPart": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "tokenCount"
+      ],
+      "description": "Parts add up to their segment's `tokenCount`, except where a segment is\nsplit into prose sections; there the headings and framing are carried by\nthe segment alone."
     },
     "ListPromptsRequest_unstable": {
       "type": "object",
@@ -3763,6 +3936,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "builtin"
+            },
             "name": {
               "type": "string"
             },
@@ -3800,10 +3977,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "builtin"
             }
           },
           "required": [
@@ -3814,6 +3987,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "platform"
+            },
             "name": {
               "type": "string"
             },
@@ -3844,10 +4021,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "platform"
             }
           },
           "required": [
@@ -3858,6 +4031,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "stdio"
+            },
             "name": {
               "type": "string"
             },
@@ -3916,10 +4093,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "stdio"
             }
           },
           "required": [
@@ -3931,6 +4104,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "streamable_http"
+            },
             "name": {
               "type": "string"
             },
@@ -4010,10 +4187,6 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
-            },
-            "type": {
-              "type": "string",
-              "const": "streamable_http"
             }
           },
           "required": [
@@ -4213,12 +4386,12 @@
         {
           "type": "object",
           "properties": {
-            "command": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "shell"
+            },
+            "command": {
+              "type": "string"
             }
           },
           "required": [
@@ -5054,12 +5227,12 @@
         {
           "type": "object",
           "properties": {
-            "projectDir": {
-              "type": "string"
-            },
             "scope": {
               "type": "string",
               "const": "projectDir"
+            },
+            "projectDir": {
+              "type": "string"
             }
           },
           "required": [
@@ -5070,12 +5243,12 @@
         {
           "type": "object",
           "properties": {
-            "projectId": {
-              "type": "string"
-            },
             "scope": {
               "type": "string",
               "const": "projectId"
+            },
+            "projectId": {
+              "type": "string"
             }
           },
           "required": [
@@ -6078,6 +6251,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "Temperature"
+            },
             "temperature": {
               "type": "number",
               "format": "float"
@@ -6099,10 +6276,6 @@
                 "null"
               ],
               "minimum": 0
-            },
-            "type": {
-              "type": "string",
-              "const": "Temperature"
             }
           },
           "required": [
@@ -6116,6 +6289,10 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "const": "MirostatV2"
+            },
             "tau": {
               "type": "number",
               "format": "float"
@@ -6130,10 +6307,6 @@
                 "null"
               ],
               "minimum": 0
-            },
-            "type": {
-              "type": "string",
-              "const": "MirostatV2"
             }
           },
           "required": [
@@ -6169,12 +6342,12 @@
         {
           "type": "object",
           "properties": {
-            "name": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "builtin"
+            },
+            "name": {
+              "type": "string"
             }
           },
           "required": [
@@ -6185,12 +6358,12 @@
         {
           "type": "object",
           "properties": {
-            "template": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "custom_inline"
+            },
+            "template": {
+              "type": "string"
             }
           },
           "required": [
@@ -6797,12 +6970,12 @@
         {
           "type": "object",
           "properties": {
-            "message": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "notice"
+            },
+            "message": {
+              "type": "string"
             }
           },
           "required": [
@@ -6813,12 +6986,12 @@
         {
           "type": "object",
           "properties": {
-            "message": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "const": "progress"
+            },
+            "message": {
+              "type": "string"
             }
           },
           "required": [
@@ -7211,6 +7384,15 @@
                   ],
                   "description": "Params for _goose/unstable/diagnostics/get",
                   "title": "DiagnosticsGetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ContextReportRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/context/report",
+                  "title": "ContextReportRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -8182,6 +8364,14 @@
                         }
                       ],
                       "title": "DiagnosticsGetResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ContextReportResponse_unstable"
+                        }
+                      ],
+                      "title": "ContextReportResponse_unstable"
                     },
                     {
                       "allOf": [

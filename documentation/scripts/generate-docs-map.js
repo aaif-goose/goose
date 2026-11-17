@@ -46,6 +46,7 @@ async function main() {
   const sections = [
     { name: 'Getting Started', pattern: 'getting-started/*.{md,mdx}' },
     { name: 'Guides', pattern: 'guides/**/*.{md,mdx}' },
+    { name: 'GDK', pattern: 'gdk/**/*.{md,mdx}' },
   ];
 
   let output = `# goose Documentation Map

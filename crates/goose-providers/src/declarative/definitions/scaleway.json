@@ -35,13 +35,6 @@
       "currency": "USD"
     },
     {
-      "name": "meta/llama-3.3-70b-instruct",
-      "context_limit": 128000,
-      "input_token_cost": 0.000000972,
-      "output_token_cost": 0.000000972,
-      "currency": "USD"
-    },
-    {
       "name": "mistralai/mistral-medium-2505",
       "context_limit": 256000,
       "input_token_cost": 0.00000175,

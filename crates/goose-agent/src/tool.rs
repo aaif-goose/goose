@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::{
-    message::{Message, MessageContent, ToolRequest},
+    message::{Message, ToolRequest},
     Conversation,
 };
 use rmcp::{
@@ -19,6 +19,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
 };
+use crate::tool_call_state::{tool_calls, ToolCallState};
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 fn empty_input_schema() -> Arc<JsonObject> {
@@ -193,7 +194,7 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
-    response: Mutex<Option<Message>>,
+    tool_responses: Mutex<Option<Message>>,
 }
 
 impl<S> ToolOperation<S>
@@ -204,7 +205,7 @@ where
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
-            response: Mutex::new(None),
+            tool_responses: Mutex::new(None),
         }
     }
 
@@ -309,9 +310,9 @@ where
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        let response = self.response.lock().unwrap().take();
-        match response {
-            Some(response) => vec![E::from(emit.message(response))],
+        let tool_responses = self.tool_responses.lock().unwrap().take();
+        match tool_responses {
+            Some(tool_responses) => vec![E::from(emit.message(tool_responses))],
             None => Vec::new(),
         }
     }
@@ -332,18 +333,14 @@ where
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let turn = messages_since_kickoff(conversation)?;
-        let answered: HashSet<&str> = turn
-            .iter()
-            .flat_map(Message::get_tool_response_ids)
-            .collect();
-        let pending = turn
-            .iter()
-            .flat_map(|message| message.content.iter())
-            .filter_map(MessageContent::as_tool_request)
-            .filter(|request| {
-                !request.was_executed_externally() && !answered.contains(request.id.as_str())
+        let pending = tool_calls(turn)
+            .into_iter()
+            .filter(|(request, state)| {
+                !request.was_executed_externally()
+                    && (*state == ToolCallState::Executable
+                        || (*state == ToolCallState::Unchecked && request.tool_call.is_err()))
             })
-            .cloned()
+            .map(|(request, _)| request.clone())
             .collect::<Vec<_>>();
         if pending.is_empty() {
             return not_applicable();
@@ -376,22 +373,21 @@ where
                         .await
                 }
             };
-            let mut output = self.response.lock().unwrap();
-            let message =
-                output.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-            message.add_tool_response_with_metadata(
-                request.id,
-                tool_result,
-                request.metadata.as_ref(),
-            );
+            let mut tool_responses = self.tool_responses.lock().unwrap();
+            tool_responses
+                .get_or_insert_with(|| Message::user().with_generated_id_if_missing())
+                .add_tool_response_with_metadata(
+                    request.id,
+                    tool_result,
+                    request.metadata.as_ref(),
+                );
         }
-        let message = self
-            .response
+        let tool_responses = self
+            .tool_responses
             .lock()
             .unwrap()
             .take()
             .expect("tool responses retained");
-        let message = emit.message(message);
-        applied([E::from(message)])
+        applied([E::from(emit.message(tool_responses))])
     }
 }

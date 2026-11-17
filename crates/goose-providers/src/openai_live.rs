@@ -4,6 +4,7 @@
 //! WebRTC connectors own their distinct connection establishment flows.
 
 use crate::{
+    api_client::{ApiClient, TlsConfig},
     http_status::handle_response,
     live::{
         LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport, LIVE_EVENT_CHANNEL_CAPACITY,
@@ -198,6 +199,7 @@ pub struct OpenAiLiveClient {
     api_key: String,
     http_endpoint: String,
     websocket_endpoint: String,
+    tls_config: Option<TlsConfig>,
 }
 
 impl OpenAiLiveClient {
@@ -206,6 +208,7 @@ impl OpenAiLiveClient {
             api_key: api_key.into(),
             http_endpoint: DEFAULT_OPENAI_LIVE_HTTP_URL.into(),
             websocket_endpoint: DEFAULT_OPENAI_LIVE_WEBSOCKET_URL.into(),
+            tls_config: None,
         }
     }
 
@@ -224,6 +227,36 @@ impl OpenAiLiveClient {
 
     pub fn with_websocket_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.websocket_endpoint = endpoint.into();
+        self
+    }
+
+    /// Points signaling at a GPT-Live compatible sessions URL, such as
+    /// `https://host/v1/live/sessions`; the sideband uses the same URL over `ws(s)`.
+    pub fn with_endpoint(self, endpoint: &str) -> Result<Self> {
+        let mut url = url::Url::parse(endpoint.trim())?;
+        let websocket_scheme = match url.scheme() {
+            "https" => "wss",
+            "http" => "ws",
+            _ => bail!("OpenAI Live endpoint must be an http or https URL"),
+        };
+        // The parser already refuses an http(s) URL without a host.
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            bail!("OpenAI Live endpoint must not carry credentials, a query or a fragment");
+        }
+        let http_endpoint = url.to_string();
+        url.set_scheme(websocket_scheme)
+            .map_err(|_| anyhow::anyhow!("OpenAI Live endpoint has no WebSocket form"))?;
+        Ok(self
+            .with_http_endpoint(http_endpoint)
+            .with_websocket_endpoint(url.to_string()))
+    }
+
+    pub fn with_tls_config(mut self, tls_config: TlsConfig) -> Self {
+        self.tls_config = Some(tls_config);
         self
     }
 
@@ -337,8 +370,11 @@ impl OpenAiLiveExistingSessionConnector {
         let client = self.client.clone();
         let session_id = self.session_id.clone();
         let transport = Arc::new(
-            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
-                .await?,
+            crate::live_transport_websocket::WebSocketLiveTransport::connect_with_tls_config(
+                self.request()?,
+                client.tls_config.as_ref(),
+            )
+            .await?,
         );
         Ok(client
             .connect_transport(transport, OpenAiLiveConnectionKind::MediaControl)
@@ -374,8 +410,11 @@ impl OpenAiLiveWebSocketConnector {
     pub async fn connect(self) -> Result<ConnectedOpenAiLiveSession> {
         let client = self.client.clone();
         let transport = Arc::new(
-            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
-                .await?,
+            crate::live_transport_websocket::WebSocketLiveTransport::connect_with_tls_config(
+                self.request()?,
+                client.tls_config.as_ref(),
+            )
+            .await?,
         );
         client
             .connect_transport(transport, OpenAiLiveConnectionKind::PrimaryWebSocket)
@@ -434,10 +473,14 @@ impl OpenAiLiveWebRtcConnector {
     ) -> Result<OpenAiLiveWebRtcNegotiation> {
         let client = self.client.clone();
         let request = self.request(offer_sdp)?;
-        let mut http_request = reqwest::Client::new().post(request.endpoint).json(&json!({
-            "session": request.session,
-            "transport": { "type": "webrtc", "sdp": request.offer_sdp },
-        }));
+        let mut http_request = ApiClient::http_client_builder(client.tls_config.as_ref())?
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?
+            .post(request.endpoint)
+            .json(&json!({
+                "session": request.session,
+                "transport": { "type": "webrtc", "sdp": request.offer_sdp },
+            }));
         for (name, value) in request.headers {
             http_request = http_request.header(name, value);
         }
@@ -942,6 +985,83 @@ mod tests {
 
         assert_eq!(negotiation.session_id.0, "session_1");
         assert_eq!(negotiation.answer_sdp, "answer-sdp");
+    }
+
+    #[test]
+    fn a_custom_endpoint_is_a_plain_http_or_https_url() {
+        let client = OpenAiLiveClient::new("key")
+            .with_endpoint("HTTP://Voice.Example:8080/v1/live/sessions/")
+            .unwrap();
+        assert_eq!(
+            client.http_endpoint,
+            "http://voice.example:8080/v1/live/sessions/"
+        );
+        assert_eq!(
+            client
+                .existing_session(OpenAiLiveSessionId("session_1".into()))
+                .request()
+                .unwrap()
+                .endpoint,
+            "ws://voice.example:8080/v1/live/sessions/session_1/attach"
+        );
+        let client = OpenAiLiveClient::new("key")
+            .with_endpoint("https://example.com/v1/live/sessions")
+            .unwrap();
+        assert_eq!(
+            client.websocket_endpoint,
+            "wss://example.com/v1/live/sessions"
+        );
+
+        for endpoint in [
+            "",
+            "example.com/v1/live/sessions",
+            "ftp://example.com/v1/live/sessions",
+            "ws://example.com/v1/live/sessions",
+            "http://",
+            "http://:19137/v1/live/sessions",
+            "http://user@example.com/v1/live/sessions",
+            "http://user:pass@example.com/v1/live/sessions",
+            "http://example.com/v1/live/sessions?x=1",
+            "http://example.com/v1/live/sessions#x",
+        ] {
+            assert!(
+                OpenAiLiveClient::new("key")
+                    .with_endpoint(endpoint)
+                    .is_err(),
+                "{endpoint}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn webrtc_negotiation_does_not_follow_redirects() {
+        let server = MockServer::start().await;
+        let elsewhere = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/live/sessions"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", format!("{}/v1/live/sessions", elsewhere.uri())),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "session": { "id": "session_1" },
+                "transport": { "type": "webrtc", "sdp": "answer-sdp" }
+            })))
+            .expect(0)
+            .mount(&elsewhere)
+            .await;
+
+        let result = OpenAiLiveClient::new("test-key")
+            .with_endpoint(&format!("{}/v1/live/sessions", server.uri()))
+            .unwrap()
+            .webrtc(config())
+            .negotiate("offer-sdp")
+            .await;
+
+        assert!(result.is_err());
     }
 
     #[test]

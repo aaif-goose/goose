@@ -2,7 +2,7 @@ use super::*;
 use goose_acp_macros::custom_methods;
 
 #[custom_methods]
-impl GooseAcpAgent {
+impl AcpConnection {
     pub async fn dispatch_custom_request(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
@@ -165,6 +165,14 @@ impl GooseAcpAgent {
         req: DiagnosticsGetRequest,
     ) -> Result<DiagnosticsGetResponse, agent_client_protocol::Error> {
         self.on_get_diagnostics(req).await
+    }
+
+    #[custom_method(ContextReportRequest)]
+    async fn dispatch_get_context_report(
+        &self,
+        req: ContextReportRequest,
+    ) -> Result<ContextReportResponse, agent_client_protocol::Error> {
+        self.on_get_context_report(req).await
     }
 
     #[custom_method(ListPromptsRequest)]

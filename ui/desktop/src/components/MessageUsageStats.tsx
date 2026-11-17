@@ -107,9 +107,15 @@ function StatRow({
 
 /**
  * Per-message usage chip (tok/s, cost, total tokens) with a tooltip breaking
- * down tokens, caching, timing, and cost. Renders nothing without data.
+ * down tokens, caching, timing, cost, and operation logs.
  */
-export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
+export default function MessageUsageStats({
+  usage,
+  operationLogs = [],
+}: {
+  usage?: MessageUsage | null;
+  operationLogs?: string[];
+}) {
   const intl = useIntl();
   const {
     inputTokens,
@@ -122,7 +128,7 @@ export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
     elapsedMs,
     timeToFirstTokenMs,
     isCompaction,
-  } = usage;
+  } = usage ?? {};
 
   const tps = tokensPerSecond(outputTokens, elapsedMs);
 
@@ -148,6 +154,12 @@ export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
       <span key="tokens">
         {formatTokenCount(totalTokens)} {intl.formatMessage(i18n.tokenUnit)}
       </span>
+    );
+  }
+
+  if (chipSegments.length === 0 && operationLogs.length > 0) {
+    chipSegments.push(
+      <Zap key="operations" className="h-3 w-3" aria-label={operationLogs.join(', ')} />
     );
   }
 
@@ -278,6 +290,14 @@ export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
           {isCompaction && (
             <div className={cn(section, 'text-amber-300/90')}>
               {intl.formatMessage(i18n.compaction)}
+            </div>
+          )}
+
+          {operationLogs.length > 0 && (
+            <div className={cn(section, 'font-mono text-text-inverse/70')}>
+              {operationLogs.map((line, index) => (
+                <div key={`${index}-${line}`}>{line}</div>
+              ))}
             </div>
           )}
         </div>

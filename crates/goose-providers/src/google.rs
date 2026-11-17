@@ -2,7 +2,7 @@ use crate::api_client::{ApiClient, AuthMethod};
 use crate::base::MessageStream;
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
-use crate::openai_compatible::{handle_status, map_http_error_to_provider_error, sanitize_url};
+use crate::openai_compatible::handle_status;
 use crate::retry::ProviderRetry;
 
 use crate::base::{known_models_from_registry, ConfigKey, Provider, ProviderMetadata};
@@ -118,13 +118,7 @@ impl Provider for GoogleProvider {
             .request("v1beta/models")
             .response_get()
             .await?;
-        let status = response.status();
-        if !status.is_success() {
-            let url = sanitize_url(response.url().as_str());
-            let body = response.text().await.unwrap_or_default();
-            let payload = serde_json::from_str::<serde_json::Value>(&body).ok();
-            return Err(map_http_error_to_provider_error(status, payload, &url));
-        }
+        let response = handle_status(response).await?;
 
         let json: serde_json::Value = response.json().await?;
         let arr = json

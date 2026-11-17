@@ -5,7 +5,6 @@ import MarkdownContent from '../MarkdownContent';
 interface RecipeActivitiesProps {
   append: (text: string) => void;
   activities: string[] | null;
-  title?: string;
 }
 
 export default function RecipeActivities({ append, activities }: RecipeActivitiesProps) {

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Button } from '../../../../ui/button';
 import { Search, ExternalLink, Check } from 'lucide-react';
 import { Input } from '../../../../ui/input';
 import { Select } from '../../../../ui/Select';
@@ -59,23 +58,13 @@ const i18n = defineMessages({
     id: 'providerCatalogPicker.requiresEnvVar',
     defaultMessage: ' • Requires {envVar}',
   },
-  cancel: {
-    id: 'providerCatalogPicker.cancel',
-    defaultMessage: 'Cancel',
-  },
 });
 
 interface ProviderCatalogPickerProps {
   onSelect: (template: ProviderTemplateDto) => void;
-  onCancel: () => void;
-  embedded?: boolean;
 }
 
-export default function ProviderCatalogPicker({
-  onSelect,
-  onCancel,
-  embedded,
-}: ProviderCatalogPickerProps) {
+export default function ProviderCatalogPicker({ onSelect }: ProviderCatalogPickerProps) {
   const intl = useIntl();
   const [selectedFormat, setSelectedFormat] = useState<string>('openai');
   const [providers, setProviders] = useState<ProviderTemplateCatalogEntryDto[]>([]);
@@ -235,15 +224,6 @@ export default function ProviderCatalogPicker({
               </button>
             ))
           )}
-        </div>
-      )}
-
-      {/* Actions */}
-      {!embedded && (
-        <div className="flex justify-end space-x-2 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            {intl.formatMessage(i18n.cancel)}
-          </Button>
         </div>
       )}
     </div>

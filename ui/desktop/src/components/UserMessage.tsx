@@ -353,24 +353,26 @@ function UserMessage({ message, onMessageUpdate }: UserMessageProps) {
                     {timestamp}
                   </div>
                   <div className="absolute right-0 pt-1 flex items-center gap-2">
-                    <button
-                      onClick={handleEditClick}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleEditClick();
-                        }
-                      }}
-                      className="flex items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 rounded"
-                      aria-label={intl.formatMessage(i18n.editMessageAriaLabel, {
-                        preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}`,
-                      })}
-                      aria-expanded={isEditing}
-                      title={intl.formatMessage(i18n.editMessageTitle)}
-                    >
-                      <Edit className="h-3 w-3" />
-                      <span>{intl.formatMessage(i18n.editButton)}</span>
-                    </button>
+                    {onMessageUpdate && (
+                      <button
+                        onClick={handleEditClick}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleEditClick();
+                          }
+                        }}
+                        className="flex items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 rounded"
+                        aria-label={intl.formatMessage(i18n.editMessageAriaLabel, {
+                          preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}`,
+                        })}
+                        aria-expanded={isEditing}
+                        title={intl.formatMessage(i18n.editMessageTitle)}
+                      >
+                        <Edit className="h-3 w-3" />
+                        <span>{intl.formatMessage(i18n.editButton)}</span>
+                      </button>
+                    )}
                     <MessageCopyLink text={textContent} contentRef={contentRef} />
                   </div>
                 </div>

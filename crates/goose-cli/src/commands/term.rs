@@ -22,6 +22,7 @@ pub enum Shell {
 
 struct ShellConfig {
     script_template: &'static str,
+    history_hook_template: Option<&'static str>,
     command_not_found: Option<&'static str>,
 }
 
@@ -40,7 +41,9 @@ impl Shell {
 static BASH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
 alias @goose='{goose_bin} term run'
-alias @g='{goose_bin} term run'
+alias @g='{goose_bin} term run'{history_hook}{command_not_found_handler}"#,
+    history_hook_template: Some(
+        r#"
 
 goose_preexec() {
     [[ "$1" =~ ^goose\ term ]] && return
@@ -51,7 +54,8 @@ goose_preexec() {
 if [[ -z "$goose_preexec_installed" ]]; then
     goose_preexec_installed=1
     trap 'goose_preexec "$BASH_COMMAND"' DEBUG
-fi{command_not_found_handler}"#,
+fi"#,
+    ),
     command_not_found: Some(
         r#"
 
@@ -66,7 +70,9 @@ command_not_found_handle() {
 static ZSH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
 alias @goose='{goose_bin} term run'
-alias @g='{goose_bin} term run'
+alias @g='{goose_bin} term run'{history_hook}{command_not_found_handler}"#,
+    history_hook_template: Some(
+        r#"
 
 goose_preexec() {
     [[ "$1" =~ ^goose\ term ]] && return
@@ -75,7 +81,8 @@ goose_preexec() {
 }
 
 autoload -Uz add-zsh-hook
-add-zsh-hook preexec goose_preexec{command_not_found_handler}"#,
+add-zsh-hook preexec goose_preexec"#,
+    ),
     command_not_found: Some(
         r#"
 
@@ -90,20 +97,26 @@ command_not_found_handler() {
 static FISH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"set -gx AGENT_SESSION_ID "{session_id}"
 function @goose; {goose_bin} term run $argv; end
-function @g; {goose_bin} term run $argv; end
+function @g; {goose_bin} term run $argv; end{history_hook}"#,
+    history_hook_template: Some(
+        r#"
 
 function goose_preexec --on-event fish_preexec
     string match -q -r '^goose term' -- $argv[1]; and return
     string match -q -r '^(@goose|@g)($|\s)' -- $argv[1]; and return
     {goose_bin} term log "$argv[1]" 2>/dev/null &
 end"#,
+    ),
     command_not_found: None,
 };
 
 static NU_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env.AGENT_SESSION_ID = "{session_id}"
 def --wrapped @goose [...args] { run-external "{goose_bin}" "term" "run" ...$args }
-def --wrapped @g [...args] { run-external "{goose_bin}" "term" "run" ...$args }
+def --wrapped @g [...args] { run-external "{goose_bin}" "term" "run" ...$args }{history_hook}
+{command_not_found_handler}"#,
+    history_hook_template: Some(
+        r#"
 
 if (($env | get -o GOOSE_NU_PREEXEC_INSTALLED | default false) != true) {
     $env.GOOSE_NU_PREEXEC_INSTALLED = true
@@ -123,8 +136,8 @@ if (($env | get -o GOOSE_NU_PREEXEC_INSTALLED | default false) != true) {
             job spawn { run-external "{goose_bin}" "term" "log" $line | complete | ignore } | ignore
         }
     )
-}
-{command_not_found_handler}"#,
+}"#,
+    ),
     command_not_found: Some(
         r#"
 $env.config.hooks.command_not_found = {|command_name|
@@ -139,7 +152,9 @@ $env.config.hooks.command_not_found = {|command_name|
 static POWERSHELL_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env:AGENT_SESSION_ID = "{session_id}"
 function @goose {{ & '{goose_bin}' term run @args }}
-function @g {{ & '{goose_bin}' term run @args }}
+function @g {{ & '{goose_bin}' term run @args }}{history_hook}"#,
+    history_hook_template: Some(
+        r#"
 
 Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
     $line = $null
@@ -149,6 +164,7 @@ Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
     }}
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
 }}"#,
+    ),
     command_not_found: None,
 };
 
@@ -157,8 +173,17 @@ fn render_term_init_script(
     session_id: &str,
     goose_bin: &str,
     with_command_not_found: bool,
+    include_history: bool,
 ) -> String {
     let config = shell.config();
+    let history_hook = if include_history {
+        config
+            .history_hook_template
+            .map(|h| h.replace("{goose_bin}", goose_bin))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
     let command_not_found_handler = if with_command_not_found {
         config
             .command_not_found
@@ -170,15 +195,17 @@ fn render_term_init_script(
 
     config
         .script_template
+        .replace("{history_hook}", &history_hook)
+        .replace("{command_not_found_handler}", &command_not_found_handler)
         .replace("{session_id}", session_id)
         .replace("{goose_bin}", goose_bin)
-        .replace("{command_not_found_handler}", &command_not_found_handler)
 }
 
 pub async fn handle_term_init(
     shell: Shell,
     name: Option<String>,
     with_command_not_found: bool,
+    include_history: bool,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
 
@@ -220,9 +247,23 @@ pub async fn handle_term_init(
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "goose".to_string());
 
+    if include_history {
+        eprintln!(
+            "Warning: --dangerous-include-history is enabled. Recent shell commands will be \
+             recorded and sent to the configured model provider. Command lines can contain \
+             credentials and other sensitive data."
+        );
+    }
+
     println!(
         "{}",
-        render_term_init_script(shell, &session.id, &goose_bin, with_command_not_found)
+        render_term_init_script(
+            shell,
+            &session.id,
+            &goose_bin,
+            with_command_not_found,
+            include_history
+        )
     );
     Ok(())
 }
@@ -386,12 +427,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn render_term_init_script_includes_nushell_hooks() {
-        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", false);
+    fn render_term_init_script_includes_nushell_basics() {
+        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", false, false);
 
         assert!(script.contains("$env.AGENT_SESSION_ID = \"session-123\""));
         assert!(script.contains("def --wrapped @goose [...args]"));
         assert!(script.contains("def --wrapped @g [...args]"));
+        assert!(!script.contains("GOOSE_NU_PREEXEC_INSTALLED"));
+        assert!(!script.contains("term log"));
+    }
+
+    #[test]
+    fn render_term_init_script_includes_nushell_hooks_with_history() {
+        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", false, true);
+
         assert!(script.contains("GOOSE_NU_PREEXEC_INSTALLED"));
         assert!(script.contains("$env.config.hooks.pre_execution"));
         assert!(script.contains("job spawn { run-external \"/tmp/goose\" \"term\" \"log\" $line | complete | ignore } | ignore"));
@@ -400,7 +449,7 @@ mod tests {
 
     #[test]
     fn render_term_init_script_includes_nushell_default_handler() {
-        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", true);
+        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", true, false);
 
         assert!(script.contains("$env.config.hooks.command_not_found = {|command_name|"));
         assert!(script
@@ -409,7 +458,7 @@ mod tests {
 
     #[test]
     fn render_term_init_script_skips_unsupported_default_handler() {
-        let script = render_term_init_script(Shell::Fish, "session-123", "/tmp/goose", true);
+        let script = render_term_init_script(Shell::Fish, "session-123", "/tmp/goose", true, false);
 
         assert!(!script.contains("command_not_found"));
     }
@@ -432,5 +481,38 @@ mod tests {
 
         let only_block = vec![&block];
         assert_eq!(shell_history_text(&only_block), None);
+    }
+
+    #[test]
+    fn render_term_init_script_bash_excludes_history_by_default() {
+        let script =
+            render_term_init_script(Shell::Bash, "session-123", "/tmp/goose", false, false);
+
+        assert!(!script.contains("term log"));
+        assert!(!script.contains("goose_preexec"));
+    }
+
+    #[test]
+    fn render_term_init_script_bash_includes_history_when_opted_in() {
+        let script = render_term_init_script(Shell::Bash, "session-123", "/tmp/goose", false, true);
+
+        assert!(script.contains("('/tmp/goose' term log \"$1\" &) 2>/dev/null"));
+        assert!(script.contains("trap 'goose_preexec \"$BASH_COMMAND\"' DEBUG"));
+    }
+
+    #[test]
+    fn render_term_init_script_zsh_excludes_history_by_default() {
+        let script = render_term_init_script(Shell::Zsh, "session-123", "/tmp/goose", false, false);
+
+        assert!(!script.contains("term log"));
+        assert!(!script.contains("goose_preexec"));
+    }
+
+    #[test]
+    fn render_term_init_script_zsh_includes_history_when_opted_in() {
+        let script = render_term_init_script(Shell::Zsh, "session-123", "/tmp/goose", false, true);
+
+        assert!(script.contains("('/tmp/goose' term log \"$1\" &) 2>/dev/null"));
+        assert!(script.contains("add-zsh-hook preexec goose_preexec"));
     }
 }

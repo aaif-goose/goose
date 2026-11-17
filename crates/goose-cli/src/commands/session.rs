@@ -327,7 +327,7 @@ pub async fn handle_session_export(
         })?;
         println!("Session exported to {}", output_path.display());
     } else {
-        println!("{}", output);
+        write_line_or_broken_pipe_ok(&mut io::stdout().lock(), &output)?;
     }
 
     Ok(())

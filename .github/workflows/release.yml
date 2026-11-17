@@ -23,6 +23,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-acp:
+    uses: ./.github/workflows/build-acp.yml
+
+  release-acp:
+    name: Release lean goose-acp
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    needs: build-acp
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download goose-acp artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: goose-acp-*
+          merge-multiple: true
+
+      - name: Attest goose-acp
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: goose-acp-*
+
+      - name: Publish goose-acp without marking the release latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --verify-tag --latest=false --title "$GITHUB_REF_NAME" --notes ""
+          published=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          for file in goose-acp-*; do
+            if grep -qxF "$file" <<< "$published"; then
+              echo "$file is already published; keeping the existing file"
+            else
+              gh release upload "$GITHUB_REF_NAME" "$file"
+            fi
+          done
+
   # ------------------------------------
   # 1) Bundle CLI and Desktop (Linux)
   # ------------------------------------
@@ -39,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: download_cli.sh
           path: download_cli.sh
@@ -109,7 +149,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    needs: [build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
+    needs: [build-acp, release-acp, build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing
@@ -125,13 +165,37 @@ jobs:
           git archive --format=zip --prefix="goose-${GITHUB_REF_NAME}/" --output="goose-source-${GITHUB_REF_NAME}.zip" HEAD
 
       - name: Download release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: '!internal-*'
           merge-multiple: true
 
+      # Release lean goose-acp already published these; re-uploading could change pinned hashes.
+      - name: Keep lean goose-acp off the versioned release
+        run: mkdir lean-goose-acp && mv goose-acp-* lean-goose-acp/
+
       - name: Generate macOS update manifest
         run: node ui/desktop/scripts/generate-mac-update-manifest.js --version "${GITHUB_REF_NAME}" --directory .
+
+      # Only copies set up by the Windows installer request installer.yml, so it needs no
+      # rollout flag: ZIP copies request latest.yml, which is never published for Windows.
+      # Non-blocking until the first installer release is verified: the setup EXE and
+      # installer.yml are attested and uploaded by their own steps, each only after the
+      # previous one succeeded.
+      - name: Generate Windows update manifest
+        id: windows-manifest
+        continue-on-error: true
+        run: node ui/desktop/scripts/generate-windows-update-manifest.js --version "${GITHUB_REF_NAME}" --directory .
+
+      - name: Attest Windows installer
+        id: attest-windows-installer
+        if: ${{ steps.windows-manifest.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            Goose-win32-x64-setup.exe
+            installer.yml
 
       - name: Attest macOS update manifest
         if: ${{ env.ENABLE_MAC_NATIVE_AUTO_UPDATE == 'true' }}
@@ -152,6 +216,7 @@ jobs:
             *.flatpak
             download_cli.sh
             mac-update-requirements.json
+            lean-goose-acp/goose-acp-*
 
       # Create/update the versioned release
       - name: Release versioned
@@ -171,6 +236,7 @@ jobs:
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true
+          makeLatest: true
 
       # Create/update the stable release
       - name: Release stable
@@ -189,6 +255,7 @@ jobs:
             *.flatpak
             download_cli.sh
             mac-update-requirements.json
+            lean-goose-acp/goose-acp-*
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true
@@ -200,3 +267,12 @@ jobs:
         run: |
           gh release upload "${GITHUB_REF_NAME}" latest-mac.yml --clobber
           gh release upload stable latest-mac.yml --clobber
+
+      - name: Upload Windows installer
+        if: ${{ steps.attest-windows-installer.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" Goose-win32-x64-setup.exe installer.yml --clobber
+          gh release upload stable Goose-win32-x64-setup.exe installer.yml --clobber

@@ -2,6 +2,48 @@ use lopdf::{content::Content as PdfContent, Document, Object};
 use rmcp::model::{ContentBlock, ErrorCode, ErrorData};
 use std::{fs, path::Path};
 
+fn create_private_dir(path: &Path) -> anyhow::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)?;
+    // An older goose may have created the directory with the default mode, so set it every time.
+    // A symlink is refused, so the mode of the directory it points to is never changed.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if fs::symlink_metadata(path)?.file_type().is_symlink() {
+            anyhow::bail!("{} is a symlink", path.display());
+        }
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+// On Unix, an entry left from an older goose may be a link or a file another process still has
+// open, and another extraction of the same PDF may write the same name. Writing a new file and
+// renaming it into place replaces the entry instead of writing through it. Windows does not allow
+// renaming over a file that another rename is replacing, so it keeps writing in place.
+fn write_new_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        let dir = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("{} has no parent directory", path.display()))?;
+        let mut file = tempfile::NamedTempFile::new_in(dir)?;
+        file.write_all(data)?;
+        file.persist(path)?;
+    }
+    #[cfg(not(unix))]
+    fs::write(path, data)?;
+    Ok(())
+}
+
 pub async fn pdf_tool(
     path: &str,
     operation: &str,
@@ -118,7 +160,7 @@ pub async fn pdf_tool(
 
         "extract_images" => {
             let cache_dir = cache_dir.join("pdf_images");
-            fs::create_dir_all(&cache_dir).map_err(|e| {
+            create_private_dir(&cache_dir).map_err(|e| {
                 ErrorData::new(
                     ErrorCode::INTERNAL_ERROR,
                     format!("Failed to create image cache directory: {}", e),
@@ -313,7 +355,7 @@ pub async fn pdf_tool(
                                             extension
                                         ));
 
-                                        fs::write(&image_path, &data).map_err(|e| {
+                                        write_new_file(&image_path, &data).map_err(|e| {
                                             ErrorData::new(
                                                 ErrorCode::INTERNAL_ERROR,
                                                 format!("Failed to write image: {}", e),
@@ -432,6 +474,101 @@ mod tests {
             println!("Verifying image file exists: {}", file_path);
             assert!(PathBuf::from(file_path).exists(), "Image file should exist");
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn image_cache_directory_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_pdf_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/computercontroller/tests/data/test_image.pdf");
+        let new_cache = tempfile::tempdir().unwrap();
+        let old_cache = tempfile::tempdir().unwrap();
+        let old_images = old_cache.path().join("pdf_images");
+        fs::create_dir(&old_images).unwrap();
+        fs::set_permissions(&old_images, fs::Permissions::from_mode(0o755)).unwrap();
+
+        for cache_dir in [new_cache.path(), old_cache.path()] {
+            pdf_tool(test_pdf_path.to_str().unwrap(), "extract_images", cache_dir)
+                .await
+                .unwrap();
+
+            let mode = fs::metadata(cache_dir.join("pdf_images"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o700, "{}", cache_dir.display());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn image_cache_directory_symlink_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_pdf_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/computercontroller/tests/data/test_image.pdf");
+        let cache_dir = tempfile::tempdir().unwrap();
+        let shared = tempfile::tempdir().unwrap();
+        fs::set_permissions(shared.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(shared.path(), cache_dir.path().join("pdf_images")).unwrap();
+
+        let result = pdf_tool(
+            test_pdf_path.to_str().unwrap(),
+            "extract_images",
+            cache_dir.path(),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let mode = fs::metadata(shared.path()).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+        assert_eq!(fs::read_dir(shared.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_file_replaces_links_instead_of_writing_through_them() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        fs::write(&outside, b"old").unwrap();
+        let symlink = dir.path().join("symlink.png");
+        std::os::unix::fs::symlink(&outside, &symlink).unwrap();
+        let hard_link = dir.path().join("hard_link.png");
+        fs::hard_link(&outside, &hard_link).unwrap();
+
+        for path in [&symlink, &hard_link] {
+            write_new_file(path, b"new").unwrap();
+
+            let metadata = fs::symlink_metadata(path).unwrap();
+            assert!(metadata.is_file(), "{}", path.display());
+            assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+            assert_eq!(fs::read(path).unwrap(), b"new");
+        }
+        assert_eq!(fs::read(&outside).unwrap(), b"old");
+    }
+
+    #[test]
+    fn concurrent_writes_of_the_same_image_all_succeed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page1_obj1_Im0.png");
+        let barrier = std::sync::Barrier::new(8);
+
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    for _ in 0..200 {
+                        write_new_file(&path, b"image").unwrap();
+                    }
+                });
+            }
+        });
+
+        assert_eq!(fs::read(&path).unwrap(), b"image");
     }
 
     #[tokio::test]

@@ -73,10 +73,6 @@ export const getToolIcon = (toolName: string): React.ComponentType<ToolIconProps
     case 'load':
       return Eye;
 
-    // Special Tools
-    case 'final_output':
-      return Tool; // Could be a checkmark icon if we had one
-
     // Default fallback for unknown tools
     default:
       return Tool;

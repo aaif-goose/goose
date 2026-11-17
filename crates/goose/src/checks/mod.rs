@@ -3,7 +3,7 @@
 //! [`crate::sources`] so all source-style files share one YAML pipeline.
 //!
 //! User-facing CRUD lives in `crate::sources` for parity with skills and
-//! projects; `goose review` consumes [`Check`] and [`discover`] directly.
+//! projects.
 
 use crate::sources::parse_frontmatter;
 use anyhow::{anyhow, bail, Context, Result};
@@ -12,12 +12,6 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// Default maximum number of turns a check subagent may take.
-///
-/// Mirrors `goose::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS`,
-/// duplicated here to keep the checks module self-contained for parsing.
-pub const DEFAULT_CHECK_TURN_LIMIT: usize = 25;
 
 /// Virtual check name prefix for `REVIEW.md`-derived checks. Findings emitted
 /// by these checks should be attributed to the originating `REVIEW.md`.
@@ -48,10 +42,9 @@ pub struct Check {
     pub name: String,
     /// Brief description shown when listing checks.
     pub description: Option<String>,
-    /// Per-check model override. Resolved against CLI flags by [`Check::resolved_model`].
+    /// Per-check model override.
     pub model: Option<String>,
-    /// Per-check turn limit. Resolved against the global default by
-    /// [`Check::resolved_turn_limit`].
+    /// Per-check turn limit.
     pub turn_limit: Option<usize>,
     /// Optional allowlist of tool names the check subagent may call.
     /// `None` (the default) means the subagent inherits the agent's full
@@ -153,31 +146,6 @@ impl Check {
             );
         }
         Ok(())
-    }
-
-    /// Resolve which model this check should use.
-    ///
-    /// `override_model` (CLI `--override-model`) wins over everything; otherwise
-    /// the per-check `model` wins; otherwise `default_model` (CLI `--model`).
-    pub fn resolved_model<'a>(
-        &'a self,
-        default_model: Option<&'a str>,
-        override_model: Option<&'a str>,
-    ) -> Option<&'a str> {
-        if let Some(m) = override_model {
-            return Some(m);
-        }
-        if let Some(m) = self.model.as_deref() {
-            return Some(m);
-        }
-        default_model
-    }
-
-    /// Resolve the turn limit for this check.
-    pub fn resolved_turn_limit(&self, default_turn_limit: Option<usize>) -> usize {
-        self.turn_limit
-            .or(default_turn_limit)
-            .unwrap_or(DEFAULT_CHECK_TURN_LIMIT)
     }
 
     /// Render this check as a generic [`SourceEntry`] so it can flow through
@@ -453,7 +421,7 @@ fn read_checks_dir(
             Err(e) => match mode {
                 LoadMode::Strict => return Err(e),
                 LoadMode::Lenient => {
-                    eprintln!("goose review: skipping {}: {e}", path.display());
+                    eprintln!("goose: skipping check {}: {e}", path.display());
                 }
             },
         }
@@ -638,40 +606,6 @@ tools: [Bash, Read, Grep]
         assert_eq!(check.name, "perf");
         assert_eq!(check.description.as_deref(), Some("ok"));
         assert_eq!(check.body, "body line");
-    }
-
-    #[test]
-    fn resolves_model_precedence() {
-        let mut check = Check::parse(
-            "---\nname: x\nmodel: per-check\n---\n",
-            &p("/r/.agents/checks/x.md"),
-        )
-        .unwrap();
-        assert_eq!(
-            check.resolved_model(Some("default"), None),
-            Some("per-check")
-        );
-        assert_eq!(
-            check.resolved_model(Some("default"), Some("override")),
-            Some("override")
-        );
-        check.model = None;
-        assert_eq!(check.resolved_model(Some("default"), None), Some("default"));
-        assert_eq!(check.resolved_model(None, None), None);
-    }
-
-    #[test]
-    fn resolves_turn_limit() {
-        let mut check = Check::parse(
-            "---\nname: x\nturn-limit: 7\n---\n",
-            &p("/r/.agents/checks/x.md"),
-        )
-        .unwrap();
-        assert_eq!(check.resolved_turn_limit(None), 7);
-        assert_eq!(check.resolved_turn_limit(Some(99)), 7);
-        check.turn_limit = None;
-        assert_eq!(check.resolved_turn_limit(Some(99)), 99);
-        assert_eq!(check.resolved_turn_limit(None), DEFAULT_CHECK_TURN_LIMIT);
     }
 
     #[test]

@@ -1,8 +1,4 @@
-use std::path::Path;
-
-use crate::slash_commands::{recipe_slash_command, skill_slash_command};
-
-use super::Agent;
+use super::StateMachineServices;
 
 pub fn slash_commands_enabled() -> bool {
     crate::config::Config::global()
@@ -10,8 +6,7 @@ pub fn slash_commands_enabled() -> bool {
         .unwrap_or(true)
 }
 
-pub const COMPACT_TRIGGERS: &[&str] =
-    &["/compact", "Please compact this conversation", "/summarize"];
+pub const COMPACT_TRIGGERS: &[&str] = &["/compact", "/summarize"];
 
 pub struct CommandDef {
     pub name: &'static str,
@@ -54,7 +49,7 @@ static COMMANDS: &[CommandDef] = &[
     },
     CommandDef {
         name: "status",
-        description: "Show session status: model, provider, mode, and token usage",
+        description: "Show session status: session ID, model, provider, mode, and token usage",
     },
 ];
 
@@ -96,20 +91,6 @@ pub fn context_management_unsupported_message(command: &str, provider: &str) -> 
     )
 }
 
-pub fn is_known_slash_command(message_text: &str, working_dir: Option<&Path>) -> bool {
-    let Some(parsed) = parse_slash_command(message_text) else {
-        return false;
-    };
-
-    COMMANDS
-        .iter()
-        .any(|command| command.name == parsed.command)
-        || recipe_slash_command::get_recipe_for_command(parsed.command).is_some()
-        || skill_slash_command::list_commands(working_dir)
-            .into_iter()
-            .any(|command| command.name.eq_ignore_ascii_case(parsed.command))
-}
-
 fn is_clear_goal_param(params_str: &str) -> bool {
     matches!(params_str, "off" | "clear" | "none")
 }
@@ -126,7 +107,7 @@ pub fn command_starts_turn(message_text: &str) -> bool {
         && !is_clear_goal_param(parsed.params_str)
 }
 
-impl Agent {}
+impl StateMachineServices {}
 
 #[cfg(test)]
 mod tests {

@@ -143,7 +143,6 @@ goose searches for recipes in the following locations (in order):
 ```bash
 $ goose recipe list
 Available recipes:
-goose-self-test - A comprehensive meta-testing recipe - local: ./goose-self-test.yaml
 hello-world - A sample recipe demonstrating basic usage - local: ~/.config/goose/recipes/hello-world.yaml
 job-finder - Find software engineering positions - local: ~/.config/goose/recipes/job-finder.yaml
 ```
@@ -152,9 +151,6 @@ job-finder - Find software engineering positions - local: ~/.config/goose/recipe
 ```bash
 $ goose recipe list --verbose
 Available recipes:
-  goose-self-test - A comprehensive meta-testing recipe - local: ./goose-self-test.yaml
-    Title: goose Self-Testing Integration Suite
-    Path: ./goose-self-test.yaml
   hello-world - A sample recipe demonstrating basic usage - local: ~/.config/goose/recipes/hello-world.yaml
     Title: Hello World Recipe
     Path: /Users/username/.config/goose/recipes/hello-world.yaml
@@ -163,13 +159,6 @@ Available recipes:
 *JSON format for automation:*
 ```json
 [
-  {
-    "name": "goose-self-test",
-    "source": "Local",
-    "path": "./goose-self-test.yaml",
-    "title": "goose Self-Testing Integration Suite",
-    "description": "A comprehensive meta-testing recipe"
-  },
   {
     "name": "hello-world",
     "source": "GitHub",

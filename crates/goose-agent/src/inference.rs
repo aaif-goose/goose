@@ -7,9 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use goose_provider_types::base::Provider;
-use goose_provider_types::conversation::message::{
-    ActionRequiredData, InferenceMetadata, Message, MessageContent,
-};
+use goose_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::conversation::{
     effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
@@ -19,9 +17,10 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
+use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
-    InferenceInput, Operation, OperationResult,
+    InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -74,22 +73,6 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-pub const EMPTY_RESPONSE_MESSAGE: &str =
-    "The model returned an empty response. Please resend your message to continue.";
-const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
-const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
-const EMPTY_RESPONSE_NOTE: &str = "empty_response";
-
-/// The model's response stayed empty after retries. The fallback message is stored
-/// hidden so that operations owning the end of a turn (recipe retries, final output)
-/// can take over; when none does, it is revealed to the user.
-pub fn is_empty_response_marker(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
-        .is_some()
-}
-
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
         content,
@@ -116,6 +99,39 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
         .retain(|content| !(is_thinking(content) && prior.contains(&content)));
 }
 
+fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
+    let mut seen = messages
+        .iter()
+        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
+        .collect::<HashSet<_>>();
+    let mut logs = Vec::new();
+
+    for (operation, line) in messages
+        .iter()
+        .filter_map(|message| message.metadata.operations.as_deref())
+        .flat_map(|operations| operations.iter())
+        .filter_map(|(operation, notes)| {
+            notes
+                .get(CLIENT_LOG)
+                .and_then(serde_json::Value::as_str)
+                .map(|line| (operation, line))
+        })
+    {
+        let log = format!("ops_{operation}: {line}");
+        if seen.insert(log.clone()) {
+            logs.push(log);
+        }
+    }
+
+    logs
+}
+
+fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
+    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
+        message.metadata.operation_logs = std::mem::take(logs);
+    }
+}
+
 pub fn chat_span(
     provider: &dyn Provider,
     model_config: &ModelConfig,
@@ -133,6 +149,7 @@ pub fn chat_span(
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "goose.chat.purpose" = purpose,
@@ -143,28 +160,29 @@ pub fn chat_span(
     span
 }
 
-fn is_empty_response(message: &Message) -> bool {
-    message.content.iter().all(|content| match content {
-        MessageContent::Text(text) => text.text.trim().is_empty(),
-        MessageContent::Thinking(thinking) => {
-            thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
-        }
-        _ => false,
-    })
+pub(crate) fn is_empty_response(message: &Message) -> bool {
+    !message.metadata.output_token_limit_reached
+        && message.content.iter().all(|content| match content {
+            MessageContent::Text(text) => text.text.trim().is_empty(),
+            MessageContent::Thinking(thinking) => {
+                thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
+            }
+            _ => false,
+        })
 }
 
 pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
     let Some(message) = messages.last() else {
         return false;
     };
-    let mut responses = message
+    let mut tool_responses = message
         .content
         .iter()
         .filter_map(MessageContent::as_tool_response)
         .peekable();
-    responses.peek().is_some()
-        && responses.all(|response| {
-            response
+    tool_responses.peek().is_some()
+        && tool_responses.all(|tool_response| {
+            tool_response
                 .tool_result
                 .as_ref()
                 .is_ok_and(|result| !result.is_error.unwrap_or(false))
@@ -201,6 +219,9 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     if let Some(id) = &usage.response_id {
         span.record("gen_ai.response.id", id.as_str());
     }
+    if let Some(id) = &usage.request_id {
+        span.record("gen_ai.request.id", id.as_str());
+    }
 }
 
 #[derive(Default)]
@@ -219,13 +240,13 @@ pub struct InferenceRunner<'a, S, E> {
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
-/// unanswered by an earlier turn are dropped, since nothing will answer them now.
+/// with no response from an earlier turn are dropped, since nothing will respond to them now.
 fn messages_for_provider(
     conversation: &Conversation,
     turn: &[Message],
     keep_empty_messages: bool,
 ) -> Vec<Message> {
-    let answered: HashSet<&str> = conversation
+    let tool_response_ids: HashSet<&str> = conversation
         .messages()
         .iter()
         .flat_map(|message| message.get_tool_response_ids())
@@ -240,7 +261,9 @@ fn messages_for_provider(
             let mut message = message.agent_visible_content();
             if index < start {
                 message.content.retain(|content| match content {
-                    MessageContent::ToolRequest(request) => answered.contains(request.id.as_str()),
+                    MessageContent::ToolRequest(request) => {
+                        tool_response_ids.contains(request.id.as_str())
+                    }
                     _ => true,
                 });
             }
@@ -248,6 +271,24 @@ fn messages_for_provider(
         })
         .filter(|message| keep_empty_messages || !message.content.is_empty())
         .collect()
+}
+
+/// Signed reasoning only verifies with the provider account that produced it.
+fn drop_foreign_signed_thinking(messages: &mut [Message], provider: &str) {
+    for message in messages {
+        if message
+            .metadata
+            .inference
+            .as_ref()
+            .is_some_and(|inference| inference.provider != provider)
+        {
+            message.content.retain(|content| match content {
+                MessageContent::Thinking(thinking) => thinking.signature.is_empty(),
+                MessageContent::RedactedThinking(_) => false,
+                _ => true,
+            });
+        }
+    }
 }
 
 fn latest_provider_session_id<'a>(
@@ -272,35 +313,7 @@ fn ends_with_provider_turn(messages: &[Message]) -> bool {
     })
 }
 
-fn has_open_tool_approval(turn: &[Message]) -> bool {
-    let mut goose_calls = HashSet::new();
-    let mut answered = HashSet::new();
-    let mut prompted = Vec::new();
-    for content in turn.iter().flat_map(|message| &message.content) {
-        match content {
-            MessageContent::ToolRequest(request) if !request.was_executed_externally() => {
-                goose_calls.insert(request.id.as_str());
-            }
-            MessageContent::ToolResponse(response) => {
-                answered.insert(response.id.as_str());
-            }
-            MessageContent::ActionRequired(action) => {
-                if let ActionRequiredData::ToolConfirmation { id, .. } = &action.data {
-                    prompted.push(id.as_str());
-                }
-            }
-            _ => {}
-        }
-    }
-    prompted
-        .into_iter()
-        .any(|id| goose_calls.contains(id) && !answered.contains(id))
-}
-
 fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
-    if has_open_tool_approval(turn) {
-        return false;
-    }
     let projected = messages_for_provider(conversation, turn, true);
     if projected
         .last()
@@ -323,6 +336,7 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "error.type" = tracing::field::Empty,
@@ -372,10 +386,17 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         emit.message(message);
     }
 
-    fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Result<OperationResult<E>> {
+    fn error_outcome(
+        &self,
+        err: &ProviderError,
+        operation_logs: &mut Vec<String>,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        self.emit_message(Message::from_provider_error(err), emit);
+        let mut message = Message::from_provider_error(err);
+        attach_operation_logs(&mut message, operation_logs);
+        self.emit_message(message, emit);
         applied(self.take_output())
     }
 }
@@ -399,7 +420,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
@@ -426,9 +447,14 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
         if !should_infer(conversation, messages) {
             return not_applicable();
         }
+        let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
-        let span = inference_span(self.provider.as_ref(), &self.model_config);
+        let model_config = session
+            .thinking_effort()
+            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
+            .unwrap_or_else(|| self.model_config.clone());
+        let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
             let PreparedInferenceRequest {
@@ -446,6 +472,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             self.output().additional_messages = additional_messages;
 
             let provider_name = self.provider.get_name();
+            drop_foreign_signed_thinking(&mut messages_for_provider, provider_name);
             if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
                 if let Err(error) = self.provider.resume(session_id).await {
                     tracing::warn!(
@@ -462,15 +489,11 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
-            let successful_tool_response =
-                ends_with_successful_tool_response(conversation.messages());
-            let mut empty_responses = 0;
-            let empty_output = loop {
             let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
                 .stream(
-                    &self.model_config,
+                    &model_config,
                     &system_prompt,
                     conversation_for_provider.messages(),
                     &tools,
@@ -479,10 +502,10 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, emit),
+                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
             };
 
-            let requested_model = self.model_config.model_name.clone();
+            let requested_model = model_config.model_name.clone();
             let resolved_model = self
                 .provider
                 .fetch_model_info(&requested_model)
@@ -501,7 +524,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, emit),
+                    Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -523,57 +546,17 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
                         self.output().accumulator.push(chunk);
                     } else {
+                        attach_operation_logs(&mut chunk, &mut operation_logs);
                         self.emit_message(chunk, emit);
                     }
                 }
             }
 
-            let empty_output = {
-                let output = self.output();
-                !output
-                    .accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                    && output.accumulator.iter().all(is_empty_response)
-            };
-            if !empty_output || successful_tool_response || emit.cancel_token().is_cancelled() {
-                break empty_output;
-            }
-            self.output().accumulator.clear();
-            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
-                empty_responses += 1;
-                tracing::warn!(
-                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
-                );
-                continue;
-            }
-            let mut marker = Message::assistant()
-                .with_text(EMPTY_RESPONSE_MESSAGE)
-                .with_visibility(false, false);
-            marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
-                EMPTY_RESPONSE_NOTE,
-                serde_json::Value::Bool(true),
-            );
-            self.output().accumulator.push(marker);
-            return applied(self.take_output());
-            };
-
-            if empty_output && successful_tool_response {
-                let message = {
-                    let mut output = self.output();
-                    let mut message = output
-                        .accumulator
-                        .last()
-                        .cloned()
-                        .unwrap_or_else(Message::assistant);
-                    message.content.clear();
-                    message.metadata.user_visible = false;
-                    message.metadata.agent_visible = true;
-                    output.accumulator.clear();
-                    message
-                };
-                self.emit_message(message, emit);
+            let empty_output = self.output().accumulator.iter().all(is_empty_response);
+            if empty_output && !emit.cancel_token().is_cancelled() {
+                let mut message = Message::assistant();
+                attach_operation_logs(&mut message, &mut operation_logs);
+                self.output().accumulator = Conversation::new_unvalidated([message]);
             }
             applied(self.take_output())
         }
@@ -585,9 +568,6 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_provider_types::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
-    use goose_provider_types::permission::Permission;
-    use rmcp::model::{CallToolRequestParams, CallToolResult};
 
     #[test]
     fn provider_session_id_comes_only_from_latest_inference() {
@@ -624,70 +604,6 @@ mod tests {
         assert!(!is_empty_response(
             &Message::assistant().with_content(MessageContent::thinking("", "sig-omitted"))
         ));
-    }
-
-    fn call(id: &str) -> Message {
-        Message::assistant().with_tool_request(id, Ok(CallToolRequestParams::new("write")))
-    }
-
-    fn prompt(id: &str) -> Message {
-        Message::assistant()
-            .with_action_required(id, "write".to_string(), Default::default(), None)
-            .user_only()
-    }
-
-    fn answer(id: &str) -> Message {
-        Message::user().with_tool_response(id, Ok(CallToolResult::success(Vec::new())))
-    }
-
-    #[test]
-    fn a_tool_approval_stays_open_until_the_call_is_answered() {
-        assert!(has_open_tool_approval(&[call("write"), prompt("write")]));
-
-        let decided = Message::user().with_content(
-            MessageContent::action_required_tool_confirmation_response(
-                "write",
-                Permission::AllowOnce,
-            ),
-        );
-        assert!(has_open_tool_approval(&[
-            call("write"),
-            prompt("write"),
-            decided
-        ]));
-
-        assert!(!has_open_tool_approval(&[
-            call("write"),
-            prompt("write"),
-            answer("write")
-        ]));
-    }
-
-    #[test]
-    fn prompts_without_a_goose_call_are_not_open() {
-        assert!(!has_open_tool_approval(&[prompt("cli-request")]));
-
-        let external = Message::assistant().with_tool_request_with_metadata(
-            "external",
-            Ok(CallToolRequestParams::new("write")),
-            None,
-            Some(serde_json::json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
-        );
-        assert!(!has_open_tool_approval(&[external, prompt("external")]));
-    }
-
-    #[test]
-    fn no_inference_while_a_tool_approval_is_open() {
-        let conversation = Conversation::new_unvalidated([
-            Message::user().with_text("add and write"),
-            Message::assistant()
-                .with_tool_request("free", Ok(CallToolRequestParams::new("add")))
-                .with_tool_request("gated", Ok(CallToolRequestParams::new("write"))),
-            answer("free"),
-            prompt("gated"),
-        ]);
-        let turn = messages_since_kickoff(&conversation).unwrap();
-        assert!(!should_infer(&conversation, turn));
     }
 
     #[test]

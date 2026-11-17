@@ -1,5 +1,4 @@
 mod common;
-pub(crate) mod fs;
 mod handoff;
 #[cfg(feature = "acp-http")]
 mod mcp_app_proxy;
@@ -8,7 +7,6 @@ mod response_builder;
 pub mod server;
 pub mod server_factory;
 pub(crate) mod tool_call_notifier;
-pub(crate) mod tools;
 #[cfg(feature = "acp-http")]
 pub mod transport;
 
@@ -22,6 +20,7 @@ pub use provider::{
 /// Set by the ACP server, read by the provider to tell a spent account apart from a
 /// prompt the agent could not accept.
 pub(crate) const CREDITS_EXHAUSTED_REASON: &str = "credits_exhausted";
+pub(crate) const TURN_FAILED_REASON: &str = "turn_failed";
 
 pub(crate) fn configured_model_for_provider(
     config: &crate::config::Config,

@@ -1,12 +1,13 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::tool_execution::ToolCallContext;
+
 use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,
 };
 use rmcp::model::{
-    ElicitationAction, ErrorCode, ExtensionCapabilities, Extensions, JsonObject, MetaObject,
+    ElicitationAction, ElicitationCapability, ErrorCode, ExtensionCapabilities, Extensions,
+    FormElicitationCapability, JsonObject, MetaObject,
 };
 use rmcp::{
     model::{
@@ -27,7 +28,7 @@ use rmcp::{
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
@@ -58,7 +59,7 @@ fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
     extensions
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GooseMcpHostInfo {
     pub explicit_extensions: bool,
     pub extensions: ExtensionCapabilities,
@@ -69,6 +70,44 @@ pub struct GooseMcpHostInfo {
 impl GooseMcpHostInfo {
     pub fn mcpui_enabled(&self) -> bool {
         self.extensions.contains_key(MCP_APPS_UI_EXTENSION_ID)
+    }
+}
+
+#[derive(Clone)]
+pub struct McpCallContext {
+    pub session_id: String,
+    pub working_dir: Option<PathBuf>,
+    pub tool_call_request_id: Option<String>,
+    notification_emitter: Option<crate::agents::tool_execution::ToolCallNotificationEmitter>,
+}
+
+impl McpCallContext {
+    pub fn new(
+        session_id: String,
+        working_dir: Option<PathBuf>,
+        tool_call_request_id: Option<String>,
+    ) -> Self {
+        Self {
+            session_id,
+            working_dir,
+            tool_call_request_id,
+            notification_emitter: None,
+        }
+    }
+    pub fn working_dir_str(&self) -> Option<&str> {
+        self.working_dir.as_ref().and_then(|path| path.to_str())
+    }
+    pub(crate) fn with_notification_emitter(
+        mut self,
+        emitter: crate::agents::tool_execution::ToolCallNotificationEmitter,
+    ) -> Self {
+        self.notification_emitter = Some(emitter);
+        self
+    }
+    pub(crate) fn notification_emitter(
+        &self,
+    ) -> Option<&crate::agents::tool_execution::ToolCallNotificationEmitter> {
+        self.notification_emitter.as_ref()
     }
 }
 
@@ -83,17 +122,13 @@ pub trait McpClientTrait: Send + Sync {
 
     async fn call_tool(
         &self,
-        ctx: &ToolCallContext,
+        ctx: &McpCallContext,
         name: &str,
         arguments: Option<JsonObject>,
         cancel_token: CancellationToken,
     ) -> Result<CallToolResult, Error>;
 
     fn get_info(&self) -> Option<&InitializeResult>;
-
-    async fn get_instructions(&self, _session_id: &str, _working_dir: &Path) -> Option<String> {
-        self.get_info().and_then(|info| info.instructions.clone())
-    }
 
     async fn list_resources(
         &self,
@@ -134,10 +169,6 @@ pub trait McpClientTrait: Send + Sync {
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
         mpsc::channel(1).1
-    }
-
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
-        None
     }
 }
 
@@ -448,7 +479,9 @@ impl ClientHandler for GooseClient {
             ClientCapabilities::builder()
                 .enable_roots()
                 .enable_extensions_with(extensions)
-                .enable_elicitation()
+                .enable_elicitation_with(
+                    ElicitationCapability::new().with_form(FormElicitationCapability::new()),
+                )
                 .build(),
             self.resolved_client_info(),
         )
@@ -744,7 +777,7 @@ impl McpClientTrait for McpClient {
 
     async fn call_tool(
         &self,
-        ctx: &ToolCallContext,
+        ctx: &McpCallContext,
         name: &str,
         arguments: Option<JsonObject>,
         cancel_token: CancellationToken,
@@ -1274,6 +1307,17 @@ mod tests {
         assert!(
             info.capabilities.roots.is_some(),
             "client should advertise roots capability"
+        );
+    }
+
+    #[test]
+    fn test_client_capabilities_advertise_form_elicitation() {
+        let client = new_client(GoosePlatform::GooseCli);
+        let info = ClientHandler::get_info(&client);
+        let capabilities = serde_json::to_value(info.capabilities).unwrap();
+        assert_eq!(
+            capabilities.get("elicitation"),
+            Some(&json!({ "form": {} }))
         );
     }
 

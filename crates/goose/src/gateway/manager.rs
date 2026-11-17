@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+use crate::agents::StateMachineServices;
 use crate::config::Config;
-use crate::execution::manager::AgentManager;
 
 use super::handler::GatewayHandler;
 use super::pairing::PairingStore;
@@ -89,17 +89,17 @@ pub struct GatewayStatus {
 pub struct GatewayManager {
     gateways: RwLock<HashMap<String, GatewayInstance>>,
     pairing_store: Arc<PairingStore>,
-    agent_manager: Arc<AgentManager>,
+    services: Arc<StateMachineServices>,
 }
 
 impl GatewayManager {
-    pub fn new(agent_manager: Arc<AgentManager>) -> anyhow::Result<Self> {
+    pub fn new(services: Arc<StateMachineServices>) -> anyhow::Result<Self> {
         let pairing_store = Arc::new(PairingStore::new()?);
 
         Ok(Self {
             gateways: RwLock::new(HashMap::new()),
             pairing_store,
-            agent_manager,
+            services,
         })
     }
 
@@ -226,7 +226,7 @@ impl GatewayManager {
 
         let cancel = CancellationToken::new();
         let handler = GatewayHandler::new(
-            self.agent_manager.clone(),
+            self.services.clone(),
             self.pairing_store.clone(),
             gateway.clone(),
             config.clone(),

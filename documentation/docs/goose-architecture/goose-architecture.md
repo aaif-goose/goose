@@ -35,7 +35,7 @@ goose supports the [Agent Client Protocol (ACP)](https://agentclientprotocol.com
 
 ### goose as an ACP Server
 
-`goose acp` starts goose as an ACP server over stdio, letting editors like JetBrains and Zed connect to it directly. See [Using goose in ACP Clients](/docs/gdk/acp).
+`goose acp` starts goose as an ACP server over stdio, letting editors like JetBrains and Zed connect to it directly. See [Set up goose in Zed](/docs/guides/zed) for an editor setup example. To create your own client, see [Build an app with goose](/docs/gdk/acp).
 
 ### ACP Agents as Providers
 

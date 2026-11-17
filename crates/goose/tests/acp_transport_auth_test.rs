@@ -1,3 +1,4 @@
+#![cfg(feature = "acp-http")]
 #![recursion_limit = "256"]
 use std::sync::Arc;
 

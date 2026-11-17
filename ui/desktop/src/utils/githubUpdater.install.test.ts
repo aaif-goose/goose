@@ -192,7 +192,7 @@ describe('prepareUpdateInstall', () => {
       pid: runningApp.pid!,
     });
 
-    launchSwapScript(swap);
+    await launchSwapScript(swap);
 
     const unrelatedFile = path.join(installRoot, 'unrelated-user-file.txt');
     await fs.writeFile(unrelatedFile, 'keep me');
@@ -251,7 +251,7 @@ describe('prepareUpdateInstall', () => {
     // Deleting the extracted payload makes the copy step fail, exercising the rollback path.
     await fs.rm(path.join(stagingDir, 'extracted'), { recursive: true, force: true });
 
-    launchSwapScript(swap);
+    await launchSwapScript(swap);
 
     // The restored app is relaunched at the end of the swap, so the marker proves the script
     // ran to completion rather than merely that the rollback has not happened yet.

@@ -1,0 +1,120 @@
+---
+title: Demos
+description: Explore applications built with GDK and goose, and the design choices behind them.
+displayed_sidebar: gdkSidebar
+hide_table_of_contents: true
+---
+
+import styles from "@site/src/css/gdk-demos.module.css";
+
+# Demos
+
+A personal wiki, a phone-call assistant, a voice interface, and more.
+Explore what these applications do, then look inside to see how they work.
+
+Some embed GDK components directly. Others build on the pre-built goose agent
+over [ACP](/docs/gdk/acp). Each demo explains which approach it takes and the
+design choice worth borrowing for your own application.
+
+<div className={styles.grid}>
+
+<article className={styles.card}>
+<p className={styles.focus}>Memory you can inspect</p>
+
+## lifewiki
+
+Turn everyday notes into a cited, evolving personal wiki. Keep the original
+record while an agent reconciles what has changed.
+
+<div className={styles.footer}>
+<span>GDK</span>
+
+[Explore →](/docs/gdk/demos/lifewiki)
+
+</div>
+</article>
+
+<article className={styles.card}>
+<p className={styles.focus}>An agent that makes phone calls</p>
+
+## GooseBusters
+
+Plan a call, approve it, and let an agent hold the conversation. Custom
+operations supervise the call and collect its outcome.
+
+<div className={styles.footer}>
+<span>GDK</span>
+
+[Explore →](/docs/gdk/demos/goosebusters)
+
+</div>
+</article>
+
+<article className={styles.card}>
+<p className={styles.focus}>Voice with a working agent behind it</p>
+
+## Huddle
+
+Talk naturally while a separate agent handles longer tasks. Live provider events
+connect the conversation to an ACP agent.
+
+<div className={styles.footer}>
+<span>GDK + ACP</span>
+
+[Explore →](/docs/gdk/demos/huddle)
+
+</div>
+</article>
+
+<article className={styles.card}>
+<p className={styles.focus}>An agent without a chat box</p>
+
+## goose Perception
+
+Turn desktop activity into a searchable wiki. Short-lived agent sessions share
+a lasting memory through ordinary files.
+
+<div className={styles.footer}>
+<span>goose over ACP</span>
+
+[Explore →](/docs/gdk/demos/perception)
+
+</div>
+</article>
+
+<article className={styles.card}>
+<p className={styles.focus}>Conversations tied to your work</p>
+
+## Top Goose
+
+Give each GitHub issue and pull request its own private agent conversation,
+with persistent sessions and separate worktrees.
+
+<div className={styles.footer}>
+<span>goose over ACP</span>
+
+[Explore →](/docs/gdk/demos/top-goose)
+
+</div>
+</article>
+
+<article className={styles.card}>
+<p className={styles.focus}>Your application, goose's runtime</p>
+
+## Berd
+
+Build a complete desktop experience around a bundled goose backend. The
+interface and agent communicate over ACP.
+
+<div className={styles.footer}>
+<span>goose over ACP</span>
+
+[Explore →](/docs/gdk/demos/berd)
+
+</div>
+</article>
+
+</div>
+
+These are independent projects at different stages of development. Their source
+repositories contain the current setup instructions and dependency versions.
