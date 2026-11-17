@@ -45,8 +45,7 @@ pub fn response_recovery_attempts(conversation: &Conversation) -> usize {
             attempts += 1;
         } else if (message.role == Role::User
             && !message.is_tool_response()
-            && !message.is_turn_context()
-            && (message.is_user_visible() || message.is_agent_visible()))
+            && message.is_user_visible())
             || (message.role == Role::Assistant && message.content.iter().any(is_answer_content))
         {
             break;
