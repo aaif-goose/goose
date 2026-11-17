@@ -105,6 +105,7 @@ describe('ModelsBottomBar', () => {
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
         sessionLoaded={false}
+        disabled={false}
       />
     );
 
@@ -121,6 +122,7 @@ describe('ModelsBottomBar', () => {
         sessionProvider="session-provider"
         onModelChanged={mockOnModelChanged}
         sessionLoaded={true}
+        disabled={false}
       />
     );
 
@@ -135,6 +137,7 @@ describe('ModelsBottomBar', () => {
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         onModelChanged={mockOnModelChanged}
+        disabled={false}
       />
     );
 
@@ -152,6 +155,7 @@ describe('ModelsBottomBar', () => {
         sessionProvider="local"
         onModelChanged={mockOnModelChanged}
         sessionLoaded={true}
+        disabled={false}
       />
     );
 
