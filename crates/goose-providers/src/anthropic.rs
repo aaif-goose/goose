@@ -20,13 +20,15 @@ use super::base::{
 };
 pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
-    block_binding_behavior, create_request_for_model, is_reserved_request_param_key,
-    is_thinking_signature_error, response_to_streaming_message, PrefixMismatchBehavior,
-    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    block_binding_behavior, create_request_for_model, error_for_type,
+    is_reserved_request_param_key, is_thinking_signature_error, response_to_streaming_message,
+    PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD,
+    THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
+use crate::http_status::extract_request_id;
 use crate::model::ModelConfig;
 use rmcp::model::Tool;
 
@@ -242,6 +244,8 @@ impl AnthropicProvider {
         .inspect_err(|e| {
             let _ = log.error(e);
         })?;
+        // Must be read before `bytes_stream()` consumes the response.
+        let request_id = extract_request_id(response.headers());
         let stream = response.bytes_stream().map_err(io::Error::other);
         Ok(Box::pin(try_stream! {
             let reader = StreamReader::new(stream);
@@ -249,7 +253,10 @@ impl AnthropicProvider {
             let messages = response_to_streaming_message(framed);
             pin!(messages);
             while let Some(message) = futures::StreamExt::next(&mut messages).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+                let (message, mut usage) = message.map_err(ProviderError::from_stream_error)?;
+                if let Some(usage) = usage.as_mut() {
+                    usage.request_id = request_id.clone();
+                }
                 if let Some(transformations) = usage
                     .as_ref()
                     .and_then(|usage| usage.additional_data.as_ref())
@@ -295,22 +302,10 @@ impl AnthropicProvider {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error")
                 .to_string();
-            let error_type = err_obj.get("type").and_then(Value::as_str);
-            return Err(match error_type {
-                Some("authentication_error" | "permission_error") => {
-                    ProviderError::Authentication(message)
-                }
-                Some("rate_limit_error") => ProviderError::RateLimitExceeded {
-                    details: message,
-                    retry_delay: None,
-                },
-                Some("billing_error") => ProviderError::CreditsExhausted {
-                    details: message,
-                    top_up_url: None,
-                },
-                Some("api_error" | "overloaded_error") => ProviderError::ServerError(message),
-                _ => ProviderError::RequestFailed(message),
-            });
+            return Err(error_for_type(
+                err_obj.get("type").and_then(Value::as_str),
+                message,
+            ));
         }
 
         let arr = match json.get("data").and_then(|v| v.as_array()) {
@@ -443,7 +438,7 @@ impl Provider for AnthropicProvider {
     }
 }
 
-fn beta_header_value(
+pub(crate) fn beta_header_value(
     api_client: &ApiClient,
     model_config: &ModelConfig,
     payload: &Value,
@@ -894,8 +889,8 @@ mod tests {
         let sonnet = metadata
             .known_models
             .iter()
-            .find(|model| model.name == "claude-sonnet-4-5")
-            .expect("claude-sonnet-4-5 should come from the catalog");
+            .find(|model| model.name == "claude-sonnet-5-5")
+            .expect("claude-sonnet-5-5 should come from the catalog");
         assert_eq!(sonnet.context_limit, Some(1_000_000));
         assert!(
             metadata

@@ -30,9 +30,10 @@ fn get_thinking_mode(canonical_id: &str, value: &Value) -> Option<ThinkingMode> 
 }
 
 fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
+    if canonical_id.starts_with("anthropic/claude-fable-") {
+        return Some(ThinkingMode::AlwaysOnAdaptive);
+    }
     match canonical_id {
-        "anthropic/claude-fable-5" => Some(ThinkingMode::AlwaysOnAdaptive),
-        "anthropic/claude-fable-5.1" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-opus-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-opus-4.6" => Some(ThinkingMode::Adaptive),
@@ -42,6 +43,12 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-haiku-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
+        // MiniMax-M3.1-Flash rejects `thinking: {type: disabled}` and
+        // requires adaptive thinking, so it must always be sent adaptively.
+        "minimax/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-cn/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-coding-plan/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-cn-coding-plan/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
         _ => None,
     }
 }

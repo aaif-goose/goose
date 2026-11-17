@@ -140,7 +140,6 @@ module.exports = [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactPlugin.configs.recommended.rules,
-      ...reactHooksPlugin.configs.recommended.rules,
       // Customize rules
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off', // We use TypeScript for prop validation

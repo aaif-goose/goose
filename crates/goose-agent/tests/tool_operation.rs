@@ -15,6 +15,7 @@ use goose_agent::{
         RunStatus,
     },
     tool::{ToolOperation, ToolProvider},
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
     message::{Message, MessageContent},
@@ -110,6 +111,15 @@ fn operation() -> ToolOperation<()> {
         .with_async_tool::<Greet>()
 }
 
+fn executable(mut message: Message) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ToolRequest(request) = content {
+            request.tool_meta.get_or_insert_with(|| json!({}))[EXECUTABLE_KEY] = json!(true);
+        }
+    }
+    message
+}
+
 fn appended_message(result: OperationResult<ConversationEffect>) -> Message {
     let OperationResult::Applied(result) = result else {
         panic!("operation should apply");
@@ -141,18 +151,20 @@ async fn advertises_user_defined_tools_directly() {
 async fn dispatches_calls_to_user_defined_tools() {
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("do both"),
-        Message::assistant()
-            .with_tool_request(
-                "call-1",
-                Ok(CallToolRequestParams::new("add").with_arguments(
-                    serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
-                )),
-            )
-            .with_tool_request(
-                "call-2",
-                Ok(CallToolRequestParams::new("greet")
-                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
-            ),
+        executable(
+            Message::assistant()
+                .with_tool_request(
+                    "call-1",
+                    Ok(CallToolRequestParams::new("add").with_arguments(
+                        serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
+                    )),
+                )
+                .with_tool_request(
+                    "call-2",
+                    Ok(CallToolRequestParams::new("greet")
+                        .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+                ),
+        ),
     ]);
 
     let message = appended_message(
@@ -241,8 +253,10 @@ async fn rediscovers_dynamic_tools_for_inference_and_execution() {
 
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("call the dynamic tool"),
-        Message::assistant()
-            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
     ]);
     let message = appended_message(
         <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
@@ -312,8 +326,10 @@ async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
 
     let conversation = Conversation::new_unvalidated([
         kickoff,
-        Message::assistant()
-            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
     ]);
     let execution_error = match <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
         &operation,
@@ -330,30 +346,6 @@ async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
         execution_error.to_string(),
         "multiple tool providers registered 'dynamic'"
     );
-}
-
-#[tokio::test]
-async fn ignores_requests_outside_the_current_turn() {
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("old turn"),
-        Message::assistant().with_tool_request(
-            "stale-call",
-            Ok(CallToolRequestParams::new("add")
-                .with_arguments(serde_json::from_value(json!({"left": 2, "right": 3})).unwrap())),
-        ),
-        Message::user().with_text("new turn"),
-    ]);
-
-    let result = <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-        &operation(),
-        &(),
-        &conversation,
-        &emitter(),
-    )
-    .await
-    .unwrap();
-
-    assert!(matches!(result, OperationResult::NotApplicable));
 }
 
 #[tokio::test]
@@ -475,23 +467,39 @@ async fn cancellation_interrupts_inference_discovery() {
 }
 
 #[tokio::test]
-async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
+async fn skips_calls_it_should_not_run() {
+    let add = || {
+        Ok(CallToolRequestParams::new("add")
+            .with_arguments(json!({"left": 2, "right": 3}).as_object().unwrap().clone()))
+    };
     let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call tools"),
+        Message::user().with_text("old turn"),
+        executable(Message::assistant().with_tool_request("stale", add())),
+        Message::user().with_text("new turn"),
+        executable(
+            Message::assistant()
+                .with_tool_request("responded", add())
+                .with_tool_request(
+                    "unavailable",
+                    Ok(CallToolRequestParams::new("not_registered")),
+                )
+                .with_tool_request_with_metadata(
+                    "external",
+                    add(),
+                    None,
+                    Some(json!({"goose.external_dispatch": true})),
+                ),
+        ),
         Message::assistant()
-            .with_tool_request("answered", Ok(CallToolRequestParams::new("add")))
-            .with_tool_request(
-                "unavailable",
-                Ok(CallToolRequestParams::new("not_registered")),
-            )
+            .with_tool_request("unmarked", add())
             .with_tool_request_with_metadata(
-                "external",
-                Ok(CallToolRequestParams::new("add")),
+                "blocked",
+                add(),
                 None,
-                Some(json!({"goose.external_dispatch": true})),
+                Some(json!({ EXECUTABLE_KEY: false })),
             ),
         Message::user().with_tool_response(
-            "answered",
+            "responded",
             Ok(CallToolResult::structured(json!({"sum": 5}))),
         ),
     ]);

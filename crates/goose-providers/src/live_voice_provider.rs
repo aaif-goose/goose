@@ -81,12 +81,22 @@ pub struct LiveVoiceInputMessage {
     pub text: String,
 }
 
+/// `base`, then `added` after a blank line when it has any text.
+pub fn append_instructions(base: &str, added: Option<&str>) -> String {
+    match added.map(str::trim).filter(|added| !added.is_empty()) {
+        Some(added) => format!("{base}\n\n{added}"),
+        None => base.to_owned(),
+    }
+}
+
 #[async_trait]
 pub trait LiveVoiceProvider: Send + Sync {
+    /// `instructions` are added after the provider's own for this start only.
     async fn start(
         &self,
         offer: WebRtcOffer,
         input_messages: Vec<LiveVoiceInputMessage>,
+        instructions: Option<String>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>;
 }
 
@@ -100,5 +110,12 @@ mod tests {
         assert!(WebRtcOffer::new("x".repeat(MAX_SDP_BYTES + 1)).is_none());
         assert!(WebRtcOffer::new("offer".into()).is_some());
         assert!(WebRtcAnswer::new("answer".into()).is_some());
+    }
+
+    #[test]
+    fn added_instructions_follow_the_base_after_a_blank_line() {
+        assert_eq!(append_instructions("base", None), "base");
+        assert_eq!(append_instructions("base", Some(" \n ")), "base");
+        assert_eq!(append_instructions("base", Some(" more\n")), "base\n\nmore");
     }
 }

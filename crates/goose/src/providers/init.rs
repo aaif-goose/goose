@@ -354,6 +354,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_lemonade_provider_registry_wiring() {
+        let lemonade = get_from_registry("lemonade")
+            .await
+            .expect("lemonade provider should be registered");
+        let meta = lemonade.metadata();
+
+        assert_eq!(meta.name, "lemonade");
+        assert_eq!(meta.display_name, "Lemonade");
+        assert!(meta.default_model.is_empty());
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "LEMONADE_API_KEY" && key.secret));
+        assert!(meta.config_keys.iter().any(|key| {
+            key.name == "LEMONADE_HOST"
+                && !key.required
+                && key.default.as_deref() == Some("http://localhost:13305")
+        }));
+    }
+
+    #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {
         let providers_list = providers().await;
         let required_api_key_cases = vec![

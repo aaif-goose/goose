@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
+
+### Added
+
+- *(live-voice)* configurable and per-start voice instructions ([#13375](https://github.com/aaif-goose/goose/pull/13375))
+- *(live-voice)* configurable GPT-Live endpoint, model and key ([#13360](https://github.com/aaif-goose/goose/pull/13360))
+- add AIHubMix declarative provider ([#12997](https://github.com/aaif-goose/goose/pull/12997))
+- *(providers)* add RouterPlex declarative provider ([#13068](https://github.com/aaif-goose/goose/pull/13068))
+
+### Fixed
+
+- *(databricks)* drop thinking blocks bound to a different prefix ([#13551](https://github.com/aaif-goose/goose/pull/13551))
+- *(databricks)* give Gemini tool calls unique ids ([#13483](https://github.com/aaif-goose/goose/pull/13483))
+- *(providers)* refresh Vercel AI Gateway models from the API ([#13442](https://github.com/aaif-goose/goose/pull/13442))
+- *(providers)* surface stream errors and premature completion ([#13226](https://github.com/aaif-goose/goose/pull/13226))
+- *(databricks)* send Gemini thinking level and drop stream_options ([#13232](https://github.com/aaif-goose/goose/pull/13232))
+- *(providers)* replace retired Spark X2 with Spark X2.5 in iflytek_astron ([#12772](https://github.com/aaif-goose/goose/pull/12772))
+- *(providers)* replay OpenAI Responses reasoning across tool turns ([#13222](https://github.com/aaif-goose/goose/pull/13222))
+- *(providers)* honor Retry-After on 429s mapped outside handle_status ([#12986](https://github.com/aaif-goose/goose/pull/12986))
+- *(openrouter)* classify typed context_length_exceeded errors as context overflow ([#13154](https://github.com/aaif-goose/goose/pull/13154))
+- *(openrouter)* resolve variant suffixes like :free and :nitro to the base model ([#12979](https://github.com/aaif-goose/goose/pull/12979))
+- *(voice)* use system trust for WebSockets ([#13075](https://github.com/aaif-goose/goose/pull/13075))
+
+### Other
+
+- Add Lemonade as a provider ([#12920](https://github.com/aaif-goose/goose/pull/12920))
+- *(release)* bump version to 1.57.0 (minor) ([#13161](https://github.com/aaif-goose/goose/pull/13161))
+
+## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
+
+### Added
+
+- add IO Intelligence provider ([#12795](https://github.com/aaif-goose/goose/pull/12795))
+
+### Fixed
+
+- *(providers)* request summarized thinking from Claude models ([#13029](https://github.com/aaif-goose/goose/pull/13029))
+- *(databricks)* send the system prompt as system on the MLflow chat route ([#13057](https://github.com/aaif-goose/goose/pull/13057))
+- *(databricks)* omit stream_options for Gemini model services ([#12675](https://github.com/aaif-goose/goose/pull/12675))
+- fix stale models ([#13054](https://github.com/aaif-goose/goose/pull/13054))
+- *(providers)* add missing GLM models to OpenCode Go and Zen ([#12057](https://github.com/aaif-goose/goose/pull/12057))
+- *(openrouter)* use the context length OpenRouter reports ([#12853](https://github.com/aaif-goose/goose/pull/12853))
+- *(openai)* send session id as prompt_cache_key on Responses requests ([#12420](https://github.com/aaif-goose/goose/pull/12420))
+
+### Other
+
+- Support provider-defined cache prices ([#12944](https://github.com/aaif-goose/goose/pull/12944))
+- *(release)* bump version to 1.55.0 (minor) ([#12863](https://github.com/aaif-goose/goose/pull/12863))
+
+## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
+
+### Added
+
+- surface provider x-request-id on responses and errors ([#12587](https://github.com/aaif-goose/goose/pull/12587))
+- add AIgateway declarative provider ([#12528](https://github.com/aaif-goose/goose/pull/12528))
+- *(providers)* honor supports_vision declared on custom provider mo… ([#12769](https://github.com/aaif-goose/goose/pull/12769))
+- Use live model metadata for OpenAI reasoning and prefer the Responses API ([#12568](https://github.com/aaif-goose/goose/pull/12568))
+
+### Fixed
+
+- *(openrouter)* do not set transforms field unconditionally ([#11374](https://github.com/aaif-goose/goose/pull/11374))
+- *(anthropic)* forward unknown request_params to wire, mirroring openai engine ([#12720](https://github.com/aaif-goose/goose/pull/12720))
+
+### Other
+
+- detect vision support ([#12594](https://github.com/aaif-goose/goose/pull/12594))
+- Run the GDK agent loop on wasm32 ([#12569](https://github.com/aaif-goose/goose/pull/12569))
+- Add Meta Muse Code provider ([#11765](https://github.com/aaif-goose/goose/pull/11765))
+
 ## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
 
 ### Added

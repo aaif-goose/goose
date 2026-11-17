@@ -1,64 +1,101 @@
 //! Exposes extension capabilities and executes requests that belong to them.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
+use goose_agent::tool_call_state::request_executable;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
+};
 
-use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
+use crate::agents::extension::ExtensionInfo;
+use crate::agents::extension_manager::CallRequest;
+use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::ops_tool_approval::request_executable;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, Command, ConversationEffect,
+    Emitter, GooseEffect, Operation, OperationResult,
 };
-use crate::agents::tool_execution::{
-    tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
-};
+use crate::agents::tool_execution::{tool_stream, ToolCallResult, ToolStreamItem};
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
-use crate::config::GooseMode;
+use crate::agents::StateMachineServices;
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
 };
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
-use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
-    "Tool approval expired because its extension lease is no longer available. Request the tool again.";
+    "Tool approval expired because the advertised tools are no longer available. Request the tool again.";
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
 
-#[derive(Clone, Copy)]
-enum ToolCategory {
-    Shell,
-    Read,
-    Write,
-    Other,
+const ENABLE_TOOLS: &str = "enable_tools";
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct EnableToolsParams {
+    /// Exact MCP tool names to make available on the next response.
+    tool_names: Vec<String>,
 }
 
-fn categorize_tool(tool_name: &str) -> ToolCategory {
-    match tool_name.rsplit("__").next().unwrap_or(tool_name) {
-        "shell" | "bash" | "exec" | "run" => ToolCategory::Shell,
-        "read" | "view" | "cat" | "read_file" => ToolCategory::Read,
-        "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
-        _ => ToolCategory::Other,
+fn enable_tools_tool() -> Result<Tool> {
+    let schema: rmcp::model::JsonObject = serde_json::from_value(serde_json::to_value(
+        schemars::schema_for!(EnableToolsParams),
+    )?)?;
+    Ok(Tool::new(
+        ENABLE_TOOLS,
+        "Enable MCP tools listed in the system instructions. Call them in your next response.",
+        schema,
+    )
+    .annotate(ToolAnnotations::new().read_only(true)))
+}
+
+fn enabled_tools(conversation: &Conversation) -> HashSet<String> {
+    let mut requests = HashSet::new();
+    let mut enabled = HashSet::new();
+    for content in conversation
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+    {
+        match content {
+            MessageContent::ToolRequest(request)
+                if request
+                    .tool_call
+                    .as_ref()
+                    .is_ok_and(|call| call.name == ENABLE_TOOLS) =>
+            {
+                requests.insert(&request.id);
+            }
+            MessageContent::ToolResponse(response) if requests.remove(&response.id) => {
+                let Ok(result) = &response.tool_result else {
+                    continue;
+                };
+                if result.is_error == Some(true) {
+                    continue;
+                }
+                let Some(names) = result
+                    .structured_content
+                    .as_ref()
+                    .and_then(|value| value["enabled"].as_array())
+                else {
+                    continue;
+                };
+                enabled.extend(
+                    names
+                        .iter()
+                        .filter_map(|name| name.as_str().map(str::to_string)),
+                );
+            }
+            _ => {}
+        }
     }
-}
-
-fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    let arguments = input.as_object()?;
-    keys.iter().find_map(|key| {
-        arguments
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
+    enabled
 }
 
 fn platform_notification(result: &CallToolResult) -> Option<rmcp::model::ServerNotification> {
@@ -87,155 +124,6 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
     )
 }
 
-/// Observation-only record of what the `PreToolUse` chain decided. Carries
-/// no veto: the decision has already been made by the time this runs.
-async fn emit_pre_tool_use_result(
-    hook_manager: &HookManager,
-    session: &Session,
-    tool_call_id: &str,
-    tool_name: &str,
-    tool_input: Option<&serde_json::Value>,
-    outcome: &HookChainOutcome,
-) {
-    if !hook_manager.has_hooks(HookEvent::PreToolUseResult) {
-        return;
-    }
-    let context = HookContext::new(HookEvent::PreToolUseResult, &session.id)
-        .with_tool(tool_name.to_string(), tool_input.cloned())
-        .with_tool_call_id(tool_call_id)
-        .with_working_dir(session.working_dir.to_string_lossy().to_string())
-        .with_pre_tool_use_outcome(outcome);
-    hook_manager.emit_pre_tool_use_result(context).await;
-}
-
-/// Runs the `PreToolUse` chain, emits `PreToolUseResult`, and reports a denial
-/// as the error the caller must return instead of executing.
-///
-/// Shared rather than duplicated because it carries policy: which decisions
-/// block, what `policy_evaluated` means, and that the result event is emitted
-/// on both the allow and the deny path. `RecipeOperation` executes
-/// `recipe__final_output` without going through [`ToolExecutionOperation`], so
-/// it calls this to get the identical lifecycle rather than its own copy.
-pub(super) async fn run_pre_tool_hooks(
-    hook_manager: &HookManager,
-    session: &Session,
-    tool_call_id: &str,
-    tool_name: &str,
-    tool_input: Option<&serde_json::Value>,
-) -> std::result::Result<(), ErrorData> {
-    let outcome = if hook_manager.has_hooks(HookEvent::PreToolUse) {
-        let context = HookContext::new(HookEvent::PreToolUse, &session.id)
-            .with_tool(tool_name.to_string(), tool_input.cloned())
-            .with_tool_call_id(tool_call_id)
-            .with_working_dir(session.working_dir.to_string_lossy().to_string());
-        hook_manager
-            .emit_blocking_with_outcome(HookEvent::PreToolUse, context)
-            .await
-    } else {
-        HookChainOutcome::allow(false)
-    };
-
-    // Emitted before the denial returns, so an observer sees the denial
-    // before the model receives the refusal. Best effort, like every other
-    // hook emission: a subscriber that fails or is absent changes nothing.
-    emit_pre_tool_use_result(
-        hook_manager,
-        session,
-        tool_call_id,
-        tool_name,
-        tool_input,
-        &outcome,
-    )
-    .await;
-
-    if let Some(denial) = outcome.denial() {
-        tracing::Span::current().record("error.type", denial.error_type);
-        return Err(ErrorData::new(
-            rmcp::model::ErrorCode::INTERNAL_ERROR,
-            denial.message,
-            None,
-        ));
-    }
-    Ok(())
-}
-
-async fn emit_with_matcher(
-    hook_manager: &HookManager,
-    event: HookEvent,
-    session: &Session,
-    matcher: String,
-    tool_name: &str,
-    tool_input: Option<serde_json::Value>,
-) {
-    if !hook_manager.has_hooks(event) {
-        return;
-    }
-    let mut context = HookContext::new(event, &session.id)
-        .with_tool(tool_name.to_string(), tool_input)
-        .with_working_dir(session.working_dir.to_string_lossy().to_string());
-    context.matcher_context = Some(matcher);
-    hook_manager.emit(event, context).await;
-}
-
-pub(super) async fn emit_extended_pre_hooks(
-    hook_manager: &HookManager,
-    tool_name: &str,
-    tool_input: Option<&serde_json::Value>,
-    session: &Session,
-) {
-    let (event, matcher) = match categorize_tool(tool_name) {
-        ToolCategory::Shell => (
-            HookEvent::BeforeShellExecution,
-            tool_input.and_then(|input| string_argument(input, &["command"])),
-        ),
-        ToolCategory::Read => (
-            HookEvent::BeforeReadFile,
-            tool_input.and_then(|input| string_argument(input, &["path", "file", "file_path"])),
-        ),
-        ToolCategory::Write | ToolCategory::Other => return,
-    };
-    if let Some(matcher) = matcher {
-        emit_with_matcher(
-            hook_manager,
-            event,
-            session,
-            matcher,
-            tool_name,
-            tool_input.cloned(),
-        )
-        .await;
-    }
-}
-
-/// Emits the post-tool event for a finished call and reports which one fired.
-///
-/// Which event fires is policy: a result flagged `is_error` counts as a failure,
-/// as does a transport error. Shared so every execution path classifies the
-/// outcome the same way. Takes the session id and working dir as strings because
-/// the caller inside [`with_post_tool_hooks`] holds owned copies, not a session.
-pub(super) async fn emit_post_tool_use(
-    hook_manager: &HookManager,
-    session_id: &str,
-    working_dir: &str,
-    tool_name: &str,
-    tool_call_id: &str,
-    tool_input: Option<&serde_json::Value>,
-    result: &std::result::Result<CallToolResult, ErrorData>,
-) -> HookEvent {
-    let event = match result {
-        Ok(result) if result.is_error != Some(true) => HookEvent::PostToolUse,
-        _ => HookEvent::PostToolUseFailure,
-    };
-    if hook_manager.has_hooks(event) {
-        let context = HookContext::new(event, session_id)
-            .with_tool(tool_name.to_string(), tool_input.cloned())
-            .with_tool_call_id(tool_call_id)
-            .with_working_dir(working_dir.to_string());
-        hook_manager.emit(event, context).await;
-    }
-    event
-}
-
 #[derive(Default)]
 struct ToolBatch {
     actions: Vec<Message>,
@@ -262,29 +150,15 @@ impl ToolBatch {
     }
 }
 
-/// Wraps a tool result so the post-tool event fires once the call completes,
-/// carrying the same `tool_call_id` the pre events carried.
-fn with_post_tool_hooks(
-    hook_manager: &HookManager,
+fn with_recording(
     batch: &Arc<StdMutex<ToolBatch>>,
     result: ToolCallResult,
-    tool_call: &CallToolRequestParams,
-    session: &Session,
     span: tracing::Span,
     request: &ToolRequest,
 ) -> ToolCallResult {
-    let hook_manager = hook_manager.clone();
     let batch = Arc::clone(batch);
-    let session_id = session.id.clone();
-    let working_dir = session.working_dir.to_string_lossy().to_string();
-    let tool_name = tool_call.name.to_string();
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
-    let tool_input = tool_call
-        .arguments
-        .as_ref()
-        .map(|arguments| serde_json::Value::Object(arguments.clone()));
-    let category = categorize_tool(&tool_name);
     let future = async move {
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
@@ -302,43 +176,6 @@ fn with_post_tool_hooks(
             }
             _ => {}
         }
-        let event = emit_post_tool_use(
-            &hook_manager,
-            &session_id,
-            &working_dir,
-            &tool_name,
-            &tool_call_id,
-            tool_input.as_ref(),
-            &result,
-        )
-        .await;
-
-        if event == HookEvent::PostToolUse {
-            let extended = match category {
-                ToolCategory::Shell => Some((
-                    HookEvent::AfterShellExecution,
-                    tool_input
-                        .as_ref()
-                        .and_then(|input| string_argument(input, &["command"])),
-                )),
-                ToolCategory::Write => Some((
-                    HookEvent::AfterFileEdit,
-                    tool_input
-                        .as_ref()
-                        .and_then(|input| string_argument(input, &["path", "file", "file_path"])),
-                )),
-                ToolCategory::Read | ToolCategory::Other => None,
-            };
-            if let Some((event, Some(matcher))) = extended {
-                if hook_manager.has_hooks(event) {
-                    let mut context = HookContext::new(event, &session_id)
-                        .with_tool(tool_name, tool_input)
-                        .with_working_dir(working_dir);
-                    context.matcher_context = Some(matcher);
-                    hook_manager.emit(event, context).await;
-                }
-            }
-        }
         result
     }
     .instrument(span);
@@ -349,124 +186,111 @@ fn with_post_tool_hooks(
     }
 }
 
+pub(super) fn advertised_working_dir(
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
+    session: &Session,
+) -> PathBuf {
+    tool_snapshot
+        .lock()
+        .expect("tool snapshot unavailable")
+        .as_ref()
+        .filter(|tools| tools.scope_id() == session.id)
+        .and_then(|tools| tools.working_dir())
+        .map_or_else(|| session.working_dir.clone(), Path::to_path_buf)
+}
+
+fn advertised_session(tools: &ToolSnapshot, session: &Session) -> Session {
+    let mut session = session.clone();
+    if let Some(working_dir) = tools.working_dir() {
+        session.working_dir = working_dir.to_path_buf();
+    }
+    session
+}
+
 pub struct ToolExecutionOperation {
-    extension_manager: Arc<ExtensionManager>,
-    hook_manager: HookManager,
-    lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    batch: Arc<StdMutex<ToolBatch>>,
+    services: Arc<StateMachineServices>,
+    tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+    execution: ToolExecution,
+    defer_tools: bool,
+    always_load_tools: HashSet<String>,
 }
 
 impl ToolExecutionOperation {
     pub fn new(
-        extension_manager: Arc<ExtensionManager>,
-        hook_manager: HookManager,
-        lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        services: Arc<StateMachineServices>,
+        tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+        defer_tools: bool,
+        always_load_tools: Vec<String>,
     ) -> Self {
         Self {
-            extension_manager,
-            hook_manager,
-            lease,
-            batch: Arc::default(),
+            services,
+            tools,
+            execution: ToolExecution::new(),
+            defer_tools,
+            always_load_tools: always_load_tools.into_iter().collect(),
         }
     }
 
-    fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
-        self.batch.lock().unwrap().take()
+    async fn execution_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
+        let platform_names: HashSet<_> = tools
+            .platform_tools()
+            .await
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect();
+        tools
+            .mcp
+            .tools()
+            .await
+            .into_iter()
+            .filter(|tool| !platform_names.contains(tool.name.as_ref()))
+            .collect()
     }
 
-    async fn lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
-        let lease = self
-            .lease
-            .lock()
-            .expect("extension lease unavailable")
-            .clone();
-        if let Some(lease) = lease {
-            if lease.scope_id() == session.id {
-                return Ok(lease);
-            }
+    fn defers_tools(&self, tools: &ToolSnapshot) -> bool {
+        #[cfg(feature = "code-mode")]
+        if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
+            return false;
         }
-        self.resolve_lease(session).await
+        let _ = tools;
+        self.defer_tools
     }
 
-    async fn resolve_lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
-        let lease = Arc::new(self.extension_manager.current_lease(&session.id).await?);
-        *self.lease.lock().expect("extension lease unavailable") = Some(Arc::clone(&lease));
-        Ok(lease)
+    async fn mcp_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
+        tools
+            .mcp
+            .tools()
+            .await
+            .into_iter()
+            .filter(is_tool_visible_to_model)
+            .collect()
     }
 
-    async fn dispatch_tool_call(
+    async fn enable_tools(
         &self,
-        lease: Arc<ExtensionLease>,
-        tool_call: CallToolRequestParams,
-        request: &ToolRequest,
-        cancellation_token: CancellationToken,
-        session: &Session,
-    ) -> std::result::Result<ToolCallResult, ErrorData> {
-        let request_id = request.id.clone();
-        let span = tool_span(&tool_call.name, &request_id, &session.id);
-        crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
-        let result_span = span.clone();
-        let leased_session = lease.working_dir().and_then(|working_dir| {
-            (working_dir != session.working_dir.as_path()).then(|| {
-                let mut session = session.clone();
-                session.working_dir = working_dir.to_path_buf();
-                session
-            })
-        });
-        let session = leased_session.as_ref().unwrap_or(session);
-
-        async {
-            let tool_input = tool_call
-                .arguments
-                .as_ref()
-                .map(|arguments| serde_json::Value::Object(arguments.clone()));
-            run_pre_tool_hooks(
-                &self.hook_manager,
-                session,
-                request_id.as_str(),
-                &tool_call.name,
-                tool_input.as_ref(),
-            )
-            .await?;
-
-            emit_extended_pre_hooks(
-                &self.hook_manager,
-                &tool_call.name,
-                tool_input.as_ref(),
-                session,
-            )
-            .await;
-
-            let result = lease
-                .call(
-                    tool_call.clone(),
-                    CallRequest::new(request_id.clone()).with_container(session.container.clone()),
-                    cancellation_token,
-                )
-                .await;
-            let result = result.unwrap_or_else(|error| {
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error(
-                    "tool_execution_failed",
-                    &format!("{}: {}", tool_call.name, error),
-                );
-                ToolCallResult::from(Err(error))
-            });
-            let result = self
-                .extension_manager
-                .applying_mutation(result, &session.id);
-            Ok(with_post_tool_hooks(
-                &self.hook_manager,
-                &self.batch,
-                result,
-                &tool_call,
-                session,
-                result_span,
-                request,
-            ))
+        tools: &ToolSnapshot,
+        call: &CallToolRequestParams,
+    ) -> CallToolResult {
+        let params = serde_json::from_value::<EnableToolsParams>(serde_json::Value::Object(
+            call.arguments.clone().unwrap_or_default(),
+        ));
+        let params = match params {
+            Ok(params) => params,
+            Err(error) => {
+                return CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+            }
+        };
+        let tools = self.mcp_tools(tools).await;
+        if let Some(name) = params
+            .tool_names
+            .iter()
+            .find(|name| !tools.iter().any(|tool| tool.name == name.as_str()))
+        {
+            return CallToolResult::error(vec![ContentBlock::text(format!(
+                "Unknown MCP tool: {name}"
+            ))]);
         }
-        .instrument(span)
-        .await
+        CallToolResult::structured(serde_json::json!({"enabled": params.tool_names}))
     }
 
     fn command_response(
@@ -501,17 +325,17 @@ impl ToolExecutionOperation {
 
     async fn list_prompts(
         &self,
-        command: &SlashCommand<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let prompts = self
-            .lease(session)
+        let prompts = ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
             .await?
+            .mcp
             .list_prompts(emit.cancel_token().clone())
             .await;
-        let extension_filter = command.params_str.split_whitespace().next();
+        let extension_filter = arguments.split_whitespace().next();
         if let Some(filter) = extension_filter {
             if !prompts.contains_key(filter) {
                 return Self::command_response(
@@ -544,12 +368,12 @@ impl ToolExecutionOperation {
 
     async fn run_prompt(
         &self,
-        command: &SlashCommand<'_>,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let params: Vec<_> = command.params_str.split_whitespace().collect();
+        let params: Vec<_> = arguments.split_whitespace().collect();
         let Some(prompt_name) = params.first() else {
             return Self::command_response(
                 conversation,
@@ -557,9 +381,9 @@ impl ToolExecutionOperation {
                 emit,
             );
         };
-        let prompts = self
-            .lease(session)
+        let prompts = ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
             .await?
+            .mcp
             .list_prompts(emit.cancel_token().clone())
             .await;
         let found = prompts.iter().find_map(|(extension, prompts)| {
@@ -601,9 +425,9 @@ impl ToolExecutionOperation {
             .filter_map(|param| param.split_once('='))
             .map(|(key, value)| (key.to_string(), value.trim_matches('"').to_string()))
             .collect();
-        let result = match self
-            .lease(session)
+        let result = match ToolSnapshot::for_session(&self.tools, &self.services, &session.id)
             .await?
+            .mcp
             .get_prompt(
                 &extension,
                 prompt_name,
@@ -662,28 +486,10 @@ impl ToolExecutionOperation {
 }
 
 pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    let mut answered = HashSet::new();
-    let mut approval_requests = HashSet::new();
-    let mut approvals = std::collections::HashMap::new();
-    for message in messages {
-        for content in &message.content {
-            match content {
-                MessageContent::ToolResponse(response) => {
-                    answered.insert(response.id.clone());
-                }
-                MessageContent::ActionRequired(action) => match &action.data {
-                    ActionRequiredData::ToolConfirmation { id, .. } => {
-                        approval_requests.insert(id.clone());
-                    }
-                    ActionRequiredData::ToolConfirmationResponse { id, permission } => {
-                        approvals.insert(id.clone(), permission.clone());
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-    }
+    let answered: HashSet<&str> = messages
+        .iter()
+        .flat_map(Message::get_tool_response_ids)
+        .collect();
 
     messages
         .iter()
@@ -691,25 +497,15 @@ pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, T
         .flat_map(|message| {
             message.content.iter().filter_map(|c| match c {
                 MessageContent::ToolRequest(req) if req.was_executed_externally() => None,
-                MessageContent::ToolRequest(req) if !answered.contains(&req.id) => {
+                MessageContent::ToolRequest(req) if !answered.contains(req.id.as_str()) => {
                     if let Err(parse_error) = &req.tool_call {
                         return Some((
                             req.clone(),
                             ToolDisposition::ParseError(parse_error.to_string()),
                         ));
                     }
-                    match request_executable(req).unwrap_or(true) {
-                        true => Some((req.clone(), ToolDisposition::Execute)),
-                        false => {
-                            if approval_requests.contains(&req.id)
-                                && !approval_denied(approvals.get(&req.id))
-                            {
-                                None
-                            } else {
-                                Some((req.clone(), ToolDisposition::Decline))
-                            }
-                        }
-                    }
+                    (request_executable(req) == Some(true))
+                        .then(|| (req.clone(), ToolDisposition::Execute))
                 }
                 _ => None,
             })
@@ -754,6 +550,18 @@ pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest
         })
 }
 
+pub(super) fn requests_can_resolve_tools<'a>(
+    messages: &[Message],
+    requests: impl IntoIterator<Item = &'a ToolRequest>,
+) -> bool {
+    let mut requests = requests.into_iter().peekable();
+    requests.peek().is_some()
+        && requests.all(|request| {
+            request_was_generated_by_operation(messages, request)
+                && !request_has_approval_history(messages, request)
+        })
+}
+
 fn request_was_generated_by_operation(messages: &[Message], request: &ToolRequest) -> bool {
     messages.iter().any(|message| {
         message.role == Role::Assistant
@@ -783,19 +591,40 @@ fn request_has_approval_history(messages: &[Message], request: &ToolRequest) -> 
 #[derive(Clone, Eq, PartialEq)]
 pub(super) enum ToolDisposition {
     Execute,
-    Decline,
     ParseError(String),
 }
 
-fn approval_denied(permission: Option<&crate::permission::Permission>) -> bool {
-    matches!(
-        permission,
-        Some(
-            crate::permission::Permission::DenyOnce
-                | crate::permission::Permission::AlwaysDeny
-                | crate::permission::Permission::Cancel
-        )
-    )
+/// The extension block, as a header part plus one part per extension. Prompt
+/// extras are joined with a blank line, so this renders the same text as one
+/// combined part while keeping each extension's tokens attributable.
+pub(super) fn extension_prompt_parts(
+    extensions: &[ExtensionInfo],
+    defer_tools: bool,
+) -> Vec<(String, String)> {
+    let mut parts = vec![(
+        "extensions".to_string(),
+        "# Extensions\n\n\
+         Extensions provide additional tools and context from different data sources and applications.\n\
+         You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
+         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
+            .to_string(),
+    )];
+    if !defer_tools {
+        parts[0].1.push_str(
+            " Each of these extensions provides tools that are in your tool specification.",
+        );
+    }
+    for extension in extensions {
+        let mut lines = vec![format!("## {}", extension.name)];
+        if extension.has_resources {
+            lines.push(format!("{} supports resources.", extension.name));
+        }
+        if !extension.instructions.is_empty() {
+            lines.push(format!("### Instructions\n{}", extension.instructions));
+        }
+        parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
+    }
+    parts
 }
 
 #[async_trait]
@@ -810,48 +639,60 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<GooseEffect> {
-        let (actions, response) = self.take_batch();
-        if let Some(response) = &response {
-            emit.emit(AgentEvent::Message(response.user_visible_content()));
-        }
-        actions
-            .into_iter()
-            .chain(response)
-            .map(GooseEffect::from)
-            .collect()
+        self.execution.finalize_cancellation(emit)
     }
 
-    async fn run_command(
-        &self,
-        command: &SlashCommand<'_>,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        match command.command {
-            "prompts" => {
-                self.list_prompts(command, session, conversation, emit)
-                    .await
-            }
-            "prompt" => self.run_prompt(command, session, conversation, emit).await,
-            _ => not_applicable(),
-        }
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(vec![
+            Command::new(
+                "prompts",
+                "List available prompts, optionally filtered by extension",
+                move |call| {
+                    Box::pin(self.list_prompts(
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+            Command::new(
+                "prompt",
+                "Execute a prompt or show its info with --info",
+                move |call| {
+                    Box::pin(self.run_prompt(
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+        ])
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(self
-            .lease(session)
-            .await?
-            .tools_excluding(crate::skills::EXTENSION_NAME)
-            .await)
-    }
-
-    async fn moim_parts(
-        &self,
-        session: &Session,
-        _conversation: &Conversation,
-    ) -> Result<Vec<String>> {
-        Ok(self.lease(session).await?.moim().await)
+        let snapshot = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
+        let mut tools = self.execution_tools(&snapshot).await;
+        if self.defers_tools(&snapshot) {
+            let deferred: HashSet<_> = self
+                .mcp_tools(&snapshot)
+                .await
+                .into_iter()
+                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
+                .map(|tool| tool.name.to_string())
+                .collect();
+            let enabled = session
+                .conversation
+                .as_ref()
+                .map(enabled_tools)
+                .unwrap_or_default();
+            tools.retain(|tool| {
+                !deferred.contains(tool.name.as_ref()) || enabled.contains(tool.name.as_ref())
+            });
+            tools.push(enable_tools_tool()?);
+        }
+        Ok(tools)
     }
 
     async fn prompt_parts(
@@ -875,35 +716,37 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         let mut prompt_parts = hints.load_new_hints(&session.working_dir);
 
-        let lease = self.lease(session).await?;
+        let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
         #[cfg(feature = "code-mode")]
-        if lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
+        if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(prompt_parts);
         }
 
-        let mut extensions = lease.instructions().await;
-        extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
+        let mut extensions = tools.mcp.instructions().await;
         if extensions.is_empty() {
             return Ok(prompt_parts);
         }
-
-        let mut lines = vec![
-            "# Extensions".to_string(),
-            "Extensions provide additional tools and context from different data sources and applications.\n\
-             You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
-             Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
-                .to_string(),
-        ];
-        for extension in extensions {
-            lines.push(format!("## {}", extension.name));
-            if extension.has_resources {
-                lines.push(format!("{} supports resources.", extension.name));
-            }
-            if !extension.instructions.is_empty() {
-                lines.push(format!("### Instructions\n{}", extension.instructions));
-            }
+        // HashMap order shuffles across restarts and would bust the prompt cache.
+        extensions.sort_by(|a, b| a.name.cmp(&b.name));
+        prompt_parts.extend(extension_prompt_parts(
+            &extensions,
+            self.defers_tools(&tools),
+        ));
+        if self.defers_tools(&tools) {
+            let mut names: Vec<_> = self
+                .mcp_tools(&tools)
+                .await
+                .into_iter()
+                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
+                .map(|tool| tool.name.to_string())
+                .collect();
+            names.sort();
+            prompt_parts.push(("mcp_tools".to_string(), format!(
+                "MCP tools available to enable: {}. Call enable_tools with exact tool_names before using them. \
+                 Their schemas become available on your next response. Enabling does not execute a tool.",
+                names.join(", ")
+            )));
         }
-        prompt_parts.push(("extensions".to_string(), lines.join("\n\n")));
         Ok(prompt_parts)
     }
 
@@ -919,38 +762,32 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             return not_applicable();
         }
 
-        let lease = self
-            .lease
+        let tools = self
+            .tools
             .lock()
-            .expect("extension lease unavailable")
+            .expect("tool snapshot unavailable")
             .clone();
-        let lease = match lease {
-            Some(lease) => Some(lease),
-            None if pending
-                .iter()
-                .any(|(_, disposition)| *disposition == ToolDisposition::Execute)
-                && pending
+        let tools = match tools {
+            Some(tools) => Some(tools),
+            None if requests_can_resolve_tools(
+                messages,
+                pending
                     .iter()
                     .filter(|(_, disposition)| *disposition == ToolDisposition::Execute)
-                    .all(|(request, _)| {
-                        request_was_generated_by_operation(messages, request)
-                            && !request_has_approval_history(messages, request)
-                    }) =>
+                    .map(|(request, _)| request),
+            ) =>
             {
-                Some(self.resolve_lease(session).await?)
+                Some(ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?)
             }
             None => None,
         };
-        let Some(lease) = lease else {
+        let Some(tools) = tools else {
             let mut response = Message::user();
             for (request, disposition) in pending {
                 let result = match disposition {
                     ToolDisposition::Execute => {
                         CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
                     }
-                    ToolDisposition::Decline => CallToolResult::error(vec![ContentBlock::text(
-                        DECLINED_RESPONSE,
-                    )]),
                     ToolDisposition::ParseError(parse_error) => {
                         CallToolResult::error(vec![ContentBlock::text(format!(
                             "The tool call could not be parsed: {parse_error}. Correct the arguments and try again."
@@ -967,65 +804,95 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             return applied([response.into()]);
         };
 
-        let known_tools: HashSet<_> = lease
-            .tools_excluding(crate::skills::EXTENSION_NAME)
+        let mut known_tools: HashSet<_> = self
+            .execution_tools(&tools)
             .await
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect();
+        if self.defers_tools(&tools) {
+            known_tools.insert(ENABLE_TOOLS.to_string());
+        }
         pending.retain(|(request, _)| {
             request
                 .tool_call
                 .as_ref()
                 .is_ok_and(|tool_call| known_tools.contains(tool_call.name.as_ref()))
         });
-        let requests: Vec<_> = pending.iter().map(|(request, _)| request.clone()).collect();
-        if requests.is_empty() {
+        if pending.is_empty() {
             return not_applicable();
         }
 
-        if session.goose_mode == GooseMode::Chat {
-            let mut response = Message::user();
-            for (request, disposition) in &pending {
-                let result = match disposition {
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}."
-                        ))])
-                    }
-                    _ => CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]),
-                };
-                response.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
+        let call_session = advertised_session(&tools, session);
+        let mut calls = Vec::new();
+        for (request, _) in pending {
+            let call = request
+                .tool_call
+                .as_ref()
+                .expect("selected calls are parsed");
+            let result = if self.defers_tools(&tools) && call.name == ENABLE_TOOLS {
+                ToolCallResult::from(Ok(self.enable_tools(&tools, call).await))
+            } else {
+                let result = tools
+                    .mcp
+                    .call(
+                        call.clone(),
+                        CallRequest::new(request.id.clone())
+                            .with_container(session.container.clone()),
+                        emit.cancel_token().clone(),
+                    )
+                    .await
+                    .unwrap_or_else(|error| ToolCallResult::from(Err(error)));
+                self.services.applying_mutation(result, &session.id)
+            };
+            calls.push((request, result));
         }
+        self.execution.run(calls, &call_session, emit).await
+    }
+}
 
+pub(super) struct ToolExecution {
+    batch: Arc<StdMutex<ToolBatch>>,
+}
+
+impl ToolExecution {
+    pub(super) fn new() -> Self {
+        Self {
+            batch: Arc::default(),
+        }
+    }
+
+    fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
+        self.batch.lock().unwrap().take()
+    }
+
+    pub(super) fn finalize_cancellation(&self, emit: &Emitter) -> Vec<GooseEffect> {
+        let (actions, response) = self.take_batch();
+        if let Some(response) = &response {
+            emit.emit(AgentEvent::Message(response.user_visible_content()));
+        }
+        actions
+            .into_iter()
+            .chain(response)
+            .map(GooseEffect::from)
+            .collect()
+    }
+
+    pub(super) async fn run(
+        &self,
+        calls: Vec<(ToolRequest, ToolCallResult)>,
+        session: &Session,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
         let mut tool_streams = Vec::new();
-        for (request, disposition) in &pending {
-            if *disposition != ToolDisposition::Execute {
-                continue;
-            }
+        for (request, result) in calls {
             let tool_call = request
                 .tool_call
-                .clone()
-                .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
-            let result = self
-                .dispatch_tool_call(
-                    Arc::clone(&lease),
-                    tool_call,
-                    request,
-                    emit.cancel_token().clone(),
-                    session,
-                )
-                .await;
-            let result = result.unwrap_or_else(|error_data| ToolCallResult::from(Err(error_data)));
+                .as_ref()
+                .expect("selected calls are parsed");
+            let span = tool_span(&tool_call.name, &request.id, &session.id);
+            crate::agents::gen_ai_telemetry::record_tool_arguments(&span, tool_call);
+            let result = with_recording(&self.batch, result, span, &request);
 
             let req_id = request.id.clone();
             let stream = tool_stream(
@@ -1042,52 +909,14 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
 
         let mut combined = futures::stream::select_all(tool_streams);
-        for (request, disposition) in &pending {
-            let mut batch = self.batch.lock().unwrap();
-            match disposition {
-                ToolDisposition::Execute => {}
-                ToolDisposition::Decline => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(
-                            DECLINED_RESPONSE,
-                        )])),
-                        request.metadata.as_ref(),
-                    );
-                }
-                ToolDisposition::ParseError(parse_error) => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}. \
-                             Correct the arguments and try again."
-                        ))])),
-                        request.metadata.as_ref(),
-                    );
-                }
-            }
-        }
-
         while let Some((request_id, item)) = combined.next().await {
             match item {
-                ToolStreamItem::Result(output) => {
-                    if let Ok(result) = &output {
-                        if let Some(notification) = platform_notification(result) {
-                            emit.emit(AgentEvent::McpNotification((
-                                request_id.clone(),
-                                notification,
-                            )));
-                        }
+                ToolStreamItem::Result(Ok(result)) => {
+                    if let Some(notification) = platform_notification(&result) {
+                        emit.emit(AgentEvent::McpNotification((request_id, notification)));
                     }
-                    let metadata = requests
-                        .iter()
-                        .find(|r| r.id == request_id)
-                        .and_then(|r| r.metadata.as_ref());
-                    self.batch
-                        .lock()
-                        .unwrap()
-                        .record(&request_id, output, metadata);
                 }
+                ToolStreamItem::Result(Err(_)) => {}
                 ToolStreamItem::Message(msg) => {
                     emit.emit(AgentEvent::McpNotification((request_id, msg)));
                 }
@@ -1109,6 +938,31 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use goose_agent::tool_call_state::EXECUTABLE_KEY;
+
+    #[test]
+    fn extension_prompt_parts_render_one_block_per_extension() {
+        let extensions = vec![
+            ExtensionInfo::new("developer", "Shell things.", false),
+            ExtensionInfo::new("memory", "", true),
+        ];
+
+        let parts = extension_prompt_parts(&extensions, false);
+
+        let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
+        assert_eq!(
+            keys,
+            ["extensions", "extension:developer", "extension:memory"]
+        );
+        let rendered = parts
+            .iter()
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        assert!(rendered.ends_with(
+            "## developer\n\n### Instructions\nShell things.\n\n## memory\n\nmemory supports resources."
+        ));
+    }
 
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {
@@ -1126,9 +980,11 @@ mod tests {
 
     #[test]
     fn operation_generated_requests_without_inference_remain_executable() {
-        let message = Message::assistant().with_tool_request(
+        let message = Message::assistant().with_tool_request_with_metadata(
             "operation-generated",
             Ok(CallToolRequestParams::new("registered__tool")),
+            None,
+            Some(serde_json::json!({ EXECUTABLE_KEY: true })),
         );
 
         let pending = pending_advertised_tool_requests(&[message]);

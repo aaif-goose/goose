@@ -21,6 +21,8 @@ import type {
   ConfigReadResponse_unstable,
   ConfigRemoveRequest_unstable,
   ConfigUpsertRequest_unstable,
+  ContextReportRequest_unstable,
+  ContextReportResponse_unstable,
   CreateScheduleRequest_unstable,
   CreateScheduleResponse_unstable,
   CreateSourceRequest_unstable,
@@ -196,6 +198,7 @@ import {
   zCanonicalModelInfoResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
+  zContextReportResponse_unstable,
   zCreateScheduleResponse_unstable,
   zCreateSourceResponse_unstable,
   zCustomProviderCreateResponse_unstable,
@@ -428,6 +431,18 @@ export class GooseExtClient {
     return zDiagnosticsGetResponse_unstable.parse(
       raw,
     ) as DiagnosticsGetResponse_unstable;
+  }
+
+  async contextReport_unstable(
+    params: ContextReportRequest_unstable,
+  ): Promise<ContextReportResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/context/report",
+      params,
+    );
+    return zContextReportResponse_unstable.parse(
+      raw,
+    ) as ContextReportResponse_unstable;
   }
 
   async configPromptsList_unstable(

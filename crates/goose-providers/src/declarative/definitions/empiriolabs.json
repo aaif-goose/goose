@@ -2,7 +2,7 @@
   "name": "empiriolabs",
   "engine": "openai",
   "display_name": "EmpirioLabs AI",
-  "description": "Frontier open and proprietary chat models through one OpenAI-compatible API with streaming support",
+  "description": "Specialized AI model hosting for open, proprietary, and custom stacks, with streaming chat models",
   "api_key_env": "EMPIRIOLABS_API_KEY",
   "base_url": "https://api.empiriolabs.ai/v1/chat/completions",
   "models": [
@@ -22,7 +22,7 @@
       "max_tokens": 65536
     },
     {
-      "name": "deepseek-v4-flash",
+      "name": "deepseek-v4-1-flash",
       "context_limit": 1000000,
       "max_tokens": 65536
     },
@@ -38,7 +38,7 @@
     },
     {
       "name": "minimax-m3",
-      "context_limit": 524000,
+      "context_limit": 1000000,
       "max_tokens": 131072
     }
   ],

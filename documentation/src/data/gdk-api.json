@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.1.0-alpha.11",
+      "version": "0.1.0-alpha.14",
       "docVersion": "0.1",
       "source": "crates/goose-sdk/src/bindings.rs",
       "functions": [
@@ -729,37 +729,37 @@
           "fields": [
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "reasoning_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
@@ -768,6 +768,12 @@
               "type": "String",
               "default": null,
               "docs": ""
+            },
+            {
+              "name": "request_id",
+              "type": "Option<String>",
+              "default": null,
+              "docs": "The model vendor's own id for this call: Anthropic sends `request-id`, OpenAI `x-request-id`."
             },
             {
               "name": "provider_metadata_json",
@@ -912,6 +918,12 @@
               "type": "Option<u64>",
               "default": null,
               "docs": ""
+            },
+            {
+              "name": "request_id",
+              "type": "Option<String>",
+              "default": null,
+              "docs": "Recovered from the message text, the only channel `ProviderError` has for it."
             }
           ],
           "variants": [],
@@ -1465,31 +1477,31 @@
             },
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             }

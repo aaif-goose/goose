@@ -18,7 +18,7 @@ interface UseAutoSubmitProps {
   messages: Message[];
   chatState: ChatState;
   initialMessage: UserInput | undefined;
-  canAutoSubmit?: boolean;
+  canAutoSubmit: boolean;
   handleSubmit: (input: UserInput) => void;
 }
 
@@ -32,10 +32,10 @@ export function useAutoSubmit({
   messages,
   chatState,
   initialMessage,
-  canAutoSubmit = true,
+  canAutoSubmit,
   handleSubmit,
 }: UseAutoSubmitProps): UseAutoSubmitReturn {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const hasAutoSubmittedRef = useRef(false);
 
   // Reset auto-submit flag when session changes
@@ -69,10 +69,26 @@ export function useAutoSubmit({
       return;
     }
 
+    // The ref resets when the chat remounts (opening Settings does that), so
+    // shouldStartAgent must also leave the URL to stay a one-shot trigger.
+    const markAutoSubmitted = () => {
+      hasAutoSubmittedRef.current = true;
+      if (shouldStartAgent) {
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('shouldStartAgent');
+            return next;
+          },
+          { replace: true }
+        );
+      }
+    };
+
     // Scenario 1: New session with initial message from Hub
     // Hub always creates new sessions, so message_count will be 0
     if (initialMessage && session.message_count === 0 && messages.length === 0) {
-      hasAutoSubmittedRef.current = true;
+      markAutoSubmitted();
       handleSubmit(initialMessage);
       clearInitialMessage();
       return;
@@ -81,7 +97,7 @@ export function useAutoSubmit({
     // Scenario 2: Forked session with edited message
     if (shouldStartAgent && initialMessage) {
       if (messages.length > 0) {
-        hasAutoSubmittedRef.current = true;
+        markAutoSubmitted();
         handleSubmit(initialMessage);
         clearInitialMessage();
         return;
@@ -91,7 +107,7 @@ export function useAutoSubmit({
 
     // Scenario 3: Resume with shouldStartAgent (continue existing conversation)
     if (shouldStartAgent) {
-      hasAutoSubmittedRef.current = true;
+      markAutoSubmitted();
       handleSubmit({ msg: '', images: [] });
       return;
     }
@@ -99,6 +115,7 @@ export function useAutoSubmit({
     session,
     initialMessage,
     searchParams,
+    setSearchParams,
     handleSubmit,
     sessionId,
     messages.length,

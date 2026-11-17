@@ -1,15 +1,88 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, Result};
+use goose_agent::tool_approval::confirmation_response_message;
 
 use crate::agents::state_machine::messages_since_kickoff;
-use crate::agents::state_machine::ops_tool_approval::ApprovalState;
+use crate::agents::state_machine::ops_toolcalling::request_was_advertised;
 use crate::conversation::message::{
-    ActionRequiredData, Message, MessageContent, ToolConfirmationRequest,
+    ActionRequiredData, Message, MessageContent, ToolConfirmationRequest, ToolRequest,
 };
 use crate::conversation::Conversation;
 use crate::permission::Permission;
 use crate::session::SessionManager;
+
+struct ApprovalState {
+    answered: HashSet<String>,
+    approval_requests: HashSet<String>,
+    approval_responses: HashMap<String, Permission>,
+    tool_requests: Vec<ToolRequest>,
+}
+
+impl ApprovalState {
+    fn from_messages(messages: &[Message]) -> Self {
+        let mut answered = HashSet::new();
+        let mut approval_requests = HashSet::new();
+        let mut approval_responses = HashMap::new();
+        let mut tool_requests = Vec::new();
+
+        for message in messages {
+            for content in &message.content {
+                match content {
+                    MessageContent::ToolResponse(response) => {
+                        answered.insert(response.id.clone());
+                    }
+                    MessageContent::ToolRequest(request)
+                        if request_was_advertised(messages, request) =>
+                    {
+                        tool_requests.push(request.clone());
+                    }
+                    MessageContent::ActionRequired(action) => match &action.data {
+                        ActionRequiredData::ToolConfirmation { id, .. } => {
+                            approval_requests.insert(id.clone());
+                        }
+                        ActionRequiredData::ToolConfirmationResponse { id, permission } => {
+                            approval_responses.insert(id.clone(), permission.clone());
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+        }
+
+        Self {
+            answered,
+            approval_requests,
+            approval_responses,
+            tool_requests,
+        }
+    }
+
+    fn has_confirmation_request(&self, request_id: &str) -> bool {
+        self.approval_requests.contains(request_id)
+            && self
+                .tool_requests
+                .iter()
+                .any(|request| request.id == request_id)
+    }
+
+    fn has_unapplied_confirmation_response(&self) -> bool {
+        self.tool_requests.iter().any(|request| {
+            !self.answered.contains(&request.id)
+                && self.approval_requests.contains(&request.id)
+                && self.approval_responses.contains_key(&request.id)
+        })
+    }
+
+    fn confirmation_response(&self, request_id: &str) -> Option<&Permission> {
+        self.approval_responses.get(request_id)
+    }
+
+    fn has_tool_response(&self, request_id: &str) -> bool {
+        self.answered.contains(request_id)
+    }
+}
 
 fn active_turn_messages(conversation: &Conversation) -> &[Message] {
     let messages = conversation.messages();
@@ -105,13 +178,10 @@ pub(crate) async fn persist_tool_confirmation_decision(
         return Err(anyhow!("Tool request {request_id} already has a response"));
     }
 
-    let response_message = Message::user().with_visibility(false, false).with_content(
-        MessageContent::action_required_tool_confirmation_response(
-            request_id.to_string(),
-            permission.clone(),
-        ),
-    );
     session_manager
-        .add_message(session_id, &response_message)
+        .add_message(
+            session_id,
+            &confirmation_response_message(request_id, permission.clone()),
+        )
         .await
 }

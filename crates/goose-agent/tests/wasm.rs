@@ -16,6 +16,7 @@ use goose_agent::{
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{Emitter, MachineEffect},
     tool::ToolOperation,
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::{
     base::{MessageStream, Provider},
@@ -132,7 +133,12 @@ impl Provider for ScriptedProvider {
         let reply = if messages.last().is_some_and(Message::is_tool_response) {
             Message::assistant().with_text("done")
         } else {
-            Message::assistant().with_tool_request("call-1", Ok(self.call.clone()))
+            Message::assistant().with_tool_request_with_metadata(
+                "call-1",
+                Ok(self.call.clone()),
+                None,
+                Some(json!({ EXECUTABLE_KEY: true })),
+            )
         };
         let usage = ProviderUsage::new("scripted-model".to_string(), Usage::default());
         Ok(Box::pin(futures::stream::once(async move {

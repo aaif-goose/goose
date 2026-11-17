@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
@@ -10,38 +10,79 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::{
-    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
-};
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, RunStatus, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation,
+    messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
-use crate::agents::subagent_handler::ForegroundSubagentRunner;
-use crate::agents::AgentEvent;
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, MessageErrorKind};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
-use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::Permission;
 use crate::providers::base::Provider;
-use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
-use crate::tool_inspection::ToolInspectionManager;
 use goose_providers::model::ModelConfig;
+use goose_providers::thinking::ThinkingEffort;
 
 struct FeatureProvider {
     inner: Arc<dyn Provider>,
     features: ProviderFeatures,
+}
+
+struct RecordingProvider {
+    inner: Arc<dyn Provider>,
+    model_configs: Arc<StdMutex<Vec<ModelConfig>>>,
+}
+
+#[async_trait::async_trait]
+impl Provider for RecordingProvider {
+    fn get_name(&self) -> &str {
+        self.inner.get_name()
+    }
+
+    fn provider_session_id(&self) -> Option<String> {
+        self.inner.provider_session_id()
+    }
+
+    async fn resume(&self, session_id: &str) -> Result<(), goose_providers::errors::ProviderError> {
+        self.inner.resume(session_id).await
+    }
+
+    async fn stream(
+        &self,
+        model_config: &ModelConfig,
+        system: &str,
+        messages: &[Message],
+        tools: &[rmcp::model::Tool],
+    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+        self.model_configs
+            .lock()
+            .unwrap()
+            .push(model_config.clone());
+        self.inner
+            .stream(model_config, system, messages, tools)
+            .await
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        self.inner.get_context_limit(model, override_limit).await
+    }
+
+    fn manages_own_context(&self) -> bool {
+        self.inner.manages_own_context()
+    }
+
+    async fn fetch_model_info(
+        &self,
+        model_name: &str,
+    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+        self.inner.fetch_model_info(model_name).await
+    }
 }
 
 #[async_trait::async_trait]
@@ -91,113 +132,97 @@ pub(super) struct TestPipeline {
     provider_features: ProviderFeatures,
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
-    extension_manager: Arc<ExtensionManager>,
-    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
-    pub(super) hook_manager: HookManager,
-    stop_hook_block_cap: u32,
+    hook_manager: HookManager,
+    turn_settings: TurnSettings,
+    max_turns: u32,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
+    session: Session,
     working_dir: std::path::PathBuf,
-    steer_queue: SteerQueue,
-    max_turns: u32,
-    scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
+    recorded_model_configs: Option<Arc<StdMutex<Vec<ModelConfig>>>>,
+    /// Built on first use, so the `with_*` settings above are what it runs with.
+    services: tokio::sync::OnceCell<Arc<StateMachineServices>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
 impl TestPipeline {
-    pub(super) fn machine(
+    pub(super) async fn services(&self) -> &Arc<StateMachineServices> {
+        self.services
+            .get_or_init(|| async {
+                let mut config = StateMachineServicesConfig::new(
+                    self.session_manager.clone(),
+                    self.permission_manager.clone(),
+                    self.scheduler.clone(),
+                    true,
+                    crate::agents::GoosePlatform::GooseCli,
+                );
+                config.turn_settings = Some(self.turn_settings.clone());
+                config.hooks = Some(self.hook_manager.clone());
+                let services = StateMachineServices::with_config(config);
+                services
+                    .providers
+                    .set_provider(&self.session_id, self.provider.clone())
+                    .await;
+                enable_session_extensions(&services, &self.session, &self.calculator)
+                    .await
+                    .expect("test session extensions start");
+                services
+            })
+            .await
+    }
+
+    fn tool_snapshot(
+        &self,
+        services: &StateMachineServices,
+    ) -> Arc<StdMutex<Option<Arc<ToolSnapshot>>>> {
+        services
+            .runtime
+            .confirmations
+            .session(&self.session_id)
+            .tool_snapshot()
+    }
+
+    async fn fire_tool_hooks(
+        &self,
+        session: &Session,
+        effects: &mut Vec<GooseEffect>,
+        emit: &Emitter,
+    ) {
+        let lease = self.tool_snapshot(self.services().await);
+        if let Some(denials) =
+            fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
+        {
+            effects.push(emit.message(denials).into());
+        }
+        fire_post_tool_hooks(&self.hook_manager, &lease, session, effects).await;
+    }
+
+    async fn start_new_turn(&self) {
+        let services = self.services().await;
+        *self.tool_snapshot(services).lock().unwrap() = None;
+    }
+
+    pub(super) async fn machine(
         &self,
         cancel: CancellationToken,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let provider = self.provider.clone();
-        let tool_call_cutoff = crate::context_mgmt::compute_tool_call_cutoff(
-            self.model_config.context_limit(),
-            COMPACTION_THRESHOLD,
-        );
-        let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-            Arc::new(SteerOperation::new(
-                self.steer_queue.clone(),
-                self.hook_manager.clone(),
-            )),
-            Arc::new(BangShellOperation::new()),
-        ];
-        if !self.provider_features.manages_own_context {
-            operations.push(Arc::new(CompactionOperation::new(
-                provider.clone(),
+        let services = self.services().await;
+        services
+            .create_state_machine(
+                self.provider.clone(),
                 self.model_config.clone(),
                 self.model_config.context_limit(),
-                COMPACTION_THRESHOLD,
-            )));
-        }
-        let extension_lease = Arc::clone(&self.extension_lease);
-        let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-            Arc::new(ToolPairCompactionOperation::new(
-                provider.clone(),
-                self.model_config.clone(),
-                tool_call_cutoff,
-                !self.provider_features.manages_own_context,
-            )),
-            Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
-            Arc::new(DoctorOperation::new(self.session_manager.clone())),
-            Arc::new(ProjectOperation),
-            Arc::new(SkillOperation::new(
-                self.hook_manager.clone(),
-                Arc::clone(&extension_lease),
-            )),
-            Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.session_manager.clone(), false),
-                cancel.clone(),
-            )),
-            Arc::new(RecipeOperation::new(
-                provider.clone(),
-                self.hook_manager.clone(),
-            )),
-            Arc::new(ToolExecutionOperation::new(
-                self.extension_manager.clone(),
-                self.hook_manager.clone(),
-                Arc::clone(&extension_lease),
-            )),
-            Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
-            Arc::new(RetryOperation::new(
-                std::time::Duration::from_secs(1),
-                std::time::Duration::from_secs(1),
-            )),
-            Arc::new(StopHookOperation::new(
-                self.hook_manager.clone(),
-                self.stop_hook_block_cap,
-            )),
-            Arc::new(ExitOnErrorOperation),
-            Arc::new(MaxTurnsOperation::new(self.max_turns)),
-        ];
-        operations.extend(remaining_operations);
-        let request_preparer = GooseInferenceRequestPreparer {
-            extension_manager: Arc::clone(&self.extension_manager),
-            extension_lease,
-            tool_inspection_manager: &self.tool_inspection_manager,
-            context_limit: self.model_config.context_limit(),
-        };
-        let status_operation = Arc::new(StatusOperation::new(
-            provider.clone(),
-            self.model_config.clone(),
-        ));
-        let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
-        let inference = Arc::new(
-            InferenceRunner::new(inference_provider, self.model_config.clone())
-                .with_request_preparer(Arc::new(request_preparer)),
-        );
-        let mut command_handlers = operations.clone();
-        command_handlers.push(status_operation);
-        let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-            Arc::new(SlashCommandOperation::new(command_handlers));
-        let steps = std::iter::once(command_operation)
-            .chain(operations)
-            .map(Step::Operation)
-            .chain(std::iter::once(Step::Inference(inference)))
-            .collect();
-
-        StateMachine::new(steps, cancel)
+                crate::agents::SessionConfig {
+                    id: self.session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(self.max_turns),
+                },
+                cancel,
+                services.runtime.steer_queue(&self.session_id),
+            )
+            .await
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
@@ -245,9 +270,74 @@ impl TestPipeline {
         self.reconstruct().await
     }
 
+    pub(super) fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    pub(super) fn with_context_relevance(
+        mut self,
+        decisions: Arc<dyn goose_providers::decision::DecisionProvider>,
+    ) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.context_relevance = Some(decisions);
+        self
+    }
+
+    pub(super) fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.always_load_tools = tools;
+        self
+    }
+
+    pub(super) fn with_deferred_tools(mut self) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.defer_tools = true;
+        self
+    }
+
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
         self.max_turns = max_turns;
         self
+    }
+
+    pub(super) fn with_auto_effort(
+        mut self,
+        operation: Arc<dyn Operation<Session, GooseEffect>>,
+    ) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.auto_effort = Some(operation);
+        self
+    }
+
+    pub(super) fn record_model_configs(mut self) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        let model_configs = Arc::new(StdMutex::new(Vec::new()));
+        self.provider = Arc::new(RecordingProvider {
+            inner: self.provider,
+            model_configs: model_configs.clone(),
+        });
+        self.recorded_model_configs = Some(model_configs);
+        self
+    }
+
+    pub(super) fn recorded_efforts(&self) -> Vec<Option<ThinkingEffort>> {
+        self.recorded_model_configs
+            .as_ref()
+            .expect("model config recording was not enabled")
+            .lock()
+            .unwrap()
+            .iter()
+            .map(ModelConfig::thinking_effort)
+            .collect()
     }
 
     pub(super) fn working_dir(&self) -> &std::path::Path {
@@ -255,16 +345,24 @@ impl TestPipeline {
     }
 
     pub(super) fn with_hook_manager(mut self, hook_manager: HookManager) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
         self.hook_manager = hook_manager;
         self
     }
 
     pub(super) fn with_stop_hook_block_cap(mut self, cap: u32) -> Self {
-        self.stop_hook_block_cap = cap;
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.stop_hook_block_cap = cap;
         self
     }
 
-    pub(super) async fn set_total_tokens(&self, tokens: i32) {
+    pub(super) async fn set_total_tokens(&self, tokens: i64) {
         use goose_providers::conversation::token_usage::Usage;
         self.session_manager
             .update(&self.session_id)
@@ -281,13 +379,15 @@ impl TestPipeline {
             .apply()
             .await?;
         for extension in recipe.extensions.clone().unwrap_or_default() {
-            self.extension_manager
-                .enable(&self.session_id, extension)
+            self.services()
+                .await
+                .enable_extension(&self.session_id, extension)
                 .await?;
         }
         Ok(())
     }
 
+    #[cfg(feature = "scheduler")]
     pub(super) async fn set_schedule_id(&self, schedule_id: String) -> Result<()> {
         self.session_manager
             .update(&self.session_id)
@@ -325,11 +425,21 @@ impl TestPipeline {
     }
 
     pub(super) async fn steer(&self, message: Message) {
-        self.steer_queue.lock().await.push_back(message);
+        self.services()
+            .await
+            .steer(&self.session_id, message)
+            .await
+            .expect("steer the test session");
     }
 
     pub(super) async fn has_pending_steers(&self) -> bool {
-        !self.steer_queue.lock().await.is_empty()
+        let services = self.services().await;
+        !services
+            .runtime
+            .steer_queue(&self.session_id)
+            .lock()
+            .await
+            .is_empty()
     }
 
     pub(super) fn calculator_total(&self) -> i64 {
@@ -340,7 +450,8 @@ impl TestPipeline {
         self.calculator.wait_for_result().await;
     }
 
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
+    #[cfg(feature = "tree-sitter")]
+    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::mcp_client::McpCallContext> {
         self.calculator.contexts()
     }
 
@@ -354,14 +465,23 @@ impl TestPipeline {
             session,
             self._temp_dir.clone(),
         )
-        .await?
-        .with_hook_manager(self.hook_manager.clone())
-        .with_max_turns(self.max_turns)
-        .with_stop_hook_block_cap(self.stop_hook_block_cap);
-        pipeline.extension_lease = Arc::clone(&self.extension_lease);
+        .await?;
+        pipeline.hook_manager = self.hook_manager.clone();
+        pipeline.turn_settings = self.turn_settings.clone();
+        pipeline.max_turns = self.max_turns;
+        let lease = self
+            .tool_snapshot(self.services().await)
+            .lock()
+            .unwrap()
+            .clone();
+        *pipeline
+            .tool_snapshot(pipeline.services().await)
+            .lock()
+            .unwrap() = lease;
         Ok(pipeline)
     }
 
+    #[cfg(feature = "tree-sitter")]
     pub(super) async fn new_session(&self, working_dir: std::path::PathBuf) -> Result<Self> {
         let source_session = self.session().await?;
         let session = self
@@ -402,11 +522,7 @@ impl TestPipeline {
         let mut events = Vec::new();
 
         for text in user_messages {
-            *self.extension_lease.lock().unwrap() = None;
-            self.session_manager
-                .add_message(&self.session_id, &Message::user().with_text(text))
-                .await?;
-
+            self.send(&Message::user().with_text(text)).await?;
             events.extend(run_machine(self).await?);
         }
 
@@ -414,10 +530,7 @@ impl TestPipeline {
     }
 
     pub(super) async fn run_message(&self, message: Message) -> Result<TestRun> {
-        *self.extension_lease.lock().unwrap() = None;
-        self.session_manager
-            .add_message(&self.session_id, &message)
-            .await?;
+        self.send(&message).await?;
         let events = run_machine(self).await?;
         Ok(TestRun::new(self.session().await?, events))
     }
@@ -426,22 +539,21 @@ impl TestPipeline {
         mut self,
         message: &str,
     ) -> Result<(Self, TestRun, usize)> {
-        *self.extension_lease.lock().unwrap() = None;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
 
         let cancel = CancellationToken::new();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
-            let machine = self.machine(cancel.clone());
+            let machine = self.machine(cancel.clone()).await;
             let mut result = machine.step(&session, &emit).await?;
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
+            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
                     self.session_manager.as_ref(),
@@ -481,12 +593,15 @@ impl TestPipeline {
         Ok(())
     }
 
-    pub(super) async fn start_turn(&self) -> Result<()> {
-        crate::agents::state_machine::session::run_turn_start_hooks(
-            &self.hook_manager,
-            &self.session().await?,
-        )
-        .await
+    pub(super) async fn send(&self, message: &Message) -> Result<()> {
+        self.start_new_turn().await;
+        self.session_manager
+            .add_message(&self.session_id, message)
+            .await?;
+        self.services()
+            .await
+            .emit_hooks_for_saved_prompt(&self.session_id)
+            .await
     }
 
     pub(super) async fn resume(&self) -> Result<TestRun> {
@@ -513,8 +628,9 @@ impl TestPipeline {
 
     pub(super) async fn leased_extensions(&self) -> Result<Vec<String>> {
         Ok(self
-            .extension_manager
-            .current_lease(&self.session_id)
+            .services()
+            .await
+            .current_tools(&self.session_id)
             .await?
             .configs()
             .iter()
@@ -523,15 +639,18 @@ impl TestPipeline {
     }
 
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {
-        self.extension_manager
+        self.services()
+            .await
+            .extension_manager
             .disable(&self.session_id, name)
             .await?;
         Ok(())
     }
 
     pub(super) async fn add_extension(&self, name: &str) -> Result<()> {
-        self.extension_manager
-            .enable(
+        self.services()
+            .await
+            .enable_extension(
                 &self.session_id,
                 ExtensionConfig::Platform {
                     name: name.to_string(),
@@ -556,21 +675,19 @@ impl TestPipeline {
         message: &str,
         cancel: CancellationToken,
     ) -> Result<TestRun> {
-        *self.extension_lease.lock().unwrap() = None;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         self.run_turn(cancel).await
     }
 
     async fn run_turn(&self, cancel: CancellationToken) -> Result<TestRun> {
-        let machine = self.machine(cancel.clone());
+        let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let session = crate::agents::state_machine::session::run(
             &machine,
             self.session_manager.as_ref(),
             &self.hook_manager,
+            &self.tool_snapshot(self.services().await),
             &self.session_id,
             &emit,
         )
@@ -589,17 +706,13 @@ impl TestPipeline {
         action: ElicitationAction,
         user_data: serde_json::Value,
     ) -> Result<TestRun> {
-        *self.extension_lease.lock().unwrap() = None;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         let cancel = CancellationToken::new();
-        let machine = self.machine(cancel.clone());
+        let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -653,6 +766,9 @@ impl TestPipeline {
                     }
                 }
             };
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
+            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
                     self.session_manager.as_ref(),
@@ -690,50 +806,49 @@ pub(super) async fn test_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
     test_pipeline_with(ProviderFeatures::default()).await
 }
 
+#[cfg(feature = "scheduler")]
 pub(super) async fn test_pipeline_with_scheduler() -> Result<(
     TestPipeline,
     Arc<DummyApi>,
     Arc<crate::scheduler::Scheduler>,
 )> {
-    let (pipeline, api, scheduler) =
-        test_pipeline_with_components(ProviderFeatures::default(), true).await?;
-    Ok((pipeline, api, scheduler.expect("scheduler was requested")))
+    let temp_dir = Arc::new(tempfile::tempdir()?);
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let scheduler = crate::scheduler::Scheduler::new(
+        temp_dir.path().join("schedule.json"),
+        session_manager.clone(),
+    )
+    .await?;
+    let (pipeline, api) = test_pipeline_with_components(
+        ProviderFeatures::default(),
+        temp_dir,
+        session_manager,
+        Some(scheduler.clone()),
+    )
+    .await?;
+    Ok((pipeline, api, scheduler))
 }
 
 pub(super) async fn test_pipeline_with(
     features: ProviderFeatures,
 ) -> Result<(TestPipeline, Arc<DummyApi>)> {
-    let (pipeline, api, _) = test_pipeline_with_components(features, false).await?;
-    Ok((pipeline, api))
+    let temp_dir = Arc::new(tempfile::tempdir()?);
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    test_pipeline_with_components(features, temp_dir, session_manager, None).await
 }
 
 async fn test_pipeline_with_components(
     features: ProviderFeatures,
-    with_scheduler: bool,
-) -> Result<(
-    TestPipeline,
-    Arc<DummyApi>,
-    Option<Arc<crate::scheduler::Scheduler>>,
-)> {
+    temp_dir: Arc<tempfile::TempDir>,
+    session_manager: Arc<SessionManager>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
+) -> Result<(TestPipeline, Arc<DummyApi>)> {
     let api = Arc::new(DummyApi::start(features).await);
-    let temp_dir = Arc::new(tempfile::tempdir()?);
-    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-    let scheduler = if with_scheduler {
-        Some(
-            crate::scheduler::Scheduler::new(
-                temp_dir.path().join("schedule.json"),
-                session_manager.clone(),
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
     let session = session_manager
         .create_session(
             temp_dir.path().to_path_buf(),
             "pipeline-test".to_string(),
-            if with_scheduler {
+            if scheduler.is_some() {
                 SessionType::Scheduled
             } else {
                 SessionType::Hidden
@@ -754,20 +869,20 @@ async fn test_pipeline_with_components(
         session_manager,
         api.clone(),
         features,
-        scheduler.clone(),
+        scheduler,
         session,
         temp_dir,
     )
     .await?;
 
-    Ok((pipeline, api, scheduler))
+    Ok((pipeline, api))
 }
 
 async fn build_test_pipeline(
     session_manager: Arc<SessionManager>,
     api: Arc<DummyApi>,
     provider_features: ProviderFeatures,
-    scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     session: Session,
     temp_dir: Arc<tempfile::TempDir>,
 ) -> Result<TestPipeline> {
@@ -796,58 +911,49 @@ async fn build_test_pipeline(
         } else {
             provider
         };
-    let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
-    providers.set_provider(&session.id, provider.clone()).await;
-    let extension_manager = Arc::new(ExtensionManager::new(
-        providers.clone(),
-        session_manager.clone(),
-        scheduler
-            .clone()
-            .map(|scheduler| scheduler as Arc<dyn crate::scheduler_trait::SchedulerTrait>),
-        "pipeline-test".to_string(),
-        ExtensionManagerCapabilities {
-            mcpui: false,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version: None,
-        },
-        false,
-    ));
-    let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-    let mut tool_inspection_manager = ToolInspectionManager::new();
-    tool_inspection_manager.add_inspector(Box::new(SecurityInspector::enabled()));
-    tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
-        permission_manager.clone(),
-        providers,
-        session_manager.clone(),
-    )));
     let model_config = session
         .model_config
         .clone()
         .expect("test session has a model config");
-    let calculator = Arc::new(CalculatorExtension::new(session_manager.action_required()));
-    let pipeline = TestPipeline {
+    Ok(TestPipeline {
+        permission_manager: Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        calculator: Arc::new(CalculatorExtension::new(session_manager.action_required())),
         session_manager,
         api,
         provider_features,
-        provider: provider.clone(),
+        provider,
         model_config,
-        extension_manager,
-        extension_lease: Arc::new(StdMutex::new(None)),
-        tool_inspection_manager,
-        permission_manager,
         hook_manager: HookManager::default(),
-        stop_hook_block_cap: 3,
-        calculator: calculator.clone(),
+        turn_settings: TurnSettings {
+            max_turns: MAX_TURNS,
+            retry_timeout: std::time::Duration::from_secs(1),
+            on_failure_timeout: std::time::Duration::from_secs(1),
+            stop_hook_block_cap: 3,
+            tool_pair_summarization: true,
+            defer_tools: false,
+            always_load_tools: Vec::new(),
+            compaction_threshold: COMPACTION_THRESHOLD,
+            compaction_token_limit: usize::MAX,
+            tool_call_cutoff: None,
+            auto_effort: None,
+            context_relevance: None,
+        },
+        max_turns: MAX_TURNS,
         session_id: session.id.clone(),
         working_dir: session.working_dir.clone(),
-        steer_queue: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
-        max_turns: MAX_TURNS,
+        session,
         scheduler,
+        recorded_model_configs: None,
+        services: tokio::sync::OnceCell::new(),
         _temp_dir: temp_dir,
-    };
-    let extension_manager = pipeline.extension_manager.clone();
-    let session_id = pipeline.session_id.clone();
+    })
+}
+
+async fn enable_session_extensions(
+    services: &StateMachineServices,
+    session: &Session,
+    calculator: &Arc<CalculatorExtension>,
+) -> Result<()> {
     let mut extensions = EnabledExtensionsState::from_extension_data(&session.extension_data)
         .map(|state| state.extensions)
         .unwrap_or_else(default_extensions);
@@ -873,26 +979,28 @@ async fn build_test_pipeline(
     }
     for extension in extensions {
         if extension.name() == "calculator" {
-            extension_manager
-                .add_client(
-                    &session_id,
+            services
+                .extension_manager
+                .add_test_client(
+                    &session.id,
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),
                 )
                 .await;
         } else {
-            extension_manager.enable(&session_id, extension).await?;
+            services.enable_extension(&session.id, extension).await?;
         }
     }
 
-    Ok(pipeline)
+    Ok(())
 }
 
 fn default_extensions() -> Vec<ExtensionConfig> {
     [
         ("extensionmanager", "Extension Manager"),
         ("todo", "Todo"),
+        #[cfg(feature = "scheduler")]
         (
             crate::agents::platform_extensions::scheduler::EXTENSION_NAME,
             "Scheduler",
@@ -1001,6 +1109,16 @@ impl TestRun {
             .count()
     }
 
+    pub(super) fn emitted_error_kinds(&self) -> Vec<MessageErrorKind> {
+        self.events
+            .iter()
+            .filter_map(|event| match event {
+                AgentEvent::Message(message) => message.error_kind(),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(super) fn assert_emitted(&self, contains: &str) {
         let emitted = self
             .events
@@ -1025,13 +1143,17 @@ impl TestRun {
     }
 
     pub(super) fn assert_emitted_message_matches_persisted(&self, contains: &str) {
+        let contains_text = |message: &Message| {
+            message
+                .content
+                .iter()
+                .any(|content| content.to_string().contains(contains))
+        };
         let emitted = self
             .events
             .iter()
             .find_map(|event| match event {
-                AgentEvent::Message(message) if message.as_concat_text().contains(contains) => {
-                    Some(message)
-                }
+                AgentEvent::Message(message) if contains_text(message) => Some(message),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no emitted message contains {contains:?}"));
@@ -1039,7 +1161,7 @@ impl TestRun {
             .conversation()
             .messages()
             .iter()
-            .find(|message| message.as_concat_text().contains(contains))
+            .find(|message| contains_text(message))
             .unwrap_or_else(|| panic!("no persisted message contains {contains:?}"));
         assert_eq!(emitted.id, persisted.id);
     }
@@ -1126,16 +1248,60 @@ impl TestRun {
     }
 }
 
+const TOOL_OPERATIONS: [&str; 7] = [
+    "final_output",
+    "tool_approval",
+    "skills",
+    "tool_execution",
+    "platform_extensions",
+    "remaining_tool_calls",
+    "unhandled_tool_calls",
+];
+
+fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step: Option<&str>) {
+    let Some(step) = applied_step else {
+        return;
+    };
+    let conversation = session
+        .conversation
+        .as_ref()
+        .expect("session has a conversation");
+    let turn = messages_since_kickoff(conversation).expect("conversation has a turn");
+    assert!(
+        TOOL_OPERATIONS.contains(&step) || !has_open_tool_call(turn),
+        "{step} acted while a tool call was open"
+    );
+}
+
+fn has_open_tool_call(turn: &[Message]) -> bool {
+    let mut open = HashSet::new();
+    for content in turn.iter().flat_map(|message| &message.content) {
+        match content {
+            MessageContent::ToolRequest(request) if !request.was_executed_externally() => {
+                open.insert(request.id.as_str());
+            }
+            MessageContent::ToolResponse(response) => {
+                open.remove(response.id.as_str());
+            }
+            _ => {}
+        }
+    }
+    !open.is_empty()
+}
+
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
     let cancel = CancellationToken::new();
-    let machine = pipeline.machine(cancel.clone());
+    let machine = pipeline.machine(cancel.clone()).await;
     let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
-    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let mut result = machine.step(&session, &emit).await?;
+        pipeline
+            .fire_tool_hooks(&session, &mut result.effects, &emit)
+            .await;
+        assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
         machine
             .apply(
                 pipeline.session_manager.as_ref(),

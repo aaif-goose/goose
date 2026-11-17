@@ -23,7 +23,7 @@ pub async fn ensure_usage_tokens(
 
     if provider_usage.usage.input_tokens.is_none() {
         let input_count = token_counter.count_chat_tokens(system_prompt, request_messages, tools);
-        provider_usage.usage.input_tokens = Some(input_count as i32);
+        provider_usage.usage.input_tokens = Some(input_count as i64);
     }
 
     if provider_usage.usage.output_tokens.is_none() {
@@ -34,14 +34,14 @@ pub async fn ensure_usage_tokens(
             .collect::<Vec<_>>()
             .join(" ");
         let output_count = token_counter.count_tokens(&response_text);
-        provider_usage.usage.output_tokens = Some(output_count as i32);
+        provider_usage.usage.output_tokens = Some(output_count as i64);
     }
 
     if let (Some(input), Some(output)) = (
         provider_usage.usage.input_tokens,
         provider_usage.usage.output_tokens,
     ) {
-        provider_usage.usage.total_tokens = Some(input + output);
+        provider_usage.usage.total_tokens = Some(input.saturating_add(output));
     }
 
     Ok(())

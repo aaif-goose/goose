@@ -299,18 +299,12 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 pub fn get_usage(data: &Value) -> Result<Usage> {
     // Extract usage data if available
     if let Some(usage) = data.get("usage") {
-        let input_tokens = usage
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as i32);
+        let input_tokens = usage.get("input_tokens").and_then(|v| v.as_i64());
 
-        let output_tokens = usage
-            .get("output_tokens")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as i32);
+        let output_tokens = usage.get("output_tokens").and_then(|v| v.as_i64());
 
         let total_tokens = match (input_tokens, output_tokens) {
-            (Some(input), Some(output)) => Some(input + output),
+            (Some(input), Some(output)) => Some(input.saturating_add(output)),
             _ => None,
         };
 

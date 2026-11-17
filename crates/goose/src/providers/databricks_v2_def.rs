@@ -100,7 +100,10 @@ fn token_resolver() -> DatabricksTokenResolver {
 }
 
 fn refresh_hook() -> DatabricksRefreshHook {
-    Arc::new(|| Config::global().invalidate_secrets_cache())
+    Arc::new(|| {
+        Config::global().invalidate_secrets_cache();
+        crate::providers::oauth::force_oauth_token_refresh();
+    })
 }
 
 fn oauth_token_provider() -> DatabricksOauthTokenProvider {

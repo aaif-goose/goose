@@ -27,10 +27,10 @@ const i18n = defineMessages({
 interface ExtensionListProps {
   extensions: FixedExtensionEntry[];
   onToggle: (extension: FixedExtensionEntry) => Promise<boolean | void> | void;
-  onConfigure?: (extension: FixedExtensionEntry) => void;
+  onConfigure: (extension: FixedExtensionEntry) => void;
   isStatic?: boolean;
   disableConfiguration?: boolean;
-  searchTerm?: string;
+  searchTerm: string;
 }
 
 export default function ExtensionList({
@@ -39,7 +39,7 @@ export default function ExtensionList({
   onConfigure,
   isStatic,
   disableConfiguration: _disableConfiguration,
-  searchTerm = '',
+  searchTerm,
 }: ExtensionListProps) {
   const matchesSearch = (extension: FixedExtensionEntry): boolean => {
     if (!searchTerm) return true;

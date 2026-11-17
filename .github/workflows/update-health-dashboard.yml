@@ -27,7 +27,7 @@ jobs:
     
     steps:
       - name: 'Download previous metrics'
-        uses: dawidd6/action-download-artifact@d63b86af1b34672e53c440b1b83979861906bad7  # v24
+        uses: dawidd6/action-download-artifact@a92c7ae74cf1df8810783758581e485ac3aaa309  # v28
         with:
           name: health-metrics
           path: .
@@ -223,7 +223,7 @@ jobs:
             console.log(`Successfully updated discussion #${discussionNumber}`);
       
       - name: 'Upload metrics artifact'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: health-metrics
           path: health-metrics.json

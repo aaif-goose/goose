@@ -104,15 +104,7 @@ import { RecipeExtensionSelector } from './RecipeExtensionSelector';
 type FormFieldApi<_T = any> = any;
 
 interface RecipeFormFieldsProps {
-  // Form instance from parent
   form: RecipeFormApi;
-
-  // Event handlers
-  onTitleChange?: (value: string) => void;
-  onDescriptionChange?: (value: string) => void;
-  onInstructionsChange?: (value: string) => void;
-  onPromptChange?: (value: string) => void;
-  onJsonSchemaChange?: (value: string) => void;
 }
 
 const BUILT_IN_RECIPE_DIR_PARAM = 'recipe_dir';
@@ -138,14 +130,7 @@ export const extractTemplateVariables = (content: string): string[] => {
   return variables;
 };
 
-export function RecipeFormFields({
-  form,
-  onTitleChange,
-  onDescriptionChange,
-  onInstructionsChange,
-  onPromptChange,
-  onJsonSchemaChange,
-}: RecipeFormFieldsProps) {
+export function RecipeFormFields({ form }: RecipeFormFieldsProps) {
   const intl = useIntl();
   const [showJsonSchemaEditor, setShowJsonSchemaEditor] = useState(false);
   const [showInstructionsEditor, setShowInstructionsEditor] = useState(false);
@@ -269,10 +254,7 @@ export function RecipeFormFields({
               id="recipe-title"
               type="text"
               value={field.state.value}
-              onChange={(e) => {
-                field.handleChange(e.target.value);
-                onTitleChange?.(e.target.value);
-              }}
+              onChange={(e) => field.handleChange(e.target.value)}
               onBlur={field.handleBlur}
               className={`w-full p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 field.state.meta.errors.length > 0 ? 'border-red-500' : 'border-border-primary'
@@ -301,10 +283,7 @@ export function RecipeFormFields({
               id="recipe-description"
               type="text"
               value={field.state.value}
-              onChange={(e) => {
-                field.handleChange(e.target.value);
-                onDescriptionChange?.(e.target.value);
-              }}
+              onChange={(e) => field.handleChange(e.target.value)}
               onBlur={field.handleBlur}
               className={`w-full p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 field.state.meta.errors.length > 0 ? 'border-red-500' : 'border-border-primary'
@@ -343,10 +322,7 @@ export function RecipeFormFields({
             <textarea
               id="recipe-instructions"
               value={field.state.value}
-              onChange={(e) => {
-                field.handleChange(e.target.value);
-                onInstructionsChange?.(e.target.value);
-              }}
+              onChange={(e) => field.handleChange(e.target.value)}
               onBlur={() => {
                 field.handleBlur();
                 updateParametersFromFields();
@@ -372,7 +348,6 @@ export function RecipeFormFields({
               value={field.state.value}
               onChange={(value) => {
                 field.handleChange(value);
-                onInstructionsChange?.(value);
                 updateParametersFromFields();
               }}
               error={field.state.meta.errors.length > 0 ? field.state.meta.errors[0] : undefined}
@@ -397,10 +372,7 @@ export function RecipeFormFields({
             <textarea
               id="recipe-prompt"
               value={field.state.value || ''}
-              onChange={(e) => {
-                field.handleChange(e.target.value);
-                onPromptChange?.(e.target.value);
-              }}
+              onChange={(e) => field.handleChange(e.target.value)}
               onBlur={() => {
                 field.handleBlur();
                 updateParametersFromFields();
@@ -636,10 +608,7 @@ export function RecipeFormFields({
                   isOpen={showJsonSchemaEditor}
                   onClose={() => setShowJsonSchemaEditor(false)}
                   value={field.state.value || ''}
-                  onChange={(value) => {
-                    field.handleChange(value);
-                    onJsonSchemaChange?.(value);
-                  }}
+                  onChange={(value) => field.handleChange(value)}
                   error={
                     field.state.meta.errors.length > 0 ? field.state.meta.errors[0] : undefined
                   }

@@ -2,3 +2,5 @@ provider: github
 owner: aaif-goose
 repo: goose
 updaterCacheDirName: goose-updater
+publisherName:
+  - 'CN="LF Open Source, LLC", O="LF Open Source, LLC", L=Laguna Beach, S=California, C=US'

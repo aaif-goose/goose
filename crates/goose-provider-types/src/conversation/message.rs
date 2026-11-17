@@ -263,6 +263,7 @@ pub enum MessageErrorKind {
     Authentication,
     ContextLengthExceeded,
     CreditsExhausted,
+    ResourceExhausted,
     #[serde(other)]
     Other,
 }
@@ -778,15 +779,15 @@ pub struct InferenceMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct MessageUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_tokens: Option<i32>,
+    pub output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_tokens: Option<i32>,
+    pub total_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<i32>,
+    pub cache_read_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_write_tokens: Option<i32>,
+    pub cache_write_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -844,8 +845,14 @@ pub struct MessageMetadata {
     /// Whether this message is a per-turn context event appended by the agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub turn_context: bool,
+    /// Whether this message is the summary that compaction left in place of
+    /// the messages it removed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compaction_summary: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_logs: Vec<String>,
     /// What an operation did to this message, keyed by operation name. Read back
     /// from the persisted conversation so a rebuilt pipeline knows what already
     /// happened. Never sent to providers.
@@ -862,7 +869,9 @@ impl Default for MessageMetadata {
             output_token_limit_reached: false,
             steer: false,
             turn_context: false,
+            compaction_summary: false,
             usage: None,
+            operation_logs: Vec::new(),
             operations: None,
         }
     }
@@ -952,6 +961,11 @@ impl MessageMetadata {
 
     pub fn with_turn_context(mut self) -> Self {
         self.turn_context = true;
+        self
+    }
+
+    pub fn with_compaction_summary(mut self) -> Self {
+        self.compaction_summary = true;
         self
     }
 }
@@ -1308,15 +1322,21 @@ impl Message {
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {
-        self.content.iter().find_map(|content| match content {
-            MessageContentBlock::Error(error) => Some(error.kind),
-            MessageContentBlock::SystemNotification(notification)
-                if notification.notification_type == SystemNotificationType::CreditsExhausted =>
-            {
-                Some(MessageErrorKind::CreditsExhausted)
-            }
-            _ => None,
+        self.error().map(|error| error.kind).or_else(|| {
+            self.content.iter().find_map(|content| match content {
+                MessageContentBlock::SystemNotification(notification)
+                    if notification.notification_type
+                        == SystemNotificationType::CreditsExhausted =>
+                {
+                    Some(MessageErrorKind::CreditsExhausted)
+                }
+                _ => None,
+            })
         })
+    }
+
+    pub fn error(&self) -> Option<&ErrorContent> {
+        self.content.iter().find_map(MessageContentBlock::as_error)
     }
 
     pub fn with_visibility(mut self, user_visible: bool, agent_visible: bool) -> Self {
@@ -1371,25 +1391,29 @@ impl Message {
     pub fn is_turn_context(&self) -> bool {
         self.metadata.turn_context
     }
+
+    pub fn is_compaction_summary(&self) -> bool {
+        self.metadata.compaction_summary
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenState {
-    pub input_tokens: i32,
-    pub output_tokens: i32,
-    pub total_tokens: i32,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     #[serde(default)]
-    pub cache_read_tokens: i32,
+    pub cache_read_tokens: i64,
     #[serde(default)]
-    pub cache_write_tokens: i32,
-    pub accumulated_input_tokens: i32,
-    pub accumulated_output_tokens: i32,
-    pub accumulated_total_tokens: i32,
+    pub cache_write_tokens: i64,
+    pub accumulated_input_tokens: i64,
+    pub accumulated_output_tokens: i64,
+    pub accumulated_total_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_read_tokens: i32,
+    pub accumulated_cache_read_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_write_tokens: i32,
+    pub accumulated_cache_write_tokens: i64,
     pub accumulated_cost: Option<f64>,
 }
 

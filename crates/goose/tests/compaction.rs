@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::agents::{Agent, AgentEvent, SessionConfig};
+use goose::agents::{AgentEvent, SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageContent};
 use goose::conversation::Conversation;
@@ -34,7 +34,7 @@ impl MockCompactionProvider {
 
     /// Calculate input tokens based on system prompt and messages
     /// Simulates realistic token counts for different scenarios
-    fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i32 {
+    fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i64 {
         // Check if this is a compaction call
         let is_compaction_call = messages.len() == 1
             && messages[0].content.iter().any(|c| {
@@ -48,12 +48,12 @@ impl MockCompactionProvider {
         if is_compaction_call {
             // For compaction: system prompt length is a good proxy for conversation size
             // Base: 6000 (system) + conversation content embedded in prompt
-            6000 + (system_prompt.len() as i32 / 4).max(400)
+            6000 + (system_prompt.len() as i64 / 4).max(400)
         } else {
             // Regular call: system prompt + messages
             let system_tokens = if system_prompt.is_empty() { 0 } else { 6000 };
 
-            let message_tokens: i32 = messages
+            let message_tokens: i64 = messages
                 .iter()
                 .map(|msg| {
                     let mut tokens = 100;
@@ -73,7 +73,7 @@ impl MockCompactionProvider {
     }
 
     /// Calculate output tokens based on response type
-    fn calculate_output_tokens(&self, is_compaction: bool, messages: &[Message]) -> i32 {
+    fn calculate_output_tokens(&self, is_compaction: bool, messages: &[Message]) -> i64 {
         if is_compaction {
             // Compaction produces a compact summary
             200
@@ -127,7 +127,7 @@ impl Provider for MockCompactionProvider {
         let output_tokens = self.calculate_output_tokens(is_compaction, messages);
 
         // Simulate context limit: if input > 20k tokens and we haven't compacted yet, fail
-        const CONTEXT_LIMIT: i32 = 20000;
+        const CONTEXT_LIMIT: i64 = 20000;
         if !is_compaction
             && input_tokens > CONTEXT_LIMIT
             && !self.has_compacted.load(Ordering::SeqCst)
@@ -210,13 +210,12 @@ impl ProviderDef for MockCompactionProvider {
 
 /// Helper: Set up a test session with initial messages and token counts
 async fn setup_test_session(
-    agent: &Agent,
+    services: &StateMachineServices,
     temp_dir: &TempDir,
     session_name: &str,
     messages: Vec<Message>,
 ) -> Result<Session> {
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .create_session(
             temp_dir.path().to_path_buf(),
@@ -227,15 +226,13 @@ async fn setup_test_session(
         .await?;
 
     let conversation = Conversation::new_unvalidated(messages);
-    agent
-        .config
+    services
         .session_manager
         .replace_conversation(&session.id, &conversation)
         .await?;
 
     // Set initial token counts
-    agent
-        .config
+    services
         .session_manager
         .update(&session.id)
         .usage(Usage::new(Some(600), Some(400), Some(1000)))
@@ -249,7 +246,7 @@ async fn setup_test_session(
 #[tokio::test]
 async fn test_auto_compaction_during_reply() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let agent = Agent::new();
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
     // Setup session with many messages to have substantial context
     // 20 exchanges = 40 messages * 100 tokens = ~4000 tokens in conversation
@@ -259,12 +256,11 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         messages.push(Message::assistant().with_text(format!("Assistant response {}", i)));
     }
 
-    let session = setup_test_session(&agent, &temp_dir, "auto-compact-test", messages).await?;
+    let session = setup_test_session(&services, &temp_dir, "auto-compact-test", messages).await?;
 
     // Capture initial context size before triggering reply
     // Should be: system (6000) + 40 messages (4000) = ~10000 tokens
-    let initial_session = agent
-        .config
+    let initial_session = services
         .session_manager
         .get_session(&session.id, true)
         .await?;
@@ -272,7 +268,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
 
     // Setup mock provider (no context limit enforcement)
     let provider = Arc::new(MockCompactionProvider::new());
-    agent
+    services
         .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
@@ -288,12 +284,12 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         max_turns: None,
     };
 
-    let reply_stream = agent.reply(user_message, session_config, None).await?;
+    let reply_stream = services.reply(user_message, session_config, None).await?;
     tokio::pin!(reply_stream);
 
     // Track compaction and context size changes
     let mut compaction_occurred = false;
-    let mut input_tokens_after_compaction: Option<i32> = None;
+    let mut input_tokens_after_compaction: Option<i64> = None;
 
     while let Some(event_result) = reply_stream.next().await {
         match event_result {
@@ -301,8 +297,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
                 compaction_occurred = true;
 
                 // Capture the input tokens immediately after compaction
-                let session_after_compact = agent
-                    .config
+                let session_after_compact = services
                     .session_manager
                     .get_session(&session.id, true)
                     .await?;
@@ -313,8 +308,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         }
     }
 
-    let updated_session = agent
-        .config
+    let updated_session = services
         .session_manager
         .get_session(&session.id, true)
         .await?;

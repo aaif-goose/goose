@@ -59,6 +59,7 @@ declare global {
       sessionId: string;
     }>;
     responseStyleChanged: CustomEvent;
+    showThinkingChanged: CustomEvent;
     'session-created': CustomEvent<{ session?: import('./types/session').Session }>;
     'session-deleted': CustomEvent<{ sessionId: string }>;
     'session-renamed': CustomEvent<{

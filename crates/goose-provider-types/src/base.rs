@@ -259,6 +259,12 @@ pub struct ModelInfo {
     pub input_token_cost: Option<f64>,
     /// Cost per token for output in USD (optional)
     pub output_token_cost: Option<f64>,
+    /// Cost per cached input token read in USD
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_token_cost: Option<f64>,
+    /// Cost per input token written to cache in USD
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_token_cost: Option<f64>,
     /// Currency for the costs (default: "$")
     pub currency: Option<String>,
     /// Whether this model supports cache control
@@ -284,6 +290,8 @@ impl ModelInfo {
             context_limit: None,
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning: false,
@@ -321,6 +329,8 @@ impl ModelInfo {
             context_limit: Some(context_limit),
             input_token_cost: Some(input_cost),
             output_token_cost: Some(output_cost),
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: Some("$".to_string()),
             supports_cache_control: None,
             reasoning: false,
@@ -372,6 +382,8 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         context_limit: canonical.as_ref().map(|model| model.limit.context),
         input_token_cost: None,
         output_token_cost: None,
+        cache_read_token_cost: None,
+        cache_write_token_cost: None,
         currency: None,
         supports_cache_control: None,
         reasoning,
@@ -1115,6 +1127,8 @@ mod tests {
             context_limit: Some(1000),
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning: false,
@@ -1131,6 +1145,8 @@ mod tests {
             context_limit: Some(1000),
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning: false,
@@ -1147,6 +1163,8 @@ mod tests {
             context_limit: Some(2000),
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning: false,
