@@ -442,6 +442,28 @@ async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
 }
 
 #[tokio::test]
+async fn mixed_empty_and_thinking_only_responses_share_retry_budget() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+
+    for _ in 0..2 {
+        api.on("alternate empty and thinking")
+            .reasoning("just thinking")
+            .times(1);
+        api.on("alternate empty and thinking").reply("").times(1);
+    }
+
+    let result = pipeline.run(["alternate empty and thinking"]).await?;
+    assert_eq!(api.call_count(), 4);
+    result.assert_message(
+        -1,
+        Agent,
+        "The model finished thinking but did not produce an answer",
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn thinking_only_recovery_is_bounded_for_agent_only_kickoffs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("hidden kickoff").reply("unexpected extra inference");

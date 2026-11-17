@@ -1,9 +1,3 @@
-//! Recovers turns where the model produced only thinking and no answer.
-//!
-//! The thinking the model already did is kept, and an agent-only user message
-//! prompts it to continue. If the model keeps thinking without answering, a
-//! visible message ends the turn instead of silence.
-
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::Role;
@@ -24,6 +18,8 @@ pub(crate) const THINKING_ONLY_TURN_MESSAGE: &str =
 const MAX_THINKING_RECOVERY_ATTEMPTS: u32 = 3;
 
 const CONTINUED: &str = "continued";
+const EMPTY_RESPONSE_OPERATION: &str = "empty_response";
+const EMPTY_RESPONSE_RETRIED: &str = "retried";
 
 pub(crate) fn is_answer_content(content: &MessageContent) -> bool {
     match content {
@@ -82,7 +78,12 @@ impl Operation<Session, GooseEffect> for ThinkingRecoveryOperation {
 
         let mut attempts = 0u32;
         for message in conversation.messages().iter().rev() {
-            if self.message_meta(message, CONTINUED).is_some() {
+            if self.message_meta(message, CONTINUED).is_some()
+                || message
+                    .metadata
+                    .operation_note(EMPTY_RESPONSE_OPERATION, EMPTY_RESPONSE_RETRIED)
+                    .is_some()
+            {
                 attempts += 1;
             } else if (message.role == Role::User
                 && !message.is_tool_response()
