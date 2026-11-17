@@ -38,8 +38,6 @@ pub use crate::formats::openai::{
 /// Returns a tuple of (prefix_text, tool_calls) where prefix_text is any text before the first function tag.
 pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageContentBlock>) {
     let mut tool_calls = Vec::new();
-    // Streamed parameter values arrive with `<` hidden by `ParameterGuard`.
-    let content = &content.replace(GUARDED_PARAMETER_END, PARAMETER_END);
 
     let function_re = Regex::new(r"<function=([^>]+)>([\s\S]*?)</function>").unwrap();
     let param_re = Regex::new(r"<parameter=([^>]+)>([\s\S]*?)</parameter>").unwrap();
@@ -57,7 +55,7 @@ pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageConten
         let mut arguments = serde_json::Map::new();
         for param_cap in param_re.captures_iter(function_body) {
             let param_name = param_cap[1].trim().to_string();
-            let param_value = param_cap[2].trim().replace(LT_PLACEHOLDER, "<");
+            let param_value = param_cap[2].trim().to_string();
             arguments.insert(param_name, serde_json::Value::String(param_value));
         }
 
@@ -158,9 +156,39 @@ const FUNCTION: &str = "<function=";
 const FUNCTION_END: &str = "</function>";
 const PARAMETER: &str = "<parameter=";
 const PARAMETER_END: &str = "</parameter>";
-// ponytail: a model that writes U+E000 itself in a parameter value gets `<` back.
-const LT_PLACEHOLDER: char = '\u{E000}';
-const GUARDED_PARAMETER_END: &str = "\u{E000}/parameter>";
+const ESCAPE: char = '\u{E000}';
+const ESCAPED_ESCAPE: char = 'e';
+const ESCAPED_LT: char = 'l';
+
+fn push_guarded(output: &mut String, text: &str, hide_lt: bool) {
+    for c in text.chars() {
+        if c == ESCAPE {
+            output.extend([ESCAPE, ESCAPED_ESCAPE]);
+        } else if hide_lt && c == '<' {
+            output.extend([ESCAPE, ESCAPED_LT]);
+        } else {
+            output.push(c);
+        }
+    }
+}
+
+fn decode_guarded(text: &str) -> String {
+    let mut decoded = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != ESCAPE {
+            decoded.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some(ESCAPED_ESCAPE) => decoded.push(ESCAPE),
+            Some(ESCAPED_LT) => decoded.push('<'),
+            Some(c) => decoded.extend([ESCAPE, c]),
+            None => decoded.push(ESCAPE),
+        }
+    }
+    decoded
+}
 
 /// Hides every `<` inside XML tool-call parameter values from the OpenAI parser's inline
 /// `<think>` filter, so think tags in tool arguments are not taken as reasoning.
@@ -175,8 +203,7 @@ struct ParameterGuard {
     token: String,
     in_call: bool,
     in_parameter: bool,
-    /// Set once a placeholder is emitted, so text is only decoded when it may hold one.
-    hid_lt: Arc<AtomicBool>,
+    encoded: Arc<AtomicBool>,
 }
 
 impl ParameterGuard {
@@ -187,34 +214,48 @@ impl ParameterGuard {
         else {
             return line;
         };
+        let mut changed = false;
+        for pointer in [
+            "/choices/0/delta/reasoning_content",
+            "/choices/0/delta/reasoning",
+        ] {
+            if let Some(text) = chunk.pointer_mut(pointer) {
+                if let Some(raw) = text.as_str() {
+                    let mut guarded = String::with_capacity(raw.len());
+                    push_guarded(&mut guarded, raw, false);
+                    if guarded != raw {
+                        *text = Value::String(guarded);
+                        changed = true;
+                    }
+                }
+            }
+        }
         // The OpenAI parser ignores content on a delta that carries native tool calls.
-        if chunk
+        let has_native_tool_calls = chunk
             .pointer("/choices/0/delta/tool_calls")
             .and_then(Value::as_array)
-            .is_some_and(|calls| !calls.is_empty())
-        {
-            return line;
-        }
-        let texts: Vec<&mut Value> = match chunk.pointer_mut("/choices/0/delta/content") {
-            Some(Value::Array(parts)) => parts
-                .iter_mut()
-                .filter(|part| part["type"] == "text")
-                .filter_map(|part| part.get_mut("text"))
-                .collect(),
-            Some(text) => vec![text],
-            None => return line,
-        };
-        let mut changed = false;
-        for text in texts {
-            if let Some((raw, guarded)) = text.as_str().map(|raw| (raw, self.guard(raw))) {
-                if guarded != raw {
-                    *text = Value::String(guarded);
-                    changed = true;
+            .is_some_and(|calls| !calls.is_empty());
+        if !has_native_tool_calls {
+            let texts: Vec<&mut Value> = match chunk.pointer_mut("/choices/0/delta/content") {
+                Some(Value::Array(parts)) => parts
+                    .iter_mut()
+                    .filter(|part| part["type"] == "text")
+                    .filter_map(|part| part.get_mut("text"))
+                    .collect(),
+                Some(text) => vec![text],
+                None => Vec::new(),
+            };
+            for text in texts {
+                if let Some((raw, guarded)) = text.as_str().map(|raw| (raw, self.guard(raw))) {
+                    if guarded != raw {
+                        *text = Value::String(guarded);
+                        changed = true;
+                    }
                 }
             }
         }
         if changed {
-            self.hid_lt.store(true, Ordering::Relaxed);
+            self.encoded.store(true, Ordering::Relaxed);
             format!("data: {chunk}")
         } else {
             line
@@ -241,11 +282,7 @@ impl ParameterGuard {
             let completes = |tag: &str| before < tag.len() && self.token.starts_with(tag);
 
             if self.in_parameter {
-                guarded.extend(
-                    piece
-                        .chars()
-                        .map(|c| if c == '<' { LT_PLACEHOLDER } else { c }),
-                );
+                push_guarded(&mut guarded, piece, true);
                 self.in_parameter = !completes(PARAMETER_END);
                 continue;
             }
@@ -258,7 +295,7 @@ impl ParameterGuard {
             let (head, tail) = tag
                 .and_then(|tag| piece.split_at_checked(tag.len() - before))
                 .unwrap_or(("", piece));
-            guarded.push_str(piece);
+            push_guarded(&mut guarded, piece, false);
             self.filter(head);
             if let Some(tag) = tag.filter(|tag| self.content_tail.ends_with(tag)) {
                 self.in_call = tag != FUNCTION_END;
@@ -310,7 +347,7 @@ where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     let mut guard = ParameterGuard::default();
-    let hid_lt = guard.hid_lt.clone();
+    let encoded = guard.encoded.clone();
     let stream = stream.map_ok(move |line| guard.guard_line(line));
 
     try_stream! {
@@ -343,10 +380,16 @@ where
                     }
                 }
 
-                if hid_lt.load(Ordering::Relaxed) {
+                if encoded.load(Ordering::Relaxed) {
                     for content in &mut message.content {
-                        if let MessageContentBlock::Text(text) = content {
-                            text.text = text.text.replace(LT_PLACEHOLDER, "<");
+                        match content {
+                            MessageContentBlock::Text(text) => {
+                                text.text = decode_guarded(&text.text);
+                            }
+                            MessageContentBlock::Thinking(thinking) => {
+                                thinking.thinking = decode_guarded(&thinking.thinking);
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -357,6 +400,9 @@ where
         }
 
         if xml_detected && !accumulated_text.is_empty() {
+            if encoded.load(Ordering::Relaxed) {
+                accumulated_text = decode_guarded(&accumulated_text);
+            }
             let (prefix, xml_tool_calls) = parse_xml_tool_calls(&accumulated_text);
 
             if !xml_tool_calls.is_empty() {
@@ -374,9 +420,6 @@ where
 
                 yield (Some(msg), buffered_usage);
             } else {
-                if hid_lt.load(Ordering::Relaxed) {
-                    accumulated_text = accumulated_text.replace(LT_PLACEHOLDER, "<");
-                }
                 let msg = Message::new(
                     Role::Assistant,
                     chrono::Utc::now().timestamp(),
@@ -450,13 +493,16 @@ mod tests {
 
     #[test]
     fn test_parse_xml_tool_calls_single() {
-        let content = r#"<function=developer__text_editor>
+        let file_text = "hello \u{E000}/parameter> world";
+        let content = format!(
+            r#"<function=developer__text_editor>
 <parameter=command>write</parameter>
 <parameter=path>/tmp/test.txt</parameter>
-<parameter=file_text>hello world</parameter>
-</function>"#;
+<parameter=file_text>{file_text}</parameter>
+</function>"#
+        );
 
-        let (prefix, tool_calls) = parse_xml_tool_calls(content);
+        let (prefix, tool_calls) = parse_xml_tool_calls(&content);
 
         assert!(prefix.is_none(), "Should have no prefix");
         assert_eq!(tool_calls.len(), 1, "Should have 1 tool call");
@@ -467,7 +513,7 @@ mod tests {
             let args = tool_call.arguments.as_ref().unwrap();
             assert_eq!(args.get("command").unwrap(), "write");
             assert_eq!(args.get("path").unwrap(), "/tmp/test.txt");
-            assert_eq!(args.get("file_text").unwrap(), "hello world");
+            assert_eq!(args.get("file_text").unwrap(), file_text);
         } else {
             panic!("Expected ToolRequest content");
         }
@@ -688,7 +734,7 @@ data: [DONE]"#;
     async fn test_streaming_keeps_any_think_tag_in_parameters_at_every_chunk_split() {
         use futures::StreamExt;
 
-        let open = "a <think> b <think x=\">\"> c <THINKING> d";
+        let open = "a \u{E000}/parameter> b <think> c <think x=\">\"> d <THINKING> e";
         let close = "e </think> f </parameter g";
         let content = format!(
             "<function=edit><parameter=open>{open}</parameter><parameter=close>{close}</parameter></function>"
@@ -952,9 +998,10 @@ data: [DONE]"#;
         use futures::StreamExt;
 
         let content = "<function=edit><parameter=text>a < b</parameter></function>";
+        let reasoning = "plan \u{E000}l";
         for field in ["reasoning_content", "reasoning"] {
             let delta =
-                json!({"choices": [{"delta": {field: "plan", "content": content}, "index": 0}]});
+                json!({"choices": [{"delta": {field: reasoning, "content": content}, "index": 0}]});
             let lines: Vec<anyhow::Result<String>> =
                 vec![Ok(format!("data: {delta}")), Ok("data: [DONE]".to_string())];
             let messages: Vec<Message> =
@@ -971,7 +1018,16 @@ data: [DONE]"#;
                     _ => None,
                 })
                 .collect();
+            let thinking: String = messages
+                .iter()
+                .flat_map(|m| &m.content)
+                .filter_map(|c| match c {
+                    MessageContentBlock::Thinking(t) => Some(t.thinking.as_str()),
+                    _ => None,
+                })
+                .collect();
             assert_eq!(text, content, "{field}");
+            assert_eq!(thinking, reasoning, "{field}");
         }
     }
 
