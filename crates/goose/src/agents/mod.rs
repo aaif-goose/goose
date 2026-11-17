@@ -8,7 +8,6 @@ pub mod extension_runtime;
 pub mod final_output_tool;
 pub(crate) mod gen_ai_telemetry;
 mod large_response_handler;
-pub mod mcp_client;
 pub mod moim;
 pub mod platform_extensions;
 #[cfg(feature = "scheduler")]

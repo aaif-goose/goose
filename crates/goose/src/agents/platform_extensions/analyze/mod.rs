@@ -4,11 +4,11 @@ pub mod languages;
 pub mod parser;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use ignore::WalkBuilder;
 use indoc::indoc;
 use parser::{FileAnalysis, Parser};

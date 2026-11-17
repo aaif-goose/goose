@@ -18,14 +18,14 @@ use crate::agents::extension_runtime::{
     self, ExtensionAuth, ExtensionHost, ExtensionSpec, StaticOAuthClientConfig,
     TraceContextInjector,
 };
-use crate::agents::mcp_client::{
-    ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
-};
 use crate::agents::services::GoosePlatform;
 use crate::config::search_path::SearchPaths;
 use crate::config::Config;
 use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use goose_agent::mcp::client::{
+    ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
+};
 
 mod builtin;
 

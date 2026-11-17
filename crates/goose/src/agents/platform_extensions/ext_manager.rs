@@ -1,7 +1,6 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::ExtensionMutation;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::is_hidden_extension;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
@@ -10,6 +9,7 @@ use crate::config::{get_all_extensions, get_extension_by_name};
 use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,

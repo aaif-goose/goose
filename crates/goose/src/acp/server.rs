@@ -10,7 +10,6 @@ use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::extension_manager::client_context;
-use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
@@ -66,6 +65,7 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
+use goose_agent::mcp::client::GooseMcpHostInfo;
 use goose_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,

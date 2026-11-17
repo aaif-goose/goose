@@ -13,10 +13,10 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
+use goose_agent::mcp::client::Error;
 
 pub static EXTENSION_NAME: &str = "summarize";
 

@@ -1,6 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::tool_execution::ToolCallContext;
@@ -17,6 +16,7 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, MetaObject,

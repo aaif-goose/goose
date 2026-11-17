@@ -16,13 +16,13 @@ use tokio_util::sync::CancellationToken;
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{CallRequest, ClientContext, ExtensionSet};
-use goose::agents::mcp_client::GooseMcpClientCapabilities;
 use goose::agents::tool_snapshot::ToolSnapshot;
 use goose::agents::GoosePlatform;
 use goose::agents::{StateMachineServices, StateMachineServicesConfig};
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
+use goose_agent::mcp::client::GooseMcpClientCapabilities;
 use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
 

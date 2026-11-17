@@ -1,11 +1,11 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::session::extension_data;
 use crate::session::extension_data::ExtensionState;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,

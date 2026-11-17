@@ -10,7 +10,6 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
@@ -26,6 +25,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
+use goose_agent::mcp::client::McpClientTrait;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -451,7 +451,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::mcp_client::McpCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<goose_agent::mcp::client::McpCallContext> {
         self.calculator.contexts()
     }
 
