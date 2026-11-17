@@ -1,3 +1,4 @@
+use agent_client_protocol::schema::v1::McpServer;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use std::collections::HashMap;
@@ -44,7 +45,8 @@ impl goose_providers::base::ProviderDescriptor for AgyAcpProvider {
             ProviderSetupMetadata::cli_agent(AGY_ACP_BINARY, &["agy-acp", "agy", "antigravity"])
                 .with_acp()
                 .with_docs_url(AGY_ACP_DOC_URL)
-                .with_capabilities(true, true, false),
+                .with_capabilities(true, true, false)
+                .show_only_when_installed(),
         )
     }
 }
@@ -65,7 +67,11 @@ impl AgyAcpProvider {
                 configured_model_for_provider(config, AGY_ACP_PROVIDER_NAME)
             };
 
-            let args = vec!["acp".to_string(), "--stdio".to_string()];
+            let args = vec![
+                "acp".to_string(),
+                "--stdio".to_string(),
+                "--process-per-session".to_string(),
+            ];
             let session_config_options = if model == ACP_CURRENT_MODEL {
                 vec![]
             } else {
@@ -84,7 +90,7 @@ impl AgyAcpProvider {
                 env: vec![],
                 env_remove: vec![],
                 work_dir: working_dir,
-                mcp_servers: extension_configs_to_mcp_servers(&extensions),
+                mcp_servers: sanitize_mcp_servers(extension_configs_to_mcp_servers(&extensions)),
                 session_mode_id: mode_mapping[&goose_mode].first().cloned(),
                 session_config_options,
                 model_config_option_id: Some("model".to_string()),
@@ -126,14 +132,85 @@ impl ProviderDef for AgyAcpProvider {
     }
 }
 
+/// `agy` names MCP tools `mcp_<server>_<tool>` and rejects names failing
+/// `^[a-zA-Z0-9_-]{1,64}$`. Map disallowed characters to `_` and cap length.
+fn sanitize_mcp_server_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(64)
+        .collect();
+    if sanitized.is_empty() {
+        "mcp".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn sanitize_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServer> {
+    servers
+        .into_iter()
+        .map(|server| match server {
+            McpServer::Stdio(mut s) => {
+                s.name = sanitize_mcp_server_name(&s.name);
+                McpServer::Stdio(s)
+            }
+            McpServer::Http(mut h) => {
+                h.name = sanitize_mcp_server_name(&h.name);
+                McpServer::Http(h)
+            }
+            McpServer::Sse(mut s) => {
+                s.name = sanitize_mcp_server_name(&s.name);
+                McpServer::Sse(s)
+            }
+            other => other,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_client_protocol::schema::v1::{McpServerHttp, McpServerStdio};
 
     #[test]
     fn metadata_uses_acp_defaults() {
         let meta = AgyAcpProvider::metadata();
         assert_eq!(meta.name, AGY_ACP_PROVIDER_NAME);
         assert_eq!(meta.default_model, ACP_CURRENT_MODEL);
+        assert!(meta.setup.is_some_and(|s| s.show_only_when_installed));
+    }
+
+    #[test]
+    fn sanitize_mcp_server_name_enforces_agy_pattern() {
+        assert_eq!(
+            sanitize_mcp_server_name("Chrome DevTools"),
+            "Chrome_DevTools"
+        );
+        assert_eq!(sanitize_mcp_server_name("my-server_1"), "my-server_1");
+        assert_eq!(sanitize_mcp_server_name(""), "mcp");
+        assert_eq!(sanitize_mcp_server_name(&"a".repeat(80)).len(), 64);
+    }
+
+    #[test]
+    fn sanitize_mcp_servers_rewrites_stdio_and_http_names() {
+        let servers = sanitize_mcp_servers(vec![
+            McpServer::Stdio(McpServerStdio::new("Chrome DevTools", "npx")),
+            McpServer::Http(McpServerHttp::new("My HTTP", "https://example.com/mcp")),
+        ]);
+        match &servers[0] {
+            McpServer::Stdio(s) => assert_eq!(s.name, "Chrome_DevTools"),
+            _ => panic!("expected stdio"),
+        }
+        match &servers[1] {
+            McpServer::Http(h) => assert_eq!(h.name, "My_HTTP"),
+            _ => panic!("expected http"),
+        }
     }
 }
