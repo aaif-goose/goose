@@ -120,6 +120,8 @@ static CHATGPT_CODEX_AUTH_STATE: LazyLock<Arc<ChatGptCodexAuthState>> =
 
 const SUPPORTED_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_IMAGE_URL_LEN: usize = 20 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION: u32 = 16_384;
+const MAX_DECODED_IMAGE_BYTES: u64 = 128 * 1024 * 1024;
 
 fn image_placeholder(mime_type: &str) -> Value {
     json!({ "type": "input_text", "text": format!("[Image: {mime_type}]") })
@@ -130,6 +132,14 @@ fn oversized_image_placeholder(len: usize) -> Value {
         "type": "input_text",
         "text": format!("image data URL is too large: {len} bytes exceeds {MAX_IMAGE_URL_LEN} byte limit")
     })
+}
+
+fn image_decode_limits() -> image::io::Limits {
+    let mut limits = image::io::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODED_IMAGE_BYTES);
+    limits
 }
 
 fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
@@ -146,16 +156,19 @@ fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
     }
 
     if format == image::ImageFormat::Gif {
-        use image::AnimationDecoder;
+        use image::{AnimationDecoder, ImageDecoder};
 
-        let decoder = image::codecs::gif::GifDecoder::new(io::Cursor::new(bytes)).ok()?;
+        let mut decoder = image::codecs::gif::GifDecoder::new(io::Cursor::new(bytes)).ok()?;
+        decoder.set_limits(image_decode_limits()).ok()?;
         let mut frames = decoder.into_frames();
         frames.next()?.ok()?;
         if frames.next().is_some() {
             return None;
         }
     } else {
-        image::load_from_memory_with_format(bytes, format).ok()?;
+        let mut reader = image::io::Reader::with_format(io::Cursor::new(bytes), format);
+        reader.limits(image_decode_limits());
+        reader.decode().ok()?;
     }
 
     Some(detected_mime)
@@ -1380,6 +1393,26 @@ mod tests {
                 ])
                 .unwrap();
         }
+        let data = base64::engine::general_purpose::STANDARD.encode(gif);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/gif",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/gif]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_gif_with_huge_dimensions() {
+        let gif = [
+            b'G', b'I', b'F', b'8', b'9', b'a', 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0x3b,
+        ];
         let data = base64::engine::general_purpose::STANDARD.encode(gif);
         let messages = vec![Message::user().with_tool_response(
             "call-1",
