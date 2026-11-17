@@ -1,5 +1,10 @@
 //! The MCP extension runtime: scoped slots, leases, tool catalogs, dispatch and
 //! transports. Everything application-specific comes from an [`ExtensionHost`].
+//!
+//! Acquire a lease from the current session's [`ExtensionSet`] at point of use.
+//! Leases keep resources alive for one logical operation, not across inference
+//! and approval. The manager owns process reuse and reconnection; session changes
+//! made while approval is pending therefore apply when execution acquires its lease.
 
 use futures::Stream;
 use indexmap::IndexMap;
@@ -31,6 +36,7 @@ pub mod container;
 mod host;
 mod lease;
 pub mod malware_check;
+mod operation;
 mod stdio;
 mod streamable_http;
 pub mod tool_schema_normalize;
@@ -41,6 +47,7 @@ pub use host::{
     ExtensionAuth, ExtensionHost, ExtensionSpec, StaticOAuthClientConfig, TraceContextInjector,
 };
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
+pub use operation::{ExtensionOperation, ExtensionSource};
 pub use stdio::{docker_exec, spawn as spawn_stdio};
 
 type McpClientBox = Arc<dyn McpClientTrait>;
@@ -334,6 +341,14 @@ pub struct ClientContext {
 }
 
 impl ClientContext {
+    pub fn new(name: impl Into<String>, version: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            version: version.into(),
+            capabilities: GooseMcpClientCapabilities::default(),
+        }
+    }
+
     fn hydrates_mcp_apps(&self) -> bool {
         match &self.capabilities.host_info {
             Some(host_info) if host_info.explicit_extensions => host_info.mcpui_enabled(),
