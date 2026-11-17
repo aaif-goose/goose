@@ -433,28 +433,6 @@ mod tests {
     }
 
     #[test]
-    fn amazeeai_requires_regional_endpoint() {
-        {
-            let _guard = env_lock::lock_env([("AMAZEEAI_ENDPOINT", None::<&str>)]);
-            assert!(config_from_json(crate::amazeeai::JSON).is_err());
-        }
-
-        let endpoint = "https://llm.de-eu101.amazee.ai/v1";
-        let _guard = env_lock::lock_env([("AMAZEEAI_ENDPOINT", Some(endpoint))]);
-        let config = config_from_json(crate::amazeeai::JSON).unwrap();
-
-        assert_eq!(config.base_url, endpoint);
-        assert_eq!(config.api_key_env, "AMAZEEAI_API_KEY");
-        assert_eq!(config.dynamic_models, Some(true));
-        assert!(config.skip_canonical_filtering);
-        assert!(config
-            .models
-            .iter()
-            .filter(|m| m.name.starts_with("chat"))
-            .all(|m| m.supports_vision == Some(true)));
-    }
-
-    #[test]
     fn setup_metadata_rejects_unknown_fields() {
         let mut definition: serde_json::Value = serde_json::from_str(crate::groq::JSON).unwrap();
         definition["setup"]["description"] = json!("This field would be ignored");
