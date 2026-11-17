@@ -9,6 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock};
 use crate::operation::ConversationEffect;
 
 pub const EXECUTABLE_KEY: &str = "goose.executable";
+pub const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ToolCallState<'a> {

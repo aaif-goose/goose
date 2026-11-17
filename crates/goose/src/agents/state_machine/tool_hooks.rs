@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -5,9 +6,7 @@ use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-use crate::agents::state_machine::ops_toolcalling::{
-    advertised_working_dir, request_was_advertised, tool_span,
-};
+use crate::agents::state_machine::ops_toolcalling::{advertised_working_dir, tool_span};
 use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
@@ -21,16 +20,18 @@ pub(crate) async fn fire_pre_tool_hooks(
     effects: &[GooseEffect],
 ) -> Option<Message> {
     let working_dir = advertised_working_dir(tool_snapshot, session);
+    let answered: HashSet<&str> = appended_messages(effects)
+        .flat_map(Message::get_tool_response_ids)
+        .collect();
     let checks = appended_messages(effects)
         .flat_map(|message| {
             message
                 .content
                 .iter()
                 .filter_map(MessageContent::as_tool_request)
-                .filter(move |request| {
-                    !request.was_executed_externally()
-                        && request_was_advertised(std::slice::from_ref(message), request)
-                })
+        })
+        .filter(|request| {
+            !request.was_executed_externally() && !answered.contains(request.id.as_str())
         })
         .map(|request| {
             let working_dir = &working_dir;
@@ -88,10 +89,7 @@ pub(crate) async fn fire_post_tool_hooks(
                 .flat_map(|message| &message.content)
                 .filter_map(MessageContent::as_tool_request)
                 .find(|request| request.id == response.id)
-                .filter(|request| {
-                    request_executable(request) == Some(true)
-                        && request_was_advertised(turn, request)
-                })?;
+                .filter(|request| request_executable(request) == Some(true))?;
             Some(emit_post_tool_hooks(
                 hook_manager,
                 &session.id,

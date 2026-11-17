@@ -11,7 +11,7 @@ use crate::agents::final_output_tool::{
     FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
 };
 use crate::agents::state_machine::ops_recipe::command_error;
-use crate::agents::state_machine::ops_toolcalling::{request_was_advertised, tool_span};
+use crate::agents::state_machine::ops_toolcalling::tool_span;
 use crate::agents::state_machine::{
     applied, ends_turn, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
     OperationResult,
@@ -48,7 +48,6 @@ fn pending_final_output_request(messages: &[Message]) -> Option<ToolRequest> {
                     .tool_call
                     .as_ref()
                     .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-                && request_was_advertised(messages, request)
         })
         .cloned()
 }

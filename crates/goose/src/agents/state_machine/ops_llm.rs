@@ -17,9 +17,6 @@ use crate::agents::state_machine::GooseEffect;
 
 pub(super) use goose_agent::inference::{chat_span, record_chat_usage};
 
-pub(super) const ADVERTISED_TOOLS_NOTE: &str = "advertised_tools";
-pub(super) const LLM_OPERATION_NAME: &str = "llm";
-
 pub struct GooseInferenceProvider {
     inner: Arc<dyn Provider>,
 }
@@ -164,18 +161,6 @@ impl Provider for GooseInferenceProvider {
             .chain(toolshim_tools.iter())
             .cloned()
             .collect::<Vec<_>>();
-        let mut advertised_tool_names = advertised_tools
-            .iter()
-            .map(|tool| tool.name.to_string())
-            .collect::<Vec<_>>();
-        advertised_tool_names.sort_unstable();
-        advertised_tool_names.dedup();
-        let advertised_tools_note = serde_json::Value::Array(
-            advertised_tool_names
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        );
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let stream = crate::agents::reply_parts::stream_response_from_provider(
             self.inner.clone(),
@@ -191,13 +176,6 @@ impl Provider for GooseInferenceProvider {
             result.map(|(message, usage)| {
                 let message = message.map(|mut message| {
                     prepare_tool_requests(&mut message, &advertised_tools);
-                    if message.role == rmcp::model::Role::Assistant {
-                        message.metadata.set_operation_note(
-                            LLM_OPERATION_NAME,
-                            ADVERTISED_TOOLS_NOTE,
-                            advertised_tools_note.clone(),
-                        );
-                    }
                     message
                 });
                 (message, usage)

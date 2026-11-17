@@ -360,6 +360,23 @@ async fn recover_from_missing_tool() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "code-mode")]
+#[tokio::test]
+async fn code_mode_rejects_direct_calls_to_hidden_tools() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("code_execution").await?;
+    api.on("add directly").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("understood");
+
+    let result = pipeline.run(["add directly"]).await?;
+
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    result.assert_message(-2, ToolResponse, &format!("Tool '{ADD}' is not available."));
+    result.assert_message(-1, Agent, "understood");
+    assert_eq!(pipeline.calculator_total(), 0);
+    Ok(())
+}
+
 #[tokio::test]
 async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
