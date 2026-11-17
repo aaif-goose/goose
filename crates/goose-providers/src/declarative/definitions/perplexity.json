@@ -6,6 +6,7 @@
   "api_key_env": "PERPLEXITY_API_KEY",
   "base_url": "https://api.perplexity.ai",
   "base_path": "v1/responses",
+  "catalog_provider_id": "perplexity-agent",
   "models": [
     { "name": "anthropic/claude-opus-5-5", "context_limit": 1000000 },
     { "name": "anthropic/claude-fable-5-2", "context_limit": 1000000 },
