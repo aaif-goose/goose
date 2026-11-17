@@ -52,7 +52,7 @@ pub(crate) fn session_id_request_builder_with_header_override(
     Ok(session_id_request_builder_with_header_name(header_name))
 }
 
-fn session_id_request_builder_with_header_name(
+pub(crate) fn session_id_request_builder_with_header_name(
     header_name: HeaderName,
 ) -> goose_providers::api_client::RequestBuilderDecorator {
     std::sync::Arc::new(move |request| {

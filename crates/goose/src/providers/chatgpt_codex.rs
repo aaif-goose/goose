@@ -8,6 +8,7 @@ use crate::providers::base::{
 use crate::providers::openai_compatible::handle_status;
 use crate::providers::private_file::write_private_file;
 use crate::providers::retry::ProviderRetry;
+use crate::session_context::{current_session_id, session_id_request_builder_with_header_name};
 use anyhow::{anyhow, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -38,6 +39,8 @@ use tokio_util::io::StreamReader;
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const ISSUER: &str = "https://auth.openai.com";
 const CODEX_API_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex";
+// The ChatGPT backend derives prompt-cache affinity from this header, matching the Codex CLI.
+const CODEX_SESSION_ID_HEADER: &str = "session-id";
 const OAUTH_SCOPES: &[&str] = &["openid", "profile", "email", "offline_access"];
 // Canonical localhost callback port for Codex OAuth (default localhost:1455 per OpenAI docs).
 // https://developers.openai.com/codex/auth/
@@ -478,6 +481,10 @@ fn create_codex_request(
     let payload_obj = payload
         .as_object_mut()
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
+
+    if let Some(session_id) = current_session_id().filter(|id| !id.is_empty()) {
+        payload_obj.insert("prompt_cache_key".to_string(), json!(session_id));
+    }
 
     if !tools.is_empty() {
         let tools_spec: Vec<Value> = tools
@@ -1031,7 +1038,9 @@ impl ChatGptCodexProvider {
         Ok(Self {
             auth_provider,
             name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
-            request_builder: crate::session_context::session_id_request_builder(),
+            request_builder: session_id_request_builder_with_header_name(
+                reqwest::header::HeaderName::from_static(CODEX_SESSION_ID_HEADER),
+            ),
         })
     }
 
