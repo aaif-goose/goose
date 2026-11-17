@@ -66,7 +66,6 @@ interface ModelsBottomBarProps {
   latestInference?: Message['metadata']['inference'] | null;
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
-  disabled: boolean;
 }
 
 type ModelMenuModal = 'switch-model' | 'local-model-settings';
@@ -80,7 +79,6 @@ export default function ModelsBottomBar({
   latestInference,
   onModelChanged,
   sessionLoaded,
-  disabled,
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
@@ -224,10 +222,7 @@ export default function ModelsBottomBar({
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
       <DropdownMenu open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
-        <DropdownMenuTrigger
-          disabled={disabled}
-          className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <DropdownMenuTrigger className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors">
           <div className="flex items-center truncate max-w-[130px] md:max-w-[200px] lg:max-w-[360px] min-w-0">
             <Bot className="mr-1 h-4 w-4 flex-shrink-0" />
             {isModelLoading ? (
