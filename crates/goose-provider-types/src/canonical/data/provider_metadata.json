@@ -283,7 +283,7 @@
     "env": [
       "AMBIENT_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 11
   },
   {
     "id": "amd",
@@ -791,7 +791,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 396
+    "model_count": 397
   },
   {
     "id": "empiriolabs",
@@ -802,7 +802,7 @@
     "env": [
       "EMPIRIOLABS_API_KEY"
     ],
-    "model_count": 65
+    "model_count": 63
   },
   {
     "id": "engy",
@@ -857,7 +857,7 @@
     "env": [
       "FASTROUTER_API_KEY"
     ],
-    "model_count": 48
+    "model_count": 55
   },
   {
     "id": "fiftyx",
@@ -1353,7 +1353,7 @@
     "env": [
       "KENARI_API_KEY"
     ],
-    "model_count": 81
+    "model_count": 82
   },
   {
     "id": "kilo",
@@ -1364,7 +1364,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 464
+    "model_count": 470
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1496,7 +1496,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 208
+    "model_count": 213
   },
   {
     "id": "llmgateway-providers",
@@ -1507,7 +1507,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 477
+    "model_count": 497
   },
   {
     "id": "llmtech",
@@ -1793,7 +1793,7 @@
     "env": [
       "MONEO_API_KEY"
     ],
-    "model_count": 11
+    "model_count": 12
   },
   {
     "id": "moonshotai",
@@ -1870,7 +1870,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 625
+    "model_count": 626
   },
   {
     "id": "nearai",
@@ -1970,7 +1970,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 93
+    "model_count": 94
   },
   {
     "id": "nvidia",
@@ -2025,7 +2025,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 152
+    "model_count": 154
   },
   {
     "id": "ollama-cloud",
@@ -2047,7 +2047,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 140
+    "model_count": 142
   },
   {
     "id": "opencode-go",
@@ -2796,7 +2796,7 @@
     "env": [
       "TINFOIL_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 9
   },
   {
     "id": "toapis",
