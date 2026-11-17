@@ -660,6 +660,8 @@ Run goose as an Agent Client Protocol (ACP) agent server over stdio. This enable
 ACP is an emerging protocol specification that standardizes communication between AI agents and client applications, making it easier for clients to integrate with various AI agents.
 
 **Options:**
+- **`--with-builtin <NAME>`**: Add built-in extensions by name. Can be passed multiple times or as a comma-separated list.
+- **`--no-builtins`**: Sessions build their tool surface from the client's `mcpServers` only: no builtin default (`developer`), no config extensions, no project plugin MCP servers. Composes with `--with-builtin` for explicitly selected builtins.
 - **`--enable-scheduler`**: Enable scheduled recipe execution. Disabled by default.
 
 **Usage:**

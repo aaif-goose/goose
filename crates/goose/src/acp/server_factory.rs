@@ -14,6 +14,9 @@ use tracing::info;
 
 pub struct AcpServerFactoryConfig {
     pub builtins: AcpBuiltinSelection,
+    /// ACP `--no-builtins`: sessions build their tool surface from the
+    /// client's `mcpServers` (plus explicit builtins) alone.
+    pub no_builtins: bool,
     pub config_dir: std::path::PathBuf,
     pub goose_platform: GoosePlatform,
     pub additional_source_roots: Vec<SourceRoot>,
@@ -113,6 +116,7 @@ impl AcpServer {
         let connection = AcpConnection::new(AcpConnectionOptions {
             provider_factory,
             builtin_selection: self.config.builtins.clone(),
+            no_builtins: self.config.no_builtins,
             config_dir: self.config.config_dir.clone(),
             additional_source_roots: self.config.additional_source_roots.clone(),
             session_cwd,
@@ -149,6 +153,7 @@ mod tests {
         AcpServer::new_for_test(
             AcpServerFactoryConfig {
                 builtins: AcpBuiltinSelection::default(),
+                no_builtins: false,
                 config_dir: data_dir.clone(),
                 goose_platform: GoosePlatform::GooseCli,
                 additional_source_roots: Vec::new(),

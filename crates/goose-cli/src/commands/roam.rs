@@ -698,6 +698,7 @@ async fn handle_share(
 
     let acp_server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
+        no_builtins: false,
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
         additional_source_roots: Vec::new(),

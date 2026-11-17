@@ -3,6 +3,7 @@ use anyhow::{bail, Result};
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut builtins = Vec::new();
+    let mut no_builtins = false;
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
@@ -18,8 +19,9 @@ async fn main() -> Result<()> {
                         .map(str::to_owned),
                 );
             }
+            "--no-builtins" => no_builtins = true,
             "-h" | "--help" => {
-                println!("Usage: goose-acp [--with-builtin <NAME,...>]");
+                println!("Usage: goose-acp [--with-builtin <NAME,...>] [--no-builtins]");
                 return Ok(());
             }
             "-V" | "--version" => {
@@ -33,5 +35,5 @@ async fn main() -> Result<()> {
     #[cfg(feature = "online-model-meta")]
     goose::model_catalog::initialize();
 
-    goose::acp::server::run(builtins, false).await
+    goose::acp::server::run(no_builtins, builtins, false).await
 }

@@ -371,12 +371,8 @@ pub async fn serve_agent_in_process(
 #[allow(dead_code)]
 pub async fn spawn_acp_server_in_process(
     openai_base_url: &str,
-    builtins: &[String],
+    config: &TestConnectionConfig,
     data_root: &std::path::Path,
-    goose_mode: GooseMode,
-    provider_factory: Option<AcpProviderFactory>,
-    current_model: &str,
-    disable_session_naming: bool,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
     // TODO: Paths::in_state_dir is global, ignoring per-test data_root
@@ -386,14 +382,14 @@ pub async fn spawn_acp_server_in_process(
         fs::write(
             &config_path,
             format!(
-                "GOOSE_MODEL: {current_model}\nGOOSE_PROVIDER: openai\nGOOSE_MODE: {}\nGOOSE_TOOL_PAIR_SUMMARIZATION: false\n",
-                goose_mode
+                "GOOSE_MODEL: {}\nGOOSE_PROVIDER: openai\nGOOSE_MODE: {}\nGOOSE_TOOL_PAIR_SUMMARIZATION: false\n",
+                config.current_model, config.goose_mode
             ),
         )
         .unwrap();
     }
     write_global_test_config(&config_path, openai_base_url);
-    let provider_factory = provider_factory.unwrap_or_else(|| {
+    let provider_factory = config.provider_factory.clone().unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
         Arc::new(move |_provider_name| {
             let base_url = base_url.clone();
@@ -413,7 +409,7 @@ pub async fn spawn_acp_server_in_process(
     let mut services_config = goose::acp::server::acp_services_config(
         Arc::new(goose::session::SessionManager::new(data_root.to_path_buf())),
         data_root.to_path_buf(),
-        disable_session_naming,
+        config.disable_session_naming,
         GoosePlatform::GooseCli,
     );
     services_config.scheduler_service = Some(Arc::new(FixtureScheduler::new()));
@@ -424,9 +420,10 @@ pub async fn spawn_acp_server_in_process(
     let connection = AcpConnection::new(AcpConnectionOptions {
         provider_factory,
         builtin_selection: goose::acp::server::AcpBuiltinSelection {
-            explicit: builtins.to_vec(),
+            explicit: config.builtins.clone(),
             ..Default::default()
         },
+        no_builtins: config.no_builtins,
         config_dir: data_root.to_path_buf(),
         services,
         additional_source_roots: Vec::new(),
@@ -557,6 +554,7 @@ pub struct SessionData<S> {
 pub struct TestConnectionConfig {
     pub mcp_servers: Vec<McpServer>,
     pub builtins: Vec<String>,
+    pub no_builtins: bool,
     pub goose_mode: GooseMode,
     pub cwd: Option<tempfile::TempDir>,
     pub data_root: PathBuf,
@@ -571,6 +569,7 @@ impl Default for TestConnectionConfig {
         Self {
             mcp_servers: Vec::new(),
             builtins: Vec::new(),
+            no_builtins: false,
             goose_mode: GooseMode::default(),
             cwd: None,
             data_root: PathBuf::new(),
