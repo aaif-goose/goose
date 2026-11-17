@@ -280,13 +280,11 @@ impl ProviderFixture {
             .update_provider(provider.clone(), model_config.clone(), &session_id)
             .await?;
         services
-            .extension_manager
-            .enable(&session_id, mcp_extension)
+            .enable_extension(&session_id, mcp_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         services
-            .extension_manager
-            .enable(&session_id, developer_extension)
+            .enable_extension(&session_id, developer_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -311,11 +309,7 @@ impl ProviderFixture {
         prompt: &str,
         model_config: Option<goose_providers::model::ModelConfig>,
     ) -> Result<Message> {
-        let lease = self
-            .services
-            .extension_manager
-            .current_lease(&self.session_id)
-            .await?;
+        let lease = self.services.current_tools(&self.session_id).await?;
         let tools = lease.tools().await;
         let info = lease.instructions().await;
         let system = PromptManager::new()
@@ -363,10 +357,14 @@ impl ProviderFixture {
         );
         let result = self
             .services
-            .extension_manager
-            .current_lease(&ctx.session_id)
+            .current_tools(&ctx.session_id)
             .await?
-            .call(params, CallRequest::from(&ctx), CancellationToken::new())
+            .call(
+                params,
+                CallRequest::from(&ctx),
+                CancellationToken::new(),
+                &self.services,
+            )
             .await
             .unwrap()
             .result

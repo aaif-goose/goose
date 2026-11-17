@@ -1559,22 +1559,17 @@ fn select_goose_mode() -> anyhow::Result<GooseMode> {
         .item(
             GooseMode::Auto,
             "Auto Mode",
-            "Full file modification, extension usage, edit, create and delete files freely"
+            "Full file modification, extension usage, edit, create and delete files freely",
         )
         .item(
             GooseMode::Approve,
             "Approve Mode",
-            "All tools, extensions and file modifications will require human approval"
+            "All tools, extensions and file modifications will require human approval",
         )
         .item(
             GooseMode::SmartApprove,
             "Smart Approve Mode",
-            "Editing, creating, deleting files and using extensions will require human approval"
-        )
-        .item(
-            GooseMode::Chat,
-            "Chat Mode",
-            "Engage with the selected provider without using tools, extensions, or file modification"
+            "Editing, creating, deleting files and using extensions will require human approval",
         )
         .interact()?;
     Ok(mode)
@@ -1585,7 +1580,6 @@ fn goose_mode_saved_message(mode: GooseMode) -> &'static str {
         GooseMode::Auto => "Set to Auto Mode - full file modification enabled",
         GooseMode::Approve => "Set to Approve Mode - all tools and modifications require approval",
         GooseMode::SmartApprove => "Set to Smart Approve Mode - modifications require approval",
-        GooseMode::Chat => "Set to Chat Mode - no tools or modifications enabled",
     }
 }
 
@@ -1802,8 +1796,7 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
     let extension_config = get_extension_by_name(&selected_extension_name);
     if let Some(config) = extension_config.as_ref() {
         services
-            .extension_manager
-            .enable(&session.id, config.clone())
+            .enable_extension(&session.id, config.clone())
             .await
             .unwrap_or_else(|_| {
                 println!(
@@ -2463,7 +2456,7 @@ mod tests {
 
     #[test]
     fn first_time_goose_mode_skips_when_set_in_env() {
-        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("chat"))]);
+        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("smart_approve"))]);
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 

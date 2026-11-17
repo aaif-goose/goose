@@ -15,18 +15,19 @@ use goose_providers::model::ModelConfig;
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
-use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
     GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseToolApproval,
-    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    StopHookOperation, SubagentOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    ThinkingRecoveryOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
+use crate::agents::tool_snapshot::ToolSnapshot;
+use crate::agents::StateMachineServices;
 use crate::config::Config;
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
@@ -43,8 +44,8 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) defer_tools: bool,
     pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
-    pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    pub(crate) services: Arc<StateMachineServices>,
+    pub(crate) tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) hook_manager: HookManager,
     pub(crate) steer_queue: SteerQueue,
@@ -108,8 +109,8 @@ pub(crate) fn build_state_machine(
         defer_tools,
         always_load_tools,
         session_manager,
-        extension_manager,
-        extension_lease,
+        services,
+        tool_snapshot,
         tool_inspection_manager,
         hook_manager,
         steer_queue,
@@ -130,22 +131,19 @@ pub(crate) fn build_state_machine(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(SkillOperation::new(
-            Arc::clone(&extension_lease),
-            hook_manager.clone(),
+        Arc::new(SkillOperation::new(Arc::clone(&tool_snapshot))),
+        Arc::new(RecipeOperation::new(Arc::clone(&services))),
+        Arc::new(PlatformExtensionOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
         )),
-        Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&extension_manager),
-            hook_manager.clone(),
-            Arc::clone(&extension_lease),
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
             defer_tools,
             always_load_tools,
         )),
-        Arc::new(RemainingToolCallsOperation::new(
-            hook_manager.clone(),
-            Arc::clone(&extension_lease),
-        )),
+        Arc::new(RemainingToolCallsOperation),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
             SubagentOperation::new(Arc::new(subagent_runner)).with_max_concurrency(
@@ -192,8 +190,8 @@ pub(crate) fn build_state_machine(
     operations.extend(remaining_operations);
     operations.extend(extra_operations);
     let request_preparer = GooseInferenceRequestPreparer {
-        extension_manager,
-        extension_lease,
+        services,
+        tool_snapshot,
         tool_inspection_manager,
         context_limit,
     };

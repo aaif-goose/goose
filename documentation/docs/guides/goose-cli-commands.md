@@ -792,8 +792,8 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 # List all prompts from the developer extension
 /prompts --extension developer
 
-# Switch to chat mode
-/mode chat
+# Switch to approve mode
+/mode approve
 
 # Add a builtin extension during the session
 /builtin developer
