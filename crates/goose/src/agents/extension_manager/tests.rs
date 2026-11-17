@@ -15,14 +15,24 @@ use rmcp::model::ServerNotification;
 use super::super::tool_execution::ToolCallNotificationEmitter;
 use futures::StreamExt;
 use goose_test_support::mcp::{McpFixtureServer, FAKE_CODE};
+use rmcp::model::ServerConfig;
 use rmcp::model::{CallToolRequestParams, GetPromptResult, Resource};
 use rmcp::ServiceExt;
+use serde_json::Value;
+use std::path::Path;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Weak;
 use tokio::sync::{mpsc, Semaphore};
+use tokio_util::sync::CancellationToken;
+
+type McpClientBox = Arc<dyn McpClientTrait>;
+
+const TOOL_EXTENSION_META_KEY: &str = "goose_extension";
 
 impl ExtensionManager {
     pub(crate) async fn add_test_client(
-        self: &Arc<Self>,
+        &self,
         session_id: &str,
         config: ExtensionConfig,
         client: McpClientBox,
@@ -34,32 +44,18 @@ impl ExtensionManager {
     }
 
     pub(crate) async fn install_test_client(
-        self: &Arc<Self>,
+        &self,
         scope_id: &str,
         config: ExtensionConfig,
         client: McpClientBox,
         info: Option<ServerConfig>,
     ) {
-        let mut slot = self.new_slot(scope_id, &config, None, None, self.client(scope_id));
-        slot.placement = None;
-        slot.runtime = OnceCell::new_with(Some(Runtime::Running(Arc::new(Extension {
-            key: config.key(),
-            config: config.clone(),
-            resolved_config: config.clone(),
-            client,
-            server_info: info,
-            tools_version: Arc::new(AtomicU64::new(0)),
-            tools: Mutex::new(None),
-        }))));
-        self.scopes
-            .lock()
-            .await
-            .entry(scope_id.to_string())
-            .or_default()
-            .insert(config.key(), Arc::new(slot));
+        self.runtime
+            .install_client(scope_id, config, client, info)
+            .await;
     }
 
-    async fn add_mock_extension(self: &Arc<Self>, name: String, client: McpClientBox) {
+    async fn add_mock_extension(&self, name: String, client: McpClientBox) {
         self.install_test_client("session", builtin_config(&name, vec![]), client, None)
             .await;
     }
@@ -1113,7 +1109,7 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
         .unwrap()
         .start()
         .await;
-    let before = manager.extension_manager.scopes.lock().await[&session.id].clone();
+    let before = manager.extension_manager.runtime().slots(&session.id).await;
 
     manager
         .platform_context()
@@ -1125,7 +1121,7 @@ async fn a_new_working_dir_restarts_only_extensions_that_run_in_it() {
         .unwrap();
     let lease = manager.current_tools(&session.id).await.unwrap();
 
-    let after = manager.extension_manager.scopes.lock().await[&session.id].clone();
+    let after = manager.extension_manager.runtime().slots(&session.id).await;
     assert!(!before.contains_key("developer"));
     assert!(!after.contains_key("developer"));
     assert!(lease.is_enabled("developer"));
@@ -1147,8 +1143,14 @@ async fn client_changes_restart_only_extensions_that_negotiate_capabilities() {
         ],
     )
     .unwrap();
-    let slots = || async { manager.extension_manager.scopes.lock().await[set.scope_id()].clone() };
-    let mut client = ClientContext::new(&GoosePlatform::GooseDesktop, None);
+    let slots = || async {
+        manager
+            .extension_manager
+            .runtime()
+            .slots(set.scope_id())
+            .await
+    };
+    let mut client = client_context(&GoosePlatform::GooseDesktop, None);
     manager
         .extension_manager
         .attach_client(set.scope_id(), client.clone());
@@ -1160,7 +1162,7 @@ async fn client_changes_restart_only_extensions_that_negotiate_capabilities() {
         .extension_manager
         .attach_client(set.scope_id(), client.clone());
     // Change capabilities after resolve captures the client, while it waits for slots.
-    let scopes = manager.extension_manager.scopes.lock().await;
+    let scopes = manager.extension_manager.runtime().lock_slots().await;
     let mut resolving = std::pin::pin!(manager.resolve_tools(&set));
     assert!(futures::poll!(resolving.as_mut()).is_pending());
     client.capabilities.mcpui = false;
@@ -1221,16 +1223,16 @@ async fn a_held_lease_survives_session_release() {
     let held = manager.current_tools(&session.id).await.unwrap();
     assert!(held.start().await.iter().all(|result| result.success));
     let before = Arc::downgrade(
-        &manager.extension_manager.scopes.lock().await[&session.id]["release_fixture"],
+        &manager.extension_manager.runtime().slots(&session.id).await["release_fixture"],
     );
 
     manager.release_tool_session(&session.id).await;
-    assert!(!manager
+    assert!(manager
         .extension_manager
-        .scopes
-        .lock()
+        .runtime()
+        .slots(&session.id)
         .await
-        .contains_key(&session.id));
+        .is_empty());
 
     let result = held
         .call(
@@ -1254,7 +1256,7 @@ async fn a_held_lease_survives_session_release() {
     assert!(!Weak::ptr_eq(
         &before,
         &Arc::downgrade(
-            &manager.extension_manager.scopes.lock().await[&session.id]["release_fixture"]
+            &manager.extension_manager.runtime().slots(&session.id).await["release_fixture"]
         ),
     ));
     assert!(current.start().await.iter().all(|result| result.success));
@@ -1450,9 +1452,13 @@ async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         .extension_manager
         .add_mock_extension("dynamic".to_string(), tools_client.clone())
         .await;
-    let slot =
-        extension_manager.extension_manager.scopes.lock().await["session"]["dynamic"].clone();
-    let tools_version = slot.start().await.unwrap().tools_version.clone();
+    let slot = extension_manager
+        .extension_manager
+        .runtime()
+        .slots("session")
+        .await["dynamic"]
+        .clone();
+    let tools_version = slot.tools_version().await.unwrap();
 
     let manager = extension_manager;
     let first_fetch = {

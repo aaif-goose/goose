@@ -14,7 +14,7 @@ use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionResult};
 use crate::agents::extension_manager::{
-    ClientContext, ExtensionManager, ExtensionMutation, ExtensionSet,
+    client_context, ExtensionManager, ExtensionMutation, ExtensionSet,
 };
 use crate::agents::platform_extensions::{PlatformExtensionContext, PlatformExtensions};
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
@@ -384,14 +384,14 @@ impl StateMachineServices {
             .filter(|config| !crate::agents::platform_extensions::is_platform(config))
             .cloned()
             .collect();
-        let mcp = ExtensionSet::new(set.scope_id(), set.working_dir.clone(), configs)
+        let mcp = ExtensionSet::new(set.scope_id(), set.working_dir().map(Into::into), configs)
             .expect("selection already validated")
-            .with_container(set.container.clone());
+            .with_container(set.container().cloned());
         ToolSnapshot::new(
             self.extension_manager.resolve(&mcp).await,
             self.platform_extensions.select(
                 set.scope_id(),
-                set.working_dir.clone(),
+                set.working_dir().map(Into::into),
                 set.extensions(),
                 &self.platform_context(),
             ),
@@ -538,7 +538,7 @@ impl StateMachineServices {
     }
 
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
-        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        let mut default_client = client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
@@ -1692,7 +1692,7 @@ mod tests {
         }
 
         fn attachment(name: &str) -> crate::agents::Attachment {
-            let mut client = crate::agents::extension_manager::ClientContext::new(
+            let mut client = crate::agents::extension_manager::client_context(
                 &GoosePlatform::GooseDesktop,
                 None,
             );

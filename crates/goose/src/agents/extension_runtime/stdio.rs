@@ -4,14 +4,15 @@ use rmcp::transport::ConfigureCommandExt;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use super::super::container::Container;
-use super::super::extension::{ExtensionError, ExtensionResult, ProcessExit};
-use super::super::extension_malware_check;
-use super::super::mcp_client::{ConnectContext, McpClient};
-use crate::config::search_path::SearchPaths;
+use super::ExtensionHost;
+use crate::agents::container::Container;
+use crate::agents::extension::{ExtensionError, ExtensionResult, ProcessExit};
+use crate::agents::extension_malware_check;
+use crate::agents::mcp_client::{ConnectContext, McpClient};
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 
-pub(super) async fn connect(
+pub(super) async fn connect<C: super::ExtensionSpec>(
+    host: &dyn ExtensionHost<C>,
     cmd: &str,
     args: &[String],
     envs: HashMap<String, String>,
@@ -20,7 +21,7 @@ pub(super) async fn connect(
 ) -> ExtensionResult<McpClient> {
     extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
 
-    let command = match container {
+    let mut command = match container {
         Some(container) => {
             ctx.docker_container = Some(container.id().to_string());
             tracing::info!(
@@ -30,14 +31,17 @@ pub(super) async fn connect(
             );
             docker_exec(container, envs, cmd, args)
         }
-        None => Command::new(resolve_command(cmd)).configure(|command| {
+        None => Command::new(host.resolve_command(cmd)).configure(|command| {
             command.args(args).envs(envs);
         }),
     };
+    if let Some(path) = host.search_path() {
+        command.env("PATH", path);
+    }
     spawn(command, ctx).await
 }
 
-pub(super) fn docker_exec(
+pub fn docker_exec(
     container: &Container,
     envs: HashMap<String, String>,
     program: &str,
@@ -52,21 +56,7 @@ pub(super) fn docker_exec(
     })
 }
 
-fn resolve_command(cmd: &str) -> std::path::PathBuf {
-    SearchPaths::builder()
-        .with_npm()
-        .resolve(cmd)
-        .unwrap_or_else(|_| {
-            // let the OS raise the error
-            std::path::PathBuf::from(cmd)
-        })
-}
-
-pub(super) async fn spawn(mut command: Command, ctx: ConnectContext) -> ExtensionResult<McpClient> {
-    if let Ok(path) = SearchPaths::builder().path() {
-        command.env("PATH", path);
-    }
-
+pub async fn spawn(mut command: Command, ctx: ConnectContext) -> ExtensionResult<McpClient> {
     if ctx.working_dir.is_dir() {
         tracing::info!(
             "Setting MCP process working directory: {:?}",
