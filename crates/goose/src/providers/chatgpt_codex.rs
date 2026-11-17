@@ -142,6 +142,62 @@ fn image_decode_limits() -> image::io::Limits {
     limits
 }
 
+fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.get(..4)? != b"RIFF" || bytes.get(8..12)? != b"WEBP" {
+        return None;
+    }
+
+    let chunk = bytes.get(12..16)?;
+    let chunk_len = u32::from_le_bytes(bytes.get(16..20)?.try_into().ok()?) as usize;
+    let payload = bytes.get(20..20usize.checked_add(chunk_len)?)?;
+    match chunk {
+        b"VP8 " => {
+            if payload.get(3..6)? != [0x9d, 0x01, 0x2a] {
+                return None;
+            }
+            let width = u16::from_le_bytes(payload.get(6..8)?.try_into().ok()?) & 0x3fff;
+            let height = u16::from_le_bytes(payload.get(8..10)?.try_into().ok()?) & 0x3fff;
+            Some((width.into(), height.into()))
+        }
+        b"VP8L" => {
+            if payload.first()? != &0x2f {
+                return None;
+            }
+            let bits = u32::from_le_bytes(payload.get(1..5)?.try_into().ok()?);
+            let width = (bits & 0x3fff) + 1;
+            let height = ((bits >> 14) & 0x3fff) + 1;
+            Some((width, height))
+        }
+        b"VP8X" => {
+            let flags = *payload.first()?;
+            if flags & 0b1100_0011 != 0 || flags & 0b0000_0010 != 0 {
+                return None;
+            }
+            if payload.get(1..4)? != [0, 0, 0] {
+                return None;
+            }
+            let width_bytes = payload.get(4..7)?;
+            let height_bytes = payload.get(7..10)?;
+            let width = u32::from_le_bytes([width_bytes[0], width_bytes[1], width_bytes[2], 0]) + 1;
+            let height =
+                u32::from_le_bytes([height_bytes[0], height_bytes[1], height_bytes[2], 0]) + 1;
+            Some((width, height))
+        }
+        _ => None,
+    }
+}
+
+fn webp_is_safe_to_decode(bytes: &[u8]) -> bool {
+    let Some((width, height)) = webp_dimensions(bytes) else {
+        return false;
+    };
+    width > 0
+        && height > 0
+        && width <= MAX_IMAGE_DIMENSION
+        && height <= MAX_IMAGE_DIMENSION
+        && u64::from(width) * u64::from(height) * 4 <= MAX_DECODED_IMAGE_BYTES
+}
+
 fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
     let format = image::guess_format(bytes).ok()?;
     let detected_mime = match format {
@@ -166,6 +222,9 @@ fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
             return None;
         }
     } else {
+        if format == image::ImageFormat::WebP && !webp_is_safe_to_decode(bytes) {
+            return None;
+        }
         let mut reader = image::io::Reader::with_format(io::Cursor::new(bytes), format);
         reader.limits(image_decode_limits());
         reader.decode().ok()?;
@@ -1426,6 +1485,48 @@ mod tests {
             output[0],
             json!({ "type": "input_text", "text": "[Image: image/gif]" })
         );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_webp_with_huge_dimensions() {
+        let webp = [
+            b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X',
+            10, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x3f, 0, 0xff, 0x3f, 0,
+        ];
+        let data = base64::engine::general_purpose::STANDARD.encode(webp);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/webp]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_accepts_valid_webp() {
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .encode(&[0, 0, 0, 255], 1, 1, image::ColorType::Rgba8)
+            .unwrap();
+        let data = base64::engine::general_purpose::STANDARD.encode(webp);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert!(output[0]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/webp;base64,"));
     }
 
     #[test]
