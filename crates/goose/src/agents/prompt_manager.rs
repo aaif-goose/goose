@@ -471,6 +471,14 @@ mod tests {
 
     #[test]
     fn test_basic() {
+        // The prompt overrides live under the config dir; without pinning it, a local
+        // ~/.config/goose/prompts/system.md changes what these snapshots assert.
+        let _tmp = tempfile::tempdir().unwrap();
+        let _root = _tmp.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("HOME", Some(_root.as_str())),
+            ("GOOSE_PATH_ROOT", Some(_root.as_str())),
+        ]);
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
         let system_prompt = manager.builder().build().unwrap();
@@ -480,6 +488,14 @@ mod tests {
 
     #[test]
     fn test_one_extension() {
+        // The prompt overrides live under the config dir; without pinning it, a local
+        // ~/.config/goose/prompts/system.md changes what these snapshots assert.
+        let _tmp = tempfile::tempdir().unwrap();
+        let _root = _tmp.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("HOME", Some(_root.as_str())),
+            ("GOOSE_PATH_ROOT", Some(_root.as_str())),
+        ]);
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
         let system_prompt = manager
@@ -497,6 +513,14 @@ mod tests {
 
     #[test]
     fn test_typical_setup() {
+        // The prompt overrides live under the config dir; without pinning it, a local
+        // ~/.config/goose/prompts/system.md changes what these snapshots assert.
+        let _tmp = tempfile::tempdir().unwrap();
+        let _root = _tmp.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("HOME", Some(_root.as_str())),
+            ("GOOSE_PATH_ROOT", Some(_root.as_str())),
+        ]);
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
         let system_prompt = manager

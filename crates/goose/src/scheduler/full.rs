@@ -1536,14 +1536,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduled_run_uses_recipe_model_settings() {
+        // Session creation resolves prompts and extensions through Config::global() and
+        // Paths, which fall back to the developer's ~/.config/goose. Without the config
+        // root pinned here, a local config.yaml changes what this test asserts and, with
+        // any extension enabled, blocks session creation until the 10 s timeout.
+        let temp_dir = tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([
             ("GOOSE_PROVIDER", Some("openai")),
             ("GOOSE_MODEL", Some("gpt-4o")),
             ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
             ("OPENAI_HOST", Some("http://127.0.0.1:9")),
             ("OPENAI_CUSTOM_HEADERS", Some("")),
+            ("HOME", Some(temp_root.as_str())),
+            ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
         ]);
-        let temp_dir = tempdir().unwrap();
         let storage_path = temp_dir.path().join("schedule.json");
         let recipe_path = temp_dir.path().join("recipe_settings.yaml");
         fs::write(
