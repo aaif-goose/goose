@@ -325,6 +325,18 @@
     "type": "streamable-http"
   },
   {
+    "id": "genaya",
+    "name": "Genaya",
+    "description": "Ask about your business schedule, clients, invoices, payments, calls and team, and prepare changes that run after you confirm",
+    "url": "https://api.genaya.com/mcp",
+    "link": "https://developer.genaya.com",
+    "installation_notes": "Hosted remote server. Sign in with your Genaya account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "github-mcp",
     "name": "GitHub",
     "description": "GitHub repository management and operations",
