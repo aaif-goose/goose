@@ -283,6 +283,7 @@ insta = { version = "1", default-features = false }
 dtor = { version = "1.0.5", default-features = false, features = ["proc_macro"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"] }
+goose-agent = { path = "../goose-agent", features = ["test-support"] }
 
 [[example]]
 name = "agent"

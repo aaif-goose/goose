@@ -16,18 +16,23 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::container::Container;
-use crate::agents::extension::{name_to_key, ExtensionError, ExtensionResult, TransportConfig};
-use crate::agents::mcp_client::{ConnectContext, GooseMcpClientCapabilities, McpClientTrait};
-use crate::conversation::message::Message;
+use crate::extension::ExtensionConfig as TransportConfig;
+use crate::extension::{name_to_key, ExtensionError, ExtensionResult};
+use crate::mcp::client::{ConnectContext, GooseMcpClientCapabilities, McpClientTrait};
+pub use container::Container;
+use goose_provider_types::conversation::message::Message;
 use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
 mod call;
+pub mod client;
+pub mod container;
 mod host;
 mod lease;
+pub mod malware_check;
 mod stdio;
 mod streamable_http;
+pub mod tool_schema_normalize;
 
 pub use call::{ToolCallNotificationEmitter, ToolCallResult, ToolResult};
 pub use host::{
@@ -301,7 +306,7 @@ impl<C: ExtensionSpec> Extension<C> {
                 );
                 tool.meta = Some(MetaObject(meta));
                 let mut schema = (*tool.input_schema).clone();
-                if crate::agents::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                if crate::mcp::tool_schema_normalize::normalize_input_schema(&mut schema) {
                     tool.input_schema = Arc::new(schema);
                 }
                 tools.push(tool);
@@ -810,7 +815,7 @@ impl<C: ExtensionSpec> ExtensionManager<C> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<C: ExtensionSpec> ExtensionManager<C> {
     pub async fn scope_lease(&self, scope_id: &str) -> ExtensionLease<C> {
         let slots = self
@@ -867,7 +872,7 @@ impl<C: ExtensionSpec> ExtensionManager<C> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<C: ExtensionSpec> ExtensionSlot<C> {
     pub async fn tools_version(&self) -> Option<Arc<AtomicU64>> {
         self.start()

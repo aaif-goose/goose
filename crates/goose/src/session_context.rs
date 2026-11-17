@@ -2,10 +2,9 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 
-pub const SESSION_ID_HEADER: &str = "agent-session-id";
-
-pub const TOOL_CALL_REQUEST_ID_HEADER: &str = "agent-tool-call-request-id";
-pub const WORKING_DIR_HEADER: &str = "agent-working-dir";
+pub use goose_agent::mcp::client::{
+    SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER,
+};
 
 tokio::task_local! {
     pub static SESSION_ID: Option<String>;
