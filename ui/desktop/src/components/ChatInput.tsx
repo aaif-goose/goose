@@ -1671,22 +1671,21 @@ export default function ChatInput({
           model selector + send button always stay visible. */}
       <div ref={bottomBarRef} className="flex flex-row items-center gap-2 px-3 py-2 relative">
         {/* Left: model selector */}
-        <fieldset disabled={isSubmissionBusy || queueProcessingBlocked} className="contents">
-          <Tooltip>
-            <div>
-              <ModelsBottomBar
-                sessionId={sessionId}
-                dropdownRef={dropdownRef}
-                setView={setView}
-                sessionModel={effectiveModel}
-                sessionProvider={effectiveProvider}
-                latestInference={latestInference}
-                onModelChanged={setModelOverride}
-                sessionLoaded={sessionLoaded}
-              />
-            </div>
-          </Tooltip>
-        </fieldset>
+        <Tooltip>
+          <div>
+            <ModelsBottomBar
+              sessionId={sessionId}
+              dropdownRef={dropdownRef}
+              setView={setView}
+              sessionModel={effectiveModel}
+              sessionProvider={effectiveProvider}
+              latestInference={latestInference}
+              onModelChanged={setModelOverride}
+              sessionLoaded={sessionLoaded}
+              disabled={isSubmissionBusy || queueProcessingBlocked}
+            />
+          </div>
+        </Tooltip>
 
         {/* Left: working directory (leaf folder name only) */}
         {!isBottomBarNarrow && (
