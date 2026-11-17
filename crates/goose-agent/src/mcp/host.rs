@@ -53,8 +53,10 @@ pub trait ExtensionHost<C: ExtensionSpec>: Send + Sync {
         anyhow::bail!("secret '{key}' is not available")
     }
 
-    /// Changes whenever secrets or environment may have changed, so running
-    /// extensions are checked against their re-resolved config.
+    /// Changes whenever secrets or environment may have changed. On the next
+    /// resolution, runtime-connected extensions are checked against their
+    /// re-resolved config; host-connected extensions get new connections.
+    /// Existing leases keep their connections.
     fn config_generation(&self) -> u64 {
         0
     }

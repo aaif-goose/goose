@@ -175,10 +175,13 @@ impl<C: ExtensionSpec> ExtensionSlot<C> {
         let current = match self.runtime.get() {
             None => true,
             Some(Runtime::Failed(_)) => false,
-            Some(Runtime::Running(extension)) => manager
-                .resolve_transport(&self.config)
-                .await
-                .is_ok_and(|config| config == extension.resolved_config),
+            Some(Runtime::Running(extension)) => {
+                extension.resolved_config.is_some()
+                    && manager
+                        .resolve_transport(&self.config)
+                        .await
+                        .is_ok_and(|config| config == extension.resolved_config)
+            }
         };
         if current {
             self.config_generation.store(generation, Ordering::SeqCst);
