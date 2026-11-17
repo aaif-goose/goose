@@ -69,7 +69,7 @@ urlencoding = { workspace = true }
 clap_complete = { version = "4", default-features = false }
 comfy-table = { version = "8", default-features = false }
 sha2 = { workspace = true }
-sigstore-verify = { version = "0.11", default-features = false, optional = true }
+sigstore-verify = { version = "0.16", default-features = false, optional = true }
 snap = { workspace = true, optional = true }
 axum.workspace = true
 axum-server = { workspace = true, optional = true }
