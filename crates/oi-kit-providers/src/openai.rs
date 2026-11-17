@@ -2049,6 +2049,59 @@ mod tests {
         assert!(cerebras_config().preserves_thinking);
     }
 
+    fn perplexity_config() -> DeclarativeProviderConfig {
+        crate::declarative::fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "perplexity")
+            .expect("perplexity should be bundled")
+    }
+
+    #[test]
+    fn perplexity_requests_agent_api_responses_endpoint() {
+        struct StaticKeyResolver;
+        impl KeyResolver for StaticKeyResolver {
+            type Error = std::convert::Infallible;
+
+            fn resolve_key(&self, _key: &str) -> std::result::Result<String, Self::Error> {
+                Ok("test-key".to_string())
+            }
+        }
+
+        let provider = from_declarative_config(perplexity_config(), None, StaticKeyResolver)
+            .expect("perplexity config should build a provider")
+            .build();
+
+        assert_eq!(
+            format!("{}/{}", provider.api_client.host(), provider.base_path),
+            "https://api.perplexity.ai/v1/responses"
+        );
+        assert!(provider.should_use_responses_api_for_provider("anthropic/claude-opus-5-5"));
+
+        let payload = create_responses_request_for_model(
+            &ModelConfig::new("anthropic/claude-opus-5-5"),
+            "anthropic/claude-opus-5-5",
+            "anthropic/claude-opus-5-5",
+            "system",
+            &[Message::user().with_text("hello")],
+            &[],
+        )
+        .expect("responses payload should build");
+        assert!(payload["input"].is_array());
+        assert!(payload.get("messages").is_none());
+    }
+
+    #[test]
+    fn perplexity_lists_agent_api_model_ids() {
+        let config = perplexity_config();
+
+        assert_eq!(config.dynamic_models, None);
+        let names: Vec<&str> = config.models.iter().map(|m| m.name.as_str()).collect();
+        // The registry uses the first entry as the provider default model.
+        assert_eq!(names[0], "anthropic/claude-opus-5-5");
+        assert!(names.iter().all(|name| name.contains('/')));
+    }
+
     #[test]
     fn apply_declared_request_params_skips_reserved_keys() {
         let mut payload = json!({
