@@ -85,11 +85,17 @@ impl Default for TreeTool {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LineCount {
+    lines: usize,
+    is_partial: bool,
+}
+
 #[derive(Default)]
 struct DirectoryNode {
     dirs: BTreeMap<String, DirectoryNode>,
-    files: BTreeMap<String, usize>,
-    total_lines: usize,
+    files: BTreeMap<String, LineCount>,
+    total_lines: LineCount,
 }
 
 impl DirectoryNode {
@@ -100,7 +106,7 @@ impl DirectoryNode {
         }
     }
 
-    fn insert_file(&mut self, components: &[String], line_count: usize) {
+    fn insert_file(&mut self, components: &[String], line_count: LineCount) {
         if components.is_empty() {
             return;
         }
@@ -114,14 +120,18 @@ impl DirectoryNode {
         node.files.insert(filename, line_count);
     }
 
-    fn compute_total_lines(&mut self) -> usize {
-        let dir_lines: usize = self
-            .dirs
-            .values_mut()
-            .map(DirectoryNode::compute_total_lines)
-            .sum();
-        let file_lines: usize = self.files.values().copied().sum();
-        self.total_lines = dir_lines + file_lines;
+    fn compute_total_lines(&mut self) -> LineCount {
+        let mut total = LineCount::default();
+        for dir in self.dirs.values_mut() {
+            let count = dir.compute_total_lines();
+            total.lines += count.lines;
+            total.is_partial |= count.is_partial;
+        }
+        for count in self.files.values() {
+            total.lines += count.lines;
+            total.is_partial |= count.is_partial;
+        }
+        self.total_lines = total;
         self.total_lines
     }
 
@@ -205,52 +215,68 @@ fn relative_components(path: &Path) -> Option<Vec<String>> {
     }
 }
 
-/// Max bytes read when counting lines for one file.
-///
 /// Procfs pseudo-files such as `pagemap` often report size 0 but yield a huge
-/// stream when read. An uncapped `read_to_string` can OOM the process; a buffer
-/// alone can still stall for minutes. Cap the read so `tree` stays bounded.
-const LINE_COUNT_MAX_BYTES: u64 = 1024 * 1024; // 1 MiB
-const LINE_COUNT_BUF_SIZE: usize = 64 * 1024; // 64 KiB
+/// stream when read, so line counting must have a byte limit.
+const LINE_COUNT_MAX_BYTES: usize = 1024 * 1024;
+const LINE_COUNT_BUF_SIZE: usize = 64 * 1024;
+const UTF8_MAX_EXTRA_BYTES: usize = 3;
 
-fn count_file_lines(path: &Path) -> usize {
+fn count_file_lines(path: &Path) -> LineCount {
     let file = match fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return 0,
+        Err(_) => return LineCount::default(),
     };
 
-    let mut reader =
-        io::BufReader::with_capacity(LINE_COUNT_BUF_SIZE, file.take(LINE_COUNT_MAX_BYTES));
+    let read_limit = (LINE_COUNT_MAX_BYTES + UTF8_MAX_EXTRA_BYTES) as u64;
+    let mut reader = io::BufReader::with_capacity(LINE_COUNT_BUF_SIZE, file.take(read_limit));
     let mut bytes = Vec::new();
     if reader.read_to_end(&mut bytes).is_err() {
-        return 0;
+        return LineCount::default();
     }
-    let hit_cap = bytes.len() as u64 >= LINE_COUNT_MAX_BYTES;
 
-    match std::str::from_utf8(&bytes) {
-        Ok(content) => content.lines().count(),
+    if bytes.len() <= LINE_COUNT_MAX_BYTES {
+        return std::str::from_utf8(&bytes)
+            .map(|content| LineCount {
+                lines: content.lines().count(),
+                is_partial: false,
+            })
+            .unwrap_or_default();
+    }
+
+    let prefix = &bytes[..LINE_COUNT_MAX_BYTES];
+    let content = match std::str::from_utf8(prefix) {
+        Ok(content) => content,
+        Err(err) if err.error_len().is_some() => return LineCount::default(),
         Err(err) => {
-            // Match prior `read_to_string` behavior: invalid UTF-8 → 0 lines.
-            // Only when the read stopped at the byte cap and the cap cut a
-            // multi-byte sequence (`error_len` is None) do we count the valid
-            // prefix. A file that genuinely ends in an incomplete character
-            // below the cap is still invalid UTF-8 and counts as 0.
-            if !hit_cap || err.error_len().is_some() {
-                return 0;
+            let valid_up_to = err.valid_up_to();
+            let character_width = match bytes[valid_up_to] {
+                0xc2..=0xdf => 2,
+                0xe0..=0xef => 3,
+                0xf0..=0xf4 => 4,
+                _ => return LineCount::default(),
+            };
+            let character_end = valid_up_to + character_width;
+            if character_end > bytes.len()
+                || std::str::from_utf8(&bytes[valid_up_to..character_end]).is_err()
+            {
+                return LineCount::default();
             }
-            match std::str::from_utf8(&bytes[..err.valid_up_to()]) {
-                Ok(content) => content.lines().count(),
-                Err(_) => 0,
-            }
+            std::str::from_utf8(&bytes[..valid_up_to]).unwrap()
         }
+    };
+
+    LineCount {
+        lines: content.lines().count(),
+        is_partial: true,
     }
 }
 
-fn format_lines(lines: usize) -> String {
-    if lines >= 1000 {
-        format!("[{}K]", lines / 1000)
+fn format_lines(count: LineCount) -> String {
+    let partial = if count.is_partial { "+" } else { "" };
+    if count.lines >= 1000 {
+        format!("[{}K{}]", count.lines / 1000, partial)
     } else {
-        format!("[{}]", lines)
+        format!("[{}{}]", count.lines, partial)
     }
 }
 
@@ -336,11 +362,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("small.txt");
         fs::write(&path, "a\nb\nc\n").unwrap();
-        assert_eq!(count_file_lines(&path), 3);
+        assert_eq!(
+            count_file_lines(&path),
+            LineCount {
+                lines: 3,
+                is_partial: false
+            }
+        );
         fs::write(&path, "a\nb\nc").unwrap();
-        assert_eq!(count_file_lines(&path), 3);
+        assert_eq!(
+            count_file_lines(&path),
+            LineCount {
+                lines: 3,
+                is_partial: false
+            }
+        );
         fs::write(&path, "").unwrap();
-        assert_eq!(count_file_lines(&path), 0);
+        assert_eq!(count_file_lines(&path), LineCount::default());
     }
 
     #[test]
@@ -348,7 +386,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bin.dat");
         fs::write(&path, [0xff, 0xfe, 0xfd, b'\n']).unwrap();
-        assert_eq!(count_file_lines(&path), 0);
+        assert_eq!(count_file_lines(&path), LineCount::default());
     }
 
     #[test]
@@ -356,17 +394,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("truncated.txt");
         fs::write(&path, b"a\n\xc3").unwrap();
-        assert_eq!(count_file_lines(&path), 0);
+        assert_eq!(count_file_lines(&path), LineCount::default());
+    }
+
+    #[test]
+    fn count_file_lines_incomplete_utf8_at_exact_cap_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("truncated.txt");
+        let mut data = vec![b'a'; LINE_COUNT_MAX_BYTES];
+        data[LINE_COUNT_MAX_BYTES - 1] = 0xc3;
+        fs::write(&path, data).unwrap();
+        assert_eq!(count_file_lines(&path), LineCount::default());
     }
 
     #[test]
     fn count_file_lines_cap_splitting_multibyte_counts_prefix() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("split.txt");
-        let cap = LINE_COUNT_MAX_BYTES as usize;
-        // Fill up to one byte before the cap with "x\n" lines, then place a
-        // two-byte character so the cap cuts it in half.
-        let mut data = Vec::with_capacity(cap + 2);
+        let cap = LINE_COUNT_MAX_BYTES;
+        let mut data = Vec::with_capacity(cap + 4);
         while data.len() + 2 < cap {
             data.extend_from_slice(b"x\n");
         }
@@ -377,9 +423,25 @@ mod tests {
             .split(|b| *b == b'\n')
             .filter(|l| !l.is_empty())
             .count();
-        data.extend_from_slice("é\n".as_bytes());
+        data.extend_from_slice("🦀\n".as_bytes());
         fs::write(&path, &data).unwrap();
-        assert_eq!(count_file_lines(&path), expected);
+        assert_eq!(
+            count_file_lines(&path),
+            LineCount {
+                lines: expected,
+                is_partial: true
+            }
+        );
+    }
+
+    #[test]
+    fn count_file_lines_invalid_utf8_across_cap_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("invalid.txt");
+        let mut data = vec![b'a'; LINE_COUNT_MAX_BYTES - 1];
+        data.extend_from_slice(b"\xc3x");
+        fs::write(&path, data).unwrap();
+        assert_eq!(count_file_lines(&path), LineCount::default());
     }
 
     #[test]
@@ -389,7 +451,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("big.txt");
         let line = b"x\n";
-        let lines_to_write = (LINE_COUNT_MAX_BYTES as usize / line.len()) + 500;
+        let lines_to_write = (LINE_COUNT_MAX_BYTES / line.len()) + 500;
         {
             let mut f = fs::File::create(&path).unwrap();
             for _ in 0..lines_to_write {
@@ -398,16 +460,39 @@ mod tests {
         }
 
         let counted = count_file_lines(&path);
-        let max_lines = (LINE_COUNT_MAX_BYTES as usize) / line.len();
-        assert!(counted > 0, "expected some lines within the cap");
+        let max_lines = LINE_COUNT_MAX_BYTES / line.len();
+        assert!(counted.lines > 0, "expected some lines within the cap");
         assert!(
-            counted <= max_lines,
-            "counted {counted} lines, cap allows at most {max_lines}"
+            counted.lines <= max_lines,
+            "counted {} lines, cap allows at most {max_lines}",
+            counted.lines
         );
         assert!(
-            counted < lines_to_write,
+            counted.lines < lines_to_write,
             "cap should stop before reading the whole {lines_to_write}-line file"
         );
+        assert!(counted.is_partial);
+    }
+
+    #[test]
+    fn tree_marks_capped_counts_partial() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_dir = dir.path().join("src");
+        fs::create_dir(&source_dir).unwrap();
+        fs::write(
+            source_dir.join("big.txt"),
+            "x\n".repeat((LINE_COUNT_MAX_BYTES / 2) + 1),
+        )
+        .unwrap();
+
+        let result = TreeTool::new().tree(TreeParams {
+            path: dir.path().display().to_string(),
+            depth: 2,
+        });
+
+        let text = extract_text(&result);
+        assert!(text.contains("src/  [524K+]"));
+        assert!(text.contains("big.txt  [524K+]"));
     }
 
     #[cfg(target_os = "linux")]
