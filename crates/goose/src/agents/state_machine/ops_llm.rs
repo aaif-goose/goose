@@ -33,45 +33,6 @@ impl InferenceEffect for GooseEffect {
     }
 }
 
-pub(crate) fn enrich_unclaimed_tool_errors(
-    messages: &[Message],
-    tools: &[rmcp::model::Tool],
-) -> Vec<Message> {
-    let mut available_tools = tools
-        .iter()
-        .map(|tool| tool.name.as_ref())
-        .collect::<Vec<_>>();
-    available_tools.sort_unstable();
-    available_tools.dedup();
-    let available_tools = available_tools.join(", ");
-    let mut messages = messages.to_vec();
-    for message in &mut messages {
-        for content in &mut message.content {
-            let goose_providers::conversation::message::MessageContent::ToolResponse(response) =
-                content
-            else {
-                continue;
-            };
-            let Some(metadata) = &mut response.metadata else {
-                continue;
-            };
-            if metadata
-                .remove(super::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR)
-                .is_none()
-            {
-                continue;
-            }
-            let Ok(result) = &mut response.tool_result else {
-                continue;
-            };
-            result.content.push(rmcp::model::ContentBlock::text(format!(
-                "Available tools: [{available_tools}]."
-            )));
-        }
-    }
-    messages
-}
-
 fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model::Tool]) {
     let tool_owners = advertised_tools
         .iter()
@@ -149,7 +110,6 @@ impl Provider for GooseInferenceProvider {
         messages: &[Message],
         tools: &[rmcp::model::Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let messages = enrich_unclaimed_tool_errors(messages, tools);
         let (tools, toolshim_tools, system_prompt) =
             crate::agents::reply_parts::prepare_tools_for_provider(
                 tools.to_vec(),
@@ -167,7 +127,7 @@ impl Provider for GooseInferenceProvider {
             model_config.clone(),
             &session_id,
             &system_prompt,
-            &messages,
+            messages,
             &tools,
             &toolshim_tools,
         )

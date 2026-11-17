@@ -5,10 +5,10 @@ use serde_json::Value;
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
-use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
+use goose_agent::tool_call_state::UNCLAIMED_TOOL_ERROR;
 
 pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,

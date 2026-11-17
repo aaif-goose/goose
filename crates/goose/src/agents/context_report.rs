@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::Result;
+use goose_agent::inference::enrich_unclaimed_tool_errors;
 use rmcp::model::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
@@ -10,7 +11,6 @@ pub use goose_sdk_types::custom_requests::{
 };
 
 use crate::agents::extension_manager::get_tool_owner;
-use crate::agents::state_machine::enrich_unclaimed_tool_errors;
 use crate::agents::{PromptManager, SessionConfig, StateMachineServices};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{
@@ -747,7 +747,7 @@ Finish the regression test
                 rmcp::model::ContentBlock::text("Tool missing__tool is not available."),
             ])),
             Some(&serde_json::Map::from_iter([(
-                crate::agents::state_machine::UNCLAIMED_TOOL_ERROR.to_string(),
+                goose_agent::tool_call_state::UNCLAIMED_TOOL_ERROR.to_string(),
                 true.into(),
             )])),
         );

@@ -99,3 +99,21 @@ pub(crate) fn add_error_response(tool_responses: &mut Message, request: &ToolReq
         request.metadata.as_ref(),
     );
 }
+
+pub(crate) fn add_unavailable_tool_response(
+    tool_responses: &mut Message,
+    request: &ToolRequest,
+    tool_name: &str,
+) {
+    let mut metadata = request.metadata.clone();
+    metadata
+        .get_or_insert_default()
+        .insert(UNCLAIMED_TOOL_ERROR.to_string(), true.into());
+    tool_responses.add_tool_response_with_metadata(
+        request.id.clone(),
+        Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+            "Tool '{tool_name}' is not available."
+        ))])),
+        metadata.as_ref(),
+    );
+}

@@ -8,9 +8,9 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, yielded, ConversationEffect, Emitter,
     Operation, OperationResult,
 };
-use crate::tool_call_state::{add_error_response, tool_calls, ToolCallState};
-
-const NOT_HANDLED_MESSAGE: &str = "This tool call was not handled.";
+use crate::tool_call_state::{
+    add_error_response, add_unavailable_tool_response, tool_calls, ToolCallState,
+};
 
 pub struct UnhandledToolCallsOperation;
 
@@ -32,9 +32,24 @@ fn respond_to_unhandled_calls(
 ) -> Option<Message> {
     let mut tool_responses = Message::user();
     for (request, state) in calls {
-        if *state != ToolCallState::AwaitingUser {
-            tracing::error!(tool_call_id = %request.id, "tool call was not handled by any operation");
-            add_error_response(&mut tool_responses, request, NOT_HANDLED_MESSAGE);
+        if *state == ToolCallState::AwaitingUser {
+            continue;
+        }
+        match &request.tool_call {
+            Ok(tool_call) => {
+                tracing::error!(tool_call_id = %request.id, tool_name = %tool_call.name, "tool call was not handled by any operation");
+                add_unavailable_tool_response(&mut tool_responses, request, &tool_call.name);
+            }
+            Err(error) => {
+                tracing::error!(tool_call_id = %request.id, %error, "tool call was not handled by any operation");
+                add_error_response(
+                    &mut tool_responses,
+                    request,
+                    &format!(
+                        "The tool call could not be parsed: {error}. Correct the arguments and try again."
+                    ),
+                );
+            }
         }
     }
     (!tool_responses.content.is_empty()).then(|| emit.message(tool_responses))
