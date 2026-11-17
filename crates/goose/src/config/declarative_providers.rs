@@ -804,6 +804,39 @@ mod tests {
     }
 
     #[test]
+    fn bundled_perplexity_resolves_vision_from_catalog() {
+        let config = fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|c| c.name == "perplexity")
+            .expect("bundled perplexity definition");
+        assert_eq!(
+            config.catalog_provider_id.as_deref(),
+            Some("perplexity-agent")
+        );
+
+        let mut registry = crate::providers::provider_registry::ProviderRegistry::new(None);
+        register_declarative_provider(&mut registry, config, ProviderType::Declarative);
+        let entry = &registry.entries["perplexity"];
+
+        // Only the catalog row knows this model takes images; the provider
+        // name lookup and name inference have no answer for it.
+        let kimi = entry
+            .normalize_model_config(oi_kit_providers::model::ModelConfig::new(
+                "perplexity/kimi-k3",
+            ))
+            .unwrap();
+        assert_eq!(kimi.supports_vision, Some(true));
+
+        let glm = entry
+            .normalize_model_config(oi_kit_providers::model::ModelConfig::new(
+                "perplexity/glm-5.3",
+            ))
+            .unwrap();
+        assert_eq!(glm.supports_vision, Some(false));
+    }
+
+    #[test]
     fn custom_provider_update_preserves_model_metadata() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_root = temp_dir.path().display().to_string();
