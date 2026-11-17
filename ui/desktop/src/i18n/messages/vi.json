@@ -1265,6 +1265,9 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "fileDrop.remoteAttachmentUnsupported": {
+    "defaultMessage": "Chỉ có thể đính kèm hình ảnh khi kết nối với backend bên ngoài"
+  },
   "goosehintsModal.close": {
     "defaultMessage": "Đóng"
   },

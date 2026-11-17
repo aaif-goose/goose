@@ -1265,6 +1265,9 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "fileDrop.remoteAttachmentUnsupported": {
+    "defaultMessage": "Harici bir arka uca bağlıyken yalnızca görseller eklenebilir"
+  },
   "goosehintsModal.close": {
     "defaultMessage": "Kapat"
   },
