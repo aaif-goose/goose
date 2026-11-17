@@ -113,7 +113,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
     "@electron-forge/maker-deb": "^7.11.2",
-    "@electron-forge/maker-flatpak": "^7.11.2",
+    "@electron-forge/maker-flatpak": "^8.0.1",
     "@electron-forge/maker-rpm": "^7.11.2",
     "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
