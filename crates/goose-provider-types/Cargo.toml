@@ -37,7 +37,7 @@ zstd = "0.14.3"
 getrandom = { version = "0.4", features = ["wasm_js"] }
 uuid = { workspace = true, features = ["js"] }
 chrono = { workspace = true, features = ["wasmbind"] }
-gloo-timers = { version = "0.3.0", features = ["futures"] }
+gloo-timers = { version = "0.4.0", features = ["futures"] }
 
 [dev-dependencies]
 env-lock = { workspace = true }

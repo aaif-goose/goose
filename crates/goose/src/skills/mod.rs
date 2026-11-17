@@ -1,12 +1,10 @@
 //! Everything specific to skills: filesystem discovery (`SKILL.md` walking +
-//! built-ins) and the platform extension (`client` submodule). User-facing
-//! CRUD lives in `crate::sources`, which generalizes across source types.
+//! built-ins) and reading supporting files. User-facing CRUD lives in
+//! `crate::sources`, which generalizes across source types.
 
 mod builtin;
-pub mod client;
 mod supporting_files;
 
-pub use client::{SkillsClient, EXTENSION_NAME};
 pub(crate) use supporting_files::{
     create_source_file, load_supporting_file, read_source_file, write_source_file,
 };
@@ -121,14 +119,23 @@ fn resolve_docs_root_placeholder(skill: &SourceEntry, content: &str, docs_root: 
     content.replace(GOOSE_DOCS_ROOT_PLACEHOLDER, docs_root)
 }
 
-pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
-    let content = goose_agent::skills::skill_content_with_args(skill, args)?;
+pub fn skills_for_session(working_dir: &Path) -> Result<Vec<SourceEntry>> {
     let docs_root = Config::global()
         .get_goose_docs_root()?
         .unwrap_or_else(|| DEFAULT_GOOSE_DOCS_ROOT.to_string());
-    let content = resolve_docs_root_placeholder(skill, &content, &docs_root);
-
-    Ok(goose_agent::skills::loaded_skill_context(skill, &content))
+    Ok(discover_skills(Some(working_dir))
+        .into_iter()
+        .filter(|skill| {
+            matches!(
+                skill.source_type,
+                SourceType::Skill | SourceType::BuiltinSkill
+            )
+        })
+        .map(|mut skill| {
+            skill.content = resolve_docs_root_placeholder(&skill, &skill.content, &docs_root);
+            skill
+        })
+        .collect())
 }
 
 pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
@@ -483,7 +490,6 @@ pub fn list_installed_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     fn write_test_skill(dir: &Path, name: &str, body: &str) {
         std::fs::create_dir_all(dir).unwrap();
@@ -523,23 +529,6 @@ mod tests {
         assert_path_rejected_by_source_crud(&skill.path, &skill.name, skill_dir);
     }
 
-    fn skill_with_content(content: &str) -> SourceEntry {
-        SourceEntry {
-            source_type: SourceType::Skill,
-            name: "test-skill".to_string(),
-            description: "Test skill".to_string(),
-            content: content.to_string(),
-            path: String::new(),
-            global: false,
-            writable: true,
-            supporting_files: Vec::new(),
-            properties: HashMap::from([(
-                "arguments".to_string(),
-                json!(["component", "from", "to"]),
-            )]),
-        }
-    }
-
     fn builtin_goose_doc_guide_skill() -> SourceEntry {
         SourceEntry {
             source_type: SourceType::BuiltinSkill,
@@ -552,42 +541,6 @@ mod tests {
             supporting_files: Vec::new(),
             properties: HashMap::new(),
         }
-    }
-
-    #[test]
-    fn loaded_skill_context_with_args_replaces_arguments_placeholder_with_raw_args() {
-        let skill = skill_with_content("Review $ARGUMENTS carefully.");
-
-        let rendered = loaded_skill_context_with_args(&skill, Some("src/foo.rs --strict")).unwrap();
-
-        assert!(rendered.contains("Review src/foo.rs --strict carefully."));
-    }
-
-    #[test]
-    fn loaded_skill_context_with_args_uses_context_without_args() {
-        let skill = skill_with_content("Review the code carefully.");
-
-        let rendered = loaded_skill_context_with_args(&skill, None).unwrap();
-
-        assert!(rendered.contains("# Loaded Skill: test-skill (skill)"));
-        assert!(rendered.contains("## Content\n\nReview the code carefully."));
-    }
-
-    #[test]
-    fn loaded_skill_context_shows_resolved_paths_for_supporting_files() {
-        let skill_dir = std::env::temp_dir().join("goose-test-skill");
-        let script_path = skill_dir.join("scripts").join("my-tool.exe");
-        let mut skill = skill_with_content("Run scripts/my-tool.exe.");
-        skill.path = skill_dir.to_string_lossy().into_owned();
-        skill.supporting_files = vec![script_path.to_string_lossy().into_owned()];
-
-        let rendered = loaded_skill_context_with_args(&skill, None).unwrap();
-        let resolved_path = script_path.to_string_lossy().replace('\\', "/");
-
-        assert!(rendered.contains("Relative paths in this skill resolve from the skill directory"));
-        assert!(rendered.contains("scripts/my-tool.exe"));
-        assert!(rendered.contains(&resolved_path));
-        assert!(rendered.contains("load_skill(name: \"test-skill/scripts/my-tool.exe\")"));
     }
 
     #[test]

@@ -57,7 +57,7 @@ fn with_path_root(test: impl FnOnce(&Path)) {
 fn new_and_rotated_request_logs_are_owner_only_under_any_umask() {
     for mask in [0o022, 0o000, 0o400] {
         with_path_root(|root| {
-            let _umask = Umask::set(mask);
+            let _umask = Umask::set(mask as libc::mode_t);
             let log = RequestLog::new(LOGS_TO_KEEP).unwrap();
             for i in 0..LOGS_TO_KEEP + 2 {
                 write_request(&log, &format!("request {i}"));

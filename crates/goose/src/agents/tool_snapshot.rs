@@ -560,11 +560,7 @@ impl PlatformTools {
             .into_iter()
             .filter_map(|request| {
                 let call = request.tool_call.as_ref().ok()?;
-                let item = catalog.iter().find(|item| {
-                    item.tool.name == call.name
-                        && get_tool_owner(&item.tool).as_deref()
-                            != Some(crate::skills::EXTENSION_NAME)
-                })?;
+                let item = catalog.iter().find(|item| item.tool.name == call.name)?;
                 let result = self.call(
                     item,
                     call.clone(),

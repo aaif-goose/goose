@@ -127,7 +127,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = { version = "0.1.8", default-features = false }
 serde_urlencoded = { version = "0.7.1", default-features = false }
-jsonschema = { version = "0.56", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 uuid = { workspace = true, features = ["v7"] }
 regex = { workspace = true }
 async-trait = { workspace = true }
@@ -167,7 +167,7 @@ goose-agent = { path = "../goose-agent" }
 rand = { workspace = true }
 tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }
 urlencoding = { workspace = true }
-v_htmlescape = { version = "0.17", default-features = false, features = ["std"] }
+v_htmlescape = { version = "1.0", default-features = false, features = ["std"] }
 sqlx = { version = "0.9.0", default-features = false, features = [
     "runtime-tokio",
     "sqlite",

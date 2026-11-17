@@ -189,8 +189,9 @@ pub(crate) fn prepare_inference_tools(
     if code_execution_active {
         tools.retain(|tool| {
             let owner = crate::agents::extension_manager::get_tool_owner(tool);
-            (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
-                && owner.is_none())
+            (owner.is_none()
+                && (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
+                    || tool.name == goose_agent::skills::LOAD_SKILL_TOOL_NAME))
                 || owner.is_some_and(|owner| {
                     crate::agents::platform_extensions::is_unprefixed_extension(&owner)
                 })

@@ -1152,7 +1152,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
 dependencies = [
  "fastrand",
- "gloo-timers",
+ "gloo-timers 0.3.0",
  "tokio",
 ]
 
@@ -2821,6 +2821,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-new"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cdc8d50f426189eef89dac62fabfa0abb27d5cc008f25bf4156a0203325becc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "derive_arbitrary"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3351,6 +3362,17 @@ name = "fancy-regex"
 version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a2e16b9a584b602f1e0e5e22c30ca0906786088c27500653e432d086def8b53"
 dependencies = [
  "bit-set",
  "regex-automata",
@@ -3974,6 +3996,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gloo-timers"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "482ce8a491a501da4cd806bd190275363d674f2845005c6ddbd5d3e1dd54495d"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "goblin"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3986,7 +4020,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-http",
@@ -4121,7 +4155,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "quote",
  "syn 3.0.10",
@@ -4160,7 +4194,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "agent-client-protocol",
  "anstream",
@@ -4285,7 +4319,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4323,7 +4357,7 @@ dependencies = [
  "env-lock",
  "futures",
  "getrandom 0.4.3",
- "gloo-timers",
+ "gloo-timers 0.4.0",
  "once_cell",
  "rand 0.10.3",
  "regex",
@@ -4384,7 +4418,7 @@ dependencies = [
 
 [[package]]
 name = "goose-roaming"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4435,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4443,7 +4477,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -5536,15 +5570,15 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.56.0"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6a806f80c1f5560431009ce5ec29b59d38f950e0cd7db5f1b8925e6d8104e21"
+checksum = "0e37f27df77c7887edbc5f5a59ecd8e5ec4a669319266ec1b61068667a603183"
 dependencies = [
  "ahash",
  "bytecount",
  "data-encoding",
  "email_address",
- "fancy-regex 0.19.2",
+ "fancy-regex 0.20.2",
  "fraction",
  "getrandom 0.3.4",
  "itoa",
@@ -5564,23 +5598,24 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.56.0"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb862addfa7782108933abcf842fe25334523a9df5b89ea4d9620e3dd7b42181"
+checksum = "7e41151614b6c927e21982be8bef5a26741ae5a0ae6a781eedee2aa930a980e6"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.56.0"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a05cd404c5ff6e2731dbbf7e290a27417750acfb59e329560a1d0af384c93fb0"
+checksum = "1515b9a91134ef67d7bac95c2d76fbc7e383c4c55ee544204ceec8088f881fef"
 dependencies = [
  "ahash",
  "bytecount",
  "fraction",
  "getrandom 0.3.4",
+ "memchr",
  "num-cmp",
  "num-traits",
  "serde_json",
@@ -5788,9 +5823,9 @@ dependencies = [
 
 [[package]]
 name = "lopdf"
-version = "0.45.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfffda0fe1ab0157e1a13c14bebd3f28671f2fccb7922f0722ec53926e6922d3"
+checksum = "c6ad532ff9262dd4bfd6e085400cbb39959d48cb8d08518b01b68f77bdf6feca"
 dependencies = [
  "aes 0.9.3",
  "bitflags 2.13.2",
@@ -7926,9 +7961,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.56.0"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3b4a92fac7e28c27de3ad26df2ecb9e652f227b258e845af034052e5b22c96c"
+checksum = "a028057ef852c58a42d75e09da87b5e733f4030f4c7411728955e4f87203a577"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -10658,13 +10693,12 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.26.13"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
+checksum = "37b2bed8f39a73439f3b0b7ed8f452be5d2911b5e9da69d352ef113bb7448fb8"
 dependencies = [
  "cc",
  "regex",
- "regex-syntax",
  "serde_json",
  "streaming-iterator",
  "tree-sitter-language",
@@ -10712,9 +10746,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-language"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca0d1bf6fdd806e43ae5198f82f527056d359def39e54e67a0f478ac09dac081"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
 
 [[package]]
 name = "tree-sitter-python"
@@ -11163,15 +11197,18 @@ dependencies = [
 
 [[package]]
 name = "v_escape-base"
-version = "0.1.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1212fce830b75af194b578e55b3db9049f2c8c45f58d397fb25602fdb50fb3d"
+checksum = "be17d1ebd0a2a1acc817577248ebe21bad513adf35b5bad71ab6adfd74a6de35"
+dependencies = [
+ "derive-new",
+]
 
 [[package]]
 name = "v_htmlescape"
-version = "0.17.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "befb3d53c9e3ec641417685896cbc8cc5bd264d6a2e190c56aaef1af24740d99"
+checksum = "70210eadf6232ce4de5cc24c46500ba6f1ae59308ea445a865b1dff3396c4f7a"
 dependencies = [
  "v_escape-base",
 ]

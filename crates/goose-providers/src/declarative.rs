@@ -17,6 +17,7 @@ pub(crate) mod declarative_providers {
         aihubmix,
         aimlapi,
         alibaba,
+        amazeeai,
         atomic_chat,
         celeris,
         cerebras,

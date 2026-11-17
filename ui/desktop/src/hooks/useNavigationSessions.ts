@@ -68,6 +68,9 @@ export function useNavigationSessions() {
     [recentSessions]
   );
   const lastSessionIdRef = useRef<string | null>(null);
+  // Bumped by each status refresh and by every rename or deletion, so a list
+  // response that started earlier cannot undo a newer change.
+  const statusRefreshVersionRef = useRef(0);
 
   const activeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const currentSessionId =
@@ -159,6 +162,7 @@ export function useNavigationSessions() {
 
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
+      statusRefreshVersionRef.current++;
 
       setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
 
@@ -178,6 +182,7 @@ export function useNavigationSessions() {
       const { sessionId, newName, userInitiated } = (
         event as CustomEvent<{ sessionId: string; newName: string; userInitiated?: boolean }>
       ).detail;
+      statusRefreshVersionRef.current++;
 
       setRecentSessions((prev) =>
         prev.map((session) =>
@@ -195,6 +200,36 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
+  }, []);
+
+  useEffect(() => {
+    const streamStates = new Map<string, string>();
+
+    const handleStatusUpdate = (event: Event) => {
+      const { sessionId, streamState } = (
+        event as CustomEvent<{ sessionId: string; streamState: string }>
+      ).detail;
+      const previousStreamState = streamStates.get(sessionId);
+      streamStates.set(sessionId, streamState);
+
+      // A rename by another process, such as `goose session rename`, sends no
+      // notification, so reload the names when a turn ends or a session loads again.
+      const turnOrLoadFinished =
+        streamState === 'idle' &&
+        (previousStreamState === 'streaming' || previousStreamState === 'loading');
+      if (!turnOrLoadFinished) return;
+
+      const version = ++statusRefreshVersionRef.current;
+      acpListRecentSessions(MAX_RECENT_SESSIONS)
+        .then((listed) => {
+          if (version !== statusRefreshVersionRef.current) return;
+          setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
+        })
+        .catch((error) => console.error('Failed to refresh sessions:', error));
+    };
+
+    window.addEventListener(AppEvents.SESSION_STATUS_UPDATE, handleStatusUpdate);
+    return () => window.removeEventListener(AppEvents.SESSION_STATUS_UPDATE, handleStatusUpdate);
   }, []);
 
   const handleNavClick = useCallback(
