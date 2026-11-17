@@ -18,11 +18,12 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::state_machine::{
     CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
     GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource,
-    GooseToolApproval, InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation,
-    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    GooseToolApproval, InferenceRunner, McpPromptOperation, Operation, PlatformExtensionOperation,
+    ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
     SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, ThinkingRecoveryOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnavailableDecisions,
+    UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -137,6 +138,11 @@ pub(crate) fn build_state_machine(
         Arc::clone(&skills),
         Arc::new(RecipeOperation::new(Arc::clone(&services))),
         Arc::new(PlatformExtensionOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+        )),
+        Arc::new(SubdirectoryHintOperation),
+        Arc::new(McpPromptOperation::new(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
         )),
