@@ -237,6 +237,9 @@ pub struct HookContext {
     pub tool_input: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_output: Option<Value>,
+    /// `PostToolUseFailure` only: why the call failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,6 +271,7 @@ impl HookContext {
             tool_name: None,
             tool_input: None,
             tool_output: None,
+            error: None,
             message: None,
             last_assistant_message: None,
             working_dir: None,
@@ -288,6 +292,11 @@ impl HookContext {
 
     pub fn with_tool_output(mut self, output: Value) -> Self {
         self.tool_output = Some(output);
+        self
+    }
+
+    pub fn with_error(mut self, error: impl Into<String>) -> Self {
+        self.error = Some(error.into());
         self
     }
 
