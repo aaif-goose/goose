@@ -9,6 +9,10 @@ repository.workspace = true
 description = "The GDK's Agent Loop"
 
 [features]
+default = ["rustls-tls"]
+# TLS for streamable HTTP extensions; native targets only.
+rustls-tls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
 # Test accessors into the MCP runtime for crates that test against it.
 test-support = []
 
