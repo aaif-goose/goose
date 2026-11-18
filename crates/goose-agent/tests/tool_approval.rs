@@ -82,6 +82,7 @@ impl ToolApproval<()> for FakeApproval {
                     }),
                     Reply::Ask(prompt) => Ok(ApprovalDecision::Ask {
                         prompt: prompt.map(str::to_string),
+                        tool_meta: Default::default(),
                     }),
                     Reply::Fail => anyhow::bail!("approval crashed"),
                 }

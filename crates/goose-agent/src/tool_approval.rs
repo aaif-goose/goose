@@ -12,15 +12,23 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
     OperationResult,
 };
-use crate::tool_call_state::{add_error_response, mark_executable, tool_calls, ToolCallState};
+use crate::tool_call_state::{
+    add_error_response, mark_executable, tool_calls, ToolCallState, EXECUTABLE_KEY,
+};
 
 pub const DEFAULT_DECLINED_MESSAGE: &str = "The user declined to run this tool.";
 
 #[derive(Debug)]
 pub enum ApprovalDecision {
     Allow,
-    Deny { reason: String },
-    Ask { prompt: Option<String> },
+    Deny {
+        reason: String,
+    },
+    Ask {
+        prompt: Option<String>,
+        /// Metadata saved on the tool request alongside the approval state.
+        tool_meta: serde_json::Map<String, serde_json::Value>,
+    },
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -118,8 +126,15 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
                 ApprovalDecision::Deny { reason } => {
                     add_error_response(&mut tool_responses, request, &reason)
                 }
-                ApprovalDecision::Ask { prompt } => {
-                    effects.push(mark_executable(&request.id, false));
+                ApprovalDecision::Ask {
+                    prompt,
+                    mut tool_meta,
+                } => {
+                    tool_meta.insert(EXECUTABLE_KEY.to_string(), false.into());
+                    effects.push(ConversationEffect::PatchToolRequestMeta {
+                        tool_call_id: request.id.clone(),
+                        patch: tool_meta.into(),
+                    });
                     effects.push(confirmation_request(request, call, prompt).into());
                 }
             }
