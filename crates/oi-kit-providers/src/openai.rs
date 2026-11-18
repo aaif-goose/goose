@@ -331,7 +331,7 @@ impl OpenAiProvider {
         payload: &mut serde_json::Value,
         model_config: &ModelConfig,
     ) {
-        if !Self::PROVIDERS_NEEDING_RESPONSES_REASONING_EFFORT_MAPPING.contains(&self.name.as_str())
+        if !Self::maps_all_responses_thinking_efforts(&self.name)
             || model_config.request_params.as_ref().is_some_and(|params| {
                 params.contains_key("reasoning") || params.contains_key("reasoning_effort")
             })
@@ -553,6 +553,10 @@ impl OpenAiProvider {
     /// model it serves, including non-OpenAI models that
     /// [`ModelConfig::openai_reasoning_for_model`] does not recognise.
     const PROVIDERS_NEEDING_RESPONSES_REASONING_EFFORT_MAPPING: &[&str] = &["perplexity"];
+
+    pub fn maps_all_responses_thinking_efforts(provider_name: &str) -> bool {
+        Self::PROVIDERS_NEEDING_RESPONSES_REASONING_EFFORT_MAPPING.contains(&provider_name)
+    }
 
     /// Maps the unified thinking effort onto the Perplexity Agent API
     /// `reasoning.effort` levels. The API rejects `off`, so `Off` is sent as

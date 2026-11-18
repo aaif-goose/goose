@@ -11,6 +11,7 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Client, ConnectionTo};
 use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::openai::OpenAiProvider;
 use oi_kit_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use serde::Serialize;
 use strum::{EnumMessage, VariantNames};
@@ -300,7 +301,7 @@ pub(super) fn build_config_options(
         .map(|m| SessionConfigSelectOption::new(m.id.clone(), m.name.clone()))
         .collect();
     let (thinking_effort_options, current_thinking_effort) =
-        build_thinking_effort_choices(model_config, effort_support);
+        build_thinking_effort_choices(model_config, provider_selection, effort_support);
     vec![
         SessionConfigOption::select(
             "provider",
@@ -340,6 +341,7 @@ pub(super) fn build_config_options(
 /// name can never satisfy.
 fn build_thinking_effort_choices(
     model_config: &ModelConfig,
+    provider_name: &str,
     effort_support: &ThinkingEffortSupport,
 ) -> (Vec<SessionConfigSelectOption>, String) {
     match effort_support {
@@ -361,14 +363,14 @@ fn build_thinking_effort_choices(
             )
         }
         ThinkingEffortSupport::Unspecified => (
-            thinking_effort_values(model_config)
+            thinking_effort_values(model_config, provider_name)
                 .iter()
                 .map(|effort| {
                     let effort = effort.to_string();
                     SessionConfigSelectOption::new(effort.clone(), effort)
                 })
                 .collect(),
-            current_thinking_effort_value(model_config),
+            current_thinking_effort_value(model_config, provider_name),
         ),
     }
 }
@@ -386,11 +388,39 @@ fn capability_thinking_effort_value(
         .unwrap_or_default()
 }
 
-fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffort] {
-    if !model_config.is_reasoning_model() {
+// The catalog row only informs the selector: copying it onto the model config
+// would also switch the OpenAI wire format into its reasoning-model shape.
+fn is_reasoning_model_for_provider(model_config: &ModelConfig, provider_name: &str) -> bool {
+    model_config
+        .reasoning
+        .or_else(|| {
+            crate::config::declarative_providers::load_provider(provider_name)
+                .ok()?
+                .config
+                .catalog_provider_id
+                .and_then(|catalog_provider_id| {
+                    oi_kit_providers::canonical::maybe_get_canonical_model(
+                        &catalog_provider_id,
+                        &model_config.model_name,
+                    )
+                })?
+                .reasoning
+        })
+        .unwrap_or_else(|| model_config.is_reasoning_model())
+}
+
+fn offers_native_effort_levels(model_config: &ModelConfig, provider_name: &str) -> bool {
+    !OpenAiProvider::maps_all_responses_thinking_efforts(provider_name)
+        && (model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model())
+}
+
+fn thinking_effort_values(
+    model_config: &ModelConfig,
+    provider_name: &str,
+) -> &'static [ThinkingEffort] {
+    if !is_reasoning_model_for_provider(model_config, provider_name) {
         &[ThinkingEffort::Off]
-    } else if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model()
-    {
+    } else if offers_native_effort_levels(model_config, provider_name) {
         &[
             ThinkingEffort::Low,
             ThinkingEffort::High,
@@ -407,15 +437,15 @@ fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffor
     }
 }
 
-fn current_thinking_effort_value(model_config: &ModelConfig) -> String {
-    if !model_config.is_reasoning_model() {
+fn current_thinking_effort_value(model_config: &ModelConfig, provider_name: &str) -> String {
+    if !is_reasoning_model_for_provider(model_config, provider_name) {
         return "off".to_string();
     }
 
     let configured = model_config
         .thinking_effort()
         .or_else(|| Config::global().get_goose_thinking_effort());
-    if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model() {
+    if offers_native_effort_levels(model_config, provider_name) {
         return match configured {
             Some(ThinkingEffort::Off | ThinkingEffort::Low) => ThinkingEffort::Low,
             Some(ThinkingEffort::Medium | ThinkingEffort::High) => ThinkingEffort::High,
@@ -869,6 +899,78 @@ mod tests {
         };
 
         assert_eq!(select.current_value.0.as_ref(), "high");
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(
+                ["off", "low", "medium", "high", "max"]
+                    .into_iter()
+                    .map(|effort| SessionConfigSelectOption::new(effort, effort))
+                    .collect()
+            )
+        );
+    }
+
+    #[test]
+    fn test_build_config_options_prefers_explicit_reasoning_over_provider_catalog() {
+        const NEMOTRON: &str = "perplexity/nemotron-3.5-super-120b-a12b";
+        let mut model_config =
+            ModelConfig::new(NEMOTRON).with_thinking_effort(ThinkingEffort::High);
+        model_config.reasoning = Some(false);
+
+        let options = build_config_options(
+            &build_mode_state(GooseMode::Auto).unwrap(),
+            &model_selection(NEMOTRON, &[NEMOTRON]),
+            &model_config,
+            "perplexity",
+            vec![SessionConfigSelectOption::new("perplexity", "perplexity")],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        assert_eq!(select.current_value.0.as_ref(), "off");
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(vec![
+                SessionConfigSelectOption::new("off", "off")
+            ])
+        );
+    }
+
+    #[test_case("perplexity/kimi-k3", "off" ; "kimi k3 off")]
+    #[test_case("perplexity/kimi-k3", "medium" ; "kimi k3 medium")]
+    #[test_case("perplexity/glm-5.3", "off" ; "glm 5.3 off")]
+    #[test_case("perplexity/glm-5.3-flash", "medium" ; "glm 5.3 flash medium")]
+    fn test_build_config_options_offers_every_effort_the_provider_maps(
+        model_name: &str,
+        effort: &str,
+    ) {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some(effort))]);
+        let model_config =
+            crate::model_config::model_config_from_user_config("perplexity", model_name).unwrap();
+
+        let options = build_config_options(
+            &build_mode_state(GooseMode::Auto).unwrap(),
+            &model_selection(model_name, &[model_name]),
+            &model_config,
+            "perplexity",
+            vec![SessionConfigSelectOption::new("perplexity", "perplexity")],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        assert_eq!(select.current_value.0.as_ref(), effort);
         assert_eq!(
             select.options,
             agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(
