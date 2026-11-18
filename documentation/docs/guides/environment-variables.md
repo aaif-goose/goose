@@ -470,13 +470,13 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
 
 goose appends `/v1/traces` to the base endpoint when sending traces, so the full URL becomes `https://your-backend.example.com/api/otel/v1/traces`. Check your backend's OTLP ingestion docs to confirm the expected base path.
 
-By default, model prompts and tool results are **not** included in exported traces. Enable them with:
+Exported traces can include user prompts (`user_message` and `trace_input`), assistant replies (`trace_output`), and tool arguments (`input`) in legacy fields even when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is unset or set to `false`. Use a trusted backend whenever you export traces.
+
+GenAI message and tool content capture is off by default. Set the variable to `true` to enable capture for `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and the legacy tool `output` field.
 
 ```bash
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 ```
-
-When this is on, message content is sent to the configured backend. Only enable it if your backend is trusted and you are comfortable with that data leaving your machine.
 
 [otel-env]: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
 
