@@ -2,11 +2,17 @@
 //! while loaded MCP skill instructions remain in a session's context every tool
 //! call is approved explicitly too: those instructions are server content, so
 //! standing permissions granted for the user's own work do not cover them.
+//!
+//! A load prompt says how the skill compares with what the user last approved
+//! from that server (see `baseline`).
+
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME;
 
+use super::baseline::{Grade, SkillBaselineStore};
 use super::mcp;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolRequest};
@@ -29,14 +35,79 @@ pub(crate) fn requested_mcp_skill(request: &ToolRequest) -> Option<&str> {
 
 const LOAD_NOTICE: &str = "Skills are instructions written by the server. Approving this load does not grant tool, filesystem, or code-execution permissions, and while the skill is loaded every tool call asks for approval.";
 
-pub struct McpSkillApprovalInspector;
+pub struct McpSkillApprovalInspector {
+    baselines: Arc<SkillBaselineStore>,
+}
 
 impl McpSkillApprovalInspector {
-    fn load_prompt(&self, name: &str) -> String {
-        format!(
-            "Load MCP skill `{}`?\n\n{LOAD_NOTICE}",
-            mcp::context_label(name)
-        )
+    pub fn new(baselines: Arc<SkillBaselineStore>) -> Self {
+        Self { baselines }
+    }
+
+    fn load_prompt(&self, session_id: &str, name: &str) -> String {
+        let name_label = mcp::context_label(name);
+        let Some((skill, relative_path)) = mcp::listed_skill_for_request(session_id, name) else {
+            if let Some((extension, uri)) = mcp::direct_skill_reference(name) {
+                mcp::take_pinned(session_id, extension, uri);
+            }
+            return format!(
+                "Load MCP skill `{name_label}`?\n\n{LOAD_NOTICE}\n\nThis skill is not in the server's current listing, so goose cannot compare it with what you approved before."
+            );
+        };
+        let origin = mcp::context_label(&skill.extension_name);
+        if let Some(relative_path) = relative_path {
+            return format!(
+                "Read `{}` from MCP skill `{}` served by `{origin}`?\n\n{LOAD_NOTICE}",
+                mcp::context_label(&relative_path),
+                mcp::context_label(&skill.name),
+            );
+        }
+
+        let change = self.baselines.change(&skill);
+        let approved_on = change
+            .approved_at
+            .map(|at| at.format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
+        let mut prompt =
+            format!("Load MCP skill `{name_label}` served by `{origin}`?\n\n{LOAD_NOTICE}\n\n");
+        match change.grade {
+            Grade::New => prompt.push_str("You have not approved this skill before."),
+            Grade::Unchanged => prompt.push_str(&format!(
+                "Unchanged since you approved it on {approved_on}."
+            )),
+            Grade::Review | Grade::Escalate => {
+                let severity = if change.grade == Grade::Escalate {
+                    "CHANGED, review carefully"
+                } else {
+                    "changed"
+                };
+                prompt.push_str(&format!(
+                    "{severity} since you approved it on {approved_on}:"
+                ));
+                for finding in &change.findings {
+                    prompt.push_str(&format!("\n- {}", mcp::context_label(&finding.to_string())));
+                }
+            }
+        }
+        let surface = self
+            .baselines
+            .surface_change(&skill.extension_name, &mcp::listed_skills(session_id));
+        if !surface.is_empty() {
+            prompt.push_str(&format!(
+                "\n\nSince your last approval `{origin}` also {}.",
+                [("added", &surface.added), ("removed", &surface.removed)]
+                    .into_iter()
+                    .filter(|(_, names)| !names.is_empty())
+                    .map(|(verb, names)| format!(
+                        "{verb} {}",
+                        mcp::context_label(&names.join(", "))
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ));
+        }
+        mcp::pin_for_approval(session_id, skill);
+        prompt
     }
 }
 
@@ -66,7 +137,7 @@ impl ToolInspector for McpSkillApprovalInspector {
             .filter_map(|request| {
                 let (prompt, reason) = match requested_mcp_skill(request) {
                     Some(name) => (
-                        self.load_prompt(name),
+                        self.load_prompt(session_id, name),
                         "MCP skills require explicit per-load approval",
                     ),
                     None if !origins.is_empty() => (
@@ -95,6 +166,72 @@ impl ToolInspector for McpSkillApprovalInspector {
 mod tests {
     use super::*;
     use rmcp::{model::CallToolRequestParams, object};
+
+    fn inspector() -> McpSkillApprovalInspector {
+        McpSkillApprovalInspector::new(Arc::new(SkillBaselineStore::new(
+            tempfile::tempdir().unwrap().path(),
+        )))
+    }
+
+    fn prompt_of(result: &InspectionResult) -> &str {
+        match &result.action {
+            InspectionAction::RequireApproval(Some(prompt)) => prompt,
+            other => panic!("expected an approval prompt, got {other:?}"),
+        }
+    }
+
+    fn listed(skill_md: &str) -> mcp::SkillRecord {
+        let uri = "skill://acme/billing/SKILL.md";
+        mcp::SkillRecord {
+            uri: uri.to_string(),
+            name: "billing".to_string(),
+            description: "Billing".to_string(),
+            frontmatter: serde_json::json!({ "name": "billing", "description": "Billing" })
+                .as_object()
+                .unwrap()
+                .clone(),
+            extension_name: "acme".to_string(),
+            resources: mcp::SkillResources::Files(vec![rmcp::model::SkillResource::from_bytes(
+                uri,
+                skill_md.as_bytes(),
+            )]),
+        }
+    }
+
+    #[tokio::test]
+    async fn load_prompt_grades_the_listing_against_the_last_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let baselines = Arc::new(SkillBaselineStore::new(dir.path()));
+        let inspector = McpSkillApprovalInspector::new(Arc::clone(&baselines));
+        let session = "approval-graded";
+        let original = listed("v1");
+
+        mcp::remember_listing(session, std::slice::from_ref(&original));
+        let first = inspector
+            .inspect(session, &[load("acme::billing")], &[], GooseMode::Auto)
+            .await
+            .unwrap();
+        assert!(prompt_of(&first[0]).contains("You have not approved this skill before."));
+        assert_eq!(
+            mcp::take_pinned(session, "acme", &original.uri).as_ref(),
+            Some(&original)
+        );
+
+        baselines.approve(&original, Some(std::slice::from_ref(&original)));
+        let mut sleeper = listed("sleeper");
+        sleeper.uri = "skill://acme/sleeper/SKILL.md".to_string();
+        sleeper.name = "sleeper".to_string();
+        mcp::remember_listing(session, &[listed("v2"), sleeper]);
+        let changed = inspector
+            .inspect(session, &[load("acme::billing")], &[], GooseMode::Auto)
+            .await
+            .unwrap();
+        let prompt = prompt_of(&changed[0]);
+        assert!(prompt.contains("CHANGED, review carefully"), "{prompt}");
+        assert!(prompt.contains("- instructions rewritten"), "{prompt}");
+        assert!(prompt.contains("also added sleeper"), "{prompt}");
+        mcp::clear_session(session);
+    }
 
     fn load(name: &str) -> ToolRequest {
         ToolRequest {
@@ -127,7 +264,7 @@ mod tests {
             "billing-server::skill://acme/refunds/SKILL.md",
             "billing-server::refunds/references/GUIDE.md",
         ] {
-            let results = McpSkillApprovalInspector
+            let results = inspector()
                 .inspect("approval-load", &[load(name)], &[], GooseMode::Auto)
                 .await
                 .unwrap();
@@ -147,7 +284,7 @@ mod tests {
         shell.tool_call = Ok(CallToolRequestParams::new("shell")
             .with_arguments(object!({ "command": "echo unsafe" })));
         hold("approval-active");
-        let results = McpSkillApprovalInspector
+        let results = inspector()
             .inspect("approval-active", &[shell], &[], GooseMode::Auto)
             .await
             .unwrap();
@@ -162,7 +299,7 @@ mod tests {
     async fn local_skills_and_tools_are_not_intercepted_without_a_held_skill() {
         let mut shell = load("refunds");
         shell.tool_call = Ok(CallToolRequestParams::new("shell"));
-        let results = McpSkillApprovalInspector
+        let results = inspector()
             .inspect(
                 "approval-local",
                 &[load("refunds"), shell],

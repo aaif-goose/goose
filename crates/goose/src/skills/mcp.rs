@@ -73,6 +73,89 @@ pub fn active_origins(session_id: &str) -> Vec<String> {
     origins
 }
 
+/// The latest listing per session, which approval prompts are graded against.
+static LISTED_SKILLS: LazyLock<StdMutex<HashMap<String, Vec<SkillRecord>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+
+/// The record an approval prompt was graded on, so the load that follows can
+/// refuse content that changed after the user saw the prompt.
+static PINNED_FOR_APPROVAL: LazyLock<StdMutex<HashMap<HeldSkillKey, SkillRecord>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+
+pub fn remember_listing(session_id: &str, skills: &[SkillRecord]) {
+    LISTED_SKILLS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(session_id.to_string(), skills.to_vec());
+}
+
+pub fn listed_skills(session_id: &str) -> Vec<SkillRecord> {
+    LISTED_SKILLS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(session_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
+pub fn pin_for_approval(session_id: &str, skill: SkillRecord) {
+    PINNED_FOR_APPROVAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(
+            held_skill_key(session_id, &skill.extension_name, &skill.uri),
+            skill,
+        );
+}
+
+pub fn take_pinned(session_id: &str, extension_name: &str, uri: &str) -> Option<SkillRecord> {
+    PINNED_FOR_APPROVAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&held_skill_key(session_id, extension_name, uri))
+}
+
+pub fn clear_session(session_id: &str) {
+    clear_held_skills(session_id);
+    LISTED_SKILLS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(session_id);
+    PINNED_FOR_APPROVAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .retain(|(pinned_session, _, _), _| pinned_session != session_id);
+}
+
+/// Resolves a `load_skill` name against the session's latest listing: the
+/// skill it names and, for a supporting file, the file's relative path.
+pub fn listed_skill_for_request(
+    session_id: &str,
+    requested: &str,
+) -> Option<(SkillRecord, Option<String>)> {
+    let listed = listed_skills(session_id);
+    let entries = merge_skill_entries(Vec::new(), listed.clone());
+    let (extension, uri, relative_path) = match requested_skill(&entries, requested) {
+        Some((entry, relative_path)) => (
+            entry
+                .properties
+                .get("mcpExtension")
+                .and_then(Value::as_str)?
+                .to_string(),
+            entry.path.clone(),
+            relative_path.map(str::to_string),
+        ),
+        None => {
+            let (extension, uri) = direct_skill_reference(requested)?;
+            (extension.to_string(), uri.to_string(), None)
+        }
+    };
+    listed
+        .into_iter()
+        .find(|skill| skill.extension_name == extension && skill.uri == uri)
+        .map(|skill| (skill, relative_path))
+}
+
 pub fn held_skill_key(session_id: &str, extension_name: &str, uri: &str) -> HeldSkillKey {
     (
         session_id.to_string(),
@@ -1112,6 +1195,28 @@ mod tests {
             ]),
         };
         assert_eq!(relative_supporting_files(&skill), ["references/GUIDE.md"]);
+    }
+
+    #[test]
+    fn requests_resolve_against_the_session_listing() {
+        let (payload, extension) = payload("billing", "stripe");
+        let skill = parse_skills_list(list(&payload), &extension)
+            .unwrap()
+            .skills
+            .remove(0);
+        remember_listing("listing-session", std::slice::from_ref(&skill));
+        let (found, path) =
+            listed_skill_for_request("listing-session", "stripe::billing/references/x.md").unwrap();
+        assert_eq!(found.uri, skill.uri);
+        assert_eq!(path.as_deref(), Some("references/x.md"));
+        assert!(listed_skill_for_request(
+            "listing-session",
+            "stripe::skill://acme/billing/SKILL.md"
+        )
+        .is_some());
+        assert!(listed_skill_for_request("listing-session", "other::billing").is_none());
+        clear_session("listing-session");
+        assert!(listed_skills("listing-session").is_empty());
     }
 
     #[test]

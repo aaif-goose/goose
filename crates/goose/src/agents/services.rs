@@ -1,3 +1,4 @@
+use crate::skills::baseline::SkillBaselineStore;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -345,6 +346,7 @@ pub struct StateMachineServices {
     pub platform_extensions: PlatformExtensions,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
+    pub(crate) skill_baselines: Arc<SkillBaselineStore>,
     pub(super) hook_manager: crate::hooks::HookManager,
     turn_settings: Option<TurnSettings>,
 }
@@ -545,6 +547,13 @@ impl StateMachineServices {
         let mut default_client = client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
+        let skill_baselines = Arc::new(SkillBaselineStore::new(
+            config
+                .permission_manager
+                .get_config_path()
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(".")),
+        ));
         let services = Arc::new(Self {
             extension_manager: Arc::new(ExtensionManager::new(
                 config.session_manager.clone(),
@@ -555,7 +564,9 @@ impl StateMachineServices {
                 config.permission_manager.clone(),
                 config.providers.clone(),
                 config.session_manager.clone(),
+                Arc::clone(&skill_baselines),
             ),
+            skill_baselines,
             session_manager: config.session_manager,
             permission_manager: config.permission_manager,
             providers: config.providers,
@@ -722,13 +733,15 @@ impl StateMachineServices {
         permission_manager: Arc<PermissionManager>,
         providers: Arc<ProviderManager>,
         session_manager: Arc<SessionManager>,
+        skill_baselines: Arc<SkillBaselineStore>,
     ) -> ToolInspectionManager {
         let mut tool_inspection_manager = ToolInspectionManager::new();
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
-        tool_inspection_manager
-            .add_inspector(Box::new(crate::skills::approval::McpSkillApprovalInspector));
+        tool_inspection_manager.add_inspector(Box::new(
+            crate::skills::approval::McpSkillApprovalInspector::new(skill_baselines),
+        ));
         tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/goose/adversary.md)

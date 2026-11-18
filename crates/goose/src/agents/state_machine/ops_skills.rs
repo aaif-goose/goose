@@ -55,6 +55,7 @@ impl SkillSource<Session> for GooseSkillSource {
         };
         let lease = &tools.mcp;
         let mut remote = mcp::listed_skill_records(lease.skills().await);
+        mcp::remember_listing(&session.id, &remote);
         remote.extend(
             mcp::held_skill_records(&session.id)
                 .into_iter()
@@ -171,6 +172,16 @@ impl GooseSkillSource {
         manifest: SkillRecord,
     ) -> Result<Vec<ContentBlock>> {
         mcp::ensure_loadable(&manifest)?;
+        if let Some(pinned) = mcp::take_pinned(session_id, &manifest.extension_name, &manifest.uri)
+        {
+            if pinned.resources != manifest.resources || pinned.frontmatter != manifest.frontmatter
+            {
+                return Err(anyhow!(
+                    "Skill '{}' changed after its approval was requested. Load it again to review the change.",
+                    skill.name
+                ));
+            }
+        }
         let markdown = match lease
             .read_skill_resource(
                 &manifest.extension_name,
@@ -210,6 +221,9 @@ impl GooseSkillSource {
             }
         }
         let tagged = mcp::origin_tagged_context(&manifest.extension_name, &manifest.uri, &rendered);
+        self.services
+            .skill_baselines
+            .approve(&manifest, Some(&mcp::listed_skills(session_id)));
         mcp::hold_skill(session_id, manifest);
         Ok(vec![ContentBlock::text(tagged)])
     }
@@ -321,6 +335,43 @@ mod tests {
         assert!(text(&loaded).starts_with(mcp::MCP_SKILL_CONTEXT_MARKER));
         assert!(text(&loaded).contains("Do the work."));
         assert_eq!(mcp::active_origins(&session.id), ["billing-server"]);
+        mcp::clear_held_skills(&session.id);
+    }
+
+    #[tokio::test]
+    async fn a_verified_load_becomes_the_baseline_and_drifted_content_is_refused() {
+        let client = Arc::new(SkillClient::new());
+        let (source, session) =
+            source_with_skill_server("skills-baseline", Arc::clone(&client)).await;
+        let skills = source.skills(&session).await.unwrap();
+        let listed = mcp::listed_skills(&session.id).remove(0);
+
+        let mut seen_in_prompt = listed.clone();
+        seen_in_prompt
+            .frontmatter
+            .insert("allowed-tools".to_string(), "Read".into());
+        mcp::pin_for_approval(&session.id, seen_in_prompt);
+        let error = source
+            .load_external(&session, &skills, "billing-server::billing", None)
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(error.to_string().contains("changed after its approval"));
+        assert_eq!(
+            source.services.skill_baselines.change(&listed).grade,
+            crate::skills::baseline::Grade::New
+        );
+
+        mcp::pin_for_approval(&session.id, listed.clone());
+        source
+            .load_external(&session, &skills, "billing-server::billing", None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            source.services.skill_baselines.change(&listed).grade,
+            crate::skills::baseline::Grade::Unchanged
+        );
         mcp::clear_held_skills(&session.id);
     }
 

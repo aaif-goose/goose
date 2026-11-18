@@ -4,6 +4,7 @@
 //! source types.
 
 pub mod approval;
+pub mod baseline;
 mod builtin;
 pub mod mcp;
 mod supporting_files;
