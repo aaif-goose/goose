@@ -1,7 +1,7 @@
 use super::*;
-use crate::agents::mcp_client::McpCallContext as ToolCallContext;
 use crate::agents::GoosePlatform;
 use crate::agents::StateMachineServices;
+use goose_agent::mcp::client::McpCallContext as ToolCallContext;
 use rmcp::model::{CallToolResult, ErrorCode};
 use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
 use rmcp::{object, ServiceError as Error};

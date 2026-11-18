@@ -8,6 +8,8 @@ pub mod extension;
 pub mod inference;
 pub mod machine;
 pub mod max_turns;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod mcp;
 pub mod operation;
 pub mod skills;
 pub mod slash_command;

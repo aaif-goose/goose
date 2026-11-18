@@ -276,7 +276,7 @@ pub struct StateMachineServicesConfig {
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
+    pub elicitation_handler: Option<goose_agent::mcp::client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub providers: Arc<ProviderManager>,
     /// Sessions kept loaded before the least recently used idle one is released.

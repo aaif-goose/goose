@@ -28,12 +28,12 @@ use super::{
     ToolCallNotificationEmitter, ToolCallResult, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::container::Container;
-use crate::agents::extension::{name_to_key, ExtensionError, ExtensionInfo};
-use crate::agents::mcp_client::McpCallContext;
-use crate::agents::mcp_client::McpClientTrait;
-use crate::conversation::message::Message;
-use goose_agent::tool_visibility::is_tool_visible_to_app;
+use crate::extension::{name_to_key, ExtensionError, ExtensionInfo};
+use crate::mcp::client::McpCallContext;
+use crate::mcp::client::McpClientTrait;
+use crate::mcp::container::Container;
+use crate::tool_visibility::is_tool_visible_to_app;
+use goose_provider_types::conversation::message::Message;
 
 #[derive(Debug)]
 pub struct ExtensionSet<C> {

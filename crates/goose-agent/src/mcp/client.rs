@@ -1,7 +1,10 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::extension_runtime::{ToolCallNotificationEmitter, TraceContextInjector};
+use crate::mcp::{ToolCallNotificationEmitter, TraceContextInjector};
 
-use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
+pub const SESSION_ID_HEADER: &str = "agent-session-id";
+pub const TOOL_CALL_REQUEST_ID_HEADER: &str = "agent-tool-call-request-id";
+pub const WORKING_DIR_HEADER: &str = "agent-working-dir";
+
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,

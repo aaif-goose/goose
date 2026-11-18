@@ -6,12 +6,13 @@ use rmcp::model::{CallToolResult, JsonObject};
 use rmcp::transport::auth::CredentialStore;
 use rmcp::transport::AuthorizationManager;
 
-use crate::agents::container::Container;
-use crate::agents::extension::{
-    name_to_key, ExtensionConfigResolver, ExtensionError, ExtensionResult, TransportConfig,
+use crate::extension::ExtensionConfig as TransportConfig;
+use crate::extension::{
+    name_to_key, ExtensionConfigResolver, ExtensionError, ExtensionResult,
     DEFAULT_EXTENSION_TIMEOUT,
 };
-use crate::agents::mcp_client::{ConnectContext, McpClientTrait};
+use crate::mcp::client::{ConnectContext, McpClientTrait};
+use crate::mcp::container::Container;
 
 /// A config the runtime can select, compare and start.
 pub trait ExtensionSpec: Clone + PartialEq + std::fmt::Debug + Send + Sync + 'static {
@@ -52,8 +53,10 @@ pub trait ExtensionHost<C: ExtensionSpec>: Send + Sync {
         anyhow::bail!("secret '{key}' is not available")
     }
 
-    /// Changes whenever secrets or environment may have changed, so running
-    /// extensions are checked against their re-resolved config.
+    /// Changes whenever secrets or environment may have changed. On the next
+    /// resolution, runtime-connected extensions are checked against their
+    /// re-resolved config; host-connected extensions get new connections.
+    /// Existing leases keep their connections.
     fn config_generation(&self) -> u64 {
         0
     }

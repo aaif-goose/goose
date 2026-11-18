@@ -1,5 +1,4 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
@@ -12,6 +11,7 @@ use crate::goose_apps::{GooseApp, McpAppCache, WindowProps};
 use crate::prompt_template::render_template;
 use crate::providers::base::{Provider, ProviderUsage};
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
     ListResourcesResult, MetaObject, ReadResourceResult, Resource, ResourceContents,

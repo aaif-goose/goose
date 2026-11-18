@@ -20,9 +20,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::{ExtensionAuth, StaticOAuthClientConfig};
-use crate::agents::extension::{ExtensionError, ExtensionResult};
-use crate::agents::mcp_client::McpCallContext as ToolCallContext;
-use crate::agents::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use crate::extension::{ExtensionError, ExtensionResult};
+use crate::mcp::client::McpCallContext as ToolCallContext;
+use crate::mcp::client::{ConnectContext, McpClient, McpClientTrait};
 
 /// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
 fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
@@ -232,7 +232,7 @@ fn http_client(
 
 fn should_retry_legacy_after_empty_discover(
     result: &Result<McpClient, Box<ClientInitializeError>>,
-    capabilities: &super::super::mcp_client::GooseMcpClientCapabilities,
+    capabilities: &super::client::GooseMcpClientCapabilities,
 ) -> bool {
     capabilities.protocol_version.is_none()
         && result.as_ref().is_err_and(|error| {
@@ -334,13 +334,10 @@ impl OAuthStepUpClient {
         });
     }
 
-    async fn step_up_reconnect(
-        &self,
-        challenge: String,
-    ) -> Result<(), crate::agents::mcp_client::Error> {
+    async fn step_up_reconnect(&self, challenge: String) -> Result<(), crate::mcp::client::Error> {
         let params = self.params.read().await;
         let Some(auth) = params.auth.as_ref() else {
-            return Err(crate::agents::mcp_client::Error::McpError(ErrorData::new(
+            return Err(crate::mcp::client::Error::McpError(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 "step-up authorization is not available",
                 None,
@@ -355,7 +352,7 @@ impl OAuthStepUpClient {
             )
             .await
             .map_err(|e| {
-                crate::agents::mcp_client::Error::McpError(ErrorData::new(
+                crate::mcp::client::Error::McpError(ErrorData::new(
                     ErrorCode::INTERNAL_ERROR,
                     format!("step-up authorization failed: {e}"),
                     None,
@@ -369,7 +366,7 @@ impl OAuthStepUpClient {
         )
         .await
         .map_err(|e| {
-            crate::agents::mcp_client::Error::McpError(ErrorData::new(
+            crate::mcp::client::Error::McpError(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 format!("reconnect after step-up authorization failed: {e}"),
                 None,
@@ -382,16 +379,12 @@ impl OAuthStepUpClient {
 
     /// Run `op` against the current client; on an auth challenge, re-authorize
     /// and retry once.
-    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::agents::mcp_client::Error>
+    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::mcp::client::Error>
     where
         F: for<'a> Fn(
             &'a McpClient,
         ) -> Pin<
-            Box<
-                dyn std::future::Future<Output = Result<T, crate::agents::mcp_client::Error>>
-                    + Send
-                    + 'a,
-            >,
+            Box<dyn std::future::Future<Output = Result<T, crate::mcp::client::Error>> + Send + 'a>,
         >,
     {
         let first = {
@@ -433,7 +426,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListToolsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListToolsResult, crate::mcp::client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -454,7 +447,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Option<rmcp::model::JsonObject>,
         cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, crate::agents::mcp_client::Error> {
+    ) -> Result<CallToolResult, crate::mcp::client::Error> {
         let ctx = ctx.clone();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -476,7 +469,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListResourcesResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListResourcesResult, crate::mcp::client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -496,7 +489,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         uri: &str,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ReadResourceResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ReadResourceResult, crate::mcp::client::Error> {
         let session_id = session_id.to_string();
         let uri = uri.to_string();
         self.with_step_up_retry(move |client| {
@@ -513,7 +506,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListPromptsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListPromptsResult, crate::mcp::client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -534,7 +527,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Value,
         cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, crate::agents::mcp_client::Error> {
+    ) -> Result<GetPromptResult, crate::mcp::client::Error> {
         let session_id = session_id.to_string();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -701,7 +694,7 @@ async fn connect_over_unix_socket(
 mod tests {
     use super::*;
     use crate::action_required_manager::ActionRequiredManager;
-    use crate::agents::mcp_client::GooseMcpClientCapabilities;
+    use crate::mcp::client::GooseMcpClientCapabilities;
     use rmcp::transport::auth::InMemoryCredentialStore;
     use std::time::Duration;
     use tempfile::tempdir;

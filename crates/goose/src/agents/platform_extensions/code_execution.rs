@@ -3,12 +3,12 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
     get_tool_resource_uri, is_tool_owned_by_extension, CallRequest,
 };
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
     JsonObject, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl crate::agents::mcp_client::McpClientTrait for PendingClient {
+    impl goose_agent::mcp::client::McpClientTrait for PendingClient {
         async fn list_tools(
             &self,
             session_id: &str,
@@ -371,7 +371,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _: &crate::agents::mcp_client::McpCallContext,
+            _: &goose_agent::mcp::client::McpCallContext,
             _: &str,
             _: Option<JsonObject>,
             _: CancellationToken,
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl crate::agents::mcp_client::McpClientTrait for VisibilityClient {
+    impl goose_agent::mcp::client::McpClientTrait for VisibilityClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -499,7 +499,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _ctx: &crate::agents::mcp_client::McpCallContext,
+            _ctx: &goose_agent::mcp::client::McpCallContext,
             _name: &str,
             arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,

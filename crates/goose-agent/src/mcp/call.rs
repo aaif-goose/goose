@@ -4,7 +4,7 @@ use futures::Stream;
 use rmcp::model::{CallToolResult, ErrorData, ServerNotification};
 use tokio::sync::mpsc;
 
-use crate::conversation::message::Message;
+use goose_provider_types::conversation::message::Message;
 
 pub type ToolResult<T> = Result<T, ErrorData>;
 
