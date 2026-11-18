@@ -23,7 +23,7 @@ interface NavigationContextValue {
   isNavExpanded: boolean;
   setIsNavExpanded: (expanded: boolean) => void;
   navWidth: number;
-  setNavWidth: (width: number) => void;
+  setNavWidth: (width: number, persist: boolean) => void;
 }
 
 const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -66,10 +66,12 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     return NAV_DIMENSIONS.NAV_WIDTH;
   });
 
-  const setNavWidth = useCallback((width: number) => {
+  const setNavWidth = useCallback((width: number, persist: boolean) => {
     const clamped = Math.min(MAX_NAV_WIDTH, Math.max(MIN_NAV_WIDTH, width));
     setNavWidthState(clamped);
-    window.electron.setRendererStorage('navigation_width', String(clamped));
+    if (persist) {
+      window.electron.setRendererStorage('navigation_width', String(clamped));
+    }
   }, []);
 
   const isNavExpandedRef = useRef(isNavExpanded);

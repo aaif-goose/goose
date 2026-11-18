@@ -77,12 +77,13 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liv
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
-      setNavWidth(startWidth.current + (e.clientX - startX.current));
+      setNavWidth(startWidth.current + (e.clientX - startX.current), false);
     };
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       if (isResizing.current) {
         isResizing.current = false;
         setIsDragging(false);
+        setNavWidth(startWidth.current + (e.clientX - startX.current), true);
       }
     };
     window.addEventListener('mousemove', handleMouseMove);
