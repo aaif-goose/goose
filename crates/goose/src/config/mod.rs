@@ -1,11 +1,13 @@
 pub mod base;
 pub mod declarative_providers;
 mod experiments;
+pub mod extension_install;
 pub mod extensions;
 mod migrations;
 pub mod paths;
 pub mod permission;
 pub mod providers;
+pub mod registry_server;
 pub mod search_path;
 pub mod signup_openrouter;
 pub mod signup_tetrate;

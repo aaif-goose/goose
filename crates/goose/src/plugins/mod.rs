@@ -1,7 +1,6 @@
 pub mod discovery;
 pub mod formats;
 pub mod mcp_servers;
-pub mod registry_server;
 
 use crate::config::paths::Paths;
 use crate::config::Config;

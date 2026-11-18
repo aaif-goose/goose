@@ -2328,7 +2328,8 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 }
 
 async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
-    use goose::plugins::registry_server::{install, preview, ServerDocument, ServerSelection};
+    use goose::config::extension_install::{install, preview};
+    use goose::config::registry_server::{ServerDocument, ServerSelection};
     use std::io::IsTerminal;
     match command {
         PluginCommand::ImportServer {
@@ -2378,10 +2379,10 @@ async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
                 yes || interactive,
                 "pass --yes to confirm a non-interactive import"
             );
-            let entries = server.extensions(&selections)?;
+            let extensions = server.extensions(&selections)?;
             if !yes {
-                for entry in &entries {
-                    eprintln!("  {:?}: {:?}", entry.config.name(), preview(entry));
+                for extension in &extensions {
+                    eprintln!("  {:?}: {:?}", extension.name(), preview(extension));
                 }
                 if !cliclack::confirm("Import and enable these MCP extensions?")
                     .initial_value(false)
@@ -2390,9 +2391,9 @@ async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
                     return Ok(());
                 }
             }
-            install(Config::global(), &entries).await?;
-            for entry in entries {
-                println!("Imported and enabled MCP server {:?}", entry.config.name());
+            install(Config::global(), &extensions).await?;
+            for extension in extensions {
+                println!("Imported and enabled MCP server {:?}", extension.name());
             }
             Ok(())
         }

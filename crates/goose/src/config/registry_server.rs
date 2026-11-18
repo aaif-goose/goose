@@ -1,6 +1,6 @@
 //! Convert selected Registry entries without running a launcher or writing credentials.
-use crate::agents::extension::{Envs, ExtensionConfig, TransportConfig};
-use crate::config::{ExtensionEntry, DEFAULT_EXTENSION_TIMEOUT};
+use crate::agents::extension::{Envs, TransportConfig};
+use crate::config::DEFAULT_EXTENSION_TIMEOUT;
 use anyhow::{bail, ensure, Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -134,14 +134,14 @@ impl ServerDocument {
             .collect()
     }
 
-    pub fn extensions(&self, selections: &[ServerSelection]) -> Result<Vec<ExtensionEntry>> {
+    pub fn extensions(&self, selections: &[ServerSelection]) -> Result<Vec<TransportConfig>> {
         selections
             .iter()
             .map(|&selection| self.extension(selection))
             .collect()
     }
 
-    fn extension(&self, selection: ServerSelection) -> Result<ExtensionEntry> {
+    fn extension(&self, selection: ServerSelection) -> Result<TransportConfig> {
         let (kind, index) = match selection {
             ServerSelection::Package(i) => ("package", i),
             ServerSelection::Remote(i) => ("remote", i),
@@ -152,21 +152,17 @@ impl ServerDocument {
             format!("{}-{kind}-{index}", self.name)
         };
         let description = self.description.clone();
-        let config = match selection {
+        match selection {
             ServerSelection::Package(i) => {
                 let package = self.packages.get(i).context("package index out of range")?;
-                package.config(name, description)?
+                package.config(name, description)
             }
             ServerSelection::Remote(i) => self
                 .remotes
                 .get(i)
                 .context("remote index out of range")?
-                .config(name, description)?,
-        };
-        Ok(ExtensionEntry {
-            enabled: true,
-            config: ExtensionConfig::External(config),
-        })
+                .config(name, description),
+        }
     }
 }
 
@@ -175,21 +171,9 @@ impl Package {
         if self.transport.kind != "stdio" {
             return self.transport.config(name, description);
         }
-        let (default_runtime, separator, public_registry) = match self.registry_type.as_str() {
-            "npm" => ("npx", "@", "https://registry.npmjs.org"),
-            "pypi" => ("uvx", "==", "https://pypi.org"),
-            "oci" => ("docker", ":", "https://docker.io"),
-            other => bail!("unsupported package registry type '{other}'"),
-        };
         ensure!(
             self.file_sha256.is_none(),
             "package integrity hashes are not supported"
-        );
-        ensure!(
-            self.registry_base_url
-                .as_deref()
-                .is_none_or(|url| url.trim_end_matches('/') == public_registry),
-            "custom package registries are not supported"
         );
         ensure!(
             !self.identifier.is_empty()
@@ -197,46 +181,47 @@ impl Package {
                 && !self.identifier.contains('\0'),
             "invalid package identifier"
         );
-        let cmd = self
-            .runtime_hint
-            .as_deref()
-            .unwrap_or(default_runtime)
-            .to_owned();
         ensure!(
-            !cmd.trim().is_empty() && !cmd.contains('\0'),
-            "invalid package runtime"
+            self.version
+                .as_deref()
+                .is_none_or(|version| !version.is_empty() && !version.contains('\0')),
+            "invalid package version"
         );
         let (env, env_keys) = named_inputs(&self.environment_variables, false)?;
-        let mut args = Vec::new();
-        if self.registry_type == "oci" {
-            args.push("run".into());
-        }
-        args.extend(arguments(&self.runtime_arguments)?);
-        match self.registry_type.as_str() {
-            "npm" => args.push("-y".into()),
+        let mut args = arguments(&self.runtime_arguments)?;
+        let (cmd, package) = match self.registry_type.as_str() {
+            "npm" => {
+                let cmd = self.runtime("https://registry.npmjs.org", "npx", &[])?;
+                args.push("-y".into());
+                (cmd, self.versioned_identifier("@"))
+            }
+            "pypi" => (
+                self.runtime("https://pypi.org", "uvx", &[])?,
+                self.versioned_identifier("=="),
+            ),
             "oci" => {
+                let cmd = self.runtime("https://docker.io", "docker", &["podman"])?;
+                args.insert(0, "run".into());
                 args.extend(["--rm".into(), "-i".into()]);
                 let mut keys: Vec<_> = env.keys().chain(&env_keys).collect();
                 keys.sort_unstable();
                 for key in keys {
                     args.extend(["-e".into(), key.to_owned()]);
                 }
+                let separator = if self
+                    .version
+                    .as_deref()
+                    .is_some_and(|version| version.contains(':'))
+                {
+                    "@"
+                } else {
+                    ":"
+                };
+                (cmd, self.versioned_identifier(separator))
             }
-            _ => {}
-        }
-        args.push(match &self.version {
-            Some(version) if self.registry_type == "oci" && version.contains(':') => {
-                format!("{}@{version}", self.identifier)
-            }
-            Some(version) => {
-                ensure!(
-                    !version.is_empty() && !version.contains('\0'),
-                    "invalid package version"
-                );
-                format!("{}{separator}{version}", self.identifier)
-            }
-            None => self.identifier.clone(),
-        });
+            other => bail!("unsupported package registry type '{other}'"),
+        };
+        args.push(package);
         args.extend(arguments(&self.package_arguments)?);
         Ok(TransportConfig::Stdio {
             name,
@@ -250,6 +235,34 @@ impl Package {
             bundled: None,
             available_tools: vec![],
         })
+    }
+
+    fn runtime(
+        &self,
+        public_registry: &str,
+        default: &str,
+        alternatives: &[&str],
+    ) -> Result<String> {
+        ensure!(
+            self.registry_base_url
+                .as_deref()
+                .is_none_or(|url| url.trim_end_matches('/') == public_registry),
+            "custom package registries are not supported"
+        );
+        let cmd = self.runtime_hint.as_deref().unwrap_or(default);
+        ensure!(
+            cmd == default || alternatives.contains(&cmd),
+            "runtime hint {cmd:?} is incompatible with {} packages",
+            self.registry_type
+        );
+        Ok(cmd.to_owned())
+    }
+
+    fn versioned_identifier(&self, separator: &str) -> String {
+        match &self.version {
+            Some(version) => format!("{}{separator}{version}", self.identifier),
+            None => self.identifier.clone(),
+        }
     }
 }
 
@@ -361,79 +374,6 @@ fn named_inputs(
     Ok((literals, env_keys))
 }
 
-pub fn preview(entry: &ExtensionEntry) -> String {
-    match &entry.config {
-        ExtensionConfig::External(TransportConfig::Stdio { cmd, args, .. }) => {
-            shell_words::join(std::iter::once(cmd).chain(args))
-        }
-        ExtensionConfig::External(TransportConfig::StreamableHttp { uri, .. }) => uri.clone(),
-        _ => entry.config.name(),
-    }
-}
-
-pub async fn install(config: &crate::config::Config, entries: &[ExtensionEntry]) -> Result<()> {
-    ensure!(!entries.is_empty(), "no MCP extensions selected");
-    if let Some(location) = std::env::var_os("GOOSE_ALLOWLIST") {
-        let url = url::Url::parse(location.to_str().context("invalid GOOSE_ALLOWLIST URL")?)?;
-        ensure!(url.scheme() == "https", "GOOSE_ALLOWLIST requires HTTPS");
-        let response = reqwest::Client::builder()
-            .https_only(true)
-            .timeout(std::time::Duration::from_secs(30))
-            .build()?
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?;
-        let policy: Allowlist = serde_yaml::from_str(&response.text().await?)?;
-        policy.check(entries)?;
-    }
-    crate::config::extensions::add_extensions(config, entries)
-}
-
-#[derive(Deserialize)]
-struct Allowlist {
-    extensions: Vec<AllowedExtension>,
-}
-
-#[derive(Deserialize)]
-struct AllowedExtension {
-    command: String,
-}
-
-impl Allowlist {
-    fn check(&self, entries: &[ExtensionEntry]) -> Result<()> {
-        let commands: Vec<_> = self
-            .extensions
-            .iter()
-            .map(|entry| {
-                ensure!(
-                    !entry.command.trim().is_empty(),
-                    "empty command in GOOSE_ALLOWLIST"
-                );
-                Ok(&entry.command)
-            })
-            .collect::<Result<_>>()?;
-        for entry in entries {
-            let allowed = commands.iter().any(|command| match &entry.config {
-                ExtensionConfig::External(TransportConfig::Stdio { cmd, args, .. }) => {
-                    shell_words::split(command)
-                        .is_ok_and(|words| words.iter().eq(std::iter::once(cmd).chain(args)))
-                }
-                ExtensionConfig::External(TransportConfig::StreamableHttp { uri, .. }) => {
-                    *command == uri
-                }
-                _ => false,
-            });
-            ensure!(
-                allowed,
-                "extension '{}' is not permitted by GOOSE_ALLOWLIST",
-                entry.config.name()
-            );
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,14 +404,14 @@ mod tests {
             })],
             vec![],
         );
-        let entry = document.extension(ServerSelection::Package(0)).unwrap();
-        let ExtensionConfig::External(TransportConfig::Stdio {
+        let extension = document.extension(ServerSelection::Package(0)).unwrap();
+        let TransportConfig::Stdio {
             cmd,
             args,
             envs,
             env_keys,
             ..
-        }) = entry.config
+        } = extension
         else {
             panic!("expected stdio")
         };
@@ -496,11 +436,11 @@ mod tests {
                 ]
             })],
         );
-        let entry = document.extension(ServerSelection::Remote(0)).unwrap();
-        assert_eq!(entry.config.name(), "io.example/weather");
-        let ExtensionConfig::External(TransportConfig::StreamableHttp {
+        let extension = document.extension(ServerSelection::Remote(0)).unwrap();
+        assert_eq!(extension.name(), "io.example/weather");
+        let TransportConfig::StreamableHttp {
             headers, env_keys, ..
-        }) = entry.config
+        } = extension
         else {
             panic!("expected a remote")
         };
@@ -509,6 +449,73 @@ mod tests {
             headers,
             HashMap::from([("X.API-Key".into(), "${X.API-Key}".into())])
         );
+    }
+
+    #[test]
+    fn package_launchers_preserve_argument_order() {
+        for (registry, hint, identifier, command, install_args) in [
+            (
+                "npm",
+                None,
+                "@example/weather",
+                "npx",
+                vec!["-y", "@example/weather@1.2.3"],
+            ),
+            (
+                "pypi",
+                Some("uvx"),
+                "weather",
+                "uvx",
+                vec!["weather==1.2.3"],
+            ),
+            (
+                "oci",
+                None,
+                "example/weather",
+                "docker",
+                vec!["--rm", "-i", "example/weather:1.2.3"],
+            ),
+        ] {
+            let document = server(
+                vec![json!({
+                    "registryType": registry, "identifier": identifier, "version": "1.2.3",
+                    "runtimeHint": hint, "transport": { "type": "stdio" },
+                    "runtimeArguments": [{ "type": "named", "name": "--runtime-option", "value": "one value" }],
+                    "packageArguments": [{ "type": "named", "name": "--package-option", "value": "another value" }],
+                })],
+                vec![],
+            );
+            let TransportConfig::Stdio { cmd, args, .. } =
+                document.extension(ServerSelection::Package(0)).unwrap()
+            else {
+                panic!("expected stdio");
+            };
+            let mut expected = if registry == "oci" {
+                vec!["run"]
+            } else {
+                vec![]
+            };
+            expected.extend(["--runtime-option", "one value"]);
+            expected.extend(install_args);
+            expected.extend(["--package-option", "another value"]);
+            assert_eq!(cmd, command);
+            assert_eq!(args, expected);
+        }
+    }
+
+    #[test]
+    fn rejects_incompatible_runtime_hints() {
+        for (registry, hint) in [("npm", "uvx"), ("pypi", "npx"), ("oci", "npx"), ("npm", "")] {
+            let document = server(
+                vec![json!({
+                    "registryType": registry, "identifier": "weather", "runtimeHint": hint,
+                    "transport": { "type": "stdio" },
+                })],
+                vec![],
+            );
+            let error = document.extension(ServerSelection::Package(0)).unwrap_err();
+            assert!(error.to_string().contains("incompatible"));
+        }
     }
 
     #[test]
@@ -568,47 +575,16 @@ mod tests {
     }
 
     #[test]
-    fn import_persists_namespaced_remotes_without_touching_secrets() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("config.yaml");
-        let secrets = dir.path().join("secrets.yaml");
-        let config = crate::config::Config::new_with_file_secrets(&file, &secrets).unwrap();
-        let entries =
-            ["io.example/weather", "io.other/weather"].map(|name| {
+    fn registry_namespace_is_preserved_in_extension_name() {
+        let names = ["io.example/weather", "io.other/weather"];
+        let configs =
+            names.map(|name| {
                 ServerDocument::parse(&json!({
                 "name": name, "description": "weather",
                 "remotes": [{ "type": "streamable-http", "url": "https://example.org/mcp" }],
             }).to_string()).unwrap().extension(ServerSelection::Remote(0)).unwrap()
             });
-        crate::config::extensions::add_extensions(&config, &entries).unwrap();
-        let saved = crate::config::extensions::get_enabled_extensions_with_config(&config);
-        for entry in entries {
-            assert!(saved.contains(&entry.config));
-        }
-        assert!(!secrets.exists());
-    }
-
-    #[test]
-    fn allowlist_matches_argument_boundaries() {
-        let document = server(
-            vec![json!({
-                "registryType": "npm", "identifier": "weather", "transport": { "type": "stdio" },
-                "packageArguments": [{ "type": "positional", "value": "two words" }]
-            })],
-            vec![],
-        );
-        let entries = [document.extension(ServerSelection::Package(0)).unwrap()];
-        for (command, allowed) in [
-            ("npx -y weather 'two words'", true),
-            ("npx -y weather two words", false),
-            ("npx -y weather", false),
-        ] {
-            let policy = Allowlist {
-                extensions: vec![AllowedExtension {
-                    command: command.into(),
-                }],
-            };
-            assert_eq!(policy.check(&entries).is_ok(), allowed);
-        }
+        assert_eq!(configs.each_ref().map(TransportConfig::name), names);
+        assert_ne!(configs[0].key(), configs[1].key());
     }
 }
