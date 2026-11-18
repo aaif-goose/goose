@@ -845,6 +845,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_build_config_options_resolves_reasoning_from_provider_catalog() {
+        const NEMOTRON: &str = "perplexity/nemotron-3.5-super-120b-a12b";
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        let model_config =
+            crate::model_config::model_config_from_user_config("perplexity", NEMOTRON).unwrap();
+
+        let options = build_config_options(
+            &build_mode_state(GooseMode::Auto).unwrap(),
+            &model_selection(NEMOTRON, &[NEMOTRON]),
+            &model_config,
+            "perplexity",
+            vec![SessionConfigSelectOption::new("perplexity", "perplexity")],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        assert_eq!(select.current_value.0.as_ref(), "high");
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(
+                ["off", "low", "medium", "high", "max"]
+                    .into_iter()
+                    .map(|effort| SessionConfigSelectOption::new(effort, effort))
+                    .collect()
+            )
+        );
+    }
+
     fn effort_capability(values: &[&str], current: &str) -> ThinkingEffortCapability {
         ThinkingEffortCapability {
             option_id: "effort".to_string(),
