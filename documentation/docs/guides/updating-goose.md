@@ -82,7 +82,13 @@ The goose CLI and desktop apps are under active and continuous development. To g
         4. Launch goose from the app menu
       </TabItem>
       <TabItem value="cli" label="goose CLI">
-        You can update goose by running:
+        If you installed goose from the Snap Store, it updates automatically. To update it manually, run:
+
+        ```sh
+        sudo snap refresh goose
+        ```
+
+        If you installed the CLI using the installation script, run:
 
         ```sh
         goose update
