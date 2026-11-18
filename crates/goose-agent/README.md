@@ -89,8 +89,7 @@ after every step that runs tools, right before inference. It gives calls no
 step handled an error result, and it pauses the run while calls wait for the
 user, so the model isn't called with calls still open. A call whose arguments
 can't be read gets the parse error; any other call gets "Tool 'X' is not
-available.", and inference adds the list of available tools to that result in
-the next request. A step that runs tools after it gets "not available" for its
+available.". A step that runs tools after it gets "not available" for its
 calls.
 
 ## Reading the conversation

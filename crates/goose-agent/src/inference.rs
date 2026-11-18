@@ -22,9 +22,8 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
     InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
-use crate::tool_call_state::{add_unavailable_tool_response, UNCLAIMED_TOOL_ERROR};
+use crate::tool_call_state::add_error_response;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
-use rmcp::model::ContentBlock;
 
 pub struct PreparedInferenceRequest {
     pub system_prompt: String,
@@ -230,6 +229,13 @@ fn unadvertised_tool_responses(
     reply: &Conversation,
     tools: &[rmcp::model::Tool],
 ) -> Option<Message> {
+    let mut available_tools = tools
+        .iter()
+        .map(|tool| tool.name.as_ref())
+        .collect::<Vec<_>>();
+    available_tools.sort_unstable();
+    available_tools.dedup();
+    let available_tools = available_tools.join(", ");
     let mut tool_responses = Message::user();
     for request in reply
         .iter()
@@ -242,44 +248,17 @@ fn unadvertised_tool_responses(
             continue;
         };
         if !tools.iter().any(|tool| tool.name == tool_call.name) {
-            add_unavailable_tool_response(&mut tool_responses, request, &tool_call.name);
+            add_error_response(
+                &mut tool_responses,
+                request,
+                &format!(
+                    "Tool '{}' was not available in this request. Available tools: [{available_tools}].",
+                    tool_call.name
+                ),
+            );
         }
     }
     (!tool_responses.content.is_empty()).then_some(tool_responses)
-}
-
-pub fn enrich_unclaimed_tool_errors(
-    messages: &[Message],
-    tools: &[rmcp::model::Tool],
-) -> Vec<Message> {
-    let mut available_tools = tools
-        .iter()
-        .map(|tool| tool.name.as_ref())
-        .collect::<Vec<_>>();
-    available_tools.sort_unstable();
-    available_tools.dedup();
-    let available_tools = available_tools.join(", ");
-    let mut messages = messages.to_vec();
-    for message in &mut messages {
-        for content in &mut message.content {
-            let MessageContent::ToolResponse(response) = content else {
-                continue;
-            };
-            let Some(metadata) = &mut response.metadata else {
-                continue;
-            };
-            if metadata.remove(UNCLAIMED_TOOL_ERROR).is_none() {
-                continue;
-            }
-            let Ok(result) = &mut response.tool_result else {
-                continue;
-            };
-            result.content.push(ContentBlock::text(format!(
-                "Available tools: [{available_tools}]."
-            )));
-        }
-    }
-    messages
 }
 
 #[derive(Default)]
@@ -553,14 +532,18 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             let projected =
                 Conversation::new_unvalidated(messages_for_provider).agent_visible_messages();
             let (fixed, _) = fix_conversation(Conversation::new_unvalidated(projected));
-            let request_messages = enrich_unclaimed_tool_errors(
-                &merge_consecutive_messages_for_request(fixed.messages().clone()),
-                &tools,
+            let conversation_for_provider = Conversation::new_unvalidated(
+                merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
             let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
-                .stream(&model_config, &system_prompt, &request_messages, &tools)
+                .stream(
+                    &model_config,
+                    &system_prompt,
+                    conversation_for_provider.messages(),
+                    &tools,
+                )
                 .await;
 
             let mut stream = match stream {

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::Result;
-use goose_agent::inference::enrich_unclaimed_tool_errors;
 use rmcp::model::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
@@ -177,7 +176,6 @@ impl StateMachineServices {
         // The prompt that will follow is unknown, but the turn-context event
         // appended after it is not.
         messages.extend(turn_context);
-        messages = enrich_unclaimed_tool_errors(&messages, &tools);
         let messages = Conversation::new_unvalidated(messages);
         let request_messages = merge_consecutive_messages_for_request(messages.messages().clone());
         let (request_tools, request_messages, counted_messages) = if toolshim {
@@ -735,38 +733,6 @@ Finish the regression test
             .sum();
         let segment_total: u64 = segments.iter().map(|segment| segment.token_count).sum();
         assert_eq!(segment_total, expected_total);
-    }
-
-    #[tokio::test]
-    async fn unclaimed_tool_errors_count_the_tool_list_the_request_appends() {
-        let token_counter = TokenCounter::new().await.unwrap();
-        let mut response = Message::user();
-        response.add_tool_response_with_metadata(
-            "call_1",
-            Ok(rmcp::model::CallToolResult::error(vec![
-                rmcp::model::ContentBlock::text("Tool missing__tool is not available."),
-            ])),
-            Some(&serde_json::Map::from_iter([(
-                goose_agent::tool_call_state::UNCLAIMED_TOOL_ERROR.to_string(),
-                true.into(),
-            )])),
-        );
-        let messages = vec![response];
-        let tools = vec![
-            test_tool("alpha__read", Some("alpha")),
-            test_tool("beta__write", Some("beta")),
-        ];
-
-        let persisted = message_segments(&messages, &messages, &token_counter);
-        let enriched = enrich_unclaimed_tool_errors(&messages, &tools);
-        let requested = message_segments(&enriched, &enriched, &token_counter);
-
-        assert!(requested[0].token_count > persisted[0].token_count);
-        assert!(requested[0].parts[0]
-            .content_preview
-            .as_deref()
-            .unwrap()
-            .contains("Available tools: [alpha__read, beta__write]."));
     }
 
     #[test]

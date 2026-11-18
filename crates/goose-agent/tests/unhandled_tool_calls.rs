@@ -1,6 +1,6 @@
 use goose_agent::{
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
-    tool_call_state::{EXECUTABLE_KEY, UNCLAIMED_TOOL_ERROR},
+    tool_call_state::EXECUTABLE_KEY,
     unhandled_tool_calls::UnhandledToolCallsOperation,
 };
 use goose_provider_types::conversation::{
@@ -16,7 +16,6 @@ use tokio_util::sync::CancellationToken;
 struct Outcome {
     status: Option<RunStatus>,
     responses: Vec<(String, String)>,
-    unclaimed: Vec<String>,
 }
 
 async fn run(messages: Vec<Message>) -> Outcome {
@@ -46,13 +45,6 @@ async fn run(messages: Vec<Message>) -> Outcome {
             let MessageContent::ToolResponse(response) = content else {
                 continue;
             };
-            if response
-                .metadata
-                .as_ref()
-                .is_some_and(|metadata| metadata.contains_key(UNCLAIMED_TOOL_ERROR))
-            {
-                outcome.unclaimed.push(response.id.clone());
-            }
             let result = response.tool_result.unwrap();
             assert_eq!(result.is_error, Some(true));
             outcome.responses.push((
@@ -136,7 +128,6 @@ async fn responds_to_open_calls_that_are_not_awaiting_confirmation() {
             not_available("declined"),
         ]
     );
-    assert_eq!(outcome.unclaimed, ["allowed", "unchecked", "declined"]);
 }
 
 #[tokio::test]
@@ -157,7 +148,6 @@ async fn explains_calls_that_could_not_be_parsed() {
             )
         )]
     );
-    assert!(outcome.unclaimed.is_empty());
 }
 
 #[tokio::test]

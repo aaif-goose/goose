@@ -8,9 +8,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, yielded, ConversationEffect, Emitter,
     Operation, OperationResult,
 };
-use crate::tool_call_state::{
-    add_error_response, add_unavailable_tool_response, tool_calls, ToolCallState,
-};
+use crate::tool_call_state::{add_error_response, tool_calls, ToolCallState};
 
 pub struct UnhandledToolCallsOperation;
 
@@ -38,7 +36,11 @@ fn respond_to_unhandled_calls(
         match &request.tool_call {
             Ok(tool_call) => {
                 tracing::error!(tool_call_id = %request.id, tool_name = %tool_call.name, "tool call was not handled by any operation");
-                add_unavailable_tool_response(&mut tool_responses, request, &tool_call.name);
+                add_error_response(
+                    &mut tool_responses,
+                    request,
+                    &format!("Tool '{}' is not available.", tool_call.name),
+                );
             }
             Err(error) => {
                 tracing::error!(tool_call_id = %request.id, %error, "tool call was not handled by any operation");

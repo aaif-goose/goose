@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use goose_agent::inference::{InferenceEffect, InferenceRunner};
 use goose_agent::machine::MachineSession;
 use goose_agent::operation::{Emitter, Inference, InferenceInput, OperationResult};
-use goose_agent::tool_call_state::UNCLAIMED_TOOL_ERROR;
 use goose_provider_types::base::{MessageStream, Provider};
 use goose_provider_types::conversation::message::{
     Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY,
@@ -48,7 +47,6 @@ impl InferenceEffect for Effect {
 
 struct ReplyProvider {
     replies: Mutex<Vec<Result<Message, ProviderError>>>,
-    sent: Mutex<Vec<Message>>,
 }
 
 #[async_trait]
@@ -61,10 +59,9 @@ impl Provider for ReplyProvider {
         &self,
         _model_config: &ModelConfig,
         _system: &str,
-        messages: &[Message],
+        _messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        *self.sent.lock().unwrap() = messages.to_vec();
         let replies = std::mem::take(&mut *self.replies.lock().unwrap());
         Ok(Box::pin(futures::stream::iter(
             replies
@@ -82,23 +79,13 @@ async fn infer(
     replies: Vec<Result<Message, ProviderError>>,
     offered: &[&'static str],
 ) -> Vec<Message> {
-    infer_after(vec![Message::user().with_text("hello")], replies, offered)
-        .await
-        .0
-}
-
-async fn infer_after(
-    history: Vec<Message>,
-    replies: Vec<Result<Message, ProviderError>>,
-    offered: &[&'static str],
-) -> (Vec<Message>, Vec<Message>) {
     let provider = Arc::new(ReplyProvider {
         replies: Mutex::new(replies),
-        sent: Mutex::new(Vec::new()),
     });
-    let runner =
-        InferenceRunner::<Session, Effect>::new(provider.clone(), ModelConfig::new("test"));
-    let session = Session(Conversation::new_unvalidated(history));
+    let runner = InferenceRunner::<Session, Effect>::new(provider, ModelConfig::new("test"));
+    let session = Session(Conversation::new_unvalidated(vec![
+        Message::user().with_text("hello")
+    ]));
     let input = InferenceInput {
         tools: offered.iter().copied().map(tool).collect(),
         ..InferenceInput::default()
@@ -112,16 +99,14 @@ async fn infer_after(
     else {
         panic!("inference did not apply");
     };
-    let messages = result
+    result
         .effects
         .into_iter()
         .filter_map(|effect| match effect {
             Effect::Message(message) => Some(*message),
             Effect::Usage => None,
         })
-        .collect();
-    let sent = provider.sent.lock().unwrap().clone();
-    (messages, sent)
+        .collect()
 }
 
 fn tool_errors(messages: &[Message]) -> Vec<(String, String)> {
@@ -133,6 +118,7 @@ fn tool_errors(messages: &[Message]) -> Vec<(String, String)> {
         .map(|response| {
             let result = response.tool_result.as_ref().unwrap();
             assert_eq!(result.is_error, Some(true));
+            assert_eq!(result.content.len(), 1);
             (
                 response.id.clone(),
                 result.content[0].as_text().unwrap().text.clone(),
@@ -165,21 +151,9 @@ async fn answers_calls_to_tools_that_were_not_offered() {
         tool_errors(&messages),
         vec![(
             "not_offered".to_string(),
-            "Tool 'b' is not available.".to_string()
+            "Tool 'b' was not available in this request. Available tools: [a].".to_string()
         )]
     );
-    let unclaimed = messages[1]
-        .content
-        .iter()
-        .filter_map(MessageContent::as_tool_response)
-        .all(|response| {
-            response
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.get(UNCLAIMED_TOOL_ERROR))
-                == Some(&json!(true))
-        });
-    assert!(unclaimed);
 }
 
 #[tokio::test]
@@ -195,47 +169,26 @@ async fn answers_calls_to_tools_that_were_not_offered_when_the_stream_fails() {
         tool_errors(&messages),
         vec![(
             "not_offered".to_string(),
-            "Tool 'b' is not available.".to_string()
+            "Tool 'b' was not available in this request. Available tools: [a].".to_string()
         )]
     );
     assert!(messages[2].error_kind().is_some());
 }
 
 #[tokio::test]
-async fn lists_the_offered_tools_next_to_unavailable_tool_errors() {
+async fn lists_the_tools_offered_to_the_inference_that_made_the_call() {
     let reply =
         Message::assistant().with_tool_request("not_offered", Ok(CallToolRequestParams::new("b")));
-    let mut history = infer(vec![Ok(reply)], &["a"]).await;
-    history.insert(0, Message::user().with_text("hello"));
 
-    let (_, sent) = infer_after(
-        history,
-        vec![Ok(Message::assistant().with_text("ok"))],
-        &["c", "a"],
-    )
-    .await;
+    let messages = infer(vec![Ok(reply)], &["c", "a", "c"]).await;
 
-    let response = sent
-        .iter()
-        .flat_map(|message| &message.content)
-        .find_map(MessageContent::as_tool_response)
-        .unwrap();
-    let text: Vec<_> = response
-        .tool_result
-        .as_ref()
-        .unwrap()
-        .content
-        .iter()
-        .map(|content| content.as_text().unwrap().text.as_str())
-        .collect();
     assert_eq!(
-        text,
-        ["Tool 'b' is not available.", "Available tools: [a, c]."]
+        tool_errors(&messages),
+        vec![(
+            "not_offered".to_string(),
+            "Tool 'b' was not available in this request. Available tools: [a, c].".to_string()
+        )]
     );
-    assert!(!response
-        .metadata
-        .as_ref()
-        .is_some_and(|metadata| metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
 }
 
 #[tokio::test]
