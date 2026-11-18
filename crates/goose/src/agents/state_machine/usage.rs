@@ -54,11 +54,15 @@ pub(super) async fn record(
     replaces_conversation: bool,
 ) -> Result<()> {
     let ledger = MessageUsage::from_provider_usage(usage, replaces_conversation);
+    let mut current_usage = usage.usage;
+    if let Some(context_tokens) = usage.context_tokens {
+        current_usage.total_tokens = Some(context_tokens.clamp(0, i32::MAX as i64) as _);
+    }
     session_manager
         .record_usage_metrics(
             &session.id,
             session.schedule_id.clone(),
-            usage.usage,
+            current_usage,
             &usage.model,
             &ledger,
         )

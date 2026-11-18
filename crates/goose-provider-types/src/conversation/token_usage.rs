@@ -24,6 +24,10 @@ pub struct ProviderUsage {
     /// unstructured so new fields flow through without changing this type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_data: Option<Map<String, Value>>,
+    /// Current context window occupancy reported by an ACP/agentic provider
+    /// (e.g., `usage_update.used`), when distinct from turn-wide billed `usage`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +68,13 @@ impl ProviderUsage {
             response_id: None,
             request_id: None,
             additional_data: None,
+            context_tokens: None,
         }
+    }
+
+    pub fn with_context_tokens(mut self, context_tokens: Option<i64>) -> Self {
+        self.context_tokens = context_tokens;
+        self
     }
 
     pub fn with_stats(mut self, stats: ProviderStats) -> Self {
