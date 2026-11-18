@@ -3,6 +3,7 @@
 //! User-facing CRUD lives in `crate::sources`, which generalizes across
 //! source types.
 
+pub mod approval;
 mod builtin;
 pub mod mcp;
 mod supporting_files;

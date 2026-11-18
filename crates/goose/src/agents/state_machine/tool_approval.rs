@@ -102,11 +102,16 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
 
     async fn on_confirmation(
         &self,
-        _session: &Session,
+        session: &Session,
         request: &ToolRequest,
         permission: &Permission,
     ) -> Result<()> {
+        // A standing allow granted for an MCP skill, or while its instructions
+        // steer the model, would outlive the content that asked for it.
+        let acting_on_mcp_skill = crate::skills::approval::requested_mcp_skill(request).is_some()
+            || !crate::skills::mcp::active_origins(&session.id).is_empty();
         let level = match permission {
+            Permission::AlwaysAllow if acting_on_mcp_skill => return Ok(()),
             Permission::AlwaysAllow => PermissionLevel::AlwaysAllow,
             Permission::AlwaysDeny => PermissionLevel::NeverAllow,
             _ => return Ok(()),
@@ -118,5 +123,88 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
             .update_permission_manager(&tool_call.name, level)
             .await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::StateMachineServices;
+    use rmcp::model::CallToolRequestParams;
+    use rmcp::object;
+
+    fn request(name: &str, arguments: rmcp::model::JsonObject) -> ToolRequest {
+        ToolRequest {
+            id: "request".to_string(),
+            tool_call: Ok(CallToolRequestParams::new(name.to_string()).with_arguments(arguments)),
+            metadata: None,
+            tool_meta: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn standing_allows_are_not_saved_while_acting_on_mcp_skills() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let services = StateMachineServices::for_tool_tests(data_dir.path().to_path_buf());
+        let approval = GooseToolApproval::new(&services.tool_inspection_manager);
+        let session = Session {
+            id: "approval-standing".to_string(),
+            ..Session::default()
+        };
+
+        approval
+            .on_confirmation(
+                &session,
+                &request(
+                    oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME,
+                    object!({ "name": "server::billing" }),
+                ),
+                &Permission::AlwaysAllow,
+            )
+            .await
+            .unwrap();
+        assert!(services
+            .permission_manager
+            .get_user_permission(oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME)
+            .is_none());
+
+        crate::skills::mcp::hold_skill(
+            &session.id,
+            crate::skills::mcp::SkillRecord {
+                uri: "skill://billing/SKILL.md".to_string(),
+                name: "billing".to_string(),
+                description: "Billing".to_string(),
+                frontmatter: serde_json::Map::new(),
+                extension_name: "server".to_string(),
+                resources: crate::skills::mcp::SkillResources::Dynamic,
+            },
+        );
+        let shell = request("shell", object!({ "command": "ls" }));
+        approval
+            .on_confirmation(&session, &shell, &Permission::AlwaysAllow)
+            .await
+            .unwrap();
+        assert!(services
+            .permission_manager
+            .get_user_permission("shell")
+            .is_none());
+        approval
+            .on_confirmation(&session, &shell, &Permission::AlwaysDeny)
+            .await
+            .unwrap();
+        assert_eq!(
+            services.permission_manager.get_user_permission("shell"),
+            Some(PermissionLevel::NeverAllow)
+        );
+
+        crate::skills::mcp::clear_held_skills(&session.id);
+        approval
+            .on_confirmation(&session, &shell, &Permission::AlwaysAllow)
+            .await
+            .unwrap();
+        assert_eq!(
+            services.permission_manager.get_user_permission("shell"),
+            Some(PermissionLevel::AlwaysAllow)
+        );
     }
 }

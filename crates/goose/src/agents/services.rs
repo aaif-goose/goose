@@ -727,6 +727,8 @@ impl StateMachineServices {
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
+        tool_inspection_manager
+            .add_inspector(Box::new(crate::skills::approval::McpSkillApprovalInspector));
         tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/goose/adversary.md)
@@ -3147,6 +3149,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(
             inspector_names.contains(&"security"),
             "Tool inspection manager should contain security inspector"
+        );
+        assert!(
+            inspector_names.contains(&crate::skills::approval::INSPECTOR_NAME),
+            "Tool inspection manager should contain MCP skill approval inspector"
         );
         assert!(
             inspector_names.contains(&"adversary"),
