@@ -5,7 +5,6 @@ use serde_json::Value;
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
-use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
@@ -908,21 +907,6 @@ async fn unadvertised_inactive_final_output_skips_hooks() -> Result<()> {
 
     result.assert_message(-2, ToolResponse, "not available");
     assert!(env.payloads("postfail.log").is_empty());
-    let response_metadata = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .find_map(|content| match content {
-            MessageContent::ToolResponse(response) => response.metadata.as_ref(),
-            _ => None,
-        });
-    assert!(response_metadata.is_some_and(|metadata| {
-        metadata
-            .get(UNCLAIMED_TOOL_ERROR)
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-    }));
     Ok(())
 }
 
@@ -991,7 +975,11 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());
     assert!(env.payloads("postfail.log").is_empty());
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
+    result.assert_message(
+        -2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request.",
+    );
     Ok(())
 }
 
@@ -1020,7 +1008,11 @@ async fn unadvertised_unknown_tool_skips_permission_and_tool_hooks() -> Result<(
 
     let result = pipeline.run(["try the missing tool"]).await?;
 
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
+    result.assert_message(
+        -2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request.",
+    );
     assert!(env.payloads("pre.log").is_empty());
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());
@@ -1305,23 +1297,6 @@ async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Res
     let result = pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
 
     result.assert_message(-1, ToolResponse, "blocked by test policy");
-    let response = result
-        .session
-        .conversation
-        .as_ref()
-        .unwrap()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .find_map(|content| match content {
-            MessageContent::ToolResponse(response) => Some(response.clone()),
-            _ => None,
-        })
-        .expect("the call was answered");
-    assert!(response
-        .metadata
-        .as_ref()
-        .is_none_or(|metadata| !metadata.contains_key(UNCLAIMED_TOOL_ERROR)));
     Ok(())
 }
 

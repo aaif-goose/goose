@@ -336,7 +336,11 @@ async fn recover_from_missing_tool() -> Result<()> {
     let result = pipeline.run(["try the missing tool"]).await?;
     assert_eq!(api.call_count(), 3);
 
-    result.assert_message(2, ToolResponse, "Tool 'missing__tool' is not available");
+    result.assert_message(
+        2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request",
+    );
     assert!(api.calls()[1].input_contains(ADD));
     result.assert_message(3, ToolCall, ADD);
     result.assert_message(4, ToolResponse, "result: 2");
@@ -357,6 +361,27 @@ async fn recover_from_missing_tool() -> Result<()> {
     assert!(api.calls()[1].input_contains(ADD));
     result.assert_message(-1, Agent, "recovered with toolshim");
 
+    Ok(())
+}
+
+#[cfg(feature = "code-mode")]
+#[tokio::test]
+async fn code_mode_rejects_direct_calls_to_hidden_tools() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("code_execution").await?;
+    api.on("add directly").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("understood");
+
+    let result = pipeline.run(["add directly"]).await?;
+
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    result.assert_message(
+        -2,
+        ToolResponse,
+        &format!("Tool '{ADD}' was not available in this request."),
+    );
+    result.assert_message(-1, Agent, "understood");
+    assert_eq!(pipeline.calculator_total(), 0);
     Ok(())
 }
 

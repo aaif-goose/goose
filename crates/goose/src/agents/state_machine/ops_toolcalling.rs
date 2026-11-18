@@ -14,7 +14,6 @@ use rmcp::model::{
 use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::CallRequest;
 use crate::agents::reply_parts::is_tool_visible_to_model;
-use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
     OperationResult,
@@ -321,43 +320,6 @@ pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, T
         .collect()
 }
 
-pub(super) fn pending_advertised_tool_requests(
-    messages: &[Message],
-) -> Vec<(ToolRequest, ToolDisposition)> {
-    pending_tool_requests(messages)
-        .into_iter()
-        .filter(|(request, _)| request_was_advertised(messages, request))
-        .collect()
-}
-
-pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
-    let Some(tool_call) = request.tool_call.as_ref().ok() else {
-        return true;
-    };
-    let Some(message) = messages.iter().find(|message| {
-        message.role == Role::Assistant
-            && message.content.iter().any(|content| {
-                content
-                    .as_tool_request()
-                    .is_some_and(|item| item.id == request.id)
-            })
-    }) else {
-        return false;
-    };
-    if message.metadata.inference.is_none() {
-        return true;
-    }
-    message
-        .metadata
-        .operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE)
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|tools| {
-            tools
-                .iter()
-                .any(|tool| tool.as_str() == Some(tool_call.name.as_ref()))
-        })
-}
-
 pub(super) fn requests_can_resolve_tools<'a>(
     messages: &[Message],
     requests: impl IntoIterator<Item = &'a ToolRequest>,
@@ -522,7 +484,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        let mut pending = pending_advertised_tool_requests(messages);
+        let mut pending = pending_tool_requests(messages);
         if pending.is_empty() {
             return not_applicable();
         }
@@ -744,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn operation_generated_requests_without_inference_remain_executable() {
+    fn executable_requests_are_pending() {
         let message = Message::assistant().with_tool_request_with_metadata(
             "operation-generated",
             Ok(CallToolRequestParams::new("registered__tool")),
@@ -752,7 +714,7 @@ mod tests {
             Some(serde_json::json!({ EXECUTABLE_KEY: true })),
         );
 
-        let pending = pending_advertised_tool_requests(&[message]);
+        let pending = pending_tool_requests(&[message]);
 
         assert_eq!(pending.len(), 1);
         assert!(matches!(pending[0].1, ToolDisposition::Execute));

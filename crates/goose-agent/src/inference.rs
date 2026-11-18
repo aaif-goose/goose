@@ -22,6 +22,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
     InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
+use crate::tool_call_state::add_error_response;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 pub struct PreparedInferenceRequest {
@@ -224,6 +225,42 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     }
 }
 
+fn unadvertised_tool_responses(
+    reply: &Conversation,
+    tools: &[rmcp::model::Tool],
+) -> Option<Message> {
+    let mut available_tools = tools
+        .iter()
+        .map(|tool| tool.name.as_ref())
+        .collect::<Vec<_>>();
+    available_tools.sort_unstable();
+    available_tools.dedup();
+    let available_tools = available_tools.join(", ");
+    let mut tool_responses = Message::user();
+    for request in reply
+        .iter()
+        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_request)
+        .filter(|request| !request.was_executed_externally())
+    {
+        let Ok(tool_call) = &request.tool_call else {
+            continue;
+        };
+        if !tools.iter().any(|tool| tool.name == tool_call.name) {
+            add_error_response(
+                &mut tool_responses,
+                request,
+                &format!(
+                    "Tool '{}' was not available in this request. Available tools: [{available_tools}].",
+                    tool_call.name
+                ),
+            );
+        }
+    }
+    (!tool_responses.content.is_empty()).then_some(tool_responses)
+}
+
 #[derive(Default)]
 struct InferenceOutput {
     accumulator: Conversation,
@@ -386,12 +423,21 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         emit.message(message);
     }
 
+    fn answer_unadvertised_tool_calls(&self, tools: &[rmcp::model::Tool], emit: &Emitter) {
+        let unadvertised = unadvertised_tool_responses(&self.output().accumulator, tools);
+        if let Some(tool_responses) = unadvertised {
+            self.emit_message(tool_responses, emit);
+        }
+    }
+
     fn error_outcome(
         &self,
         err: &ProviderError,
+        tools: &[rmcp::model::Tool],
         operation_logs: &mut Vec<String>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
+        self.answer_unadvertised_tool_calls(tools, emit);
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
         let mut message = Message::from_provider_error(err);
@@ -502,7 +548,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
             };
 
             let requested_model = model_config.model_name.clone();
@@ -524,7 +570,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                    Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -558,6 +604,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 attach_operation_logs(&mut message, &mut operation_logs);
                 self.output().accumulator = Conversation::new_unvalidated([message]);
             }
+            self.answer_unadvertised_tool_calls(&tools, emit);
             applied(self.take_output())
         }
         .instrument(span)

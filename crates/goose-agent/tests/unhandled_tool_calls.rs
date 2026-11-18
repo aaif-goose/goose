@@ -7,7 +7,7 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY},
     Conversation,
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -38,23 +38,19 @@ async fn run(messages: Vec<Message>) -> Outcome {
         ..Outcome::default()
     };
     for effect in result.effects {
-        match effect {
-            ConversationEffect::AppendMessage(message) => {
-                outcome
-                    .responses
-                    .extend(message.content.into_iter().filter_map(|content| {
-                        let MessageContent::ToolResponse(response) = content else {
-                            return None;
-                        };
-                        let result = response.tool_result.unwrap();
-                        assert_eq!(result.is_error, Some(true));
-                        Some((
-                            response.id,
-                            result.content[0].as_text().unwrap().text.clone(),
-                        ))
-                    }));
-            }
-            _ => panic!("unexpected effect"),
+        let ConversationEffect::AppendMessage(message) = effect else {
+            panic!("unexpected effect");
+        };
+        for content in message.content {
+            let MessageContent::ToolResponse(response) = content else {
+                continue;
+            };
+            let result = response.tool_result.unwrap();
+            assert_eq!(result.is_error, Some(true));
+            outcome.responses.push((
+                response.id,
+                result.content[0].as_text().unwrap().text.clone(),
+            ));
         }
     }
     outcome
@@ -92,11 +88,8 @@ fn tool_responses(ids: &[&str]) -> Message {
     })
 }
 
-fn not_handled(id: &str) -> (String, String) {
-    (
-        id.to_string(),
-        "This tool call was not handled.".to_string(),
-    )
+fn not_available(id: &str) -> (String, String) {
+    (id.to_string(), format!("Tool '{id}' is not available."))
 }
 
 #[tokio::test]
@@ -130,10 +123,30 @@ async fn responds_to_open_calls_that_are_not_awaiting_confirmation() {
     assert_eq!(
         outcome.responses,
         vec![
-            not_handled("allowed"),
-            not_handled("unchecked"),
-            not_handled("declined"),
+            not_available("allowed"),
+            not_available("unchecked"),
+            not_available("declined"),
         ]
+    );
+}
+
+#[tokio::test]
+async fn explains_calls_that_could_not_be_parsed() {
+    let error = ErrorData::new(ErrorCode::INVALID_PARAMS, "bad json", None);
+    let outcome = run(vec![
+        kickoff(),
+        Message::assistant().with_tool_request("broken", Err(error.clone())),
+    ])
+    .await;
+
+    assert_eq!(
+        outcome.responses,
+        vec![(
+            "broken".to_string(),
+            format!(
+                "The tool call could not be parsed: {error}. Correct the arguments and try again."
+            )
+        )]
     );
 }
 

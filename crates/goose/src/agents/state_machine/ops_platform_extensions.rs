@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use rmcp::model::Tool;
 
 use super::ops_toolcalling::{
-    extension_prompt_parts, pending_advertised_tool_requests, requests_can_resolve_tools,
-    ToolDisposition, ToolExecution,
+    extension_prompt_parts, pending_tool_requests, requests_can_resolve_tools, ToolDisposition,
+    ToolExecution,
 };
 use super::{
     messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation, OperationResult,
@@ -85,7 +85,7 @@ impl Operation<Session, GooseEffect> for PlatformExtensionOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        let pending = pending_advertised_tool_requests(messages);
+        let pending = pending_tool_requests(messages);
         if pending.is_empty() {
             return not_applicable();
         }
