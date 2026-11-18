@@ -47,6 +47,7 @@ struct Transport {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Input {
+    format: Option<String>,
     value: Option<String>,
     default: Option<String>,
     #[serde(default)]
@@ -171,9 +172,11 @@ impl ServerDocument {
 
 impl Package {
     fn config(&self, name: String, description: String) -> Result<ExtensionConfig> {
-        if self.transport.kind != "stdio" {
-            return self.transport.config(name, description);
-        }
+        ensure!(
+            self.transport.kind == "stdio",
+            "unsupported package transport '{}'; packages must use stdio",
+            self.transport.kind
+        );
         ensure!(
             self.file_sha256.is_none(),
             "package integrity hashes are not supported"
@@ -322,6 +325,14 @@ fn arguments(items: &[Argument]) -> Result<Vec<String>> {
                     name.starts_with('-') && !name.contains('\0'),
                     "invalid named argument"
                 );
+                if input.format.as_deref() == Some("boolean") {
+                    ensure!(
+                        matches!(value.as_str(), "true" | "false"),
+                        "invalid boolean argument value"
+                    );
+                    args.push(format!("{name}={value}"));
+                    continue;
+                }
                 args.push(name.clone());
             }
             args.push(value);
@@ -403,6 +414,10 @@ mod tests {
                     { "name": "TOKEN", "isRequired": true, "isSecret": true },
                     { "name": "OPTIONAL", "isSecret": true }
                 ],
+                "runtimeArguments": [
+                    { "type": "named", "name": "--read-only", "format": "boolean", "value": "true" },
+                    { "type": "named", "name": "--init", "format": "boolean", "default": "false" }
+                ],
                 "packageArguments": [{ "type": "named", "name": "--optional" }]
             })],
             vec![],
@@ -421,10 +436,36 @@ mod tests {
         assert_eq!(cmd, "podman");
         assert_eq!(
             args,
-            ["run", "--rm", "-i", "-e", "TOKEN", "example/weather:1.0.0"]
+            [
+                "run",
+                "--read-only=true",
+                "--init=false",
+                "--rm",
+                "-i",
+                "-e",
+                "TOKEN",
+                "example/weather:1.0.0"
+            ]
         );
         assert_eq!(env_keys, ["TOKEN"]);
         assert!(envs.get_env().is_empty());
+    }
+
+    #[test]
+    fn http_transport_is_supported_for_remotes_but_not_packages() {
+        let http = json!({ "type": "streamable-http", "url": "http://localhost:3000/mcp" });
+        let document = server(
+            vec![json!({
+                "registryType": "npm", "identifier": "weather", "transport": http.clone(),
+            })],
+            vec![http],
+        );
+        let error = document.extension(ServerSelection::Package(0)).unwrap_err();
+        assert!(error.to_string().contains("packages must use stdio"));
+        assert!(matches!(
+            document.extension(ServerSelection::Remote(0)),
+            Ok(ExtensionConfig::StreamableHttp { .. })
+        ));
     }
 
     #[test]
