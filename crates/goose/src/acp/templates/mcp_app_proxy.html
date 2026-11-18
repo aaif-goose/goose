@@ -27,10 +27,6 @@
       (function () {
         'use strict';
 
-        // The guest server (spawn_guest_server in mcp_app_proxy.rs) binds an
-        // ephemeral loopback port and serves GET /mcp-app-guest?nonce=<uuid>.
-        // It must stay on a different origin from this proxy, because the guest
-        // iframe is sandboxed with allow-scripts + allow-same-origin.
         var GUEST_HOSTS = { '127.0.0.1': 'http://127.0.0.1' };
         var GUEST_PATH = '/mcp-app-guest';
         var NONCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,9 +53,6 @@
           return window.location.origin + prefix;
         }
 
-        // Validate the guest URL returned by the server and rebuild it from
-        // constants plus sanitized parts (numeric port, UUID nonce), so the
-        // server string itself is never used as the iframe src.
         function buildGuestTarget(rawUrl) {
           var parsed;
           try {
@@ -99,8 +92,6 @@
 
           var origin = hostBase + ':' + String(port);
 
-          // Keep the guest on a different origin from the proxy: allow-scripts +
-          // allow-same-origin is only safe under that separation.
           if (origin === window.location.origin) {
             throw new Error('Guest must not share the proxy origin');
           }
@@ -232,7 +223,6 @@
           try {
             guestTarget = await storeGuestHtml(guestHtml);
           } catch (e) {
-            // A newer resource-ready notification superseded this one; its result owns the UI.
             if (guestIframe !== iframe) {
               return;
             }
@@ -241,7 +231,6 @@
             return;
           }
 
-          // Out-of-order store responses must not overwrite the newer iframe.
           if (guestIframe !== iframe) {
             return;
           }
@@ -274,7 +263,6 @@
             return;
           }
 
-          // Only forward to the guest once its origin is known, and only to that origin.
           if (guestIframe && guestIframe.contentWindow && guestOrigin) {
             guestIframe.contentWindow.postMessage(data, guestOrigin);
           }
