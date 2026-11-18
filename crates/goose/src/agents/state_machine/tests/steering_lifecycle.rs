@@ -5,7 +5,7 @@ use super::pipeline::{self, test_pipeline, MessageKind::Agent};
 use crate::conversation::message::Message;
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
-const WRITE_WORKING_NOTES: &str = "write structured working notes from the conversation so far";
+const WRITE_SUMMARY: &str = "write a structured summary of the conversation so far";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<()> {
@@ -49,7 +49,7 @@ async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<(
         .repeat((pipeline.context_limit() as f64 * pipeline::COMPACTION_THRESHOLD * 1.01) as usize);
     let held_response = api.on("continue near the limit").hold_reply(large_response);
     api.on(SUMMARIZE_HISTORY).reply("steered work summarized");
-    api.on(WRITE_WORKING_NOTES).reply("steered work summarized");
+    api.on(WRITE_SUMMARY).reply("steered work summarized");
     api.on("Your context was compacted")
         .reply("continued after steering compaction");
 
@@ -69,7 +69,7 @@ async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<(
     assert!(!pipeline.has_pending_steers().await);
     let calls = api.calls();
     assert!(calls.iter().any(|call| {
-        call.input_contains(SUMMARIZE_HISTORY) || call.input_contains(WRITE_WORKING_NOTES)
+        call.input_contains(SUMMARIZE_HISTORY) || call.input_contains(WRITE_SUMMARY)
     }));
     let continuation = calls.last().expect("continuation request");
     assert!(continuation.input_contains("steered work summarized"));

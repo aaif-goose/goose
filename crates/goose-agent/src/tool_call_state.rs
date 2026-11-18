@@ -32,26 +32,28 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
     let mut tool_responses_by_id = HashMap::new();
     let mut confirmation_requests = HashSet::new();
     let mut confirmations = HashMap::new();
-    for content in messages.iter().flat_map(|message| &message.content) {
-        match content {
-            MessageContent::ToolRequest(request) => {
-                if request_ids.insert(request.id.as_str()) {
-                    requests.push(request);
+    for message in messages {
+        for content in &message.content {
+            match content {
+                MessageContent::ToolRequest(request) if message.is_agent_visible() => {
+                    if request_ids.insert(request.id.as_str()) {
+                        requests.push(request);
+                    }
                 }
-            }
-            MessageContent::ToolResponse(response) => {
-                tool_responses_by_id.insert(response.id.as_str(), response);
-            }
-            MessageContent::ActionRequired(action) => match &action.data {
-                ActionRequiredData::ToolConfirmation { id, .. } => {
-                    confirmation_requests.insert(id.as_str());
+                MessageContent::ToolResponse(response) => {
+                    tool_responses_by_id.insert(response.id.as_str(), response);
                 }
-                ActionRequiredData::ToolConfirmationResponse { id, permission } => {
-                    confirmations.insert(id.as_str(), permission);
-                }
+                MessageContent::ActionRequired(action) => match &action.data {
+                    ActionRequiredData::ToolConfirmation { id, .. } => {
+                        confirmation_requests.insert(id.as_str());
+                    }
+                    ActionRequiredData::ToolConfirmationResponse { id, permission } => {
+                        confirmations.insert(id.as_str(), permission);
+                    }
+                    _ => {}
+                },
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 

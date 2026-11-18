@@ -438,7 +438,9 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         hide_response: bool,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        self.answer_unadvertised_tool_calls(tools, emit);
+        if !hide_response {
+            self.answer_unadvertised_tool_calls(tools, emit);
+        }
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
         let mut message = Message::from_provider_error(err);
@@ -639,7 +641,9 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 attach_operation_logs(&mut message, &mut operation_logs);
                 self.output().accumulator = Conversation::new_unvalidated([message]);
             }
-            self.answer_unadvertised_tool_calls(&tools, emit);
+            if !hide_response {
+                self.answer_unadvertised_tool_calls(&tools, emit);
+            }
             applied(self.take_output())
         }
         .instrument(span)
