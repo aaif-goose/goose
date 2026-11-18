@@ -2,7 +2,7 @@ import { Loader2, X } from 'lucide-react';
 import { defineMessages, useIntl } from '../i18n';
 import type { ToolRequest, ToolResponse } from '../types/message';
 
-const FINAL_OUTPUT_TOOL_NAME = 'recipe__final_output';
+const FINAL_OUTPUT_TOOL_NAMES = ['final_output', 'recipe__final_output'];
 
 const i18n = defineMessages({
   returning: {
@@ -25,7 +25,9 @@ const i18n = defineMessages({
 
 export function isFinalOutputToolRequest(toolRequest: ToolRequest): boolean {
   const toolCall = toolRequest.toolCall as { status?: string; value?: { name?: string } };
-  return toolCall.status === 'success' && toolCall.value?.name === FINAL_OUTPUT_TOOL_NAME;
+  return (
+    toolCall.status === 'success' && FINAL_OUTPUT_TOOL_NAMES.includes(toolCall.value?.name ?? '')
+  );
 }
 
 interface FinalOutputLineProps {

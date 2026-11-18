@@ -1,4 +1,5 @@
 use anyhow::Result;
+use goose_agent::final_output::FinalOutputTool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
@@ -114,6 +115,16 @@ pub struct Settings {
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub json_schema: Option<serde_json::Value>,
+}
+
+impl Response {
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        let json_schema = self
+            .json_schema
+            .clone()
+            .ok_or_else(|| "json_schema is required".to_string())?;
+        FinalOutputTool::try_new(json_schema).map(|_| ())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

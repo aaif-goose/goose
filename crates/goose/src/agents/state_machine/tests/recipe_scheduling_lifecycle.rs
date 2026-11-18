@@ -11,7 +11,6 @@ use super::pipeline::test_pipeline_with_scheduler;
 use super::pipeline::MessageKind::ToolResponse;
 use super::pipeline::{test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error};
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 #[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
@@ -19,6 +18,8 @@ use crate::conversation::message::Message;
 #[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
+use goose_agent::final_output::FINAL_OUTPUT_CONTINUATION_MESSAGE;
+use goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 
 #[tokio::test]
 async fn slash_recipe_extensions_remain_available_in_the_session() -> Result<()> {

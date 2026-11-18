@@ -151,6 +151,7 @@ tools, provider, or subagent runner:
 | [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
 | [`SlashCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/slash_command/struct.SlashCommandOperation.html) | Run the command named by a kickoff message that starts with `/`, using the commands its operations offer. |
 | [`BangCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/bang_command/struct.BangCommandOperation.html) | Turn a user message beginning with `!` into a call to a tool you name, without inference. |
+| [`FinalOutputOperation`](https://docs.rs/goose-agent/latest/goose_agent/final_output/struct.FinalOutputOperation.html) | Offer a structured final output tool for the schema your `FinalOutputSchemaSource` returns, validate the model's answer, and remind the model to call it. |
 
 ### Operations in goose
 
@@ -162,7 +163,6 @@ your application.
 
 | Operation                     | Purpose                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| `FinalOutputOperation`        | Offer the structured final output tool to the model and collect the answer.                       |
 | `ToolApprovalOperation`       | Inspect pending tool requests and record whether they can execute or need approval.               |
 | `ToolExecutionOperation`      | Execute eligible extension tool calls, including tool hooks and streamed output.                  |
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |

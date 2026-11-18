@@ -2278,7 +2278,6 @@ mod tests {
     mod empty_turn_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
         use goose::agents::{AgentEvent, GoosePlatform, SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
@@ -2288,6 +2287,7 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
+        use goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;

@@ -16,14 +16,14 @@ use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
-    CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource,
-    GooseToolApproval, InferenceRunner, McpPromptOperation, Operation, PlatformExtensionOperation,
-    ProjectOperation, RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
-    SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnavailableDecisions,
-    UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    recipe_unsupported_message, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
+    FinalOutputOperation, GooseEffect, GooseFinalOutputSchemaSource, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseSkillSource, GooseToolApproval, InferenceRunner,
+    McpPromptOperation, Operation, PlatformExtensionOperation, ProjectOperation, RecipeOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
+    StopHookOperation, SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -130,7 +130,10 @@ pub(crate) fn build_state_machine(
         SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
     );
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-        Arc::new(FinalOutputOperation::new(provider.clone())),
+        Arc::new(
+            FinalOutputOperation::new(Arc::new(GooseFinalOutputSchemaSource), provider.clone())
+                .with_unsupported_message(recipe_unsupported_message(provider.get_name())),
+        ),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),

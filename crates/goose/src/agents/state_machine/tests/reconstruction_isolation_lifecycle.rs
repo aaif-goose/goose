@@ -39,10 +39,10 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     use super::calculator_extension::REQUEST_VALUE;
     use super::dummy_api::ProviderFeatures;
     use super::pipeline::test_pipeline_with;
-    use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
     use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
     use crate::config::GooseMode;
     use crate::recipe::{Recipe, Response};
+    use goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
     use goose_providers::model::ModelConfig;
 
     let (pipeline, api) = test_pipeline_with(ProviderFeatures {

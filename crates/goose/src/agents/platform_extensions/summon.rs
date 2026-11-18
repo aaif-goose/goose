@@ -1,5 +1,4 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::state_machine::DELEGATED_META_KEY;
@@ -17,6 +16,7 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::final_output::FinalOutputTool;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, MetaObject,
@@ -970,7 +970,11 @@ impl SummonClient {
                 })),
             });
         }
-        FinalOutputTool::try_new(recipe.response.as_ref().unwrap().clone())
+        recipe
+            .response
+            .as_ref()
+            .unwrap()
+            .validate()
             .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
 
         let mut extension_data = ExtensionData::default();
@@ -1803,7 +1807,7 @@ mod tests {
                 &Message::assistant().with_tool_request(
                     "final-output-call",
                     Ok(rmcp::model::CallToolRequestParams::new(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+                        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
                     )
                     .with_arguments(arguments)),
                 ),
@@ -1815,7 +1819,7 @@ mod tests {
                 &Message::user().with_tool_response(
                     "final-output-call",
                     Ok(CallToolResult::success(vec![ContentBlock::text(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
+                        goose_agent::final_output::FINAL_OUTPUT_SUCCESS_MESSAGE,
                     )])),
                 ),
             )

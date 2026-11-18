@@ -39,6 +39,7 @@ mod tests;
 
 pub use effects::GooseEffect;
 pub use goose_agent::command::Command;
+pub(super) use goose_agent::final_output::FinalOutputOperation;
 pub use goose_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
@@ -62,7 +63,7 @@ pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDecisions};
 pub(super) use ops_doctor::DoctorOperation;
-pub(super) use ops_final_output::FinalOutputOperation;
+pub(super) use ops_final_output::{recipe_unsupported_message, GooseFinalOutputSchemaSource};
 pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_mcp_prompts::McpPromptOperation;
 pub(super) use ops_platform_extensions::PlatformExtensionOperation;
