@@ -13,6 +13,8 @@ export type ConfigKey = {
 };
 
 export type ModelInfo = {
+  cache_read_token_cost?: number | null;
+  cache_write_token_cost?: number | null;
   context_limit?: number | null;
   currency?: string | null;
   input_token_cost?: number | null;
@@ -60,7 +62,7 @@ export type UpdateCustomProviderRequest = {
   headers?: Record<string, string> | null;
   models: string[];
   preserves_thinking?: boolean | null;
-  requires_auth?: boolean;
+  requires_auth: boolean;
   supports_streaming?: boolean | null;
   toolshim: boolean;
 };

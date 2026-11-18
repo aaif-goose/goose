@@ -113,9 +113,9 @@ Each tool can be set to one of three permission levels:
     │  developer 
     │
     ◇  Choose a tool to update permission
-    │  developer__image_processor 
+    │  read_image 
     │
-    ◆  Set permission level for tool developer__image_processor, current permission level: Not Set
+    ◆  Set permission level for tool read_image, current permission level: Not Set
     │  ○ Always Allow 
      // highlight-start
     │  ● Ask Before (Prompt before executing this tool)

@@ -87,7 +87,7 @@ fn extract_functions(
     let mut symbols = Vec::new();
 
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             if query.capture_names()[cap.index as usize] == "name" {
                 let name = node_text(source, &cap.node).to_string();
                 let line = cap.node.start_position().row + 1;
@@ -119,7 +119,7 @@ fn collect_init_deinit(
     info: &LangInfo,
     symbols: &mut Vec<Symbol>,
 ) {
-    for i in 0..node.child_count() as u32 {
+    for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             match child.kind() {
                 "init_declaration" => {
@@ -160,7 +160,7 @@ fn extract_classes(
     let mut symbols = Vec::new();
 
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             if query.capture_names()[cap.index as usize] == "name" {
                 let name_text = node_text(source, &cap.node).to_string();
                 let line = cap.node.start_position().row + 1;
@@ -239,7 +239,7 @@ fn extract_inheritance(lang_name: &str, class_node: &tree_sitter::Node, source: 
         "javascript" => {
             if let Some(heritage) = find_child_by_kind(class_node, "class_heritage") {
                 // Get the full extends expression (could be identifier, member_expression, etc.)
-                for i in 0..heritage.child_count() as u32 {
+                for i in 0..heritage.child_count() {
                     if let Some(child) = heritage.child(i) {
                         let text = node_text(source, &child).trim();
                         if !text.is_empty() && text != "extends" {
@@ -336,7 +336,7 @@ fn extract_inheritance(lang_name: &str, class_node: &tree_sitter::Node, source: 
                 return String::new();
             }
             let mut has_for = false;
-            for i in 0..class_node.child_count() as u32 {
+            for i in 0..class_node.child_count() {
                 if let Some(child) = class_node.child(i) {
                     if node_text(source, &child) == "for" {
                         has_for = true;
@@ -350,7 +350,7 @@ fn extract_inheritance(lang_name: &str, class_node: &tree_sitter::Node, source: 
             }
             let mut trait_name = String::new();
             let mut found_for = false;
-            for i in 0..class_node.child_count() as u32 {
+            for i in 0..class_node.child_count() {
                 if let Some(child) = class_node.child(i) {
                     if node_text(source, &child) == "for" {
                         found_for = true;
@@ -381,7 +381,7 @@ fn find_enclosing_class(node: tree_sitter::Node, source: &str, info: &LangInfo) 
             if parent.kind() == "impl_item" {
                 // For trait impls (impl Trait for Type), get the type after "for"
                 let mut found_for = false;
-                for i in 0..parent.child_count() as u32 {
+                for i in 0..parent.child_count() {
                     if let Some(child) = parent.child(i) {
                         if node_text(source, &child) == "for" {
                             found_for = true;
@@ -409,7 +409,7 @@ fn find_enclosing_class(node: tree_sitter::Node, source: &str, info: &LangInfo) 
             }
             // For Go type_declaration, look inside type_spec
             if parent.kind() == "type_declaration" {
-                for i in 0..parent.child_count() as u32 {
+                for i in 0..parent.child_count() {
                     if let Some(child) = parent.child(i) {
                         if child.kind() == "type_spec" {
                             return find_child_by_kind(&child, "type_identifier")
@@ -476,7 +476,7 @@ fn extract_fn_signature_from_node(fn_node: tree_sitter::Node, source: &str) -> O
     // For Rust: look for a child that is "->" followed by a type
     // For Python: look for "return_type" or "type" child
     // Generic approach: scan children for return type indicators
-    for i in 0..fn_node.child_count() as u32 {
+    for i in 0..fn_node.child_count() {
         if let Some(child) = fn_node.child(i) {
             if ret_kinds.contains(&child.kind()) {
                 let ret_text = node_text(source, &child).trim().to_string();
@@ -554,7 +554,7 @@ fn collect_field_names(
     source: &str,
     out: &mut Vec<String>,
 ) {
-    for i in 0..node.child_count() as u32 {
+    for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             if field_kinds.contains(&child.kind()) {
                 // Java/Kotlin: field name is inside variable_declarator, not a direct child.
@@ -582,7 +582,7 @@ fn find_child_by_kind<'a>(
     node: &tree_sitter::Node<'a>,
     kind: &str,
 ) -> Option<tree_sitter::Node<'a>> {
-    (0..node.child_count() as u32)
+    (0..node.child_count())
         .filter_map(|i| node.child(i))
         .find(|c| c.kind() == kind)
 }
@@ -594,7 +594,7 @@ fn find_descendant_by_kind<'a>(
     if node.kind() == kind {
         return Some(*node);
     }
-    for i in 0..node.child_count() as u32 {
+    for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             if let Some(found) = find_descendant_by_kind(&child, kind) {
                 return Some(found);
@@ -618,7 +618,7 @@ fn extract_imports(
     let mut imports: Vec<Import> = Vec::new();
 
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             if query.capture_names()[cap.index as usize] != "path" {
                 continue;
             }
@@ -682,7 +682,7 @@ fn extract_calls(
     let mut calls = Vec::new();
 
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             if query.capture_names()[cap.index as usize] != "name" {
                 continue;
             }
@@ -732,7 +732,7 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
 }
 
 fn find_child_text(node: &tree_sitter::Node, kinds: &[&str], source: &str) -> Option<String> {
-    (0..node.child_count() as u32)
+    (0..node.child_count())
         .filter_map(|i| node.child(i))
         .find(|c| kinds.contains(&c.kind()))
         .map(|c| node_text(source, &c).to_string())

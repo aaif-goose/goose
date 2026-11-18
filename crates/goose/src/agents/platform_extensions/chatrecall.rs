@@ -1,14 +1,15 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::conversation::Conversation;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use indoc::indoc;
 use rmcp::model::{
-    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListToolsResult, Role, ServerCapabilities, TextContent, Tool, ToolAnnotations,
+    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, Role,
+    ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -111,9 +112,14 @@ impl ChatRecallClient {
         Ok(Self { info, context })
     }
 
-    fn search_session_types(&self) -> Vec<SessionType> {
-        match self.context.session.as_ref().map(|s| s.session_type) {
-            Some(SessionType::Acp) => vec![SessionType::Acp],
+    async fn search_session_types(&self, current_session_id: &str) -> Vec<SessionType> {
+        let current = self
+            .context
+            .session_manager
+            .get_session(current_session_id, false)
+            .await;
+        match current.map(|s| s.session_type) {
+            Ok(SessionType::Acp) => vec![SessionType::Acp],
             _ => vec![SessionType::User, SessionType::Scheduled],
         }
     }
@@ -205,7 +211,7 @@ impl ChatRecallClient {
                     after_date,
                     before_date,
                     exclude_session_id,
-                    self.search_session_types(),
+                    self.search_session_types(current_session_id).await,
                 )
                 .await
             {
@@ -292,19 +298,9 @@ impl ChatRecallClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ChatRecallClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+impl PlatformExtension for ChatRecallClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(
@@ -440,11 +436,9 @@ mod tests {
             .unwrap();
 
         let client = ChatRecallClient::new(PlatformExtensionContext {
-            extension_manager: None,
+            providers: Default::default(),
             session_manager,
             scheduler: None,
-            session: Some(Arc::new(current_session.clone())),
-            use_login_shell_path: false,
         })
         .unwrap();
         let load_output = client

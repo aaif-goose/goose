@@ -23,10 +23,7 @@ use crate::formats::databricks::create_request_for_provider;
 pub use crate::formats::databricks::DATABRICKS_PROVIDER_NAME;
 use crate::formats::openai_responses::create_responses_request;
 use crate::model::ModelConfig;
-use crate::openai_compatible::{
-    handle_status, map_http_error_to_provider_error, sanitize_url, stream_openai_compat,
-    stream_responses_compat,
-};
+use crate::openai_compatible::{handle_status, stream_openai_compat, stream_responses_compat};
 use crate::request_log::{start_log, LoggerHandleExt};
 use crate::retry::ProviderRetry;
 use crate::retry::{
@@ -76,11 +73,6 @@ static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, CachedDatabricksEndpointInfo>>,
 > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
-pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
-    "databricks-claude-sonnet-4-5",
-    "databricks-meta-llama-3-3-70b-instruct",
-    "databricks-meta-llama-3-1-405b-instruct",
-];
 
 pub const DATABRICKS_DOC_URL: &str =
     "https://docs.databricks.com/en/generative-ai/external-models/index.html";
@@ -190,8 +182,23 @@ impl DatabricksProvider {
         model_name.to_lowercase().contains("claude")
     }
 
-    fn is_reasoning_capable_model_name(model_name: &str) -> bool {
-        Self::is_claude_model(model_name) || is_openai_responses_model(model_name)
+    fn resolve_vision_support(
+        model_config: &ModelConfig,
+        effective_model_name: &str,
+    ) -> Option<ModelConfig> {
+        if effective_model_name == model_config.model_name {
+            return None;
+        }
+
+        let resolved = ModelConfig::new(effective_model_name)
+            .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME)
+            .supports_vision?;
+
+        if model_config.supports_vision == Some(resolved) {
+            return None;
+        }
+
+        Some(model_config.clone().with_vision_support(resolved))
     }
 
     fn uses_responses_api(
@@ -273,8 +280,20 @@ impl DatabricksProvider {
 
         let reasoning = upstream_model_name
             .as_deref()
-            .map(Self::is_reasoning_capable_model_name)
-            .or_else(|| Some(Self::is_reasoning_capable_model_name(&name)));
+            .and_then(|model_name| {
+                goose_provider_types::canonical::maybe_get_canonical_model(
+                    DATABRICKS_PROVIDER_NAME,
+                    model_name,
+                )
+                .and_then(|model| model.reasoning)
+            })
+            .or_else(|| {
+                goose_provider_types::canonical::maybe_get_canonical_model(
+                    DATABRICKS_PROVIDER_NAME,
+                    &name,
+                )
+                .and_then(|model| model.reasoning)
+            });
 
         Some(DatabricksEndpointInfo {
             name,
@@ -490,9 +509,12 @@ impl DatabricksProvider {
             context_limit,
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -524,7 +546,7 @@ impl crate::base::ProviderDescriptor for DatabricksProvider {
             "Databricks",
             "Models on Databricks AI Gateway",
             DATABRICKS_DEFAULT_MODEL,
-            DATABRICKS_KNOWN_MODELS.to_vec(),
+            vec![],
             DATABRICKS_DOC_URL,
             vec![
                 ConfigKey::new("DATABRICKS_HOST", true, false, None, true),
@@ -588,6 +610,9 @@ impl Provider for DatabricksProvider {
             endpoint_info.as_ref(),
             &[&model_config.model_name, effective_model_name],
         );
+        let vision_resolved_config =
+            Self::resolve_vision_support(model_config, effective_model_name);
+        let model_config = vision_resolved_config.as_ref().unwrap_or(model_config);
         let path = if is_responses_model {
             "serving-endpoints/responses".to_string()
         } else {
@@ -706,17 +731,7 @@ impl Provider for DatabricksProvider {
                         .streaming(true)
                         .response_post(&payload)
                         .await?;
-                    if !resp.status().is_success() {
-                        let status = resp.status();
-                        let url = sanitize_url(resp.url().as_str());
-                        let error_text = crate::http_status::read_error_body(resp)
-                            .await
-                            .unwrap_or_default();
-
-                        let json_payload = serde_json::from_str::<Value>(&error_text).ok();
-                        return Err(map_http_error_to_provider_error(status, json_payload, &url));
-                    }
-                    Ok(resp)
+                    handle_status(resp).await
                 })
                 .await;
 
@@ -731,20 +746,7 @@ impl Provider for DatabricksProvider {
                             .streaming(true)
                             .response_post(&payload)
                             .await?;
-                        if !resp.status().is_success() {
-                            let status = resp.status();
-                            let url = sanitize_url(resp.url().as_str());
-                            let error_text = crate::http_status::read_error_body(resp)
-                                .await
-                                .unwrap_or_default();
-                            let json_payload = serde_json::from_str::<Value>(&error_text).ok();
-                            return Err(map_http_error_to_provider_error(
-                                status,
-                                json_payload,
-                                &url,
-                            ));
-                        }
-                        Ok(resp)
+                        handle_status(resp).await
                     })
                     .await
                     .inspect_err(|e| {
@@ -1032,6 +1034,29 @@ mod tests {
         let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
 
         assert!(!info.supports_responses_api);
+    }
+
+    #[test]
+    fn vision_support_resolves_from_upstream_model_behind_endpoint_alias() {
+        let aliased = ModelConfig::new("production-chat");
+        assert_eq!(aliased.supports_vision, None);
+
+        let resolved = DatabricksProvider::resolve_vision_support(&aliased, "gpt-4o")
+            .expect("upstream model should resolve vision support");
+        assert_eq!(resolved.supports_vision, Some(true));
+        assert_eq!(resolved.model_name, "production-chat");
+
+        let catalog_alias = ModelConfig::new("gpt-3.5-turbo")
+            .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME);
+        assert_eq!(catalog_alias.supports_vision, Some(false));
+
+        let corrected = DatabricksProvider::resolve_vision_support(&catalog_alias, "gpt-4o")
+            .expect("upstream model should override alias-derived capability");
+        assert_eq!(corrected.supports_vision, Some(true));
+
+        let downgraded =
+            DatabricksProvider::resolve_vision_support(&resolved, "gpt-3.5-turbo").unwrap();
+        assert_eq!(downgraded.supports_vision, Some(false));
     }
 
     #[test]

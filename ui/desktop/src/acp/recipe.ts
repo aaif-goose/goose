@@ -126,7 +126,7 @@ export async function deleteRecipe(id: string): Promise<void> {
   }
 }
 
-export async function scheduleRecipe(id: string, cronSchedule?: string | null): Promise<void> {
+export async function scheduleRecipe(id: string, cronSchedule: string | null): Promise<void> {
   try {
     const client = await getAcpClient();
     await client.goose.recipesSchedule_unstable({ id, cron_schedule: cronSchedule });
@@ -137,7 +137,7 @@ export async function scheduleRecipe(id: string, cronSchedule?: string | null): 
 
 export async function setRecipeSlashCommand(
   id: string,
-  slashCommand?: string | null
+  slashCommand: string | null
 ): Promise<void> {
   try {
     const client = await getAcpClient();

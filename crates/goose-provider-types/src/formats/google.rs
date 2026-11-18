@@ -4,6 +4,7 @@ use crate::documents::{
 };
 use crate::errors::ProviderError;
 use crate::formats::openai::{is_valid_function_name, sanitize_function_name};
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::thinking::ThinkingEffort;
@@ -91,18 +92,9 @@ pub fn format_messages(messages: &[Message], nested_function_response_media: boo
         })
         .collect();
 
-    let tool_names: HashMap<_, _> = filtered
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(|content| match content {
-            MessageContentBlock::ToolRequest(request) => request
-                .tool_call
-                .as_ref()
-                .ok()
-                .map(|tool_call| (request.id.as_str(), sanitize_function_name(&tool_call.name))),
-            _ => None,
-        })
-        .collect();
+    // Record names as we walk the conversation so a reused tool-call id
+    // resolves to the nearest preceding request, not a later overwrite.
+    let mut tool_names: HashMap<&str, String> = HashMap::new();
 
     let active_loop_start_idx = filtered
         .iter()
@@ -135,12 +127,11 @@ pub fn format_messages(messages: &[Message], nested_function_response_media: boo
                     }
                     MessageContentBlock::ToolRequest(request) => match &request.tool_call {
                         Ok(tool_call) => {
+                            let name = sanitize_function_name(&tool_call.name);
+                            tool_names.insert(request.id.as_str(), name.clone());
                             let mut function_call_part = Map::new();
                             function_call_part.insert("id".to_string(), json!(request.id));
-                            function_call_part.insert(
-                                "name".to_string(),
-                                json!(sanitize_function_name(&tool_call.name)),
-                            );
+                            function_call_part.insert("name".to_string(), json!(name));
 
                             if let Some(args) = &tool_call.arguments {
                                 if !args.is_empty() {
@@ -417,8 +408,7 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
     if let Some(usage_meta_data) = data.get("usageMetadata") {
         let input_tokens = usage_meta_data
             .get("promptTokenCount")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as i32);
+            .and_then(|v| v.as_i64());
         // `candidatesTokenCount` is the visible output; thinking models
         // (Gemini 2.5/3) report reasoning tokens separately in
         // `thoughtsTokenCount`, and per the API spec `totalTokenCount` =
@@ -429,25 +419,25 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
         // includes thinking) adapters.
         let candidates_tokens = usage_meta_data
             .get("candidatesTokenCount")
-            .and_then(|v| v.as_u64());
+            .and_then(|v| v.as_i64());
         let thoughts_tokens = usage_meta_data
             .get("thoughtsTokenCount")
-            .and_then(|v| v.as_u64());
+            .and_then(|v| v.as_i64());
         let output_tokens = match (candidates_tokens, thoughts_tokens) {
             (None, None) => None,
-            (candidates, thoughts) => {
-                Some((candidates.unwrap_or(0) + thoughts.unwrap_or(0)) as i32)
-            }
+            (candidates, thoughts) => Some(
+                candidates
+                    .unwrap_or(0)
+                    .saturating_add(thoughts.unwrap_or(0)),
+            ),
         };
         let total_tokens = usage_meta_data
             .get("totalTokenCount")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as i32);
+            .and_then(|v| v.as_i64());
         // promptTokenCount already includes cachedContentTokenCount
         let cached_tokens = usage_meta_data
             .get("cachedContentTokenCount")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as i32);
+            .and_then(|v| v.as_i64());
         Ok(Usage::new(input_tokens, output_tokens, total_tokens)
             .with_cache_tokens(cached_tokens, None))
     } else {
@@ -464,7 +454,7 @@ pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     use async_stream::try_stream;
     use futures::StreamExt;
@@ -1053,6 +1043,38 @@ mod tests {
                 "id": "call_123",
                 "name": "read_file",
                 "response": {"content": {"text": "contents"}}
+            })
+        );
+    }
+
+    #[test]
+    fn test_reused_tool_call_id_keeps_each_response_name() {
+        let messages = vec![
+            set_up_tool_request_message(
+                "call_3407",
+                CallToolRequestParams::new("download_document"),
+            ),
+            set_up_tool_response_message("call_3407", vec![ContentBlock::text("the document")]),
+            set_up_tool_request_message("call_3407", CallToolRequestParams::new("shell")),
+            set_up_tool_response_message("call_3407", vec![ContentBlock::text("shell output")]),
+        ];
+
+        let payload = format_messages(&messages, false);
+
+        assert_eq!(
+            payload[1]["parts"][0]["functionResponse"],
+            json!({
+                "id": "call_3407",
+                "name": "download_document",
+                "response": {"content": {"text": "the document"}}
+            })
+        );
+        assert_eq!(
+            payload[3]["parts"][0]["functionResponse"],
+            json!({
+                "id": "call_3407",
+                "name": "shell",
+                "response": {"content": {"text": "shell output"}}
             })
         );
     }

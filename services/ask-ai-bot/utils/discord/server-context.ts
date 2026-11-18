@@ -1,11 +1,6 @@
 import type { Guild, TextChannel } from "discord.js";
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 
-function isPublicChannel(ch: TextChannel, guild: Guild): boolean {
-  const everyoneOverwrite = ch.permissionOverwrites.cache.get(guild.id);
-  return !everyoneOverwrite?.deny.has(PermissionFlagsBits.ViewChannel);
-}
-
 export async function buildServerContext(guild: Guild): Promise<string> {
   try {
     const channels = await guild.channels.fetch();
@@ -14,8 +9,9 @@ export async function buildServerContext(guild: Guild): Promise<string> {
       .filter(
         (ch): ch is TextChannel =>
           ch?.type === ChannelType.GuildText &&
-          ch !== null &&
-          isPublicChannel(ch, guild),
+          !!ch
+            .permissionsFor(guild.roles.everyone)
+            ?.has(PermissionFlagsBits.ViewChannel),
       )
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 

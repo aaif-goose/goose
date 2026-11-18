@@ -8,6 +8,7 @@ use crate::documents::{
 };
 use crate::errors::ProviderError;
 use crate::images::{convert_image, ImageFormat};
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::thinking::ThinkingEffort;
@@ -51,6 +52,11 @@ macro_rules! string_enum {
 string_enum!(ThinkingType { Adaptive => "adaptive", Enabled => "enabled", Disabled => "disabled" });
 string_enum!(CacheTtl { FiveMinutes => "5m", OneHour => "1h" });
 
+string_enum!(PrefixMismatchBehavior { DropBlock => "drop_block", Error => "error" });
+
+pub const THINKING_BINDING_CONTROLS_BETA: &str = "thinking-binding-controls-2026-08-01";
+pub const INPUT_TRANSFORMATIONS_FIELD: &str = "input_transformations";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AnthropicFormatOptions {
     pub preserve_unsigned_thinking: bool,
@@ -60,10 +66,20 @@ pub struct AnthropicFormatOptions {
     pub current_model: Option<String>,
     pub prompt_cache_disabled: bool,
     pub cache_ttl: Option<CacheTtl>,
+    pub prefix_mismatch_behavior: Option<PrefixMismatchBehavior>,
+    pub strip_thinking_history: bool,
 }
 
 impl AnthropicFormatOptions {
-    fn for_model(self, model_config: &ModelConfig) -> Self {
+    /// Anthropic-compatible providers keep `Default`, which does not request block binding.
+    pub fn native() -> Self {
+        Self {
+            prefix_mismatch_behavior: Some(PrefixMismatchBehavior::DropBlock),
+            ..Self::default()
+        }
+    }
+
+    fn for_model(self, provider_name: &str, model_config: &ModelConfig) -> Self {
         let preserve_thinking_context = model_config
             .request_param::<bool>("preserve_thinking_context")
             .unwrap_or(self.preserve_thinking_context);
@@ -71,8 +87,11 @@ impl AnthropicFormatOptions {
             .request_param::<bool>("preserve_unsigned_thinking")
             .unwrap_or(self.preserve_unsigned_thinking)
             || preserve_thinking_context;
-        let thinking_disabled = model_config.reasoning == Some(false)
-            || model_config.thinking_effort() == Some(ThinkingEffort::Off);
+        let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
+            == Some(ThinkingMode::AlwaysOnAdaptive);
+        let thinking_disabled = !always_on
+            && (model_config.reasoning == Some(false)
+                || model_config.thinking_effort() == Some(ThinkingEffort::Off));
         let emit_clear_thinking = model_config
             .request_param::<bool>("emit_clear_thinking")
             .unwrap_or(self.emit_clear_thinking);
@@ -80,6 +99,14 @@ impl AnthropicFormatOptions {
             .cache_ttl()
             .and_then(|ttl| ttl.parse::<CacheTtl>().ok())
             .or(self.cache_ttl);
+        let prefix_mismatch_behavior = match model_config
+            .request_param::<String>("prefix_mismatch_behavior")
+            .as_deref()
+        {
+            None => self.prefix_mismatch_behavior,
+            Some("off") => None,
+            Some(value) => value.parse().ok().or(self.prefix_mismatch_behavior),
+        };
 
         Self {
             preserve_unsigned_thinking,
@@ -91,6 +118,8 @@ impl AnthropicFormatOptions {
                 .or_else(|| Some(model_config.model_name.clone())),
             prompt_cache_disabled: model_config.prompt_cache_disabled(),
             cache_ttl,
+            prefix_mismatch_behavior,
+            strip_thinking_history: self.strip_thinking_history,
         }
     }
 
@@ -105,6 +134,13 @@ impl AnthropicFormatOptions {
             _ => json!({ TYPE_FIELD: "ephemeral" }),
         }
     }
+}
+
+pub fn is_reserved_request_param_key(key: &str) -> bool {
+    matches!(
+        key,
+        "messages" | "model" | "stream" | "max_tokens" | "system" | "tools"
+    )
 }
 
 pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -> bool {
@@ -123,7 +159,18 @@ pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -
 }
 
 fn canonical_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
-    maybe_get_canonical_model(provider_name, model_name).and_then(|model| model.thinking_mode)
+    maybe_get_canonical_model(provider_name, model_name)
+        .and_then(|model| model.thinking_mode)
+        .or_else(|| provider_thinking_mode(provider_name, model_name))
+}
+
+/// Models that always reason when the canonical entry has no thinking mode.
+/// Muse Spark rejects `thinking: disabled` and ignores `budget_tokens`.
+fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
+    if provider_name == "muse_code" && model_name.starts_with("muse-spark") {
+        return Some(ThinkingMode::AlwaysOnAdaptive);
+    }
+    None
 }
 
 /// Adaptive models run adaptive thinking when `thinking` is omitted, so turning
@@ -248,6 +295,8 @@ fn format_messages_with_options(
         };
 
         let thinking_is_stale = thinking_block_is_stale(message, options.current_model.as_deref());
+        let replay_thinking =
+            !options.thinking_disabled && !options.strip_thinking_history && !thinking_is_stale;
 
         let mut content = Vec::new();
         for msg_content in &message.content {
@@ -401,15 +450,13 @@ fn format_messages_with_options(
                 }
                 MessageContentBlock::Thinking(thinking) => {
                     // Anthropic rejects thinking blocks sent without a matching thinking config.
-                    if !options.thinking_disabled {
+                    if replay_thinking {
                         if !thinking.signature.is_empty() {
-                            if !thinking_is_stale {
-                                content.push(json!({
-                                    TYPE_FIELD: THINKING_TYPE,
-                                    THINKING_TYPE: thinking.thinking,
-                                    SIGNATURE_FIELD: thinking.signature
-                                }));
-                            }
+                            content.push(json!({
+                                TYPE_FIELD: THINKING_TYPE,
+                                THINKING_TYPE: thinking.thinking,
+                                SIGNATURE_FIELD: thinking.signature
+                            }));
                         } else if options.preserve_unsigned_thinking
                             && !thinking.thinking.is_empty()
                         {
@@ -421,7 +468,7 @@ fn format_messages_with_options(
                     }
                 }
                 MessageContentBlock::RedactedThinking(redacted) => {
-                    if !options.thinking_disabled && !thinking_is_stale {
+                    if replay_thinking {
                         content.push(json!({
                             TYPE_FIELD: REDACTED_THINKING_TYPE,
                             DATA_FIELD: redacted.data
@@ -614,12 +661,7 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 }
 
 fn usage_from_anthropic_fields(usage: &Value) -> Usage {
-    let field = |key: &str| {
-        usage
-            .get(key)
-            .and_then(|v| v.as_u64())
-            .map(|v| v.min(i32::MAX as u64) as i32)
-    };
+    let field = |key: &str| usage.get(key).and_then(|v| v.as_i64());
 
     Usage::from_cache_exclusive_input(
         Some(field("input_tokens").unwrap_or(0)),
@@ -663,6 +705,23 @@ fn merge_delta_usage(existing: &Usage, delta: &Usage, delta_data: &Value) -> Usa
     }
 }
 
+pub fn error_for_type(error_type: Option<&str>, details: String) -> ProviderError {
+    match error_type {
+        Some("authentication_error" | "permission_error") => ProviderError::Authentication(details),
+        Some("rate_limit_error") => ProviderError::RateLimitExceeded {
+            details,
+            retry_delay: None,
+        },
+        Some("billing_error") => ProviderError::CreditsExhausted {
+            details,
+            top_up_url: None,
+        },
+        Some("request_too_large") => ProviderError::ContextLengthExceeded(details),
+        Some("api_error" | "overloaded_error") => ProviderError::ServerError(details),
+        _ => ProviderError::RequestFailed(details),
+    }
+}
+
 pub fn get_usage(data: &Value) -> Result<Usage> {
     if let Some(usage) = data.get("usage") {
         Ok(usage_from_anthropic_fields(usage))
@@ -687,6 +746,24 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
 
 /// Anthropic response fields that have no canonical `ProviderUsage` equivalent.
 const ADDITIONAL_USAGE_FIELDS: [&str; 1] = ["service_tier"];
+
+pub fn input_transformations(message_data: &Value) -> Option<Value> {
+    let transformations = message_data.get(INPUT_TRANSFORMATIONS_FIELD)?.as_array()?;
+    let dropped: Vec<(&str, &str)> = transformations
+        .iter()
+        .filter(|t| t.get("type").and_then(|v| v.as_str()) == Some("thinking_dropped"))
+        .map(|t| {
+            (
+                t.get("path").and_then(Value::as_str).unwrap_or(""),
+                t.get("reason").and_then(Value::as_str).unwrap_or(""),
+            )
+        })
+        .collect();
+    if !dropped.is_empty() {
+        tracing::warn!(?dropped, "API dropped thinking blocks from the request");
+    }
+    Some(Value::Array(transformations.clone()))
+}
 
 pub fn get_additional_data(data: &Value) -> Option<Map<String, Value>> {
     let usage = data.get("usage")?.as_object()?;
@@ -714,6 +791,15 @@ pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
     model_config
         .thinking_effort()
         .unwrap_or(ThinkingEffort::High)
+}
+
+fn adaptive_effort_wire(provider_name: &str, model_config: &ModelConfig) -> String {
+    let effort = adaptive_output_effort(model_config);
+    // Meta Messages accepts low, medium, high, and xhigh. goose's max maps to xhigh.
+    if provider_name == "muse_code" && effort == ThinkingEffort::Max {
+        return "xhigh".to_string();
+    }
+    effort.to_string()
 }
 
 pub fn adaptive_output_effort(model_config: &ModelConfig) -> ThinkingEffort {
@@ -762,7 +848,7 @@ fn apply_thinking_config(
     match thinking_type_for_provider(provider_name, model_config) {
         ThinkingType::Adaptive => {
             obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = adaptive_output_effort(model_config).to_string();
+            let effort = adaptive_effort_wire(provider_name, model_config);
             obj.insert("output_config".to_string(), json!({"effort": effort}));
         }
         ThinkingType::Enabled => {
@@ -809,6 +895,51 @@ fn apply_thinking_config(
     {
         obj.insert("thinking".to_string(), json!({"type": "disabled"}));
     }
+
+    // Newer Claude models default to `display: "omitted"` and return empty thinking
+    // blocks. Request summaries explicitly; other models sharing this format don't
+    // accept the field.
+    if model_config.model_name.to_lowercase().contains("claude") {
+        if let Some(thinking) = obj.get_mut("thinking").and_then(|t| t.as_object_mut()) {
+            if thinking.get("type").and_then(|t| t.as_str()) != Some("disabled") {
+                thinking.insert("display".to_string(), json!("summarized"));
+            }
+        }
+    }
+
+    // `block_binding` is only accepted alongside adaptive or enabled thinking.
+    if let Some(behavior) = options.prefix_mismatch_behavior {
+        if let Some(thinking) = obj.get_mut("thinking").and_then(|t| t.as_object_mut()) {
+            if thinking.get("type").and_then(|t| t.as_str()) != Some("disabled") {
+                thinking.insert(
+                    "block_binding".to_string(),
+                    json!({"prefix_mismatch_behavior": behavior.to_string()}),
+                );
+            }
+        }
+    }
+}
+
+pub fn block_binding_behavior(payload: &Value) -> Option<PrefixMismatchBehavior> {
+    payload
+        .pointer("/thinking/block_binding/prefix_mismatch_behavior")
+        .and_then(Value::as_str)
+        .and_then(|behavior| behavior.parse().ok())
+}
+
+pub fn is_thinking_signature_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("thinking")
+        && (lower.contains("signature")
+            || lower.contains("cannot be modified")
+            || lower.contains("block_binding"))
+}
+
+pub fn is_unsupported_thinking_config_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("thinking")
+        && (lower.contains("is not supported for this model")
+            || lower.contains("to turn thinking off on this model"))
 }
 
 pub fn create_request(
@@ -839,7 +970,7 @@ pub fn create_request_for_model(
     tools: &[Tool],
     options: AnthropicFormatOptions,
 ) -> Result<Value> {
-    let options = options.for_model(model_config);
+    let options = options.for_model(provider_name, model_config);
     let anthropic_messages = format_messages_with_options(messages, &options);
     let tool_specs = format_tools(tools, &options);
     let system_spec = format_system(system, &options);
@@ -894,7 +1025,7 @@ pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     use async_stream::try_stream;
     use futures::StreamExt;
@@ -938,10 +1069,12 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
+        let mut held = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
         let mut stop_reason: Option<String> = None;
+        let mut message_stopped = false;
         let mut additional_data: Option<Map<String, Value>> = None;
 
         while let Some(line_result) = stream.next().await {
@@ -955,24 +1088,34 @@ where
 
             let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
 
+            if data_part.trim().is_empty() {
+                continue;
+            }
+
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
                 break;
             }
 
-            // Parse the JSON event
-            let event: StreamingEvent = match serde_json::from_str(data_part) {
-                Ok(event) => event,
-                Err(e) => {
-                    tracing::debug!("Failed to parse streaming event: {} - Line: {}", e, data_part);
-                    continue;
-                }
-            };
+            let event: StreamingEvent = serde_json::from_str(data_part)
+                .map_err(ProviderError::stream_decode_error)?;
 
             match event.event_type.as_str() {
+                "error" => {
+                    let error = event.data.get("error").unwrap_or(&event.data);
+                    let error_type = error.get("type").and_then(Value::as_str);
+                    let message = error.get("message").and_then(Value::as_str).unwrap_or("Anthropic stream error");
+                    let details = format!("{}: {message}", error_type.unwrap_or("unknown_error"));
+                    Err(error_for_type(error_type, details))?;
+                }
                 EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
                         additional_data = get_additional_data(message_data);
+                        if let Some(transformations) = input_transformations(message_data) {
+                            additional_data
+                                .get_or_insert_with(Map::new)
+                                .insert(INPUT_TRANSFORMATIONS_FIELD.to_string(), transformations);
+                        }
                         if let Some(id) = message_data.get("id").and_then(|v| v.as_str()) {
                             message_id = Some(id.to_string());
                         }
@@ -1023,7 +1166,7 @@ where
                                     let mut message = Message::assistant()
                                         .with_redacted_thinking(data);
                                     message.id = message_id.clone();
-                                    yield (Some(message), None);
+                                    if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                 } else {
                                     tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
                                 }
@@ -1039,7 +1182,7 @@ where
                             Ok(ContentBlockDelta::TextDelta { text }) => {
                                 let mut message = Message::assistant().with_text(&text);
                                 message.id = message_id.clone();
-                                yield (Some(message), None);
+                                if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                             }
                             Ok(ContentBlockDelta::InputJsonDelta { partial_json }) => {
                                 if let Some(call) = block_index(&event.data)
@@ -1067,11 +1210,12 @@ where
                 }
                 EVENT_CONTENT_BLOCK_STOP => {
                     if let Some(state) = thinking.take() {
-                        if !state.text.is_empty() {
+                        // Omitted thinking arrives as an empty string with a signature and must still be replayed.
+                        if !state.text.is_empty() || !state.signature.is_empty() {
                             let mut message = Message::assistant()
                                 .with_thinking(state.text, state.signature);
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     if let Some(index) = block_index(&event.data) {
@@ -1098,7 +1242,7 @@ where
                                             vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
                                         );
                                         message.id = message_id.clone();
-                                        yield (Some(message), None);
+                                        if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                         continue;
                                     }
                                 }
@@ -1112,7 +1256,7 @@ where
                                 vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
                             );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            held.push(message);
                         }
                     }
                     continue;
@@ -1169,12 +1313,13 @@ where
                                 "The provider ended the response with: {details}"
                             ));
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     continue;
                 }
                 EVENT_MESSAGE_STOP => {
+                    message_stopped = true;
                     if let Some(usage_data) = event.data.get("usage") {
                         let usage = get_usage(usage_data).unwrap_or_default();
                         let model = event.data.get("model")
@@ -1192,6 +1337,14 @@ where
                     continue;
                 }
             }
+        }
+
+        if !message_stopped {
+            Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
+        }
+
+        for message in held {
+            yield (Some(message), None);
         }
 
         // A tool_use block left open at stream end never received its
@@ -1540,6 +1693,22 @@ mod tests {
     }
 
     #[test]
+    fn strip_thinking_history_removes_signed_blocks() {
+        let messages = vec![Message::assistant()
+            .with_content(MessageContent::thinking("", "sig"))
+            .with_text("answer")];
+        let opts = AnthropicFormatOptions {
+            strip_thinking_history: true,
+            ..Default::default()
+        };
+        let spec = format_messages_with_options(&messages, &opts);
+        assert_eq!(
+            spec[0]["content"],
+            json!([{"type": "text", "text": "answer"}])
+        );
+    }
+
+    #[test]
     fn drops_signed_thinking_from_a_different_model() {
         let messages = vec![signed_thinking_from_model("claude-opus-4-1")];
         let opts = AnthropicFormatOptions {
@@ -1710,9 +1879,41 @@ mod tests {
         let messages = vec![Message::user().with_text("Hello")];
         let payload = create_request_with_default_options(&config, "system", &messages, &[])?;
 
-        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(
+            payload["thinking"],
+            json!({"type": "adaptive", "display": "summarized"})
+        );
         assert_eq!(payload["output_config"]["effort"], "high");
-        assert!(payload["thinking"].get("budget_tokens").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_adaptive_thinking_for_minimax() -> Result<()> {
+        // MiniMax-M3.1-Flash rejects thinking.type=disabled and requires
+        // adaptive thinking, so the payload must carry thinking.type=adaptive
+        // plus output_config.effort even when the effort is "off".
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
+        ]);
+
+        let mut config = cfg_with_effort("MiniMax-M3.1-Flash", "off");
+        config.max_tokens = Some(4096);
+
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request_for_model(
+            "minimax",
+            &config,
+            "MiniMax-M3.1-Flash",
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions::default(),
+        )?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert!(payload["output_config"]["effort"].is_string());
 
         Ok(())
     }
@@ -1731,6 +1932,7 @@ mod tests {
         let payload = create_request_with_default_options(&config, "system", &messages, &[])?;
 
         assert_eq!(payload["thinking"]["type"], "enabled");
+        assert_eq!(payload["thinking"]["display"], "summarized");
         let budget = payload["thinking"]["budget_tokens"].as_i64().unwrap();
         assert!(budget > 0);
         assert_eq!(payload["max_tokens"], 64000);
@@ -1790,6 +1992,27 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_non_claude_adaptive_omits_thinking_display() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg("muse-spark");
+        config.reasoning = Some(true);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(
+            "muse_code",
+            &config,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions::default(),
+        )?;
+
+        assert_eq!(payload["thinking"], json!({"type": "adaptive"}));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_request_preserves_thinking_context_for_compatible_models() -> Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_ENABLED", None::<&str>),
@@ -1820,6 +2043,7 @@ mod tests {
         assert_eq!(payload["thinking"]["type"], "enabled");
         assert!(payload["thinking"]["budget_tokens"].as_i64().unwrap() >= 1024);
         assert_eq!(payload["thinking"]["clear_thinking"], false);
+        assert!(payload["thinking"].get("display").is_none());
         assert_eq!(payload["max_tokens"], 64000);
         assert_eq!(payload["messages"][0]["content"][0]["type"], "thinking");
         assert_eq!(payload["messages"][0]["content"][0]["thinking"], "internal");
@@ -2293,6 +2517,35 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_type_fable_5_2_is_always_on_adaptive() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        for model in ["claude-fable-5-2", "system.ai.claude-fable-5-2"] {
+            for effort in ["off", "low", "high"] {
+                assert_eq!(
+                    thinking_type(&cfg_with_effort(model, effort)),
+                    ThinkingType::Adaptive,
+                    "{model} {effort}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_thinking_type_opus_5_5_cannot_disable_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        assert_eq!(
+            thinking_type(&cfg("claude-opus-5-5")),
+            ThinkingType::Adaptive
+        );
+        assert_eq!(
+            thinking_type(&cfg_with_effort("claude-opus-5-5", "off")),
+            ThinkingType::Adaptive
+        );
+    }
+
+    #[test]
     fn test_create_request_fable_5_omits_temperature() -> Result<()> {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
         let mut config = cfg("claude-fable-5");
@@ -2759,6 +3012,54 @@ mod tests {
         assert_eq!(merged.output_tokens, Some(510));
         assert_eq!(merged.cache_read_input_tokens, Some(5000));
         assert_eq!(merged.cache_write_input_tokens, Some(10000));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_permission_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"permission_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::Authentication(details))
+                    if details == "permission_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_billing_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"billing_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::CreditsExhausted { details, top_up_url: None })
+                    if details == "billing_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_request_too_large_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"request_too_large","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::ContextLengthExceeded(details))
+                    if details == "request_too_large: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     fn expect_refusal(

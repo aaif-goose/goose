@@ -504,15 +504,19 @@ The `settings` field allows you to configure the AI model and provider settings 
 
 #### Understanding max_turns
 
-The `max_turns` setting controls how many iterations an agent can perform before stopping. When set in a recipe's settings, it applies to that recipe's execution and any subagents or subrecipes it creates (unless they specify their own value).
+The `max_turns` setting controls how many iterations an agent can perform before stopping. When set in a recipe's settings, it applies to that recipe's execution.
 
-**Configuration precedence (highest to lowest):**
-1. Subagent tool call override
-2. Recipe `settings.max_turns`
-3. `GOOSE_SUBAGENT_MAX_TURNS` environment variable
-4. Default value (1000 for main recipes, 25 for subagents)
+**Subagent configuration precedence (highest to lowest):**
+
+1. The `delegate` tool's `max_turns` argument.
+2. The child recipe's `settings.max_turns`.
+3. `GOOSE_SUBAGENT_MAX_TURNS` in the environment or configuration file.
+4. `GOOSE_MAX_TURNS` in the environment or configuration file.
+5. The default of 1000.
 
 **Common use cases:** Limit execution time for automated workflows, prevent runaway subagents, control resource usage in scheduled jobs.
+
+For subagents, `goose_provider` and `goose_model` in `settings` take precedence over the `GOOSE_SUBAGENT_PROVIDER` and `GOOSE_SUBAGENT_MODEL` environment variables.
 
 #### Example Settings Configuration
 

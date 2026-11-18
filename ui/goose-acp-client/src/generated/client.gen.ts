@@ -21,6 +21,8 @@ import type {
   ConfigReadResponse_unstable,
   ConfigRemoveRequest_unstable,
   ConfigUpsertRequest_unstable,
+  ContextReportRequest_unstable,
+  ContextReportResponse_unstable,
   CreateScheduleRequest_unstable,
   CreateScheduleResponse_unstable,
   CreateSourceRequest_unstable,
@@ -97,6 +99,11 @@ import type {
   ListSlashCommandsResponse_unstable,
   ListSourcesRequest_unstable,
   ListSourcesResponse_unstable,
+  LiveVoiceAvailabilityRequest_unstable,
+  LiveVoiceAvailabilityResponse_unstable,
+  LiveVoiceStartRequest_unstable,
+  LiveVoiceStartResponse_unstable,
+  LiveVoiceStopRequest_unstable,
   LocalInferenceBuiltinChatTemplatesListRequest_unstable,
   LocalInferenceBuiltinChatTemplatesListResponse_unstable,
   LocalInferenceHuggingFaceRepoVariantsRequest_unstable,
@@ -171,8 +178,6 @@ import type {
   SetSessionSystemPromptRequest_unstable,
   SetToolPermissionsRequest_unstable,
   SetToolPermissionsResponse_unstable,
-  ShareSessionNostrRequest_unstable,
-  ShareSessionNostrResponse_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
   TruncateSessionConversationRequest_unstable,
@@ -193,6 +198,7 @@ import {
   zCanonicalModelInfoResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
+  zContextReportResponse_unstable,
   zCreateScheduleResponse_unstable,
   zCreateSourceResponse_unstable,
   zCustomProviderCreateResponse_unstable,
@@ -227,6 +233,8 @@ import {
   zListSchedulesResponse_unstable,
   zListSlashCommandsResponse_unstable,
   zListSourcesResponse_unstable,
+  zLiveVoiceAvailabilityResponse_unstable,
+  zLiveVoiceStartResponse_unstable,
   zLocalInferenceBuiltinChatTemplatesListResponse_unstable,
   zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
   zLocalInferenceHuggingFaceSearchResponse_unstable,
@@ -256,7 +264,6 @@ import {
   zSaveRecipeResponse_unstable,
   zScanRecipeResponse_unstable,
   zSetToolPermissionsResponse_unstable,
-  zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
   zUpdateScheduleResponse_unstable,
   zUpdateSourceResponse_unstable,
@@ -384,6 +391,36 @@ export class GooseExtClient {
     ) as SteerSessionResponse_unstable;
   }
 
+  async sessionLiveVoiceAvailability_unstable(
+    params: LiveVoiceAvailabilityRequest_unstable,
+  ): Promise<LiveVoiceAvailabilityResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/live-voice/availability",
+      params,
+    );
+    return zLiveVoiceAvailabilityResponse_unstable.parse(
+      raw,
+    ) as LiveVoiceAvailabilityResponse_unstable;
+  }
+
+  async sessionLiveVoiceStart_unstable(
+    params: LiveVoiceStartRequest_unstable,
+  ): Promise<LiveVoiceStartResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/live-voice/start",
+      params,
+    );
+    return zLiveVoiceStartResponse_unstable.parse(
+      raw,
+    ) as LiveVoiceStartResponse_unstable;
+  }
+
+  async sessionLiveVoiceStop_unstable(
+    params: LiveVoiceStopRequest_unstable,
+  ): Promise<void> {
+    await this.conn.request("_goose/unstable/session/live-voice/stop", params);
+  }
+
   async diagnosticsGet_unstable(
     params: DiagnosticsGetRequest_unstable,
   ): Promise<DiagnosticsGetResponse_unstable> {
@@ -394,6 +431,18 @@ export class GooseExtClient {
     return zDiagnosticsGetResponse_unstable.parse(
       raw,
     ) as DiagnosticsGetResponse_unstable;
+  }
+
+  async contextReport_unstable(
+    params: ContextReportRequest_unstable,
+  ): Promise<ContextReportResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/context/report",
+      params,
+    );
+    return zContextReportResponse_unstable.parse(
+      raw,
+    ) as ContextReportResponse_unstable;
   }
 
   async configPromptsList_unstable(
@@ -842,18 +891,6 @@ export class GooseExtClient {
     return zImportSessionResponse_unstable.parse(
       raw,
     ) as ImportSessionResponse_unstable;
-  }
-
-  async sessionShareNostr_unstable(
-    params: ShareSessionNostrRequest_unstable,
-  ): Promise<ShareSessionNostrResponse_unstable> {
-    const raw = await this.conn.request(
-      "_goose/unstable/session/share/nostr",
-      params,
-    );
-    return zShareSessionNostrResponse_unstable.parse(
-      raw,
-    ) as ShareSessionNostrResponse_unstable;
   }
 
   async recipesEncode_unstable(

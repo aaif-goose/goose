@@ -1,9 +1,10 @@
+use futures::stream::BoxStream;
+use futures::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 
-pub const SESSION_ID_HEADER: &str = "agent-session-id";
-
-pub const TOOL_CALL_REQUEST_ID_HEADER: &str = "agent-tool-call-request-id";
-pub const WORKING_DIR_HEADER: &str = "agent-working-dir";
+pub use goose_agent::mcp::client::{
+    SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER,
+};
 
 tokio::task_local! {
     pub static SESSION_ID: Option<String>;
@@ -16,15 +17,47 @@ where
     SESSION_ID.scope(session_id, f).await
 }
 
+pub fn with_session_id_stream<'a, T: Send + 'a>(
+    session_id: Option<String>,
+    stream: BoxStream<'a, T>,
+) -> BoxStream<'a, T> {
+    Box::pin(futures::stream::unfold(
+        (stream, session_id),
+        |(mut stream, session_id)| async move {
+            with_session_id(session_id.clone(), stream.next())
+                .await
+                .map(|item| (item, (stream, session_id)))
+        },
+    ))
+}
+
 pub fn current_session_id() -> Option<String> {
     SESSION_ID.try_with(|id| id.clone()).ok().flatten()
 }
 
 pub fn session_id_request_builder() -> goose_providers::api_client::RequestBuilderDecorator {
-    std::sync::Arc::new(|request| {
+    session_id_request_builder_with_header_name(HeaderName::from_static(SESSION_ID_HEADER))
+}
+
+pub(crate) fn session_id_request_builder_with_header_override(
+    header_name_override: Option<&str>,
+) -> Result<goose_providers::api_client::RequestBuilderDecorator, reqwest::header::InvalidHeaderName>
+{
+    let header_name = match header_name_override {
+        Some(header_name) => HeaderName::from_bytes(header_name.as_bytes())?,
+        None => HeaderName::from_static(SESSION_ID_HEADER),
+    };
+
+    Ok(session_id_request_builder_with_header_name(header_name))
+}
+
+fn session_id_request_builder_with_header_name(
+    header_name: HeaderName,
+) -> goose_providers::api_client::RequestBuilderDecorator {
+    std::sync::Arc::new(move |request| {
         let (client, request) = request.build_split();
         let mut request = request?;
-        let session_header = HeaderName::from_static(SESSION_ID_HEADER);
+        let session_header = header_name.clone();
         request.headers_mut().remove(&session_header);
 
         if let Some(session_id) = current_session_id() {
@@ -120,5 +153,67 @@ mod tests {
             assert_eq!(current_session_id(), Some("persistent-session".to_string()));
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_session_id_scopes_each_stream_poll() {
+        let stream = futures::stream::iter([(), ()]).then(|()| async { current_session_id() });
+        let mut stream =
+            with_session_id_stream(Some("stream-session".to_string()), Box::pin(stream));
+
+        assert_eq!(
+            stream.next().await,
+            Some(Some("stream-session".to_string()))
+        );
+        assert_eq!(
+            stream.next().await,
+            Some(Some("stream-session".to_string()))
+        );
+        assert_eq!(stream.next().await, None);
+        assert_eq!(current_session_id(), None);
+    }
+
+    #[tokio::test]
+    async fn test_session_id_request_builder_uses_custom_header() {
+        with_session_id(Some("test-session-123".to_string()), async {
+            let decorate =
+                session_id_request_builder_with_header_override(Some("x-opencode-session"))
+                    .unwrap();
+
+            let request = decorate(reqwest::Client::new().get("http://localhost"))
+                .unwrap()
+                .build()
+                .unwrap();
+
+            assert_eq!(
+                request.headers().get("x-opencode-session").unwrap(),
+                "test-session-123"
+            );
+            assert!(request.headers().get(SESSION_ID_HEADER).is_none());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_session_id_request_builder_uses_default_without_override() {
+        with_session_id(Some("test-session-123".to_string()), async {
+            let decorate = session_id_request_builder_with_header_override(None).unwrap();
+
+            let request = decorate(reqwest::Client::new().get("http://localhost"))
+                .unwrap()
+                .build()
+                .unwrap();
+
+            assert_eq!(
+                request.headers().get(SESSION_ID_HEADER).unwrap(),
+                "test-session-123"
+            );
+        })
+        .await;
+    }
+
+    #[test]
+    fn test_session_id_request_builder_rejects_invalid_header_override() {
+        assert!(session_id_request_builder_with_header_override(Some("invalid header")).is_err());
     }
 }

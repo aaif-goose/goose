@@ -1,11 +1,19 @@
+mod registry;
+pub(crate) use registry::is_platform;
+pub use registry::PlatformExtensions;
+#[cfg(feature = "tree-sitter")]
 pub mod analyze;
+#[cfg(feature = "platform-apps")]
 pub mod apps;
+#[cfg(feature = "chat-recall")]
 pub mod chatrecall;
 #[cfg(feature = "code-mode")]
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
-pub mod orchestrator;
+#[cfg(feature = "code-mode")]
+mod javascript;
+#[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
 pub mod summon;
@@ -14,8 +22,8 @@ pub mod tom;
 
 use std::collections::HashMap;
 
-use crate::agents::mcp_client::McpClientTrait;
-use crate::session::Session;
+mod client;
+pub use client::PlatformExtension;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -30,6 +38,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
     || {
         let mut map = HashMap::new();
 
+        #[cfg(feature = "tree-sitter")]
         map.insert(
             analyze::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -51,13 +60,14 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Todo",
                 description:
                     "Enable a todo list for goose so it can keep track of what it is doing",
-                default_enabled: true,
+                default_enabled: false,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Some(Box::new(todo::TodoClient::new(ctx).unwrap())),
             },
         );
 
+        #[cfg(feature = "platform-apps")]
         map.insert(
             apps::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -72,6 +82,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "chat-recall")]
         map.insert(
             chatrecall::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -102,6 +113,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "scheduler")]
         map.insert(
             scheduler::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -156,11 +168,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 hidden: false,
                 client_factory: |ctx| {
                     Some(Box::new(
-                        code_execution::CodeExecutionClient::new(
-                            ctx,
-                            code_execution::get_tool_disclosure(),
-                        )
-                        .unwrap(),
+                        code_execution::CodeExecutionClient::new(ctx).unwrap(),
                     ))
                 },
             },
@@ -175,21 +183,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Some(Box::new(developer::DeveloperClient::new(ctx).unwrap())),
-            },
-        );
-
-        map.insert(
-            orchestrator::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: orchestrator::EXTENSION_NAME,
-                display_name: "Orchestrator",
-                description:
-                    "Manage agent sessions: list, view, start, send messages, interrupt, and stop agents",
-                default_enabled: false,
-                unprefixed_tools: false,
-                hidden: true,
-                client_factory: |ctx| Some(Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap())),
+                client_factory: |_| Some(Box::new(developer::DeveloperClient::new().unwrap())),
             },
         );
 
@@ -207,36 +201,33 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
-        map.insert(
-            crate::skills::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: crate::skills::EXTENSION_NAME,
-                display_name: "Skills",
-                description: "Discover and provide skill instructions from filesystem and builtins",
-                default_enabled: true,
-                unprefixed_tools: true,
-                hidden: false,
-                client_factory: |ctx| {
-                    Some(Box::new(crate::skills::SkillsClient::new(ctx).unwrap()))
-                },
-            },
-        );
-
         map
     },
 );
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
-    pub extension_manager:
-        Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
+    pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
-    pub session: Option<std::sync::Arc<Session>>,
-    pub use_login_shell_path: bool,
 }
 
 impl PlatformExtensionContext {
+    pub async fn provider_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<std::sync::Arc<dyn crate::providers::base::Provider>, String> {
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|e| e.to_string())?;
+        self.providers
+            .provider_for(&session)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
@@ -302,5 +293,19 @@ pub struct PlatformExtensionDef {
     pub unprefixed_tools: bool,
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
-    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
+    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn PlatformExtension>>,
+}
+
+/// Returns true if the named extension is a first-class platform extension
+/// whose tools are exposed unprefixed and remain visible during code execution mode.
+pub fn is_unprefixed_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.unprefixed_tools)
+}
+
+pub fn is_hidden_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.hidden)
 }

@@ -24,6 +24,7 @@ fn custom_config_with_auth(base_url: &str, auth: AuthConfig) -> DeclarativeProvi
         base_url: base_url.to_string(),
         models: vec![goose_providers::base::ModelInfo::new("test-model")],
         headers: None,
+        session_id_header_override: None,
         timeout_seconds: None,
         supports_streaming: Some(true),
         requires_auth: true,

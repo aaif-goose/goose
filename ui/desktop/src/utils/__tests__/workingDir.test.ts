@@ -42,6 +42,9 @@ describe('getEffectiveWorkingDir', () => {
       workingDir: ' /home/goose/workspace ',
     });
     await expect(getEffectiveWorkingDir()).resolves.toBe('/home/goose/workspace');
+    await expect(getEffectiveWorkingDir('/home/goose/previous-project')).resolves.toBe(
+      '/home/goose/workspace'
+    );
   });
 
   it('honors the configured remote directory for env-mode backends regardless of enabled/url', async () => {
@@ -64,6 +67,7 @@ describe('getEffectiveWorkingDir', () => {
     mockWindow(false, '');
     getSettingMock.mockResolvedValue({ enabled: true, workingDir: '/home/goose/workspace' });
     await expect(getEffectiveWorkingDir()).resolves.toBe('/Users/johannes/home/workspace');
+    await expect(getEffectiveWorkingDir('/projects/website')).resolves.toBe('/projects/website');
   });
 
   it('falls back to the remembered directory when the bound backend no longer matches settings', async () => {

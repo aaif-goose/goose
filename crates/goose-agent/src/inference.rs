@@ -1,6 +1,7 @@
 //! Provider inference operation for the unrolled agent loop.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,10 +17,13 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
+use crate::machine::MachineSession;
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
-    Inference, InferenceInput, Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
+    InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
+use crate::tool_call_state::add_error_response;
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 pub struct PreparedInferenceRequest {
     pub system_prompt: String,
@@ -27,8 +31,13 @@ pub struct PreparedInferenceRequest {
     pub additional_messages: Vec<Message>,
 }
 
-#[async_trait]
-pub trait InferenceRequestPreparer<S>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
+    async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {
+        Ok(None)
+    }
+
     async fn prepare(
         &self,
         session: &S,
@@ -39,8 +48,9 @@ pub trait InferenceRequestPreparer<S>: Send + Sync {
 
 pub struct IdentityInferenceRequestPreparer;
 
-#[async_trait]
-impl<S: Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     async fn prepare(
         &self,
         _session: &S,
@@ -60,13 +70,9 @@ impl<S: Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     }
 }
 
-pub trait InferenceEffect: From<Message> + Send + 'static {
+pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
-
-const EMPTY_RESPONSE_MESSAGE: &str =
-    "The model returned an empty response. Please resend your message to continue.";
-const CANCELLED_TOOL_RESPONSE: &str = "Tool call was cancelled before execution";
 
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
@@ -75,7 +81,7 @@ fn is_thinking(content: &MessageContent) -> bool {
     )
 }
 
-fn normalize_tool_call_thinking(accumulator: &mut Conversation, chunk: &mut Message) {
+fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Message) {
     if !chunk
         .content
         .iter()
@@ -83,41 +89,47 @@ fn normalize_tool_call_thinking(accumulator: &mut Conversation, chunk: &mut Mess
     {
         return;
     }
+    let prior: Vec<&MessageContent> = accumulator
+        .iter()
+        .filter(|message| message.role == chunk.role)
+        .flat_map(|message| message.content.iter())
+        .filter(|content| is_thinking(content))
+        .collect();
+    chunk
+        .content
+        .retain(|content| !(is_thinking(content) && prior.contains(&content)));
+}
 
-    let has_direct_thinking = chunk.content.iter().any(is_thinking);
-    let mut prior_thinking = Vec::new();
-    for message in accumulator.messages_mut() {
-        if message.role != chunk.role
-            || message
-                .content
-                .iter()
-                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
-        {
-            continue;
+fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
+    let mut seen = messages
+        .iter()
+        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
+        .collect::<HashSet<_>>();
+    let mut logs = Vec::new();
+
+    for (operation, line) in messages
+        .iter()
+        .filter_map(|message| message.metadata.operations.as_deref())
+        .flat_map(|operations| operations.iter())
+        .filter_map(|(operation, notes)| {
+            notes
+                .get(CLIENT_LOG)
+                .and_then(serde_json::Value::as_str)
+                .map(|line| (operation, line))
+        })
+    {
+        let log = format!("ops_{operation}: {line}");
+        if seen.insert(log.clone()) {
+            logs.push(log);
         }
-        prior_thinking.extend(
-            message
-                .content
-                .iter()
-                .filter(|content| is_thinking(content))
-                .cloned(),
-        );
-        message.content.retain(|content| !is_thinking(content));
     }
-    accumulator
-        .messages_mut()
-        .retain(|message| !message.content.is_empty());
 
-    if !has_direct_thinking && !prior_thinking.is_empty() {
-        if let Some(tool_request) = chunk
-            .content
-            .iter()
-            .position(|content| matches!(content, MessageContent::ToolRequest(_)))
-        {
-            chunk
-                .content
-                .splice(tool_request..tool_request, prior_thinking);
-        }
+    logs
+}
+
+fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
+    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
+        message.metadata.operation_logs = std::mem::take(logs);
     }
 }
 
@@ -138,6 +150,7 @@ pub fn chat_span(
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "goose.chat.purpose" = purpose,
@@ -146,6 +159,35 @@ pub fn chat_span(
     );
     record_request_params(&span, model_config);
     span
+}
+
+pub(crate) fn is_empty_response(message: &Message) -> bool {
+    !message.metadata.output_token_limit_reached
+        && message.content.iter().all(|content| match content {
+            MessageContent::Text(text) => text.text.trim().is_empty(),
+            MessageContent::Thinking(thinking) => {
+                thinking.thinking.trim().is_empty() && thinking.signature.is_empty()
+            }
+            _ => false,
+        })
+}
+
+pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
+    let Some(message) = messages.last() else {
+        return false;
+    };
+    let mut tool_responses = message
+        .content
+        .iter()
+        .filter_map(MessageContent::as_tool_response)
+        .peekable();
+    tool_responses.peek().is_some()
+        && tool_responses.all(|tool_response| {
+            tool_response
+                .tool_result
+                .as_ref()
+                .is_ok_and(|result| !result.is_error.unwrap_or(false))
+        })
 }
 
 fn record_request_params(span: &tracing::Span, model_config: &ModelConfig) {
@@ -178,19 +220,70 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     if let Some(id) = &usage.response_id {
         span.record("gen_ai.response.id", id.as_str());
     }
+    if let Some(id) = &usage.request_id {
+        span.record("gen_ai.request.id", id.as_str());
+    }
+}
+
+fn unadvertised_tool_responses(
+    reply: &Conversation,
+    tools: &[rmcp::model::Tool],
+) -> Option<Message> {
+    let mut available_tools = tools
+        .iter()
+        .map(|tool| tool.name.as_ref())
+        .collect::<Vec<_>>();
+    available_tools.sort_unstable();
+    available_tools.dedup();
+    let available_tools = available_tools.join(", ");
+    let mut tool_responses = Message::user();
+    for request in reply
+        .iter()
+        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_request)
+        .filter(|request| !request.was_executed_externally())
+    {
+        let Ok(tool_call) = &request.tool_call else {
+            continue;
+        };
+        if !tools.iter().any(|tool| tool.name == tool_call.name) {
+            add_error_response(
+                &mut tool_responses,
+                request,
+                &format!(
+                    "Tool '{}' was not available in this request. Available tools: [{available_tools}].",
+                    tool_call.name
+                ),
+            );
+        }
+    }
+    (!tool_responses.content.is_empty()).then_some(tool_responses)
+}
+
+#[derive(Default)]
+struct InferenceOutput {
+    accumulator: Conversation,
+    additional_messages: Vec<Message>,
+    usage: Vec<ProviderUsage>,
 }
 
 pub struct InferenceRunner<'a, S, E> {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
+    output: Mutex<InferenceOutput>,
     effect: std::marker::PhantomData<fn() -> E>,
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
-/// unanswered by an earlier turn are dropped, since nothing will answer them now.
-fn messages_for_provider(conversation: &Conversation, turn: &[Message]) -> Vec<Message> {
-    let answered: std::collections::HashSet<&str> = conversation
+/// with no response from an earlier turn are dropped, since nothing will respond to them now.
+fn messages_for_provider(
+    conversation: &Conversation,
+    turn: &[Message],
+    keep_empty_messages: bool,
+) -> Vec<Message> {
+    let tool_response_ids: HashSet<&str> = conversation
         .messages()
         .iter()
         .flat_map(|message| message.get_tool_response_ids())
@@ -205,14 +298,34 @@ fn messages_for_provider(conversation: &Conversation, turn: &[Message]) -> Vec<M
             let mut message = message.agent_visible_content();
             if index < start {
                 message.content.retain(|content| match content {
-                    MessageContent::ToolRequest(request) => answered.contains(request.id.as_str()),
+                    MessageContent::ToolRequest(request) => {
+                        tool_response_ids.contains(request.id.as_str())
+                    }
                     _ => true,
                 });
             }
             message
         })
-        .filter(|message| !message.content.is_empty())
+        .filter(|message| keep_empty_messages || !message.content.is_empty())
         .collect()
+}
+
+/// Signed reasoning only verifies with the provider account that produced it.
+fn drop_foreign_signed_thinking(messages: &mut [Message], provider: &str) {
+    for message in messages {
+        if message
+            .metadata
+            .inference
+            .as_ref()
+            .is_some_and(|inference| inference.provider != provider)
+        {
+            message.content.retain(|content| match content {
+                MessageContent::Thinking(thinking) => thinking.signature.is_empty(),
+                MessageContent::RedactedThinking(_) => false,
+                _ => true,
+            });
+        }
+    }
 }
 
 fn latest_provider_session_id<'a>(
@@ -237,31 +350,15 @@ fn ends_with_provider_turn(messages: &[Message]) -> bool {
     })
 }
 
-fn cancellation_response(persisted: &[Message], pending: &[Message]) -> Option<Message> {
-    let mut answered = persisted
-        .iter()
-        .chain(pending)
-        .flat_map(Message::get_tool_response_ids)
-        .collect::<std::collections::HashSet<_>>();
-    let mut request_ids = std::collections::HashSet::new();
-    let mut response = Message::user();
-    for request in persisted
-        .iter()
-        .chain(pending)
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
+fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
+    let projected = messages_for_provider(conversation, turn, true);
+    if projected
+        .last()
+        .is_some_and(|message| message.content.is_empty())
     {
-        if request_ids.insert(request.id.as_str()) && !answered.remove(request.id.as_str()) {
-            response.add_tool_response_with_metadata(
-                request.id.clone(),
-                Ok(rmcp::model::CallToolResult::error(vec![
-                    rmcp::model::ContentBlock::text(CANCELLED_TOOL_RESPONSE),
-                ])),
-                request.metadata.as_ref(),
-            );
-        }
+        return false;
     }
-    (!response.get_tool_response_ids().is_empty()).then_some(response)
+    ends_with_provider_turn(&messages_for_provider(conversation, turn, false))
 }
 
 fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracing::Span {
@@ -276,6 +373,7 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "error.type" = tracing::field::Empty,
@@ -284,12 +382,13 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
     span
 }
 
-impl<'a, S: Sync, E: InferenceEffect> InferenceRunner<'a, S, E> {
+impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
         Self {
             provider,
             model_config,
             request_preparer: Arc::new(IdentityInferenceRequestPreparer),
+            output: Mutex::new(InferenceOutput::default()),
             effect: std::marker::PhantomData,
         }
     }
@@ -302,48 +401,81 @@ impl<'a, S: Sync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         self
     }
 
-    async fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Vec<E> {
+    fn output(&self) -> MutexGuard<'_, InferenceOutput> {
+        self.output.lock().unwrap()
+    }
+
+    fn take_output(&self) -> Vec<E> {
+        let output = std::mem::take(&mut *self.output());
+        let mut effects: Vec<E> = output
+            .additional_messages
+            .into_iter()
+            .map(E::from)
+            .collect();
+        effects.extend(output.usage.into_iter().map(E::record_usage));
+        effects.extend(output.accumulator.into_iter().map(E::from));
+        effects
+    }
+
+    fn emit_message(&self, message: Message, emit: &Emitter) {
+        let message = message.with_generated_id_if_missing();
+        self.output().accumulator.push(message.clone());
+        emit.message(message);
+    }
+
+    fn answer_unadvertised_tool_calls(&self, tools: &[rmcp::model::Tool], emit: &Emitter) {
+        let unadvertised = unadvertised_tool_responses(&self.output().accumulator, tools);
+        if let Some(tool_responses) = unadvertised {
+            self.emit_message(tool_responses, emit);
+        }
+    }
+
+    fn error_outcome(
+        &self,
+        err: &ProviderError,
+        tools: &[rmcp::model::Tool],
+        operation_logs: &mut Vec<String>,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
+        self.answer_unadvertised_tool_calls(tools, emit);
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        let message = Message::from_provider_error(err);
-        let message = emit.message(message).await;
-        vec![E::from(message)]
+        let mut message = Message::from_provider_error(err);
+        attach_operation_logs(&mut message, operation_logs);
+        self.emit_message(message, emit);
+        applied(self.take_output())
     }
 }
 
-#[async_trait]
-impl<S: Sync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> {
     fn name(&self) -> &'static str {
         "llm"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &S,
-        conversation: &Conversation,
-        result: OperationResult<E>,
-        emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
-        let OperationResult::NotApplicable = result else {
-            return Ok(result);
-        };
-        let Some(response) = cancellation_response(messages_since_kickoff(conversation)?, &[])
-        else {
-            return Ok(OperationResult::NotApplicable);
-        };
-        let response = emit.message(response).await;
-        applied([E::from(response)])
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<E> {
+        self.take_output()
     }
 }
 
-#[async_trait]
-impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
         };
-        trailing_error(conversation).is_none()
-            && ends_with_provider_turn(&messages_for_provider(conversation, turn))
+        trailing_error(conversation).is_none() && should_infer(conversation, turn)
+    }
+
+    async fn prepare_session(&self, session: &S) -> Result<Option<S>> {
+        self.request_preparer.prepare_session(session).await
     }
 
     async fn infer(
@@ -358,12 +490,17 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             return not_applicable();
         }
 
-        let mut messages_for_provider = messages_for_provider(conversation, messages);
-        if !ends_with_provider_turn(&messages_for_provider) {
+        if !should_infer(conversation, messages) {
             return not_applicable();
         }
+        let mut operation_logs = pending_operation_logs(messages);
+        let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
-        let span = inference_span(self.provider.as_ref(), &self.model_config);
+        let model_config = session
+            .thinking_effort()
+            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
+            .unwrap_or_else(|| self.model_config.clone());
+        let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
             let PreparedInferenceRequest {
@@ -378,9 +515,10 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             for message in &additional_messages {
                 messages_for_provider.push(message.clone());
             }
-            let mut usage_effects: Vec<E> = additional_messages.into_iter().map(E::from).collect();
+            self.output().additional_messages = additional_messages;
 
             let provider_name = self.provider.get_name();
+            drop_foreign_signed_thinking(&mut messages_for_provider, provider_name);
             if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
                 if let Err(error) = self.provider.resume(session_id).await {
                     tracing::warn!(
@@ -397,10 +535,11 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
+            let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
                 .stream(
-                    &self.model_config,
+                    &model_config,
                     &system_prompt,
                     conversation_for_provider.messages(),
                     &tools,
@@ -409,13 +548,10 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => {
-                    usage_effects.extend(self.error_outcome(&err, emit).await);
-                    return applied(usage_effects);
-                }
+                Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
             };
 
-            let requested_model = self.model_config.model_name.clone();
+            let requested_model = model_config.model_name.clone();
             let resolved_model = self
                 .provider
                 .fetch_model_info(&requested_model)
@@ -430,91 +566,46 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                 provider_session_id,
             });
 
-            let mut accumulator = Conversation::empty();
-            let mut tool_request_ids = std::collections::HashSet::new();
-            let mut provider_usage = None;
-            let mut cancelled = false;
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = emit.cancelled() => {
-                        cancelled = true;
-                        break;
-                    },
-                    next = stream.next() => {
-                        let Some(result) = next else { break };
-                        let (msg_opt, usage_opt) = match result {
-                            Ok(chunk) => chunk,
-                            Err(err) => {
-                                if let Some(usage) = provider_usage {
-                                    usage_effects.push(E::record_usage(usage));
-                                }
-                                usage_effects.extend(accumulator.into_iter().map(E::from));
-                                usage_effects.extend(self.error_outcome(&err, emit).await);
-                                return applied(usage_effects);
-                            }
-                        };
-                        if let Some(usage) = usage_opt {
-                            let span = tracing::Span::current();
-                            record_chat_usage(&span, &usage);
-                            provider_usage = Some(usage);
+            let mut tool_request_ids = HashSet::new();
+            while let Some(result) = stream.next().await {
+                let (msg_opt, usage_opt) = match result {
+                    Ok(chunk) => chunk,
+                    Err(err) => return self.error_outcome(&err, &tools, &mut operation_logs, emit),
+                };
+                if let Some(usage) = usage_opt {
+                    record_chat_usage(&tracing::Span::current(), &usage);
+                    let mut output = self.output();
+                    output.usage.truncate(attempt_start);
+                    output.usage.push(usage);
+                }
+                if let Some(mut chunk) = msg_opt {
+                    if let Some(inference) = &inference {
+                        chunk = chunk.with_inference_if_assistant(inference.clone());
+                    }
+                    chunk.content.retain(|content| match content {
+                        MessageContent::ToolRequest(request) => {
+                            tool_request_ids.insert(request.id.clone())
                         }
-                        if let Some(mut chunk) = msg_opt {
-                            if let Some(inference) = &inference {
-                                chunk = chunk.with_inference_if_assistant(inference.clone());
-                            }
-                            chunk.content.retain(|content| match content {
-                                MessageContent::ToolRequest(request) => {
-                                    tool_request_ids.insert(request.id.clone())
-                                }
-                                _ => true,
-                            });
-                            normalize_tool_call_thinking(&mut accumulator, &mut chunk);
-                            if chunk.content.is_empty() {
-                                if chunk.metadata.output_token_limit_reached {
-                                    chunk = emit.message(chunk).await;
-                                }
-                                accumulator.push(chunk);
-                                continue;
-                            }
-                            let chunk = emit.message(chunk).await;
-                            accumulator.push(chunk);
-                        }
+                        _ => true,
+                    });
+                    drop_repeated_tool_call_thinking(&self.output().accumulator, &mut chunk);
+                    if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
+                        self.output().accumulator.push(chunk);
+                    } else {
+                        attach_operation_logs(&mut chunk, &mut operation_logs);
+                        self.emit_message(chunk, emit);
                     }
                 }
             }
 
-            if let Some(usage) = provider_usage {
-                usage_effects.push(E::record_usage(usage));
+            let empty_output = self.output().accumulator.iter().all(is_empty_response);
+            if empty_output && !emit.cancel_token().is_cancelled() {
+                let mut message = Message::assistant();
+                attach_operation_logs(&mut message, &mut operation_logs);
+                self.output().accumulator = Conversation::new_unvalidated([message]);
             }
-
-            if cancelled || emit.cancel_token().is_cancelled() {
-                if let Some(response) = cancellation_response(messages, accumulator.messages()) {
-                    let response = emit.message(response).await;
-                    accumulator.push(response);
-                }
-            }
-
-            let empty_response = !cancelled
-                && !accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                && accumulator.iter().all(|message| {
-                    message.content.iter().all(|content| match content {
-                        MessageContent::Text(text) => text.text.trim().is_empty(),
-                        MessageContent::Thinking(thinking) => thinking.thinking.trim().is_empty(),
-                        _ => false,
-                    })
-                });
-            if empty_response {
-                let message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
-                let message = emit.message(message).await;
-                usage_effects.push(E::from(message));
-                return yielded_with(usage_effects);
-            }
-
-            usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
-            applied(usage_effects)
+            self.answer_unadvertised_tool_calls(&tools, emit);
+            applied(self.take_output())
         }
         .instrument(span)
         .await
@@ -553,48 +644,17 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_response_includes_requests_from_unconverted_messages() {
-        let persisted = [Message::user().with_text("run it")];
-        let pending = [Message::assistant().with_tool_request(
-            "pending-call",
-            Ok(rmcp::model::CallToolRequestParams::new("tool")),
-        )];
-
-        let response = cancellation_response(&persisted, &pending).expect("cancellation response");
-
-        assert_eq!(
-            response.get_tool_response_ids(),
-            std::collections::HashSet::from(["pending-call"])
-        );
-        let cancellation_text = response
-            .content
-            .iter()
-            .filter_map(MessageContent::as_tool_response)
-            .flat_map(|response| {
-                response
-                    .tool_result
-                    .as_ref()
-                    .expect("tool result")
-                    .content
-                    .iter()
-            })
-            .filter_map(|content| content.as_text())
-            .map(|text| text.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(cancellation_text, vec![CANCELLED_TOOL_RESPONSE]);
+    fn signed_thinking_without_text_is_not_an_empty_response() {
+        assert!(is_empty_response(
+            &Message::assistant().with_content(MessageContent::thinking("", ""))
+        ));
+        assert!(!is_empty_response(
+            &Message::assistant().with_content(MessageContent::thinking("", "sig-omitted"))
+        ));
     }
 
     #[test]
-    fn cancellation_response_skips_answered_requests() {
-        let request = Message::assistant().with_tool_request(
-            "answered-call",
-            Ok(rmcp::model::CallToolRequestParams::new("tool")),
-        );
-        let response = Message::user().with_tool_response(
-            "answered-call",
-            Ok(rmcp::model::CallToolResult::success(vec![])),
-        );
-
-        assert!(cancellation_response(&[request, response], &[]).is_none());
+    fn whitespace_only_text_is_an_empty_response() {
+        assert!(is_empty_response(&Message::assistant().with_text(" \n\t ")));
     }
 }

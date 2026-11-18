@@ -1,11 +1,439 @@
 use crate::recipe::read_recipe_file_content::RecipeFile;
-use crate::recipe::template_recipe::parse_recipe_content;
+use crate::recipe::template_recipe::{
+    parse_recipe_content, parse_recipe_template, prepare_recipe_template, ParsedRecipeTemplate,
+};
+use crate::recipe::value_deserializer::RecipeValueDeserializer;
 use crate::recipe::{
     Recipe, RecipeParameter, RecipeParameterInputType, RecipeParameterRequirement,
     BUILT_IN_RECIPE_DIR_PARAM,
 };
 use anyhow::Result;
-use std::collections::HashSet;
+use serde_path_to_error::Segment;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+const MAX_PARAMETERS: usize = 32;
+const MAX_TOTAL_SELECT_OPTIONS: usize = 200;
+const MAX_PARAMETERS_SIZE_BYTES: usize = 128 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecipeFileFormat {
+    Json,
+    Yaml,
+}
+
+pub fn recipe_file_format(path: &Path) -> RecipeFileFormat {
+    if path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        RecipeFileFormat::Json
+    } else {
+        RecipeFileFormat::Yaml
+    }
+}
+
+#[derive(Debug)]
+pub enum SchedulerRecipeError {
+    GenericParse(RecipeFileFormat),
+    InvalidSchema(String),
+}
+
+impl std::fmt::Display for SchedulerRecipeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SchedulerRecipeError::GenericParse(RecipeFileFormat::Json) => {
+                write!(formatter, "Invalid JSON recipe")
+            }
+            SchedulerRecipeError::GenericParse(RecipeFileFormat::Yaml) => {
+                write!(formatter, "Invalid YAML recipe")
+            }
+            SchedulerRecipeError::InvalidSchema(message) => {
+                write!(formatter, "Invalid recipe: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SchedulerRecipeError {}
+
+#[derive(Clone, Copy)]
+enum SchemaNode {
+    Recipe,
+    Scalar,
+    StringList,
+    Settings,
+    Author,
+    ParameterList,
+    Parameter,
+    ExtensionList,
+    Extension,
+    Response,
+    SubRecipeList,
+    SubRecipe,
+    Retry,
+    CheckList,
+    Check,
+    Opaque,
+}
+
+struct SafeSchemaPath {
+    display: String,
+    node: SchemaNode,
+    truncated: bool,
+}
+
+fn schema_field(node: SchemaNode, field: &str) -> Option<SchemaNode> {
+    match node {
+        SchemaNode::Recipe => match field {
+            "version" | "title" | "description" | "instructions" | "prompt" => {
+                Some(SchemaNode::Scalar)
+            }
+            "extensions" => Some(SchemaNode::ExtensionList),
+            "settings" => Some(SchemaNode::Settings),
+            "activities" => Some(SchemaNode::StringList),
+            "author" => Some(SchemaNode::Author),
+            "parameters" => Some(SchemaNode::ParameterList),
+            "response" => Some(SchemaNode::Response),
+            "sub_recipes" => Some(SchemaNode::SubRecipeList),
+            "retry" => Some(SchemaNode::Retry),
+            _ => None,
+        },
+        SchemaNode::Settings => match field {
+            "goose_provider" | "goose_model" | "temperature" | "max_turns" => {
+                Some(SchemaNode::Scalar)
+            }
+            _ => None,
+        },
+        SchemaNode::Author => match field {
+            "contact" | "metadata" => Some(SchemaNode::Scalar),
+            _ => None,
+        },
+        SchemaNode::Parameter => match field {
+            "key" | "input_type" | "requirement" | "description" | "default" => {
+                Some(SchemaNode::Scalar)
+            }
+            "options" => Some(SchemaNode::StringList),
+            _ => None,
+        },
+        SchemaNode::Extension => match field {
+            "type" | "name" | "description" | "cmd" | "timeout" | "cwd" | "bundled"
+            | "display_name" | "uri" | "socket" | "client_id" | "client_secret_key"
+            | "instructions" | "code" => Some(SchemaNode::Scalar),
+            "args" | "env_keys" | "available_tools" | "scopes" | "dependencies" => {
+                Some(SchemaNode::StringList)
+            }
+            "envs" | "headers" | "tools" => Some(SchemaNode::Opaque),
+            _ => None,
+        },
+        SchemaNode::Response => match field {
+            "json_schema" => Some(SchemaNode::Opaque),
+            _ => None,
+        },
+        SchemaNode::SubRecipe => match field {
+            "name" | "path" | "sequential_when_repeated" | "description" => {
+                Some(SchemaNode::Scalar)
+            }
+            "values" => Some(SchemaNode::Opaque),
+            _ => None,
+        },
+        SchemaNode::Retry => match field {
+            "max_retries" | "on_failure" | "timeout_seconds" | "on_failure_timeout_seconds" => {
+                Some(SchemaNode::Scalar)
+            }
+            "checks" => Some(SchemaNode::CheckList),
+            _ => None,
+        },
+        SchemaNode::Check => match field {
+            "type" | "command" => Some(SchemaNode::Scalar),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn schema_sequence_item(node: SchemaNode) -> Option<SchemaNode> {
+    match node {
+        SchemaNode::StringList => Some(SchemaNode::Scalar),
+        SchemaNode::ParameterList => Some(SchemaNode::Parameter),
+        SchemaNode::ExtensionList => Some(SchemaNode::Extension),
+        SchemaNode::SubRecipeList => Some(SchemaNode::SubRecipe),
+        SchemaNode::CheckList => Some(SchemaNode::Check),
+        _ => None,
+    }
+}
+
+fn safe_schema_path(path: &serde_path_to_error::Path) -> Option<SafeSchemaPath> {
+    let mut node = SchemaNode::Recipe;
+    let mut display = String::new();
+
+    for segment in path {
+        if matches!(node, SchemaNode::Opaque) {
+            return Some(SafeSchemaPath {
+                display,
+                node,
+                truncated: true,
+            });
+        }
+
+        match segment {
+            Segment::Map { key } => {
+                node = schema_field(node, key)?;
+                if !display.is_empty() {
+                    display.push('.');
+                }
+                display.push_str(key);
+            }
+            Segment::Seq { index } => {
+                node = schema_sequence_item(node)?;
+                display.push_str(&format!("[{index}]"));
+            }
+            Segment::Enum { .. } | Segment::Unknown => return None,
+        }
+    }
+
+    Some(SafeSchemaPath {
+        display,
+        node,
+        truncated: false,
+    })
+}
+
+fn strip_path_prefix(message: &str, path: &str) -> String {
+    if path.is_empty() {
+        return message.to_string();
+    }
+    message
+        .strip_prefix(path)
+        .and_then(|rest| rest.strip_prefix(": "))
+        .unwrap_or(message)
+        .to_string()
+}
+
+fn schema_field_from_message<'a>(message: &'a str, prefix: &str) -> Option<&'a str> {
+    message.strip_prefix(prefix)?.strip_suffix('`')
+}
+
+fn classify_conversion_error(
+    error: &serde_path_to_error::Error<serde_yaml::Error>,
+    format: RecipeFileFormat,
+) -> SchedulerRecipeError {
+    let Some(safe_path) = safe_schema_path(error.path()) else {
+        return SchedulerRecipeError::GenericParse(format);
+    };
+    let raw_path = match error.path().to_string().as_str() {
+        "." => String::new(),
+        path => path.to_string(),
+    };
+    let message = strip_path_prefix(
+        &crate::recipe::strip_error_location(&error.inner().to_string()),
+        &raw_path,
+    );
+
+    if !safe_path.truncated {
+        for (prefix, label) in [
+            ("missing field `", "missing field"),
+            ("duplicate field `", "duplicate field"),
+        ] {
+            if let Some(field) = schema_field_from_message(&message, prefix) {
+                if schema_field(safe_path.node, field).is_some() {
+                    let diagnostic = if safe_path.display.is_empty() {
+                        format!("{label} `{field}`")
+                    } else {
+                        format!("{}: {label} `{field}`", safe_path.display)
+                    };
+                    return SchedulerRecipeError::InvalidSchema(diagnostic);
+                }
+            }
+        }
+    }
+
+    if safe_path.display.is_empty() {
+        SchedulerRecipeError::GenericParse(format)
+    } else {
+        SchedulerRecipeError::InvalidSchema(format!("{} is invalid", safe_path.display))
+    }
+}
+
+fn convert_recipe_from_value(
+    value: &serde_yaml::Value,
+    format: RecipeFileFormat,
+    coerce_scalars: bool,
+) -> Result<Recipe, SchedulerRecipeError> {
+    let result = if coerce_scalars {
+        serde_path_to_error::deserialize(RecipeValueDeserializer::new(value))
+    } else {
+        serde_path_to_error::deserialize(value)
+    };
+    result.map_err(|error| classify_conversion_error(&error, format))
+}
+
+fn format_parameter_paths(indices: &[usize]) -> String {
+    indices
+        .iter()
+        .map(|index| format!("parameters[{index}]"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn normalize_scheduling_parameter_key(key: &str) -> String {
+    serde_yaml::from_str::<serde_yaml::Value>(key)
+        .ok()
+        .and_then(|value| match value {
+            serde_yaml::Value::Bool(value) => Some(value.to_string()),
+            serde_yaml::Value::Number(value) => Some(value.to_string()),
+            serde_yaml::Value::Null => Some("null".to_string()),
+            _ => None,
+        })
+        .unwrap_or_else(|| key.to_string())
+}
+
+fn validate_scheduling_parameters(
+    parameters: &Option<Vec<RecipeParameter>>,
+    template_variables: &HashSet<String>,
+) -> Result<(), String> {
+    let parameters = parameters.as_deref().unwrap_or_default();
+    validate_parameter_limits(parameters).map_err(|e| e.to_string())?;
+
+    let file_defaults = parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, parameter)| {
+            matches!(parameter.input_type, RecipeParameterInputType::File)
+                && parameter.default.is_some()
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !file_defaults.is_empty() {
+        return Err(format!(
+            "file parameters cannot have default values at {}",
+            format_parameter_paths(&file_defaults)
+        ));
+    }
+
+    let optional_without_defaults = parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, parameter)| {
+            matches!(parameter.requirement, RecipeParameterRequirement::Optional)
+                && parameter.default.is_none()
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !optional_without_defaults.is_empty() {
+        return Err(format!(
+            "optional parameters require default values at {}",
+            format_parameter_paths(&optional_without_defaults)
+        ));
+    }
+
+    let mut defined_keys = HashSet::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        if !defined_keys.insert(parameter.key.clone()) {
+            return Err(format!(
+                "duplicate parameter definition at parameters[{index}]"
+            ));
+        }
+    }
+
+    let mut referenced_keys = template_variables.clone();
+    referenced_keys.remove(BUILT_IN_RECIPE_DIR_PARAM);
+    let keys_match = |defined: &str, referenced: &str| {
+        defined == referenced || defined == normalize_scheduling_parameter_key(referenced)
+    };
+
+    let missing_count = referenced_keys
+        .iter()
+        .filter(|referenced| {
+            !defined_keys
+                .iter()
+                .any(|defined| keys_match(defined, referenced))
+        })
+        .count();
+    if missing_count > 0 {
+        return Err(format!(
+            "missing parameter definitions for {missing_count} template variables"
+        ));
+    }
+
+    let unnecessary = parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, parameter)| {
+            !referenced_keys
+                .iter()
+                .any(|referenced| keys_match(&parameter.key, referenced))
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !unnecessary.is_empty() {
+        return Err(format!(
+            "unnecessary parameter definitions at {}",
+            format_parameter_paths(&unnecessary)
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn validate_recipe_for_scheduling(
+    content: &str,
+    recipe_dir: Option<String>,
+    format: RecipeFileFormat,
+) -> Result<Recipe, SchedulerRecipeError> {
+    let (prepared_content, template_variables) = prepare_recipe_template(content, recipe_dir)
+        .map_err(|_| SchedulerRecipeError::GenericParse(format))?;
+    let document = serde_yaml::from_str::<serde_yaml::Value>(&prepared_content)
+        .map_err(|_| SchedulerRecipeError::GenericParse(format))?;
+    let nested_recipe = document.get("recipe");
+    let recipe_value = nested_recipe.unwrap_or(&document);
+    let mut recipe = convert_recipe_from_value(recipe_value, format, nested_recipe.is_none())?;
+    recipe.ensure_analyze_for_developer();
+    recipe.ensure_summon_for_subrecipes();
+
+    validate_prompt_or_instructions(&recipe)
+        .map_err(|error| SchedulerRecipeError::InvalidSchema(error.to_string()))?;
+    validate_retry_config(&recipe)
+        .map_err(|error| SchedulerRecipeError::InvalidSchema(error.to_string()))?;
+    validate_scheduling_parameters(&recipe.parameters, &template_variables)
+        .map_err(SchedulerRecipeError::InvalidSchema)?;
+    if let Some(schema) = recipe
+        .response
+        .as_ref()
+        .and_then(|response| response.json_schema.as_ref())
+    {
+        validate_json_schema(schema).map_err(|error| match error.to_string().as_str() {
+            "JSON schema must be an object" | "Empty JSON schema is not allowed" => {
+                SchedulerRecipeError::InvalidSchema(error.to_string())
+            }
+            _ => SchedulerRecipeError::InvalidSchema("response.json_schema is invalid".to_string()),
+        })?;
+    }
+
+    Ok(recipe)
+}
+
+pub(crate) struct ValidatedRecipeTemplate {
+    parsed: ParsedRecipeTemplate,
+}
+
+impl ValidatedRecipeTemplate {
+    pub(crate) fn recipe(&self) -> &Recipe {
+        self.parsed.recipe()
+    }
+
+    pub(crate) fn into_recipe(self) -> Recipe {
+        self.parsed.into_recipe()
+    }
+
+    pub(crate) fn render(self, params: &HashMap<String, String>) -> Result<Recipe> {
+        let (rendered_content, template_variables) = self.parsed.render(params)?;
+        let recipe = Recipe::from_content(&rendered_content)?;
+        validate_recipe_parameters(&recipe, &template_variables)?;
+        validate_recipe_non_parameter_invariants(&recipe)?;
+        Ok(recipe)
+    }
+}
 
 pub fn parse_and_validate_parameters(
     recipe_file_content: &str,
@@ -17,6 +445,39 @@ pub fn parse_and_validate_parameters(
     validate_optional_parameters(recipe_parameters)?;
     validate_parameters_in_template(recipe_parameters, &template_variables)?;
     Ok(recipe_template)
+}
+
+fn validate_recipe_parameters(recipe: &Recipe, template_variables: &HashSet<String>) -> Result<()> {
+    validate_optional_parameters(&recipe.parameters)?;
+    validate_parameters_in_template(&recipe.parameters, template_variables)
+}
+
+/// Drop parameter keys that no longer appear as `{{ }}` (session snapshots).
+pub fn strip_unreferenced_parameters(mut recipe: Recipe) -> Recipe {
+    if recipe
+        .parameters
+        .as_ref()
+        .is_none_or(|parameters| parameters.is_empty())
+    {
+        recipe.parameters = None;
+        return recipe;
+    }
+
+    let Ok(yaml) = recipe.to_yaml() else {
+        return recipe;
+    };
+    let Ok((_, mut template_variables)) = parse_recipe_content(&yaml, None) else {
+        return recipe;
+    };
+    template_variables.remove(BUILT_IN_RECIPE_DIR_PARAM);
+
+    if let Some(parameters) = recipe.parameters.as_mut() {
+        parameters.retain(|parameter| template_variables.contains(&parameter.key));
+        if parameters.is_empty() {
+            recipe.parameters = None;
+        }
+    }
+    recipe
 }
 
 fn validate_json_schema(schema: &serde_json::Value) -> Result<()> {
@@ -45,18 +506,28 @@ pub fn validate_recipe_template_from_content(
     recipe_content: &str,
     recipe_dir: Option<String>,
 ) -> Result<Recipe> {
-    parse_and_validate_parameters(recipe_content, recipe_dir.clone())?;
-    let (recipe, _) = parse_recipe_content(recipe_content, recipe_dir)?;
+    Ok(validate_recipe_template(recipe_content, recipe_dir)?.into_recipe())
+}
 
-    validate_prompt_or_instructions(&recipe)?;
-    validate_retry_config(&recipe)?;
+pub(crate) fn validate_recipe_template(
+    recipe_content: &str,
+    recipe_dir: Option<String>,
+) -> Result<ValidatedRecipeTemplate> {
+    let parsed = parse_recipe_template(recipe_content, recipe_dir)?;
+    validate_recipe_parameters(parsed.recipe(), parsed.template_variables())?;
+    validate_recipe_non_parameter_invariants(parsed.recipe())?;
+    Ok(ValidatedRecipeTemplate { parsed })
+}
+
+pub(crate) fn validate_recipe_non_parameter_invariants(recipe: &Recipe) -> Result<()> {
+    validate_prompt_or_instructions(recipe)?;
+    validate_retry_config(recipe)?;
     if let Some(response) = &recipe.response {
         if let Some(json_schema) = &response.json_schema {
             validate_json_schema(json_schema)?;
         }
     }
-
-    Ok(recipe)
+    Ok(())
 }
 
 fn validate_retry_config(recipe: &Recipe) -> Result<()> {
@@ -147,9 +618,43 @@ fn validate_parameters_in_template(
     Err(anyhow::anyhow!("{}", message.trim_end()))
 }
 
+fn validate_parameter_limits(parameters: &[RecipeParameter]) -> Result<()> {
+    if parameters.len() > MAX_PARAMETERS {
+        return Err(anyhow::anyhow!(
+            "Recipe has {} parameters but the maximum is {}.",
+            parameters.len(),
+            MAX_PARAMETERS
+        ));
+    }
+
+    let total_options: usize = parameters
+        .iter()
+        .map(|p| p.options.as_deref().unwrap_or_default().len())
+        .sum();
+    if total_options > MAX_TOTAL_SELECT_OPTIONS {
+        return Err(anyhow::anyhow!(
+            "Recipe has {} total select options but the maximum is {}.",
+            total_options,
+            MAX_TOTAL_SELECT_OPTIONS
+        ));
+    }
+
+    let serialized = serde_yaml::to_string(&parameters)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize parameters: {}", e))?;
+    if serialized.len() > MAX_PARAMETERS_SIZE_BYTES {
+        return Err(anyhow::anyhow!(
+            "Serialized parameters exceed the {} KiB limit.",
+            MAX_PARAMETERS_SIZE_BYTES / 1024
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Result<()> {
     let empty_params = vec![];
     let params = parameters.as_ref().unwrap_or(&empty_params);
+    validate_parameter_limits(params)?;
 
     let file_params_with_defaults: Vec<String> = params
         .iter()
@@ -191,6 +696,87 @@ parameters:
 {parameters}
 "#
         )
+    }
+
+    fn make_string_param(key: &str) -> String {
+        format!(
+            "  - key: {key}\n    input_type: string\n    requirement: required\n    description: p\n"
+        )
+    }
+
+    fn recipe_with_parameters(parameters: &str) -> String {
+        let vars: String = parameters
+            .lines()
+            .filter_map(|l| {
+                let trimmed = l.trim_start();
+                trimmed
+                    .strip_prefix("- key: ")
+                    .map(|k| format!("{{{{ {k} }}}} "))
+            })
+            .collect();
+        format!(
+            "version: 1.0.0\ntitle: T\ndescription: D\ninstructions: use {vars}\nparameters:\n{parameters}\n"
+        )
+    }
+
+    #[test]
+    fn rejects_too_many_parameters() {
+        let params: String = (0..=MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("maximum is 32"), "{}", error);
+    }
+
+    #[test]
+    fn accepts_exactly_max_parameters() {
+        let params: String = (0..MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        assert!(validate_recipe_template_from_content(&recipe_content, None).is_ok());
+    }
+
+    #[test]
+    fn rejects_too_many_total_select_options() {
+        let options: String = (0..=MAX_TOTAL_SELECT_OPTIONS)
+            .map(|i| format!("      - opt{i}\n"))
+            .collect();
+        let param = format!("  - key: choice\n    input_type: select\n    requirement: required\n    description: p\n    options:\n{options}");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("maximum is 200"), "{}", error);
+    }
+
+    #[test]
+    fn rejects_oversized_serialized_parameters() {
+        let long_desc = "x".repeat(MAX_PARAMETERS_SIZE_BYTES);
+        let param = format!("  - key: p\n    input_type: string\n    requirement: required\n    description: \"{long_desc}\"\n");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("128 KiB"), "{}", error);
+    }
+
+    #[test]
+    fn scheduling_rejects_too_many_parameters() {
+        let params: String = (0..=MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        let error = scheduling_error(&recipe_content);
+        assert!(error.to_string().contains("maximum is 32"), "{}", error);
+    }
+
+    #[test]
+    fn scheduling_rejects_too_many_total_select_options() {
+        let options: String = (0..=MAX_TOTAL_SELECT_OPTIONS)
+            .map(|i| format!("      - opt{i}\n"))
+            .collect();
+        let param = format!("  - key: choice\n    input_type: select\n    requirement: required\n    description: p\n    options:\n{options}");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = scheduling_error(&recipe_content);
+        assert!(error.to_string().contains("maximum is 200"), "{}", error);
     }
 
     #[test]
@@ -270,6 +856,301 @@ parameters:
         println!("Recipe: {:?}", recipe.prompt);
     }
 
+    fn scheduling_error(content: &str) -> SchedulerRecipeError {
+        validate_recipe_for_scheduling(content, None, RecipeFileFormat::Yaml).unwrap_err()
+    }
+
+    #[test]
+    fn scheduling_reports_safe_schema_paths_without_values() {
+        let cases = [
+            (
+                "description: Missing title\nprompt: Run safely\n",
+                "Invalid recipe: missing field `title`",
+                "Missing title",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ item }}\nparameters:\n  - key: item\n    input_type: string\n    requirement: required\n",
+                "Invalid recipe: parameters[0]: missing field `description`",
+                "item",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ item }}\nparameters:\n  - key: item\n    input_type: yaml-secret-242\n    requirement: required\n    description: hi\n",
+                "Invalid recipe: parameters[0].input_type is invalid",
+                "yaml-secret-242",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nsettings:\n  temperature: yaml-secret-242\n",
+                "Invalid recipe: settings.temperature is invalid",
+                "yaml-secret-242",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nauthor:\n  contact: [yaml-secret-242]\n",
+                "Invalid recipe: author.contact is invalid",
+                "yaml-secret-242",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nsub_recipes:\n  - path: yaml-secret-242.yaml\n",
+                "Invalid recipe: sub_recipes[0]: missing field `name`",
+                "yaml-secret-242",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nextensions:\n  - type: yaml-secret-242\n    name: ext\n",
+                "Invalid recipe: extensions[0].type is invalid",
+                "yaml-secret-242",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nretry:\n  max_retries: yaml-secret-242\n  checks: []\n",
+                "Invalid recipe: retry.max_retries is invalid",
+                "yaml-secret-242",
+            ),
+        ];
+
+        for (content, expected, secret) in cases {
+            let message = scheduling_error(content).to_string();
+            assert_eq!(message, expected);
+            assert!(!message.contains(secret));
+        }
+    }
+
+    #[test]
+    fn scheduling_uses_generic_errors_for_untrusted_parse_details() {
+        let yaml_cases = [
+            "yaml-secret-242",
+            "title: Test: yaml-secret-242\n",
+            "{% if %}\nyaml-secret-242\n{% endif %}\n",
+        ];
+        for content in yaml_cases {
+            let message = scheduling_error(content).to_string();
+            assert_eq!(message, "Invalid YAML recipe");
+            assert!(!message.contains("yaml-secret-242"));
+        }
+
+        let message = validate_recipe_for_scheduling(
+            "{\"title\": \"json-secret-242\"",
+            None,
+            RecipeFileFormat::Json,
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(message, "Invalid JSON recipe");
+        assert!(!message.contains("json-secret-242"));
+    }
+
+    #[test]
+    fn scheduling_rejects_duplicate_fields_like_runtime_load() {
+        let content = "title: First\ntitle: yaml-secret-242\ndescription: hi\nprompt: Run safely\n";
+
+        assert!(Recipe::from_content(content).is_err());
+        let message = scheduling_error(content).to_string();
+        assert_eq!(message, "Invalid YAML recipe");
+        assert!(!message.contains("yaml-secret-242"));
+    }
+
+    #[test]
+    fn scheduling_preserves_runtime_scalar_coercion() {
+        let recipe = validate_recipe_for_scheduling(
+            "title: 12345\ndescription: hi\nprompt: Run {{ count }}\nsettings:\n  temperature: 0.3\n  max_turns: 7\nparameters:\n  - key: count\n    input_type: string\n    requirement: optional\n    default: 0.85\n    description: hi\n",
+            None,
+            RecipeFileFormat::Yaml,
+        )
+        .unwrap();
+
+        assert_eq!(recipe.title, "12345");
+        assert_eq!(
+            recipe.parameters.as_ref().unwrap()[0].default.as_deref(),
+            Some("0.85")
+        );
+        let settings = recipe.settings.unwrap();
+        assert_eq!(settings.temperature, Some(0.3));
+        assert_eq!(settings.max_turns, Some(7));
+    }
+
+    #[test]
+    fn scheduling_scalar_spellings_match_cli_acceptance() {
+        for scalar in [
+            "15",
+            "0.85",
+            "1e3",
+            "0x10",
+            "true",
+            "null",
+            "~",
+            "!!null null",
+            "!!str 15",
+            "!!str null",
+            "!custom yaml-secret-242",
+        ] {
+            let content = format!(
+                "title: 12345\ndescription: hi\nprompt: Run {{{{ count }}}}\nparameters:\n  - key: count\n    input_type: string\n    requirement: optional\n    default: {scalar}\n    description: hi\n"
+            );
+            let cli = validate_recipe_template_from_content(&content, None);
+            let scheduling = validate_recipe_for_scheduling(&content, None, RecipeFileFormat::Yaml);
+
+            assert_eq!(
+                scheduling.is_ok(),
+                cli.is_ok(),
+                "validation verdict differed for {scalar}: cli={cli:?}, scheduling={scheduling:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheduling_matches_parameter_keys_after_yaml_scalar_normalization() {
+        for key in ["TRUE", "NULL"] {
+            let template_key = key;
+            let content = format!(
+                "title: Test\ndescription: hi\nprompt: Run {{{{ {template_key} }}}}\nparameters:\n  - key: {key}\n    input_type: string\n    requirement: required\n    description: hi\n"
+            );
+            let cli = validate_recipe_template_from_content(&content, None);
+            let scheduling = validate_recipe_for_scheduling(&content, None, RecipeFileFormat::Yaml);
+
+            assert_eq!(
+                scheduling.is_ok(),
+                cli.is_ok(),
+                "validation verdict differed for {key}: cli={cli:?}, scheduling={scheduling:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheduling_required_string_scalars_match_cli_acceptance() {
+        for scalar in [
+            "12345",
+            "1e3",
+            "0x10",
+            "true",
+            "null",
+            "~",
+            "!!null null",
+            "!!str null",
+        ] {
+            let content = format!("title: {scalar}\ndescription: hi\nprompt: Run safely\n");
+            let cli = validate_recipe_template_from_content(&content, None);
+            let scheduling = validate_recipe_for_scheduling(&content, None, RecipeFileFormat::Yaml);
+
+            assert_eq!(
+                scheduling.is_ok(),
+                cli.is_ok(),
+                "validation verdict differed for {scalar}: cli={cli:?}, scheduling={scheduling:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheduling_extension_scalars_match_cli_acceptance() {
+        let content = "title: Test\ndescription: hi\nprompt: Run safely\nextensions:\n  - type: stdio\n    name: 12345\n    cmd: 67890\n    args: [13579]\n";
+
+        let cli = validate_recipe_template_from_content(content, None);
+        let scheduling = validate_recipe_for_scheduling(content, None, RecipeFileFormat::Yaml);
+
+        assert_eq!(
+            scheduling.is_ok(),
+            cli.is_ok(),
+            "validation verdict differed: cli={cli:?}, scheduling={scheduling:?}"
+        );
+    }
+
+    #[test]
+    fn scheduling_accepts_nested_recipe_documents() {
+        let recipe = validate_recipe_for_scheduling(
+            "recipe:\n  title: Nested\n  description: hi\n  prompt: Run safely\n",
+            None,
+            RecipeFileFormat::Yaml,
+        )
+        .unwrap();
+
+        assert_eq!(recipe.title, "Nested");
+    }
+
+    #[test]
+    fn scheduling_preserves_nested_recipe_scalar_rules() {
+        let content = "recipe:\n  title: Nested\n  description: hi\n  prompt: Run {{ count }}\n  parameters:\n    - key: count\n      input_type: string\n      requirement: optional\n      default: 15\n      description: hi\n";
+
+        assert!(validate_recipe_template_from_content(content, None).is_err());
+        let message = scheduling_error(content).to_string();
+        assert_eq!(message, "Invalid recipe: parameters[0].default is invalid");
+    }
+
+    #[test]
+    fn scheduling_parameter_diagnostics_do_not_reflect_keys() {
+        let cases = [
+            (
+                "title: Test\ndescription: hi\nprompt: Run\nparameters:\n  - key: yaml-secret-242\n    input_type: string\n    requirement: required\n    description: hi\n",
+                "Invalid recipe: unnecessary parameter definitions at parameters[0]",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ yaml_secret_242 }}\n",
+                "Invalid recipe: missing parameter definitions for 1 template variables",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ yaml_secret_242 }}\nparameters:\n  - key: yaml_secret_242\n    input_type: string\n    requirement: required\n    description: first\n  - key: yaml_secret_242\n    input_type: string\n    requirement: required\n    description: second\n",
+                "Invalid recipe: duplicate parameter definition at parameters[1]",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ yaml_secret_242 }}\nparameters:\n  - key: yaml_secret_242\n    input_type: file\n    requirement: required\n    default: secret.txt\n    description: hi\n",
+                "Invalid recipe: file parameters cannot have default values at parameters[0]",
+            ),
+            (
+                "title: Test\ndescription: hi\nprompt: Run {{ yaml_secret_242 }}\nparameters:\n  - key: yaml_secret_242\n    input_type: string\n    requirement: optional\n    description: hi\n",
+                "Invalid recipe: optional parameters require default values at parameters[0]",
+            ),
+        ];
+
+        for (content, expected) in cases {
+            let message = scheduling_error(content).to_string();
+            assert_eq!(message, expected);
+            assert!(!message.contains("yaml_secret_242"));
+            assert!(!message.contains("yaml-secret-242"));
+        }
+    }
+
+    #[test]
+    fn scheduling_redacts_dynamic_map_keys() {
+        let cases = [
+            "title: Test\ndescription: hi\nprompt: Run\nextensions:\n  - type: stdio\n    name: ext\n    cmd: run\n    args: []\n    envs:\n      yaml-secret-242: []\n",
+            "title: Test\ndescription: hi\nprompt: Run\nextensions:\n  - type: streamable_http\n    name: ext\n    uri: https://example.com\n    headers:\n      yaml-secret-242: []\n",
+            "title: Test\ndescription: hi\nprompt: Run\nsub_recipes:\n  - name: child\n    path: child.yaml\n    values:\n      yaml-secret-242:\n        ? [complex, key]\n        : value\n",
+        ];
+
+        for content in cases {
+            let message = scheduling_error(content).to_string();
+            assert!(!message.contains("yaml-secret-242"));
+        }
+    }
+
+    #[test]
+    fn scheduling_sanitizes_json_schema_compile_errors() {
+        let content = r#"
+title: Test
+description: hi
+prompt: Run
+response:
+  json_schema:
+    type: object
+    properties:
+      result:
+        type: string
+        pattern: "[yaml-secret-242"
+"#;
+
+        let message = scheduling_error(content).to_string();
+        assert_eq!(message, "Invalid recipe: response.json_schema is invalid");
+        assert!(!message.contains("yaml-secret-242"));
+    }
+
+    #[test]
+    fn scheduling_uses_json_format_without_losing_schema_details() {
+        let message = validate_recipe_for_scheduling(
+            "{\"description\": \"no title\", \"prompt\": \"Run\"}",
+            None,
+            RecipeFileFormat::Json,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(message, "Invalid recipe: missing field `title`");
+    }
+
     #[test]
     fn response_json_schema_must_be_an_object() {
         let recipe_content = r#"
@@ -323,5 +1204,139 @@ response:
         let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
 
         assert!(error.to_string().contains("JSON schema validation failed"));
+    }
+
+    fn string_param(key: &str) -> RecipeParameter {
+        RecipeParameter {
+            key: key.to_string(),
+            input_type: RecipeParameterInputType::String,
+            requirement: RecipeParameterRequirement::Required,
+            description: format!("{key} parameter"),
+            default: None,
+            options: None,
+        }
+    }
+
+    #[test]
+    fn rendered_snapshot_with_leftover_parameters_fails_template_validation() {
+        let recipe = Recipe::builder()
+            .title("snapshot")
+            .description("rendered")
+            .prompt("hello")
+            .parameters(vec![string_param("message")])
+            .build()
+            .unwrap();
+
+        let error =
+            validate_recipe_template_from_content(&recipe.to_yaml().unwrap(), None).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Unnecessary parameter definitions: message"));
+    }
+
+    #[test]
+    fn strip_unreferenced_parameters_lets_rendered_snapshot_validate() {
+        let recipe = Recipe::builder()
+            .title("snapshot")
+            .description("rendered")
+            .prompt("hello")
+            .parameters(vec![string_param("message")])
+            .build()
+            .unwrap();
+
+        let stripped = strip_unreferenced_parameters(recipe);
+        assert!(stripped.parameters.is_none());
+        validate_recipe_template_from_content(&stripped.to_yaml().unwrap(), None).unwrap();
+    }
+
+    fn render_with_message(message_value: &str) -> Recipe {
+        let recipe_content = r#"
+version: 1.0.0
+title: Snapshot
+description: Rendered snapshot
+prompt: "write a template like {{ message }}"
+parameters:
+  - key: message
+    input_type: string
+    requirement: required
+    description: message parameter
+"#;
+        let params = HashMap::from([("message".to_string(), message_value.to_string())]);
+        validate_recipe_template(recipe_content, None)
+            .unwrap()
+            .render(&params)
+            .unwrap()
+    }
+
+    #[test]
+    fn strip_unreferenced_parameters_when_a_rendered_value_looks_like_a_reference() {
+        let ordinary = render_with_message("hello");
+        assert_eq!(
+            ordinary.prompt.as_deref(),
+            Some("write a template like hello")
+        );
+        assert!(strip_unreferenced_parameters(ordinary).parameters.is_none());
+
+        // The value the user supplied is itself the text "{{ message }}", so rendering
+        // leaves it in the snapshot as data. Re-parsing the snapshot reports `message` as
+        // a template variable again, so the key survives where `hello` lost it.
+        let rendered = render_with_message("{{ message }}");
+        assert_eq!(
+            rendered.prompt.as_deref(),
+            Some("write a template like {{ message }}")
+        );
+        let (_, template_variables) =
+            parse_recipe_content(&rendered.to_yaml().unwrap(), None).unwrap();
+        assert!(template_variables.contains("message"));
+
+        let stripped = strip_unreferenced_parameters(rendered);
+        let keys: Vec<_> = stripped
+            .parameters
+            .as_ref()
+            .expect("rendered user data is read back as a live reference")
+            .iter()
+            .map(|parameter| parameter.key.as_str())
+            .collect();
+        assert_eq!(keys, ["message"]);
+    }
+
+    #[test]
+    fn strip_unreferenced_parameters_keeps_keys_still_in_the_template() {
+        let recipe = Recipe::builder()
+            .title("template")
+            .description("unrendered")
+            .prompt("{{ message }}")
+            .parameters(vec![string_param("message")])
+            .build()
+            .unwrap();
+
+        let stripped = strip_unreferenced_parameters(recipe);
+        let keys: Vec<_> = stripped
+            .parameters
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|parameter| parameter.key.as_str())
+            .collect();
+        assert_eq!(keys, ["message"]);
+    }
+
+    #[test]
+    fn authoring_unused_parameter_still_fails_after_strip_helper_exists() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Unused
+description: Unused parameter
+instructions: no templates here
+parameters:
+  - key: message
+    input_type: string
+    requirement: required
+    description: unused
+"#;
+        let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Unnecessary parameter definitions: message"));
     }
 }

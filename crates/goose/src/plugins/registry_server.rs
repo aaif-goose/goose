@@ -1,4 +1,4 @@
-use crate::agents::extension::{Envs, ExtensionConfig};
+use crate::agents::extension::{Envs, ExtensionConfig, TransportConfig};
 use crate::config::{ExtensionEntry, DEFAULT_EXTENSION_TIMEOUT};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -194,7 +194,7 @@ pub fn import_server_json(
             let _ = name;
             Ok(ExtensionEntry {
                 enabled: true,
-                config,
+                config: ExtensionConfig::External(config),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -263,7 +263,7 @@ fn package_config(
     description: String,
     package: &Package,
     values: &HashMap<String, String>,
-) -> Result<ExtensionConfig> {
+) -> Result<TransportConfig> {
     if package.transport.kind != "stdio" {
         return remote_config(name, description, &package.transport, values);
     }
@@ -322,7 +322,7 @@ fn package_config(
         args.push("--".into());
     }
     args.extend(resolve_arguments(&package.package_arguments, values)?);
-    Ok(ExtensionConfig::Stdio {
+    Ok(TransportConfig::Stdio {
         name,
         description,
         cmd,
@@ -363,7 +363,7 @@ fn remote_config(
     description: String,
     transport: &Transport,
     values: &HashMap<String, String>,
-) -> Result<ExtensionConfig> {
+) -> Result<TransportConfig> {
     if transport.kind != "streamable-http" {
         bail!(
             "unsupported transport '{}'; Goose supports stdio and streamable-http",
@@ -382,7 +382,7 @@ fn remote_config(
     env_keys.extend(variable_env_keys);
     env_keys.sort_unstable();
     env_keys.dedup();
-    Ok(ExtensionConfig::StreamableHttp {
+    Ok(TransportConfig::StreamableHttp {
         name,
         description,
         uri,
@@ -573,7 +573,8 @@ mod tests {
 
     #[test]
     fn oci_uses_declared_version() {
-        let ExtensionConfig::Stdio { args, .. } = import_oci(None) else {
+        let ExtensionConfig::External(TransportConfig::Stdio { args, .. }) = import_oci(None)
+        else {
             panic!("expected stdio extension");
         };
 
@@ -582,7 +583,9 @@ mod tests {
 
     #[test]
     fn oci_runtime_hint_keeps_run_subcommand() {
-        let ExtensionConfig::Stdio { cmd, args, .. } = import_oci(Some("podman")) else {
+        let ExtensionConfig::External(TransportConfig::Stdio { cmd, args, .. }) =
+            import_oci(Some("podman"))
+        else {
             panic!("expected stdio extension");
         };
 
@@ -609,12 +612,12 @@ mod tests {
 
         let (entries, secrets) =
             import_server_json(json, &[ServerSelection::Remote(0)], &values).unwrap();
-        let ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(TransportConfig::StreamableHttp {
             uri,
             headers,
             env_keys,
             ..
-        } = &entries[0].config
+        }) = &entries[0].config
         else {
             panic!("expected streamable HTTP extension");
         };
@@ -651,19 +654,19 @@ mod tests {
             &values,
         )
         .unwrap();
-        let ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(TransportConfig::StreamableHttp {
             uri: secret_uri,
             env_keys: secret_env_keys,
             ..
-        } = &entries[0].config
+        }) = &entries[0].config
         else {
             panic!("expected streamable HTTP extension");
         };
-        let ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(TransportConfig::StreamableHttp {
             uri: public_uri,
             env_keys: public_env_keys,
             ..
-        } = &entries[1].config
+        }) = &entries[1].config
         else {
             panic!("expected streamable HTTP extension");
         };
@@ -690,12 +693,12 @@ mod tests {
 
         let (entries, secrets) =
             import_server_json(json, &[ServerSelection::Remote(0)], &HashMap::new()).unwrap();
-        let ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(TransportConfig::StreamableHttp {
             uri,
             headers,
             env_keys,
             ..
-        } = &entries[0].config
+        }) = &entries[0].config
         else {
             panic!("expected streamable HTTP extension");
         };
@@ -721,7 +724,8 @@ mod tests {
 
         let (entries, _) =
             import_server_json(json, &[ServerSelection::Package(0)], &HashMap::new()).unwrap();
-        let ExtensionConfig::Stdio { env_keys, .. } = &entries[0].config else {
+        let ExtensionConfig::External(TransportConfig::Stdio { env_keys, .. }) = &entries[0].config
+        else {
             panic!("expected stdio extension");
         };
 

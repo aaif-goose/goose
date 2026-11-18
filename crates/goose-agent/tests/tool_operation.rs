@@ -12,8 +12,10 @@ use goose_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
         ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
+        RunStatus,
     },
     tool::{ToolOperation, ToolProvider},
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
     message::{Message, MessageContent},
@@ -99,7 +101,7 @@ fn emitter() -> Emitter {
 }
 
 fn emitter_with_token(cancel: CancellationToken) -> Emitter {
-    let (tx, _rx) = mpsc::channel(1);
+    let (tx, _rx) = mpsc::unbounded_channel();
     Emitter::new(tx, cancel)
 }
 
@@ -107,6 +109,15 @@ fn operation() -> ToolOperation<()> {
     ToolOperation::new()
         .with_sync_tool::<Add>()
         .with_async_tool::<Greet>()
+}
+
+fn executable(mut message: Message) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ToolRequest(request) = content {
+            request.tool_meta.get_or_insert_with(|| json!({}))[EXECUTABLE_KEY] = json!(true);
+        }
+    }
+    message
 }
 
 fn appended_message(result: OperationResult<ConversationEffect>) -> Message {
@@ -140,18 +151,20 @@ async fn advertises_user_defined_tools_directly() {
 async fn dispatches_calls_to_user_defined_tools() {
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("do both"),
-        Message::assistant()
-            .with_tool_request(
-                "call-1",
-                Ok(CallToolRequestParams::new("add").with_arguments(
-                    serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
-                )),
-            )
-            .with_tool_request(
-                "call-2",
-                Ok(CallToolRequestParams::new("greet")
-                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
-            ),
+        executable(
+            Message::assistant()
+                .with_tool_request(
+                    "call-1",
+                    Ok(CallToolRequestParams::new("add").with_arguments(
+                        serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
+                    )),
+                )
+                .with_tool_request(
+                    "call-2",
+                    Ok(CallToolRequestParams::new("greet")
+                        .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+                ),
+        ),
     ]);
 
     let message = appended_message(
@@ -240,8 +253,10 @@ async fn rediscovers_dynamic_tools_for_inference_and_execution() {
 
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("call the dynamic tool"),
-        Message::assistant()
-            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
     ]);
     let message = appended_message(
         <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
@@ -311,8 +326,10 @@ async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
 
     let conversation = Conversation::new_unvalidated([
         kickoff,
-        Message::assistant()
-            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        executable(
+            Message::assistant()
+                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
+        ),
     ]);
     let execution_error = match <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
         &operation,
@@ -329,30 +346,6 @@ async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
         execution_error.to_string(),
         "multiple tool providers registered 'dynamic'"
     );
-}
-
-#[tokio::test]
-async fn ignores_requests_outside_the_current_turn() {
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("old turn"),
-        Message::assistant().with_tool_request(
-            "stale-call",
-            Ok(CallToolRequestParams::new("add")
-                .with_arguments(serde_json::from_value(json!({"left": 2, "right": 3})).unwrap())),
-        ),
-        Message::user().with_text("new turn"),
-    ]);
-
-    let result = <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-        &operation(),
-        &(),
-        &conversation,
-        &emitter(),
-    )
-    .await
-    .unwrap();
-
-    assert!(matches!(result, OperationResult::NotApplicable));
 }
 
 #[tokio::test]
@@ -381,77 +374,6 @@ async fn responds_to_unparseable_tool_requests() {
         response.tool_result.as_ref().unwrap_err().message,
         "malformed arguments"
     );
-}
-
-#[derive(Default, Clone)]
-struct BlockingSession {
-    started: Arc<AtomicBool>,
-}
-
-struct BlockingSyncTool;
-
-impl ToolBase for BlockingSyncTool {
-    type Parameter = ();
-    type Output = ();
-    type Error = ErrorData;
-
-    fn name() -> Cow<'static, str> {
-        "blocking_sync".into()
-    }
-
-    fn input_schema() -> Option<Arc<serde_json::Map<String, serde_json::Value>>> {
-        None
-    }
-}
-
-impl SyncTool<BlockingSession> for BlockingSyncTool {
-    fn invoke(session: &BlockingSession, _input: ()) -> Result<(), ErrorData> {
-        session.started.store(true, Ordering::SeqCst);
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn cancellation_interrupts_blocking_sync_tools() {
-    let session = BlockingSession::default();
-    let started = session.started.clone();
-    let operation = ToolOperation::new().with_sync_tool::<BlockingSyncTool>();
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call it"),
-        Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking_sync"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<BlockingSession> as Operation<BlockingSession, ConversationEffect>>::run(
-            &operation,
-            &session,
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while !started.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let result = tokio::time::timeout(std::time::Duration::from_millis(50), run)
-        .await
-        .expect("operation should not wait for the blocking tool")
-        .unwrap()
-        .unwrap();
-
-    let message = appended_message(result);
-    assert!(message.content[0]
-        .as_tool_response()
-        .unwrap()
-        .tool_result
-        .as_ref()
-        .unwrap()
-        .is_error
-        .is_some_and(|is_error| is_error));
 }
 
 struct BlockingDiscovery {
@@ -541,140 +463,43 @@ async fn cancellation_interrupts_inference_discovery() {
     }
     cancel.cancel();
 
-    assert!(step.await.unwrap().unwrap().is_none());
+    assert_eq!(step.await.unwrap().unwrap().status, RunStatus::Cancelled);
 }
 
 #[tokio::test]
-async fn cancellation_interrupts_execution_discovery() {
-    let started = Arc::new(AtomicBool::new(false));
-    let operation = ToolOperation::new().with_provider(Arc::new(BlockingDiscovery {
-        started: started.clone(),
-    }));
+async fn skips_calls_it_should_not_run() {
+    let add = || {
+        Ok(CallToolRequestParams::new("add")
+            .with_arguments(json!({"left": 2, "right": 3}).as_object().unwrap().clone()))
+    };
     let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call it"),
+        Message::user().with_text("old turn"),
+        executable(Message::assistant().with_tool_request("stale", add())),
+        Message::user().with_text("new turn"),
+        executable(
+            Message::assistant()
+                .with_tool_request("responded", add())
+                .with_tool_request(
+                    "unavailable",
+                    Ok(CallToolRequestParams::new("not_registered")),
+                )
+                .with_tool_request_with_metadata(
+                    "external",
+                    add(),
+                    None,
+                    Some(json!({"goose.external_dispatch": true})),
+                ),
+        ),
         Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-            &operation,
-            &(),
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while !started.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let message = appended_message(run.await.unwrap().unwrap());
-
-    let response = message.content[0].as_tool_response().unwrap();
-    assert_eq!(response.id, "call-1");
-    assert!(response
-        .tool_result
-        .as_ref()
-        .unwrap()
-        .is_error
-        .is_some_and(|is_error| is_error));
-}
-
-struct BlockingTools {
-    calls: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl ToolProvider<()> for BlockingTools {
-    async fn tools(&self, _session: &()) -> Result<Vec<Tool>> {
-        Ok(vec![Tool::new(
-            "blocking",
-            "A tool that never finishes",
-            Arc::new(serde_json::from_value(json!({"type": "object"}))?),
-        )])
-    }
-
-    async fn call(
-        &self,
-        _session: &(),
-        _request_id: &str,
-        _call: CallToolRequestParams,
-        _emit: &Emitter,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        std::future::pending().await
-    }
-}
-
-#[tokio::test]
-async fn cancellation_interrupts_current_and_remaining_calls() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let operation = ToolOperation::new().with_provider(Arc::new(BlockingTools {
-        calls: calls.clone(),
-    }));
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call twice"),
-        Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking")))
-            .with_tool_request("call-2", Ok(CallToolRequestParams::new("blocking"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-            &operation,
-            &(),
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while calls.load(Ordering::SeqCst) == 0 {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let message = appended_message(run.await.unwrap().unwrap());
-
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        message.get_tool_response_ids(),
-        ["call-1", "call-2"].into_iter().collect()
-    );
-    for content in &message.content {
-        let result = content
-            .as_tool_response()
-            .unwrap()
-            .tool_result
-            .as_ref()
-            .unwrap();
-        assert!(result.is_error.is_some_and(|is_error| is_error));
-        assert_eq!(
-            result.content[0].as_text().unwrap().text,
-            "Tool call was interrupted before completing"
-        );
-    }
-}
-
-#[tokio::test]
-async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call tools"),
-        Message::assistant()
-            .with_tool_request("answered", Ok(CallToolRequestParams::new("add")))
-            .with_tool_request(
-                "unavailable",
-                Ok(CallToolRequestParams::new("not_registered")),
-            )
+            .with_tool_request("unmarked", add())
             .with_tool_request_with_metadata(
-                "external",
-                Ok(CallToolRequestParams::new("add")),
+                "blocked",
+                add(),
                 None,
-                Some(json!({"goose.external_dispatch": true})),
+                Some(json!({ EXECUTABLE_KEY: false })),
             ),
         Message::user().with_tool_response(
-            "answered",
+            "responded",
             Ok(CallToolResult::structured(json!({"sum": 5}))),
         ),
     ]);

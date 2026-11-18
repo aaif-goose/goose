@@ -30,6 +30,49 @@ describe('ACP providers', () => {
     vi.clearAllMocks();
   });
 
+  it('exposes Coding Plan in Desktop setup and refreshes newly discovered models', async () => {
+    const entry = providerEntry({
+      providerId: 'zai_coding_plan',
+      providerName: 'Z.AI Coding Plan',
+      providerType: 'Declarative',
+      acp: false,
+      configKeys: [{ name: 'ZAI_CODING_PLAN_API_KEY', required: true, secret: true }],
+    });
+    const discovered = {
+      ...entry,
+      models: [{ id: 'glm-future', name: 'glm-future', recommended: true }],
+    };
+    const client = {
+      goose: {
+        providersList_unstable: vi
+          .fn()
+          .mockResolvedValueOnce({ entries: [entry] })
+          .mockResolvedValueOnce({ entries: [entry] })
+          .mockResolvedValueOnce({ entries: [discovered] }),
+        providersReadinessCheck_unstable: vi.fn().mockResolvedValue({ ready: true }),
+        providersInventoryRefresh_unstable: vi
+          .fn()
+          .mockResolvedValue({ started: ['zai_coding_plan'], skipped: [] }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    const setup = await acpListSetupProviderDetails();
+    expect(setup[0].metadata.display_name).toBe('Z.AI Coding Plan');
+    expect(setup[0].supports_refresh).toBe(true);
+    expect(setup[0].metadata.config_keys[0].name).toBe('ZAI_CODING_PLAN_API_KEY');
+
+    const refreshed = await acpRefreshProviderDetails('zai_coding_plan');
+    expect(client.goose.providersInventoryRefresh_unstable).toHaveBeenCalledWith({
+      providerIds: ['zai_coding_plan'],
+    });
+    expect(refreshed.provider.metadata.known_models.map((model) => model.name)).toEqual([
+      'glm-future',
+    ]);
+  });
+
   it('sets thinking effort after provider and model, then returns the final config response', async () => {
     const client = {
       connection: {

@@ -1,3 +1,11 @@
+// On riscv64, update() bails early because no release artifacts are published,
+// so the implementation below (and most of this module) is cfg-disabled and
+// would otherwise trigger dead_code/unused warnings that fail clippy.
+#![cfg_attr(
+    target_arch = "riscv64",
+    allow(dead_code, unused_imports, unused_variables)
+)]
+
 use anyhow::{bail, Context, Result};
 use reqwest::{
     header::{HeaderValue, AUTHORIZATION},
@@ -37,6 +45,12 @@ fn asset_name() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
     {
         "goose-aarch64-unknown-linux-musl.tar.bz2"
+    }
+    // RISC-V builds compile with this asset name, but update() rejects the
+    // platform until release artifacts are published. See update() below.
+    #[cfg(all(target_os = "linux", target_arch = "riscv64", target_env = "gnu"))]
+    {
+        "goose-riscv64gc-unknown-linux-gnu.tar.bz2"
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
     {
@@ -220,8 +234,8 @@ fn verify_bundle(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let identity = result
-        .identity
-        .as_deref()
+        .identity()
+        .map(|identity| identity.as_str())
         .ok_or_else(|| anyhow::anyhow!("No identity in certificate"))?;
 
     let expected = format!("/.github/workflows/{workflow}");
@@ -258,7 +272,7 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<()> {
 
     let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .context("Failed to load Sigstore trusted root")?;
-    let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
+    let policy = VerificationPolicy::any_identity().require_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
         Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;
 
@@ -297,7 +311,14 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         bail!("Update is disabled in this build.");
     }
 
-    #[cfg(not(feature = "disable-update"))]
+    // RISC-V release artifacts are not published yet, so reject self-update
+    // rather than downloading a nonexistent asset.
+    #[cfg(all(target_arch = "riscv64", not(feature = "disable-update")))]
+    {
+        bail!("Self-update is not supported on riscv64: no release artifacts are published for this platform.");
+    }
+
+    #[cfg(all(not(target_arch = "riscv64"), not(feature = "disable-update")))]
     {
         let tag = if canary { "canary" } else { "stable" };
         let asset = asset_name();
@@ -392,7 +413,7 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<()> {
 
         let safe_path = match entry.enclosed_name() {
             Some(p) => p.to_owned(),
-            None => bail!("Zip entry has unsafe path: {}", entry.name()),
+            None => bail!("Zip entry has unsafe path: {}", entry.name()?),
         };
 
         let target = dest.join(&safe_path);

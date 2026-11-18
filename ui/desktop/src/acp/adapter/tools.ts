@@ -10,6 +10,7 @@ import { toolNotificationChange } from './toolNotifications';
 import {
   type AcpChatStateChange,
   type AdapterState,
+  applyInferenceMeta,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
   type GooseMessageMeta,
   getGooseMessageMeta,
@@ -26,6 +27,7 @@ export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatSta
 
   const gooseMeta = getGooseMessageMeta(update);
   const message = getOrCreateAssistantMessageForUpdate(state, gooseMeta);
+  applyInferenceMeta(message, gooseMeta);
 
   if (
     message.content.some(
@@ -80,13 +82,14 @@ export function applyToolCallUpdate(
   message.content.push({
     type: 'toolResponse',
     id: update.toolCallId,
-    toolResult:
-      toolCallState.status === 'failed'
-        ? { status: 'error', error: toolError(toolCallState) }
-        : {
-            status: 'success',
-            value: toolResultValue(toolCallState, mcpAppMetadata(update)),
-          },
+    toolResult: {
+      status: 'success',
+      value: toolResultValue(
+        toolCallState,
+        toolResultMetadata(update),
+        toolCallState.status === 'failed'
+      ),
+    },
     ...(metadata ? { metadata } : {}),
   });
 
@@ -117,6 +120,9 @@ function getOrCreateAssistantMessageForUpdate(
 ): Message {
   const existing = findMessageForChunk(state, 'assistant', gooseMeta.messageId, gooseMeta.created);
   if (existing) {
+    if (gooseMeta.operationLogs) {
+      existing.metadata.operationLogs = gooseMeta.operationLogs;
+    }
     return existing;
   }
 
@@ -125,7 +131,10 @@ function getOrCreateAssistantMessageForUpdate(
     role: 'assistant',
     created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
     content: [],
-    metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
+    metadata: {
+      ...DEFAULT_VISIBLE_MESSAGE_METADATA,
+      ...(gooseMeta.operationLogs ? { operationLogs: gooseMeta.operationLogs } : {}),
+    },
   };
   state.messages.push(message);
   return message;
@@ -210,12 +219,22 @@ function baseToolMetadata(
 
 function toolResultValue(
   update: ToolCallUpdate,
-  mcpAppMeta: DesktopMcpAppMeta | undefined
+  meta: DesktopToolResultMeta | undefined,
+  isError: boolean
 ): ToolResultValue {
+  const content = toolResultContent(update);
+  if (isError && content.length === 0) {
+    const errorText =
+      typeof update.rawOutput === 'string' && update.rawOutput.trim()
+        ? update.rawOutput
+        : (update.title ?? 'Tool call failed');
+    content.push({ type: 'text', text: errorText });
+  }
+
   const toolResult: ToolResultValue = {
-    content: toolResultContent(update),
-    isError: false,
-    ...(mcpAppMeta ? { _meta: mcpAppMeta } : {}),
+    content,
+    isError,
+    ...(meta ? { _meta: meta } : {}),
   };
 
   if (update.rawOutput !== undefined) {
@@ -315,63 +334,48 @@ function apiResourceContentsFromAcpResource(
   };
 }
 
-function toolError(update: ToolCallUpdate): string {
-  if (typeof update.rawOutput === 'string' && update.rawOutput.trim()) {
-    return update.rawOutput;
-  }
-
-  const contentText = toolResultContent(update)
-    .flatMap((content) => (content.type === 'text' ? [content.text] : []))
-    .filter((text) => text.trim().length > 0)
-    .join('\n');
-  if (contentText) {
-    return contentText;
-  }
-
-  return update.title ?? 'Tool call failed';
-}
-
-interface DesktopMcpAppMeta extends Record<string, unknown> {
-  ui: {
+interface DesktopToolResultMeta extends Record<string, unknown> {
+  ui?: {
     resourceUri: string;
   };
   extensionName?: string;
   toolName?: string;
   toolNameIsActual?: boolean;
+  subagent_session_id?: string;
 }
 
 type ToolResultValue = {
   content: GooseContentBlock[];
   structuredContent?: unknown;
   isError: boolean;
-  _meta?: DesktopMcpAppMeta;
+  _meta?: DesktopToolResultMeta;
 };
 
-function mcpAppMetadata(update: ToolCallUpdate): DesktopMcpAppMeta | undefined {
+function toolResultMetadata(update: ToolCallUpdate): DesktopToolResultMeta | undefined {
   if (!isRecord(update._meta)) {
     return undefined;
   }
 
   const goose = update._meta.goose;
-  if (!isRecord(goose) || !isRecord(goose.mcpApp)) {
+  if (!isRecord(goose)) {
     return undefined;
   }
 
-  const resourceUri = goose.mcpApp.resourceUri;
-  if (typeof resourceUri !== 'string') {
-    return undefined;
+  const meta: DesktopToolResultMeta = {};
+  if (typeof goose.subagentSessionId === 'string') {
+    meta.subagent_session_id = goose.subagentSessionId;
   }
 
-  return {
-    ui: {
-      resourceUri,
-    },
-    extensionName:
-      typeof goose.mcpApp.extensionName === 'string' ? goose.mcpApp.extensionName : undefined,
-    toolName: typeof goose.mcpApp.toolName === 'string' ? goose.mcpApp.toolName : undefined,
-    toolNameIsActual:
+  if (isRecord(goose.mcpApp) && typeof goose.mcpApp.resourceUri === 'string') {
+    meta.ui = { resourceUri: goose.mcpApp.resourceUri };
+    meta.extensionName =
+      typeof goose.mcpApp.extensionName === 'string' ? goose.mcpApp.extensionName : undefined;
+    meta.toolName = typeof goose.mcpApp.toolName === 'string' ? goose.mcpApp.toolName : undefined;
+    meta.toolNameIsActual =
       typeof goose.mcpApp.toolNameIsActual === 'boolean'
         ? goose.mcpApp.toolNameIsActual
-        : undefined,
-  };
+        : undefined;
+  }
+
+  return Object.keys(meta).length > 0 ? meta : undefined;
 }

@@ -1,33 +1,223 @@
+use std::sync::Arc;
+
 use anyhow::Result;
-use rmcp::model::ElicitationAction;
+use rmcp::model::{CallToolRequestParams, ElicitationAction, ErrorData};
 use serde_json::json;
 
 use super::calculator_extension::{
     delayed_value, value, ADD, ADD_WITH_AUDIENCE, APP_ONLY, DIVIDE, REQUEST_VALUE,
 };
-use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
+use super::dummy_api::DummyApi;
+use super::pipeline::MessageKind::{Agent, Confirmation, Error, ToolCall, ToolResponse};
+use super::pipeline::TestPipeline;
 use super::pipeline::MAX_TURNS;
 use super::test_pipeline;
-use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
+use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+
+async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    pipeline.set_permission(ADD, PermissionLevel::AlwaysAllow);
+    api.on("add four and halve it")
+        .calls([("free", ADD, value(4)), ("gated", DIVIDE, value(2))]);
+    Ok((pipeline, api))
+}
+
+#[tokio::test]
+async fn no_inference_while_a_tool_confirmation_is_open() -> Result<()> {
+    let (pipeline, api) = pipeline_with_gated_divide().await?;
+
+    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
+    assert_eq!(api.call_count(), 1);
+    assert_eq!(pipeline.calculator_total(), 4);
+    awaiting_confirmation.assert_message(-1, ToolResponse, "result: 4");
+
+    api.on("result: 2").reply("halved");
+    pipeline.confirm("gated", Permission::AllowOnce).await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Agent, "halved");
+    assert_eq!(pipeline.calculator_total(), 2);
+    assert_eq!(api.call_count(), 2);
+    assert!(api.calls().last().unwrap().answers_every_tool_call_next());
+    Ok(())
+}
+
+#[tokio::test]
+async fn steer_waits_for_an_open_tool_confirmation() -> Result<()> {
+    let (pipeline, api) = pipeline_with_gated_divide().await?;
+    pipeline
+        .steer(Message::user().with_text("then say done"))
+        .await;
+
+    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
+    assert_eq!(api.call_count(), 1);
+    assert!(pipeline.has_pending_steers().await);
+    assert!(!awaiting_confirmation
+        .conversation()
+        .messages()
+        .iter()
+        .any(|message| message.as_concat_text() == "then say done"));
+
+    api.on("then say done").reply("done");
+    pipeline.confirm("gated", Permission::AllowOnce).await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Agent, "done");
+    assert_eq!(pipeline.calculator_total(), 2);
+    assert!(!pipeline.has_pending_steers().await);
+    let messages = result.conversation().messages();
+    let steer = messages
+        .iter()
+        .position(|message| message.as_concat_text() == "then say done")
+        .expect("steer was persisted");
+    let gated_answer = messages
+        .iter()
+        .position(|message| message.get_tool_response_ids().contains("gated"))
+        .expect("gated call was answered");
+    assert!(gated_answer < steer);
+    assert!(api.calls().last().unwrap().answers_every_tool_call_next());
+    Ok(())
+}
+
+#[tokio::test]
+async fn max_turns_waits_for_an_open_tool_confirmation() -> Result<()> {
+    let (pipeline, api) = pipeline_with_gated_divide().await?;
+    let pipeline = pipeline.with_max_turns(1);
+
+    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
+    awaiting_confirmation.assert_message(-1, ToolResponse, "result: 4");
+
+    pipeline.confirm("gated", Permission::AllowOnce).await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
+    assert_eq!(pipeline.calculator_total(), 2);
+    assert_eq!(api.call_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn steer_waits_for_calls_answered_by_different_operations() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let arguments = value(1).as_object().unwrap().clone();
+    pipeline
+        .seed([
+            Message::user().with_text("do two things"),
+            Message::assistant()
+                .with_tool_request(
+                    "valid",
+                    Ok(CallToolRequestParams::new(ADD).with_arguments(arguments)),
+                )
+                .with_tool_request(
+                    "malformed",
+                    Err(ErrorData::invalid_params("bad json", None)),
+                ),
+        ])
+        .await?;
+    pipeline
+        .steer(Message::user().with_text("then say done"))
+        .await;
+    api.on("then say done").reply("done");
+
+    let result = pipeline.resume().await?;
+
+    result.assert_message(-1, Agent, "done");
+    let messages = result.conversation().messages();
+    let answer = |id: &str| {
+        messages
+            .iter()
+            .position(|message| message.get_tool_response_ids().contains(id))
+            .unwrap_or_else(|| panic!("{id} was answered"))
+    };
+    let steer = messages
+        .iter()
+        .position(|message| message.as_concat_text() == "then say done")
+        .expect("steer was persisted");
+    assert!(answer("valid") < steer);
+    assert!(answer("malformed") < steer);
+    assert!(api.calls().last().unwrap().answers_every_tool_call_next());
+    Ok(())
+}
 
 #[tokio::test]
 async fn basic_tool_calling() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("The total is 1");
+    api.on("add a numeric string")
+        .call(ADD, json!({ "value": "4" }));
+    api.on("result: 5").reply("The total is 5");
     api.on("hello").reply("hi there!");
 
-    let result = pipeline.run(["add one", "hello"]).await?;
+    let result = pipeline
+        .run(["add one", "add a numeric string", "hello"])
+        .await?;
 
     result.assert_message(2, ToolResponse, "");
     result.assert_message(3, Agent, "The total is 1");
+    result.assert_message(6, ToolResponse, "result: 5");
+    result.assert_message(7, Agent, "The total is 5");
     result.assert_message(-1, Agent, "hi there!");
-    assert_eq!(api.call_count(), 3);
+    assert_eq!(api.call_count(), 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_tools_remain_eager_with_deferral() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_deferred_tools()
+        .with_always_load_tools(vec![ADD.to_string(), APP_ONLY.to_string()]);
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    pipeline.run(["add one"]).await?;
+    let calls = api.calls();
+    assert!(calls[0].advertises_tool(ADD));
+    assert!(!calls[0].advertises_tool(DIVIDE));
+    assert!(!calls[0].advertises_tool(APP_ONLY));
+    assert!(!calls[0].system_contains(&format!("{ADD},")));
+    assert!(calls[0].system_contains(DIVIDE));
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_tools_follow_the_conversation_lifecycle() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_deferred_tools();
+    api.on("add one")
+        .call("enable_tools", json!({"tool_names": [ADD]}))
+        .times(1);
+    api.on(r#""enabled":["calculator__add"]"#)
+        .call(ADD, value(1));
+    api.on("result: 1").reply("one");
+    let result = pipeline.run(["add one"]).await?;
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    assert!(api.calls()[0].system_contains(ADD));
+    result.assert_message(-1, Agent, "one");
+
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("add two").call(ADD, value(2));
+    api.on("result: 3").reply("three");
+    pipeline
+        .run(["add two"])
+        .await?
+        .assert_message(-1, Agent, "three");
+    assert!(!api.calls().last().unwrap().input_contains(r#""enabled""#));
+
+    pipeline.run(["/clear"]).await?;
+    api.on("add again").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("enable it again");
+    pipeline
+        .run(["add again"])
+        .await?
+        .assert_message(-2, ToolResponse, "not available");
     Ok(())
 }
 
@@ -146,7 +336,11 @@ async fn recover_from_missing_tool() -> Result<()> {
     let result = pipeline.run(["try the missing tool"]).await?;
     assert_eq!(api.call_count(), 3);
 
-    result.assert_message(2, ToolResponse, "Tool 'missing__tool' is not available");
+    result.assert_message(
+        2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request",
+    );
     assert!(api.calls()[1].input_contains(ADD));
     result.assert_message(3, ToolCall, ADD);
     result.assert_message(4, ToolResponse, "result: 2");
@@ -170,6 +364,27 @@ async fn recover_from_missing_tool() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "code-mode")]
+#[tokio::test]
+async fn code_mode_rejects_direct_calls_to_hidden_tools() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("code_execution").await?;
+    api.on("add directly").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("understood");
+
+    let result = pipeline.run(["add directly"]).await?;
+
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    result.assert_message(
+        -2,
+        ToolResponse,
+        &format!("Tool '{ADD}' was not available in this request."),
+    );
+    result.assert_message(-1, Agent, "understood");
+    assert_eq!(pipeline.calculator_total(), 0);
+    Ok(())
+}
+
 #[tokio::test]
 async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -187,7 +402,7 @@ async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let result = pipeline.run(["repeat malformed forever"]).await?;
 
     assert_eq!(api.call_count() - calls_before, MAX_TURNS as usize);
-    result.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     Ok(())
 }
@@ -286,6 +501,13 @@ async fn approvals_and_per_tool_permissions() -> Result<()> {
     result.assert_message(-1, Agent, "permissions applied");
     assert_eq!(pipeline.calculator_total(), 4);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn security_inspection_requires_approval_in_auto_mode() -> Result<()> {
+    let _env = env_lock::lock_env([("SECURITY_PROMPT_ENABLED_OVERRIDE", Some("true"))]);
+    let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     pipeline.add_extension("developer").await?;
     api.on("run a dangerous command").calls([(
@@ -377,7 +599,7 @@ async fn execution_recovers_from_timeout_cancellation_and_filtered_output() -> R
         .await?;
     let pipeline = pipeline.reconstruct().await?;
     let result = pipeline.resume_cancelled().await?;
-    result.assert_message(-1, ToolResponse, "cancelled before execution");
+    result.assert_message(-1, ToolResponse, "interrupted before completing");
     assert_eq!(pipeline.calculator_total(), 0);
     let request_ids = result
         .conversation()
@@ -430,33 +652,29 @@ async fn elicitation_accept_decline_and_cancel() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
+async fn tool_availability_tracks_extension_removal() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
 
-    api.on("install the extra extension").call(
-        crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-        json!({
-            "action": "enable",
-            "extension_name": "analyze"
-        }),
-    );
-    api.on("installed successfully").reply("extension ready");
-    let result = pipeline.run(["install the extra extension"]).await?;
-    result.assert_message(-1, Agent, "extension ready");
-    assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    #[cfg(feature = "tree-sitter")]
+    {
+        api.on("install the extra extension").call(
+            crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
+            json!({
+                "action": "enable",
+                "extension_name": "analyze"
+            }),
+        );
+        api.on("installed successfully").reply("extension ready");
+        let result = pipeline.run(["install the extra extension"]).await?;
+        result.assert_message(-1, Agent, "extension ready");
+        assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    }
 
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    api.on("try the tool").call(ADD, value(1));
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("here is the plan");
-
-    let result = pipeline.run(["try the tool"]).await?;
-    result.assert_message(-2, ToolResponse, "chat mode");
-    result.assert_message(-1, Agent, "here is the plan");
+    api.on("before removing the calculator")
+        .reply("calculator present");
+    pipeline.run(["before removing the calculator"]).await?;
     assert!(api.calls().last().unwrap().advertises_tool(ADD));
-    assert_eq!(pipeline.calculator_total(), 0);
 
-    let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     pipeline.remove_extension("calculator").await?;
     api.on("continue without the calculator")
         .reply("calculator removed");
@@ -503,5 +721,93 @@ async fn stale_orphaned_tool_request_is_not_executed() -> Result<()> {
     }));
     assert!(!conversation.messages().iter().any(|m| m.is_tool_response()));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_pinned_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_goose() -> Result<()>
+{
+    let (pipeline, _api) =
+        super::pipeline::test_pipeline_with(super::dummy_api::ProviderFeatures {
+            manages_own_context: true,
+            ..Default::default()
+        })
+        .await?;
+    pipeline
+        .session_manager
+        .update_enabled_extensions(&pipeline.session_id, |selected| {
+            selected.push(crate::agents::extension::ExtensionConfig::stdio(
+                "remote",
+                "missing-binary",
+                "",
+                5_u64,
+            ))
+        })
+        .await?;
+
+    let leased = pipeline.leased_extensions().await?;
+
+    assert!(leased.contains(&"calculator".to_string()));
+    assert!(!leased.contains(&"remote".to_string()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn platform_and_mcp_operations_answer_the_same_model_batch() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("todo").await?;
+    api.on("use both tool families").calls([
+        ("mcp", ADD, value(3)),
+        (
+            "platform",
+            "todo__todo_write",
+            json!({"content": "keep the platform boundary"}),
+        ),
+    ]);
+    api.on("keep the platform boundary").reply("both completed");
+    let result = pipeline.run(["use both tool families"]).await?;
+    result.assert_message(-1, Agent, "both completed");
+    assert_eq!(pipeline.calculator_total(), 3);
+    assert!(api.calls().last().unwrap().answers_every_tool_call_next());
+    let services = pipeline.services().await;
+    let lease = services.current_tools(&pipeline.session_id).await?;
+    assert!(lease
+        .mcp
+        .configs()
+        .iter()
+        .all(|registration| registration.key() != "todo"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn platform_call_keeps_its_advertised_instance_across_approval() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline.add_extension("todo").await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    api.on("remember this").call(
+        "todo__todo_write",
+        json!({"content": "approved platform task"}),
+    );
+    pipeline.run(["remember this"]).await?;
+    let services = pipeline.services().await;
+    services
+        .extension_manager
+        .disable(&pipeline.session_id, "todo")
+        .await?;
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("approved platform task").reply("remembered");
+    let request_id = pipeline
+        .session()
+        .await?
+        .conversation
+        .unwrap()
+        .messages()
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .find_map(|content| content.as_tool_request().map(|request| request.id.clone()))
+        .unwrap();
+    pipeline.confirm(&request_id, Permission::AllowOnce).await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Agent, "remembered");
     Ok(())
 }

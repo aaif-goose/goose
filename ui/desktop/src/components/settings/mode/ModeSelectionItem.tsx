@@ -29,14 +29,6 @@ const i18n = defineMessages({
     id: 'modeSelectionItem.smartDescription',
     defaultMessage: 'Intelligently determine which actions need approval based on risk level',
   },
-  chatOnlyLabel: {
-    id: 'modeSelectionItem.chatOnlyLabel',
-    defaultMessage: 'Chat only',
-  },
-  chatOnlyDescription: {
-    id: 'modeSelectionItem.chatOnlyDescription',
-    defaultMessage: 'Engage with the selected provider without using tools or extensions.',
-  },
 });
 
 export interface GooseMode {
@@ -60,11 +52,6 @@ export const all_goose_modes: GooseMode[] = [
     key: 'smart_approve',
     labelDescriptor: i18n.smartLabel,
     descriptionDescriptor: i18n.smartDescription,
-  },
-  {
-    key: 'chat',
-    labelDescriptor: i18n.chatOnlyLabel,
-    descriptionDescriptor: i18n.chatOnlyDescription,
   },
 ];
 

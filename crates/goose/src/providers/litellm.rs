@@ -176,6 +176,7 @@ impl LiteLLMProvider {
                 let mut model_info_obj =
                     ModelInfo::new(model_name).with_optional_context_limit(context_length);
                 model_info_obj.supports_cache_control = supports_cache_control;
+                model_info_obj.supports_vision = model_info["supports_vision"].as_bool();
                 models.push(model_info_obj);
             }
         }
@@ -197,11 +198,17 @@ impl LiteLLMProvider {
             .await?)
     }
 
+    async fn model_info(&self, model_name: &str) -> Option<ModelInfo> {
+        self.get_or_fetch_models()
+            .await
+            .ok()?
+            .into_iter()
+            .find(|m| m.name == model_name)
+    }
+
     async fn supports_cache_control(&self, model: &ModelConfig) -> bool {
-        if let Ok(models) = self.get_or_fetch_models().await {
-            if let Some(model_info) = models.iter().find(|m| m.name == model.model_name) {
-                return model_info.supports_cache_control.unwrap_or(false);
-            }
+        if let Some(model_info) = self.model_info(&model.model_name).await {
+            return model_info.supports_cache_control.unwrap_or(false);
         }
 
         model.model_name.to_lowercase().contains("claude")
@@ -303,8 +310,16 @@ impl Provider for LiteLLMProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let mut effective_model_config = model_config.clone();
+        if effective_model_config.supports_vision.is_none() {
+            effective_model_config.supports_vision = self
+                .model_info(&model_config.model_name)
+                .await
+                .and_then(|info| info.supports_vision);
+        }
+
         let mut payload = goose_providers::formats::openai::create_request(
-            model_config,
+            &effective_model_config,
             system,
             messages,
             tools,
@@ -436,6 +451,16 @@ mod tests {
             .collect()
     }
 
+    async fn single_chat_request_body(server: &MockServer) -> Value {
+        let requests = server.received_requests().await.unwrap();
+        let chat_requests: Vec<_> = requests
+            .iter()
+            .filter(|request| request.url.path() == "/v1/chat/completions")
+            .collect();
+        assert_eq!(chat_requests.len(), 1);
+        serde_json::from_slice(&chat_requests[0].body).unwrap()
+    }
+
     #[tokio::test]
     async fn streaming_request_consumes_sse_and_reports_usage() {
         install_capturing_request_logger();
@@ -489,9 +514,7 @@ mod tests {
         assert_eq!(usage.usage.output_tokens, Some(1));
         assert_eq!(usage.usage.total_tokens, Some(4));
 
-        let requests = server.received_requests().await.unwrap();
-        assert_eq!(requests.len(), 1);
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let body = single_chat_request_body(&server).await;
         assert_eq!(body["stream"], json!(true));
         assert_eq!(body["stream_options"], json!({"include_usage": true}));
 
@@ -558,9 +581,7 @@ mod tests {
         assert_eq!(usage.usage.total_tokens, Some(8));
         assert!(stream.next().await.is_none());
 
-        let requests = server.received_requests().await.unwrap();
-        assert_eq!(requests.len(), 1);
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let body = single_chat_request_body(&server).await;
         assert!(body.get("stream").is_none());
         assert!(body.get("stream_options").is_none());
 
@@ -665,5 +686,76 @@ mod tests {
             provider.get_context_limit("cached-model", None).await,
             32_000
         );
+    }
+
+    #[tokio::test]
+    async fn stream_uses_model_info_vision_support_when_config_is_unset() {
+        for (model_info_vision, config_vision, expect_image) in [
+            (json!(true), None, true),
+            (json!(false), None, false),
+            (Value::Null, None, false),
+            (json!(true), Some(false), false),
+            (json!(false), Some(true), true),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/model/info"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "data": [{
+                        "model_name": "team-vision",
+                        "model_info": {"supports_vision": model_info_vision}
+                    }]
+                })))
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/chat/completions"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "id": "chatcmpl-litellm-vision",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": "team-vision",
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "a cat"},
+                        "finish_reason": "stop"
+                    }]
+                })))
+                .mount(&server)
+                .await;
+
+            let provider = LiteLLMProvider {
+                api_client: ApiClient::new_with_tls(server.uri(), AuthMethod::NoAuth, None)
+                    .unwrap(),
+                base_path: "v1/chat/completions".to_string(),
+                supports_streaming: false,
+                name: LITELLM_PROVIDER_NAME.to_string(),
+                cached_model_info: tokio::sync::Mutex::new(None),
+            };
+            let mut model = ModelConfig::new("team-vision").with_prompt_cache_disabled();
+            model.supports_vision = config_vision;
+            let message = Message::user()
+                .with_text("What is in this image?")
+                .with_image("aW1hZ2VkYXRh", "image/png");
+
+            let _stream = provider
+                .stream(&model, "system", &[message], &[])
+                .await
+                .unwrap();
+
+            let body = single_chat_request_body(&server).await;
+            let content = &body["messages"][1]["content"];
+            if expect_image {
+                assert_eq!(
+                    content[1]["image_url"]["url"],
+                    "data:image/png;base64,aW1hZ2VkYXRh"
+                );
+            } else {
+                assert!(content
+                    .as_str()
+                    .unwrap()
+                    .contains("[image omitted: model does not support vision]"));
+            }
+        }
     }
 }

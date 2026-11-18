@@ -139,6 +139,7 @@ export async function callMcpAppTool(
   const client = await getAcpClient();
   const response = await client.goose.toolsCall_unstable({
     sessionId,
+    extensionName,
     name: fullToolName,
     arguments: args || {},
   });

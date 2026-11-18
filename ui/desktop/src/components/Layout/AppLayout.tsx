@@ -12,6 +12,7 @@ import { Navigation } from './NavigationPanel';
 import { Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
+import type { LiveVoiceController } from '../../liveVoice/useLiveVoice';
 
 const i18n = defineMessages({
   openNavigation: {
@@ -30,14 +31,16 @@ interface AppLayoutContentProps {
     initialMessage?: UserInput;
     noAutoSubmit?: boolean;
   }>;
+  liveVoice: LiveVoiceController;
 }
 
-const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) => {
+const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liveVoice }) => {
   const intl = useIntl();
   const location = useLocation();
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
   const isOnPairRoute = location.pathname === '/pair';
+  const isOnSettingsRoute = location.pathname === '/settings';
 
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -96,6 +99,21 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
 
   const { setChat } = chatContext;
 
+  if (isOnSettingsRoute) {
+    return (
+      <div className="relative flex h-full w-full flex-1 bg-background-secondary">
+        <Outlet />
+        <div className="hidden">
+          <ChatSessionsContainer
+            setChat={setChat}
+            activeSessions={activeSessions}
+            liveVoice={liveVoice}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const needsTrafficLightInset = safeIsMacOS && !isFullScreen;
   const headerPadding = needsTrafficLightInset ? 'pl-[96px]' : 'pl-4';
   const headerTop = needsTrafficLightInset ? 'top-[14px]' : 'top-[11px]';
@@ -135,7 +153,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           className="relative flex-shrink-0 overflow-hidden h-full p-2"
         >
           <div className="w-full h-full overflow-hidden rounded-xl border border-border-primary">
-            <Navigation />
+            <Navigation activeLiveVoiceSessionId={liveVoice.activeSessionId} />
           </div>
           {isNavExpanded && (
             <div
@@ -151,7 +169,11 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           {/* Always render ChatSessionsContainer to keep SSE connections alive.
               When navigating away from /pair, hide it with CSS */}
           <div className={isOnPairRoute ? 'contents' : 'hidden'}>
-            <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
+            <ChatSessionsContainer
+              setChat={setChat}
+              activeSessions={activeSessions}
+              liveVoice={liveVoice}
+            />
           </div>
         </div>
       </div>
@@ -165,12 +187,13 @@ interface AppLayoutProps {
     initialMessage?: UserInput;
     noAutoSubmit?: boolean;
   }>;
+  liveVoice: LiveVoiceController;
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ activeSessions }) => {
+export const AppLayout: React.FC<AppLayoutProps> = ({ activeSessions, liveVoice }) => {
   return (
     <NavigationProvider>
-      <AppLayoutContent activeSessions={activeSessions} />
+      <AppLayoutContent activeSessions={activeSessions} liveVoice={liveVoice} />
     </NavigationProvider>
   );
 };

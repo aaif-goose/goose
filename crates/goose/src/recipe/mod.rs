@@ -19,6 +19,7 @@ pub mod read_recipe_file_content;
 mod recipe_extension_adapter;
 pub mod template_recipe;
 pub mod validate_recipe;
+mod value_deserializer;
 pub mod yaml_format_utils;
 
 pub const BUILT_IN_RECIPE_DIR_PARAM: &str = "recipe_dir";
@@ -768,9 +769,11 @@ isGlobal: true"#;
         let extensions = recipe.extensions.unwrap();
         assert_eq!(extensions.len(), 1);
 
-        if let ExtensionConfig::Stdio {
-            name, description, ..
-        } = &extensions[0]
+        if let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name,
+            description,
+            ..
+        }) = &extensions[0]
         {
             assert_eq!(name, "test_extension");
             assert_eq!(description, "");

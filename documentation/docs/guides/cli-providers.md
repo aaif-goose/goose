@@ -25,7 +25,7 @@ CLI providers are useful if you:
 - need session persistence to save, resume, and export conversation history
 - want to use goose recipes and scheduled tasks to create repeatable workflows
 - prefer unified commands across different AI providers
-- want to [use multiple models together](#combining-with-planner-models) in your tasks
+- want to [use multiple models together](/docs/guides/multi-model) in your tasks
 
 ### Benefits
 
@@ -37,7 +37,7 @@ CLI providers are useful if you:
 #### Workflow Integration  
 - **Recipe compatibility**: Use CLI providers in automated goose recipes
 - **Scheduling support**: Include in scheduled tasks and workflows
-- **Hybrid configurations**: Combine with planning mode and model-specific workflows
+- **Hybrid configurations**: Combine with subagents and model-specific workflows
 
 #### Interface Consistency
 - **Unified commands**: Use the same `goose session` interface across all providers
@@ -260,20 +260,6 @@ Once configured, you can start a goose session using these providers just like a
 goose session
 ```
 
-### Combining with Planner Models
-
-CLI providers also work well with planning mode when you want one model for strategy and another for execution:
-
-```bash
-# Use Claude Code for execution, OpenAI for planning
-export GOOSE_PROVIDER=claude-code
-export GOOSE_MODEL=default
-export GOOSE_PLANNER_PROVIDER=openai
-export GOOSE_PLANNER_MODEL=gpt-4o
-
-goose session
-```
-
 ## Configuration Options
 
 ### Claude Code Configuration
@@ -299,7 +285,6 @@ The following models are recognized and passed to the Claude CLI via the `--mode
 | `auto` | `--dangerously-skip-permissions` | Bypasses all permission prompts |
 | `smart-approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
 | `approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
-| `chat` | (none) | Default Claude Code behavior |
 
 :::tip Approve Mode Integration
 When using `approve` or `smart_approve` mode with Claude Code, goose routes Claude Code's permission prompts through goose's confirmation interface. This means:
@@ -354,7 +339,6 @@ These are the default models supported by Codex CLI v0.77.0. To access older or 
 | `auto` | `--yolo` | Bypasses all approvals and sandbox restrictions |
 | `smart-approve` | `--full-auto` | Workspace-write sandbox, approvals only on failure |
 | `approve` | (none) | Interactive approvals (Codex default behavior) |
-| `chat` | `--sandbox read-only` | Read-only sandbox mode |
 
 ### Gemini CLI Configuration
 

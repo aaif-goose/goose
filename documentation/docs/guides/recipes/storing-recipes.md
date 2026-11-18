@@ -44,8 +44,8 @@ Before saving recipes, it's important to understand where they can be stored and
 
 **Save New Recipe:**
 
-1. To create a recipe from your chat session, see [Create Recipe](/docs/guides/recipes/session-recipes#create-recipe)
-2. Once in the Recipe Editor, click `Save Recipe` to save it to your Recipe Library
+1. Open `Recipes` from the sidebar and click `Create Recipe`
+2. Complete the Recipe Editor, then click `Save Recipe` to save it to your Recipe Library
 
 **Save Modified Recipe:**
 
@@ -61,15 +61,7 @@ When you modify and save a recipe with a new name, a new recipe and new link are
   </TabItem>
   <TabItem value="cli" label="goose CLI">
 
-    When you [create a recipe](/docs/guides/recipes/recipe-reference), it gets saved to:
-
-    * Your working directory by default: `./recipe.yaml`
-    * Any path you specify: `/recipe /path/to/my-recipe.yaml`  
-    * Local project recipes: `/recipe .goose/recipes/my-recipe.yaml`
-
-    :::note
-    The CLI saves recipes as `.yaml` files. While the CLI can run recipes in `.json` format, it does not provide an option to save recipes as JSON.
-    :::
+    Create recipe files with your preferred editor. Store project-specific recipes in `.goose/recipes/` and global recipes in `~/.config/goose/recipes/`. The CLI can run recipes in either YAML or JSON format.
 
   </TabItem>
 </Tabs>
@@ -151,7 +143,6 @@ goose searches for recipes in the following locations (in order):
 ```bash
 $ goose recipe list
 Available recipes:
-goose-self-test - A comprehensive meta-testing recipe - local: ./goose-self-test.yaml
 hello-world - A sample recipe demonstrating basic usage - local: ~/.config/goose/recipes/hello-world.yaml
 job-finder - Find software engineering positions - local: ~/.config/goose/recipes/job-finder.yaml
 ```
@@ -160,9 +151,6 @@ job-finder - Find software engineering positions - local: ~/.config/goose/recipe
 ```bash
 $ goose recipe list --verbose
 Available recipes:
-  goose-self-test - A comprehensive meta-testing recipe - local: ./goose-self-test.yaml
-    Title: goose Self-Testing Integration Suite
-    Path: ./goose-self-test.yaml
   hello-world - A sample recipe demonstrating basic usage - local: ~/.config/goose/recipes/hello-world.yaml
     Title: Hello World Recipe
     Path: /Users/username/.config/goose/recipes/hello-world.yaml
@@ -171,13 +159,6 @@ Available recipes:
 *JSON format for automation:*
 ```json
 [
-  {
-    "name": "goose-self-test",
-    "source": "Local",
-    "path": "./goose-self-test.yaml",
-    "title": "goose Self-Testing Integration Suite",
-    "description": "A comprehensive meta-testing recipe"
-  },
   {
     "name": "hello-world",
     "source": "GitHub",

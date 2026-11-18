@@ -1,12 +1,18 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::agents::StateMachineServices;
 
 use crate::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
 use crate::session::Session;
 
 #[async_trait]
 pub trait SchedulerTrait: Send + Sync {
+    /// The services the scheduler's jobs run on.
+    fn run_jobs_on(&self, _services: &Arc<StateMachineServices>) {}
+
     async fn add_scheduled_job(
         &self,
         job: ScheduledJob,

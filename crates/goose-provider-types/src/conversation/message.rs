@@ -263,6 +263,7 @@ pub enum MessageErrorKind {
     Authentication,
     ContextLengthExceeded,
     CreditsExhausted,
+    ResourceExhausted,
     #[serde(other)]
     Other,
 }
@@ -778,15 +779,15 @@ pub struct InferenceMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct MessageUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_tokens: Option<i32>,
+    pub output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_tokens: Option<i32>,
+    pub total_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<i32>,
+    pub cache_read_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_write_tokens: Option<i32>,
+    pub cache_write_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -844,8 +845,14 @@ pub struct MessageMetadata {
     /// Whether this message is a per-turn context event appended by the agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub turn_context: bool,
+    /// Whether this message is the summary that compaction left in place of
+    /// the messages it removed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compaction_summary: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_logs: Vec<String>,
     /// What an operation did to this message, keyed by operation name. Read back
     /// from the persisted conversation so a rebuilt pipeline knows what already
     /// happened. Never sent to providers.
@@ -862,7 +869,9 @@ impl Default for MessageMetadata {
             output_token_limit_reached: false,
             steer: false,
             turn_context: false,
+            compaction_summary: false,
             usage: None,
+            operation_logs: Vec::new(),
             operations: None,
         }
     }
@@ -952,6 +961,11 @@ impl MessageMetadata {
 
     pub fn with_turn_context(mut self) -> Self {
         self.turn_context = true;
+        self
+    }
+
+    pub fn with_compaction_summary(mut self) -> Self {
+        self.compaction_summary = true;
         self
     }
 }
@@ -1268,12 +1282,36 @@ impl Message {
 
     pub fn from_provider_error(err: &crate::errors::ProviderError) -> Self {
         use crate::errors::ProviderError;
+        if let ProviderError::CreditsExhausted { top_up_url, .. } = err {
+            let message = if top_up_url.is_some() {
+                "Please add credits to your account, then resend your message to continue."
+            } else {
+                "Please check your account with your provider to add more credits, then resend your message to continue."
+            };
+            return Message::assistant().with_system_notification_with_data(
+                SystemNotificationType::CreditsExhausted,
+                message,
+                serde_json::json!({ "top_up_url": top_up_url }),
+            );
+        }
+
         let text = match err {
             ProviderError::NetworkError(_) => {
                 format!("{err}\n\nPlease resend your message to try again.")
             }
             ProviderError::ContextLengthExceeded(_) => {
                 format!("{err}\n\nThe conversation is too long for the model's context window.")
+            }
+            ProviderError::Refusal { details, category } => {
+                let category = category
+                    .as_deref()
+                    .map(|category| format!("\n\nCategory: {category}"))
+                    .unwrap_or_default();
+                format!(
+                    "The provider refused this request.\n\n{details}{category}\n\n\
+                     Please start a new session to continue — resending this conversation \
+                     is likely to be refused again."
+                )
             }
             _ => format!(
                 "Ran into this error: {err}.\n\n\
@@ -1284,9 +1322,21 @@ impl Message {
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {
-        self.content
-            .iter()
-            .find_map(|content| content.as_error().map(|error| error.kind))
+        self.error().map(|error| error.kind).or_else(|| {
+            self.content.iter().find_map(|content| match content {
+                MessageContentBlock::SystemNotification(notification)
+                    if notification.notification_type
+                        == SystemNotificationType::CreditsExhausted =>
+                {
+                    Some(MessageErrorKind::CreditsExhausted)
+                }
+                _ => None,
+            })
+        })
+    }
+
+    pub fn error(&self) -> Option<&ErrorContent> {
+        self.content.iter().find_map(MessageContentBlock::as_error)
     }
 
     pub fn with_visibility(mut self, user_visible: bool, agent_visible: bool) -> Self {
@@ -1341,25 +1391,29 @@ impl Message {
     pub fn is_turn_context(&self) -> bool {
         self.metadata.turn_context
     }
+
+    pub fn is_compaction_summary(&self) -> bool {
+        self.metadata.compaction_summary
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenState {
-    pub input_tokens: i32,
-    pub output_tokens: i32,
-    pub total_tokens: i32,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     #[serde(default)]
-    pub cache_read_tokens: i32,
+    pub cache_read_tokens: i64,
     #[serde(default)]
-    pub cache_write_tokens: i32,
-    pub accumulated_input_tokens: i32,
-    pub accumulated_output_tokens: i32,
-    pub accumulated_total_tokens: i32,
+    pub cache_write_tokens: i64,
+    pub accumulated_input_tokens: i64,
+    pub accumulated_output_tokens: i64,
+    pub accumulated_total_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_read_tokens: i32,
+    pub accumulated_cache_read_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_write_tokens: i32,
+    pub accumulated_cache_write_tokens: i64,
     pub accumulated_cost: Option<f64>,
 }
 
@@ -1417,7 +1471,7 @@ mod document_tests {
 mod tests {
     use crate::conversation::message::{
         ActionRequiredData, Message, MessageContentBlock, MessageErrorKind, MessageMetadata,
-        ProviderMetadata, ToolResponse,
+        ProviderMetadata, SystemNotificationType, ToolResponse,
     };
     use crate::errors::ProviderError;
     use base64::Engine;
@@ -1438,6 +1492,28 @@ mod tests {
         assert_eq!(message.error_kind(), Some(MessageErrorKind::Authentication));
         assert!(message.is_user_visible());
         assert!(!message.is_agent_visible());
+    }
+
+    #[test]
+    fn provider_credits_error_preserves_top_up_url_and_is_terminal() {
+        let message = Message::from_provider_error(&ProviderError::CreditsExhausted {
+            details: "credits exhausted".to_string(),
+            top_up_url: Some("https://example.com/top-up".to_string()),
+        });
+
+        assert_eq!(
+            message.error_kind(),
+            Some(MessageErrorKind::CreditsExhausted)
+        );
+        let notification = message.content[0].as_system_notification().unwrap();
+        assert_eq!(
+            notification.notification_type,
+            SystemNotificationType::CreditsExhausted
+        );
+        assert_eq!(
+            notification.data.as_ref().unwrap()["top_up_url"],
+            "https://example.com/top-up"
+        );
     }
 
     #[test]

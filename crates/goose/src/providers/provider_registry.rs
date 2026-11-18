@@ -30,9 +30,12 @@ pub struct ProviderEntry {
     pub(crate) inventory_configured: super::inventory::InventoryConfiguredResolver,
     pub(crate) cleanup: Option<ProviderCleanup>,
     provider_type: ProviderType,
+    catalog_provider_id: Option<String>,
     supports_inventory_refresh: bool,
     tls_config: Option<TlsConfig>,
     toolshim: bool,
+    session_bound: bool,
+    runs_own_tool_loop: bool,
 }
 
 impl ProviderEntry {
@@ -42,6 +45,14 @@ impl ProviderEntry {
 
     pub fn provider_type(&self) -> ProviderType {
         self.provider_type
+    }
+
+    pub fn session_bound(&self) -> bool {
+        self.session_bound
+    }
+
+    pub fn runs_own_tool_loop(&self) -> bool {
+        self.runs_own_tool_loop
     }
 
     pub fn supports_inventory_refresh(&self) -> bool {
@@ -63,6 +74,15 @@ impl ProviderEntry {
     pub fn normalize_model_config(&self, mut model: ModelConfig) -> Result<ModelConfig> {
         if self.toolshim_enabled(model.toolshim) {
             model = model.with_toolshim(true);
+        }
+        // Canonical detection may already have populated supports_vision earlier
+        // in materialization, so declared metadata has to overwrite it here.
+        model = model.with_declared_vision_support(&self.metadata.known_models);
+        // Without a catalog id the name lookup is left to materialization, which
+        // skips it for providers such as Azure Foundry.
+        if let Some(catalog_provider_id) = self.catalog_provider_id.as_deref() {
+            model =
+                model.with_provider_vision_support(&self.metadata.name, Some(catalog_provider_id));
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -151,9 +171,12 @@ impl ProviderRegistry {
                 } else {
                     ProviderType::Builtin
                 },
+                catalog_provider_id: None,
                 supports_inventory_refresh: inventory.supports_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
+                session_bound: F::SESSION_BOUND,
+                runs_own_tool_loop: F::RUNS_OWN_TOOL_LOOP,
             },
         );
     }
@@ -316,9 +339,12 @@ impl ProviderRegistry {
                 inventory_configured: inventory_configured.unwrap_or(default_inventory_configured),
                 cleanup: None,
                 provider_type,
+                catalog_provider_id: config.catalog_provider_id.clone(),
                 supports_inventory_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,
+                session_bound: false,
+                runs_own_tool_loop: false,
             },
         );
     }
@@ -366,6 +392,7 @@ impl ProviderRegistry {
 mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
+    use crate::providers::azure_foundry_def::AzureFoundryProviderDef;
     use crate::providers::openai_def::OpenAiProviderDef;
 
     fn test_config() -> DeclarativeProviderConfig {
@@ -378,6 +405,7 @@ mod tests {
             base_url: "https://router.huggingface.co/v1".to_string(),
             models: vec![ModelInfo::new("test-model").with_context_limit(128_000)],
             headers: None,
+            session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
             requires_auth: true,
@@ -447,5 +475,141 @@ mod tests {
         assert!(registry.entries["custom_toolshim"].toolshim_enabled(false));
         assert!(registry.entries["custom_default"].toolshim_enabled(true));
         assert!(!registry.entries["custom_default"].toolshim_enabled(false));
+    }
+
+    #[test]
+    fn canonical_metadata_preserves_explicit_vision_overrides() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<OpenAiProviderDef>(false);
+        let entry = &registry.entries["openai"];
+
+        for (name, canonical_vision) in [("gpt-4o", true), ("gpt-4", false)] {
+            let detected = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(detected.supports_vision, Some(canonical_vision));
+
+            let overridden = entry
+                .normalize_model_config(
+                    ModelConfig::new(name).with_vision_support(!canonical_vision),
+                )
+                .unwrap();
+            assert_eq!(overridden.supports_vision, Some(!canonical_vision));
+        }
+    }
+
+    #[test]
+    fn renamed_provider_keeps_catalog_vision_support() {
+        const KIMI: &str = "accounts/fireworks/models/kimi-k3";
+        let mut registry = ProviderRegistry::new(None);
+        for (name, catalog_provider_id) in [
+            ("custom_fireworks_live", Some("fireworks-ai")),
+            ("custom_fireworks_plain", None),
+        ] {
+            let mut config = test_config();
+            config.name = name.to_string();
+            config.catalog_provider_id = catalog_provider_id.map(str::to_string);
+            config.models = vec![ModelInfo::new(KIMI)];
+            registry.register_with_name::<OpenAiProviderDef, _, _>(
+                &config,
+                ProviderType::Custom,
+                false,
+                |_| unreachable!("constructor is not used by this test"),
+                move || Ok(InventoryIdentityInput::new(name, name)),
+            );
+        }
+
+        let with_catalog = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(with_catalog.supports_vision, Some(true));
+
+        let explicit = registry.entries["custom_fireworks_live"]
+            .normalize_model_config(ModelConfig::new(KIMI).with_vision_support(false))
+            .unwrap();
+        assert_eq!(explicit.supports_vision, Some(false));
+
+        let without_catalog = registry.entries["custom_fireworks_plain"]
+            .normalize_model_config(ModelConfig::new(KIMI))
+            .unwrap();
+        assert_eq!(without_catalog.supports_vision, None);
+    }
+
+    #[test]
+    fn azure_foundry_skips_name_vision_lookup() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<AzureFoundryProviderDef>(true);
+
+        let model = registry.entries["azure_foundry"]
+            .normalize_model_config(ModelConfig::new("gpt-4o"))
+            .unwrap();
+        assert_eq!(model.supports_vision, None);
+    }
+
+    #[test]
+    fn case_collisions_do_not_change_the_selected_models_vision() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("Foo").with_vision_support(false),
+            ModelInfo::new("foo").with_vision_support(true),
+            ModelInfo::new("Bar").with_vision_support(true),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        for (name, expected) in [
+            ("Foo", Some(false)),
+            ("foo", Some(true)),
+            ("FOO", None),
+            ("bar", None),
+        ] {
+            let model = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(model.supports_vision, expected);
+        }
+    }
+
+    #[test]
+    fn declared_supports_vision_overrides_detected_value() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("vision-model").with_vision_support(true),
+            ModelInfo::new("text-model").with_vision_support(false),
+            ModelInfo::new("undeclared-model"),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        let mut detected_without_vision = ModelConfig::new("vision-model");
+        detected_without_vision.supports_vision = Some(false);
+        let mut detected_with_vision = ModelConfig::new("text-model");
+        detected_with_vision.supports_vision = Some(true);
+
+        let vision = entry
+            .normalize_model_config(detected_without_vision)
+            .unwrap();
+        let text = entry.normalize_model_config(detected_with_vision).unwrap();
+        let undeclared = entry
+            .normalize_model_config(ModelConfig::new("undeclared-model"))
+            .unwrap();
+
+        assert_eq!(vision.supports_vision, Some(true));
+        assert_eq!(text.supports_vision, Some(false));
+        assert_eq!(undeclared.supports_vision, None);
     }
 }

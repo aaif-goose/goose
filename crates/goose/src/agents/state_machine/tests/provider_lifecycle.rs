@@ -8,10 +8,11 @@ use crate::agents::AgentEvent;
 use crate::conversation::fix_conversation;
 use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
 use crate::conversation::Conversation;
+use rmcp::model::{Annotations, Role, TextContent};
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {
-    let (mut pipeline, api) = test_pipeline_with(ProviderFeatures {
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         reports_usage: false,
         preserves_thinking: true,
         resolved_model: Some("resolved-test-model"),
@@ -19,8 +20,9 @@ async fn provider_lifecycle() -> Result<()> {
     })
     .await?;
     pipeline
-        .set_system_prompt_override("CUSTOM_SYSTEM_PROMPT")
+        .set_system_prompt_override(Some("CUSTOM_SYSTEM_PROMPT"))
         .await;
+    let mut pipeline = pipeline.reconstruct().await?;
 
     api.on("inspect this image and add one")
         .reasoning("I should inspect the image before calculating.")
@@ -36,20 +38,43 @@ async fn provider_lifecycle() -> Result<()> {
                 .with_image(image_data, "image/png"),
         )
         .await?;
-    result.assert_message(2, Agent, "The image is suitable. I will add one.");
     result.assert_message(
-        3,
+        2,
         Thinking,
         "I should inspect the image before calculating.",
     );
+    result.assert_message(3, Agent, "The image is suitable. I will add one.");
     result.assert_message(4, ToolCall, ADD);
     result.assert_message(5, ToolResponse, "result: 1");
     result.assert_message(-1, Agent, "The total is 1.");
+    let tool_turn = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+        })
+        .expect("tool-call assistant message");
+    assert!(
+        matches!(
+            tool_turn.content.as_slice(),
+            [
+                MessageContent::Thinking(_),
+                MessageContent::Text(_),
+                MessageContent::ToolRequest(_)
+            ]
+        ),
+        "thinking, text, and the tool call must stay one message in model order: {:#?}",
+        tool_turn.content
+    );
     assert!(result
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .filter(|message| message.role == Role::Assistant)
         .all(|message| {
             message
                 .metadata
@@ -174,6 +199,76 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-2, ToolResponse, "result: 6");
     result.assert_message(-1, Agent, "The total is 6.");
 
+    api.on("add one and two at once")
+        .reasoning("Both additions are independent.")
+        .reply("Adding both.")
+        .call(ADD, value(1))
+        .call(ADD, value(2));
+    api.on("Adding both.").reply("Both added.");
+    let result = pipeline.run(["add one and two at once"]).await?;
+    result.assert_message(-1, Agent, "Both added.");
+    let tool_turns: Vec<&Message> = result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| {
+            message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+        })
+        .collect();
+    let tool_turn = *tool_turns.last().unwrap();
+    assert!(
+        matches!(
+            tool_turn.content.as_slice(),
+            [
+                MessageContent::Thinking(_),
+                MessageContent::Text(_),
+                MessageContent::ToolRequest(_),
+                MessageContent::ToolRequest(_)
+            ]
+        ),
+        "parallel tool calls must share the reasoning's message: {:#?}",
+        tool_turn.content
+    );
+    let emitted_tool_turn = result
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::Message(message)
+                if message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::ToolRequest(_))) =>
+            {
+                Some(message)
+            }
+            _ => None,
+        })
+        .expect("emitted parallel tool calls");
+    assert_eq!(emitted_tool_turn.id, tool_turn.id);
+    assert!(result.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::MessageUsage { message_id, .. } if message_id == &tool_turn.id
+    )));
+
+    let follow_up = api.calls().pop().unwrap();
+    let assistant_tool_calls: Vec<&serde_json::Value> = follow_up
+        .messages()
+        .iter()
+        .filter(|message| {
+            message["tool_calls"]
+                .as_array()
+                .is_some_and(|c| c.len() == 2)
+        })
+        .collect();
+    assert_eq!(assistant_tool_calls.len(), 1, "{:#?}", follow_up.messages());
+    assert_eq!(
+        assistant_tool_calls[0]["reasoning_content"],
+        "Both additions are independent."
+    );
+
     assert!(result.session.usage.total_tokens.is_none());
     assert!(result
         .session
@@ -194,8 +289,29 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-1, Agent, "recovered from no choices");
 
     api.on("return an empty reply").reply("");
+    let calls_before = api.call_count();
     let result = pipeline.run(["return an empty reply"]).await?;
+    assert_eq!(api.call_count() - calls_before, 4);
     result.assert_message(-1, Agent, "model returned an empty response");
+
+    api.on("empty twice").reply("recovered after empty replies");
+    api.on("empty twice").reply("").times(2);
+    let calls_before = api.call_count();
+    let result = pipeline.run(["empty twice"]).await?;
+    assert_eq!(api.call_count() - calls_before, 3);
+    result.assert_message(-1, Agent, "recovered after empty replies");
+
+    let calls_before = api.call_count();
+    let user_only = Message::user().with_content(MessageContent::Text(
+        TextContent::new("only for the user")
+            .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+    ));
+    let result = pipeline.run_message(user_only).await?;
+    assert_eq!(api.call_count(), calls_before);
+    assert_eq!(
+        result.conversation().last().unwrap().as_concat_text(),
+        "only for the user"
+    );
 
     api.on("after empty reply")
         .reply("recovered from empty reply");
@@ -225,7 +341,7 @@ async fn provider_lifecycle() -> Result<()> {
         .iter()
         .all(|call| call.system_contains("CUSTOM_SYSTEM_PROMPT")));
 
-    pipeline.clear_system_prompt_override().await;
+    pipeline.set_system_prompt_override(None).await;
     pipeline = pipeline.with_model("gpt-4.1").await;
     api.on("use the standard prompt")
         .reply("The standard prompt is active.");
@@ -239,13 +355,141 @@ async fn provider_lifecycle() -> Result<()> {
 }
 
 #[tokio::test]
+async fn thinking_only_response_is_prompted_to_continue() -> Result<()> {
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
+        preserves_thinking: true,
+        ..ProviderFeatures::default()
+    })
+    .await?;
+
+    api.on("think without answering")
+        .reasoning("deep thoughts with no answer");
+    api.on("did not produce an answer")
+        .reply("recovered after thinking");
+
+    let result = pipeline.run(["think without answering"]).await?;
+    result.assert_message(-1, Agent, "recovered after thinking");
+
+    let thinking = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message.content.iter().any(|content| {
+                matches!(content, MessageContent::Thinking(thinking) if thinking.thinking == "deep thoughts with no answer")
+            })
+        })
+        .expect("the thinking-only response should be kept");
+    assert!(thinking.is_agent_visible());
+    let continuation = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message
+                .as_concat_text()
+                .contains("did not produce an answer")
+        })
+        .expect("a continuation prompt should be persisted");
+    assert_eq!(continuation.role, rmcp::model::Role::User);
+    assert!(continuation.is_agent_visible());
+    assert!(!continuation.is_user_visible());
+
+    let recovery_call = api.calls().last().cloned().expect("continuation request");
+    assert!(recovery_call.input_contains("did not produce an answer"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thinking_only_response_with_whitespace_is_prompted_to_continue() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("think with blank text")
+        .reasoning("still thinking")
+        .reply(" \n\t ");
+    api.on("did not produce an answer")
+        .reply("recovered after thinking");
+
+    let result = pipeline.run(["think with blank text"]).await?;
+    assert_eq!(api.call_count(), 2);
+    result.assert_message(-1, Agent, "recovered after thinking");
+    Ok(())
+}
+
+#[tokio::test]
+async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+
+    api.on("keep thinking forever").reasoning("just thinking");
+
+    let result = pipeline.run(["keep thinking forever"]).await?;
+    assert_eq!(
+        api.call_count(),
+        4,
+        "thinking-only continuation retries should be bounded"
+    );
+    result.assert_message(
+        -1,
+        Agent,
+        "The model finished thinking but did not produce an answer",
+    );
+    let fallback = result.conversation().last().expect("fallback message");
+    assert!(fallback.is_user_visible());
+    assert!(!fallback.is_agent_visible());
+
+    api.on("after thinking forever").reply("answering again");
+    let result = pipeline.run(["after thinking forever"]).await?;
+    result.assert_message(-1, Agent, "answering again");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mixed_empty_and_thinking_only_responses_share_retry_budget() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+
+    for _ in 0..2 {
+        api.on("alternate empty and thinking").reply("").times(1);
+        api.on("alternate empty and thinking")
+            .reasoning("just thinking")
+            .times(1);
+    }
+
+    let result = pipeline.run(["alternate empty and thinking"]).await?;
+    assert_eq!(api.call_count(), 4);
+    result.assert_message(-1, Agent, "The model returned an empty response");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thinking_only_recovery_is_bounded_for_agent_only_kickoffs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("hidden kickoff").reply("unexpected extra inference");
+
+    for turn in 1..=2 {
+        api.on("hidden kickoff").reasoning("just thinking").times(4);
+        let result = pipeline
+            .run_message(Message::user().with_text("hidden kickoff").agent_only())
+            .await?;
+        assert_eq!(api.call_count(), 4 * turn);
+        result.assert_message(
+            -1,
+            Agent,
+            "The model finished thinking but did not produce an answer",
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("hello").reply("hi there");
 
     let result = pipeline.run(["hello"]).await?;
     let input_tokens = api.calls()[0].input_tokens();
-    let output_tokens = "hi there".chars().count() as i32;
+    let output_tokens = "hi there".chars().count() as i64;
     let total_tokens = input_tokens + output_tokens;
 
     assert_eq!(result.session.usage.total_tokens, Some(total_tokens));
@@ -262,7 +506,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .expect("assistant response");
     assert_eq!(
         assistant
@@ -278,7 +522,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .server_error("boom");
     let result = pipeline.run(["stream then fail"]).await?;
     let stream_total =
-        api.calls().last().unwrap().input_tokens() + "partial response".chars().count() as i32;
+        api.calls().last().unwrap().input_tokens() + "partial response".chars().count() as i64;
     assert_eq!(result.session.usage.total_tokens, Some(stream_total));
     assert!(result.events.iter().any(
         |event| matches!(event, AgentEvent::Usage(usage) if usage.usage.total_tokens == Some(stream_total))
@@ -322,7 +566,7 @@ async fn requested_model_is_recorded_without_resolved_model() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .and_then(|message| message.metadata.inference.as_ref())
         .expect("assistant inference metadata");
 

@@ -1,5 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
 };
@@ -11,10 +11,11 @@ use crate::goose_apps::{GooseApp, McpAppCache, WindowProps};
 use crate::prompt_template::render_template;
 use crate::providers::base::{Provider, ProviderUsage};
 use async_trait::async_trait;
+use goose_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListResourcesResult, ListToolsResult, MetaObject, ReadResourceResult, Resource,
-    ResourceContents, ServerCapabilities, Tool as McpTool,
+    ListResourcesResult, MetaObject, ReadResourceResult, Resource, ResourceContents,
+    ServerCapabilities, Tool as McpTool,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -262,24 +263,6 @@ impl AppsManagerClient {
             .result_with_platform_notification(result, EXTENSION_NAME, event_type, params)
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
-            .as_ref()
-            .ok_or("Provider not available")?
-            .clone();
-
-        Ok(provider)
-    }
-
     async fn effective_model_config(
         &self,
         session_id: &str,
@@ -325,7 +308,7 @@ impl AppsManagerClient {
         session_id: &str,
         prd: &str,
     ) -> Result<CreateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let existing_apps = self.list_stored_apps().unwrap_or_default();
         let existing_names = existing_apps.join(", ");
@@ -357,7 +340,7 @@ impl AppsManagerClient {
         .await?;
 
         if let (Some(output), Some(max)) = (usage.usage.output_tokens, model_config.max_tokens) {
-            if output >= max {
+            if output >= i64::from(max) {
                 return Err("App content generation was truncated because the response hit the token limit. Try simplifying your app description.".to_string());
             }
         }
@@ -376,7 +359,7 @@ impl AppsManagerClient {
         existing_prd: &str,
         feedback: &str,
     ) -> Result<UpdateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let context: HashMap<&str, &str> = HashMap::new();
         let system_prompt = render_template("apps_iterate.md", &context)
@@ -406,7 +389,7 @@ impl AppsManagerClient {
         .await?;
 
         if let (Some(output), Some(max)) = (usage.usage.output_tokens, model_config.max_tokens) {
-            if output >= max {
+            if output >= i64::from(max) {
                 return Err("App content update was truncated because the response hit the token limit. Try requesting smaller changes.".to_string());
             }
         }
@@ -581,13 +564,8 @@ impl AppsManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AppsManagerClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+impl PlatformExtension for AppsManagerClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<McpTool>, Error> {
         let tools = vec![
             McpTool::new(
                 "list_apps".to_string(),
@@ -611,12 +589,7 @@ impl McpClientTrait for AppsManagerClient {
             )),
         ];
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(tools)
     }
 
     async fn call_tool(
@@ -832,11 +805,9 @@ mod tests {
         AppsManagerClient {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
-                extension_manager: None,
+                providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
-                session: None,
-                use_login_shell_path: false,
             },
             apps_dir,
         }
@@ -912,11 +883,7 @@ mod tests {
     async fn management_tools_are_model_only_while_listing_remains_shared() {
         let temp = tempfile::tempdir().unwrap();
         let client = test_client(temp.path().join("apps"));
-        let tools = client
-            .list_tools("session", None, CancellationToken::new())
-            .await
-            .unwrap()
-            .tools;
+        let tools = client.list_tools("session").await.unwrap();
 
         for name in ["create_app", "iterate_app", "delete_app"] {
             let tool = tools.iter().find(|tool| tool.name == name).unwrap();

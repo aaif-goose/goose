@@ -5,6 +5,7 @@ import { ChatType } from '../types/chat';
 import { UserInput } from '../types/message';
 import { subscribeToAcpRecovery } from '../acp/acpConnection';
 import { acpChatSessionController } from '../acp/chatSessionController';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 interface ChatSessionsContainerProps {
   setChat: (chat: ChatType) => void;
@@ -13,6 +14,7 @@ interface ChatSessionsContainerProps {
     initialMessage?: UserInput;
     noAutoSubmit?: boolean;
   }>;
+  liveVoice: LiveVoiceController;
 }
 
 /**
@@ -23,6 +25,7 @@ interface ChatSessionsContainerProps {
 export default function ChatSessionsContainer({
   setChat,
   activeSessions,
+  liveVoice,
 }: ChatSessionsContainerProps) {
   const [searchParams] = useSearchParams();
   const currentSessionId = searchParams.get('resumeSessionId') ?? undefined;
@@ -72,6 +75,7 @@ export default function ChatSessionsContainer({
               noAutoSubmit={session.noAutoSubmit}
               suppressEmptyState={false}
               isActiveSession={isVisible}
+              liveVoice={liveVoice}
             />
           </div>
         );

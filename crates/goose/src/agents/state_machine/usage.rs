@@ -1,9 +1,10 @@
 use anyhow::Result;
-use goose_providers::conversation::token_usage::{CostSource, ProviderUsage, Usage as TokenUsage};
+use goose_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
 
 use crate::agents::state_machine::{ConversationEffect, GooseEffect};
 use crate::conversation::message::MessageUsage;
 use crate::conversation::Conversation;
+use crate::providers::canonical_cost::resolve_usage_cost;
 use crate::session::{Session, SessionManager};
 
 fn attach_to_last_assistant(effects: &mut [GooseEffect], usage: &ProviderUsage) {
@@ -24,25 +25,12 @@ pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect]) {
     for index in 0..effects.len() {
         let (usage, replaces_conversation) = match &effects[index] {
             GooseEffect::RecordUsage(usage) => (usage.clone(), false),
-            GooseEffect::ReplaceConversation {
+            GooseEffect::CompactConversation {
                 usage: Some(usage), ..
             } => (usage.clone(), true),
             _ => continue,
         };
-        let (cost, cost_source) = if let Some(cost) = usage.cost {
-            (Some(cost), Some(CostSource::ProviderReported))
-        } else {
-            match session.provider_name.as_deref().and_then(|provider| {
-                crate::providers::canonical_cost::estimate_model_cost(
-                    provider,
-                    &usage.model,
-                    &usage.usage,
-                )
-            }) {
-                Some(cost) => (Some(cost), Some(CostSource::Estimated)),
-                None => (None, None),
-            }
-        };
+        let (cost, cost_source) = resolve_usage_cost(session.provider_name.as_deref(), &usage);
 
         let mut enriched = usage.clone();
         enriched.cost = cost;
@@ -53,7 +41,7 @@ pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect]) {
         }
         match &mut effects[index] {
             GooseEffect::RecordUsage(usage) => *usage = enriched,
-            GooseEffect::ReplaceConversation { usage, .. } => *usage = Some(enriched),
+            GooseEffect::CompactConversation { usage, .. } => *usage = Some(enriched),
             _ => {}
         }
     }
@@ -79,6 +67,6 @@ pub(super) async fn record(
 }
 
 pub(super) async fn estimate_context(conversation: &Conversation) -> Result<TokenUsage> {
-    let tokens = crate::context_mgmt::count_context_tokens(conversation).await?;
+    let tokens = crate::context_mgmt::count_context_tokens(conversation.messages()).await?;
     Ok(TokenUsage::new(Some(tokens), None, Some(tokens)))
 }

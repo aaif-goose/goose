@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use jsonwebtoken::{encode, EncodingKey, Header};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use ring::rand::SystemRandom;
+use ring::signature::{RsaKeyPair, RSA_PKCS1_SHA256};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -91,6 +94,18 @@ struct ServiceAccountCredentials {
     private_key: String,
     /// URI for token exchange requests
     token_uri: String,
+}
+
+fn rsa_key_pair_from_pem(private_key: &str) -> Result<RsaKeyPair, AuthError> {
+    let invalid_key =
+        |e: &dyn fmt::Display| AuthError::TokenCreation(format!("Invalid private key: {}", e));
+    let pem = pem::parse(private_key).map_err(|e| invalid_key(&e))?;
+    match pem.tag() {
+        "PRIVATE KEY" => RsaKeyPair::from_pkcs8(pem.contents()),
+        "RSA PRIVATE KEY" => RsaKeyPair::from_der(pem.contents()),
+        tag => return Err(invalid_key(&format!("unsupported PEM type {}", tag))),
+    }
+    .map_err(|e| invalid_key(&e))
 }
 
 /// Returns the default OAuth 2.0 token endpoint.
@@ -450,15 +465,30 @@ impl GcpAuth {
             exp: now + 3600, // 1 hours validity
         };
 
-        let encoding_key = EncodingKey::from_rsa_pem(creds.private_key.as_bytes())
-            .map_err(|e| AuthError::TokenCreation(format!("Invalid private key: {}", e)))?;
+        let key_pair = rsa_key_pair_from_pem(&creds.private_key)?;
+        let claims = serde_json::to_vec(&claims)
+            .map_err(|e| AuthError::TokenCreation(format!("Failed to create JWT: {}", e)))?;
+        let signing_input = format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(r#"{"typ":"JWT","alg":"RS256"}"#),
+            URL_SAFE_NO_PAD.encode(claims)
+        );
 
-        encode(
-            &Header::new(jsonwebtoken::Algorithm::RS256),
-            &claims,
-            &encoding_key,
-        )
-        .map_err(|e| AuthError::TokenCreation(format!("Failed to create JWT: {}", e)))
+        let mut signature = vec![0; key_pair.public().modulus_len()];
+        key_pair
+            .sign(
+                &RSA_PKCS1_SHA256,
+                &SystemRandom::new(),
+                signing_input.as_bytes(),
+                &mut signature,
+            )
+            .map_err(|e| AuthError::TokenCreation(format!("Failed to sign JWT: {}", e)))?;
+
+        Ok(format!(
+            "{}.{}",
+            signing_input,
+            URL_SAFE_NO_PAD.encode(signature)
+        ))
     }
 
     /// Exchanges a token or assertion for an access token.
@@ -583,6 +613,7 @@ impl GcpAuth {
 mod tests {
     use super::*;
     use mockall::predicate::eq;
+    use serde_json::Value;
     use tokio::time::sleep;
     use wiremock::matchers::{header, method, path};
     // Only import what we need
@@ -885,15 +916,73 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             cached_token: Arc::new(RwLock::new(None)),
         };
 
-        let jwt = auth.create_jwt_token(&mock_service_account());
+        let creds = mock_service_account();
+        let jwt = auth.create_jwt_token(&creds);
         assert!(jwt.is_ok(), "JWT creation failed: {:?}", jwt.err());
-        let jwt_str = jwt.unwrap();
-        assert!(jwt_str.starts_with("ey"), "JWT should start with 'ey'");
+        assert_jwt_signed_by(&jwt.unwrap(), &creds);
+    }
+
+    #[tokio::test]
+    async fn test_service_account_jwt_creation_with_pkcs8_key() {
+        let auth = GcpAuth {
+            credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
+            client: reqwest::Client::new(),
+            cached_token: Arc::new(RwLock::new(None)),
+        };
+        let mock = mock_service_account();
+        let creds = ServiceAccountCredentials {
+            private_key: pkcs1_to_pkcs8_pem(&mock.private_key),
+            ..mock
+        };
+
+        let jwt = auth.create_jwt_token(&creds).unwrap();
+        assert_jwt_signed_by(&jwt, &creds);
+    }
+
+    fn pkcs1_to_pkcs8_pem(pkcs1_pem: &str) -> String {
+        use pkcs8::der::{asn1::OctetStringRef, Encode};
+
+        let pkcs1 = pem::parse(pkcs1_pem).unwrap();
+        let algorithm = pkcs8::AlgorithmIdentifierRef {
+            oid: pkcs8::ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
+            parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
+        };
+        let private_key = OctetStringRef::new(pkcs1.contents()).unwrap();
+        let der = pkcs8::PrivateKeyInfoRef::new(algorithm, private_key)
+            .to_der()
+            .unwrap();
+        pem::encode(&pem::Pem::new("PRIVATE KEY", der))
+    }
+
+    fn assert_jwt_signed_by(jwt: &str, creds: &ServiceAccountCredentials) {
+        let (signing_input, signature) = jwt.rsplit_once('.').unwrap();
+        let (header, claims) = signing_input.split_once('.').unwrap();
+
         assert_eq!(
-            jwt_str.matches('.').count(),
-            2,
-            "JWT should have exactly 2 dots"
+            URL_SAFE_NO_PAD.decode(header).unwrap(),
+            br#"{"typ":"JWT","alg":"RS256"}"#
         );
+
+        let claims: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(claims).unwrap()).unwrap();
+        assert_eq!(claims["iss"], creds.client_email);
+        assert_eq!(claims["sub"], creds.client_email);
+        assert_eq!(claims["aud"], creds.token_uri);
+        assert_eq!(
+            claims["scope"],
+            "https://www.googleapis.com/auth/cloud-platform"
+        );
+
+        let key_pair = rsa_key_pair_from_pem(&creds.private_key).unwrap();
+        ring::signature::UnparsedPublicKey::new(
+            &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+            key_pair.public().as_ref(),
+        )
+        .verify(
+            signing_input.as_bytes(),
+            &URL_SAFE_NO_PAD.decode(signature).unwrap(),
+        )
+        .expect("JWT signature should verify with the service account public key");
     }
 
     #[tokio::test]

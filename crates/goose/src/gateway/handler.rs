@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,15 +7,14 @@ use futures::StreamExt;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{Agent, AgentEvent, ExtensionConfig, SessionConfig};
+use crate::agents::{AgentEvent, ExtensionConfig, SessionConfig, StateMachineServices};
 use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
-use crate::execution::manager::AgentManager;
 use crate::permission::Permission;
 use crate::session::SessionType;
-use crate::session::{EnabledExtensionsState, ExtensionState, Session};
+use crate::session::{EnabledExtensionsState, Session};
 
 use super::pairing::PairingStore;
 use super::{Gateway, GatewayConfig, IncomingMessage, OutgoingMessage, PairingState, PlatformUser};
@@ -40,7 +39,7 @@ fn resolve_gateway_max_turns(gateway_override: Option<u32>, global_max_turns: Op
 }
 
 struct PendingConfirmation {
-    agent: Arc<Agent>,
+    services: Arc<StateMachineServices>,
     session_id: String,
     request_ids: VecDeque<String>,
     cancel_token: CancellationToken,
@@ -50,7 +49,7 @@ type PerUserLocks = Arc<Mutex<HashMap<PlatformUser, Arc<Mutex<()>>>>>;
 
 #[derive(Clone)]
 pub struct GatewayHandler {
-    agent_manager: Arc<AgentManager>,
+    services: Arc<StateMachineServices>,
     pairing_store: Arc<PairingStore>,
     gateway: Arc<dyn Gateway>,
     config: GatewayConfig,
@@ -60,23 +59,27 @@ pub struct GatewayHandler {
     turn_locks: PerUserLocks,
     /// Serializes confirmation replies without waiting for the active turn to finish.
     confirmation_reply_locks: PerUserLocks,
+    /// When set, only platform user IDs in this list may enter the pairing flow.
+    allowed_user_ids: Option<HashSet<String>>,
 }
 
 impl GatewayHandler {
     pub fn new(
-        agent_manager: Arc<AgentManager>,
+        services: Arc<StateMachineServices>,
         pairing_store: Arc<PairingStore>,
         gateway: Arc<dyn Gateway>,
         config: GatewayConfig,
     ) -> Self {
+        let allowed_user_ids = allowed_user_ids_from_config(&config);
         Self {
-            agent_manager,
+            services,
             pairing_store,
             gateway,
             config,
             pending_confirmations: Arc::new(Mutex::new(HashMap::new())),
             turn_locks: Arc::new(Mutex::new(HashMap::new())),
             confirmation_reply_locks: Arc::new(Mutex::new(HashMap::new())),
+            allowed_user_ids,
         }
     }
 
@@ -84,13 +87,13 @@ impl GatewayHandler {
         let pending: Vec<_> = self.pending_confirmations.lock().await.drain().collect();
         for (_, pending) in pending {
             let PendingConfirmation {
-                agent,
+                services,
                 session_id,
                 request_ids,
                 cancel_token,
             } = pending;
             for request_id in request_ids {
-                if let Err(error) = agent
+                if let Err(error) = services
                     .submit_tool_confirmation(&session_id, &request_id, Permission::DenyOnce)
                     .await
                 {
@@ -121,6 +124,15 @@ impl GatewayHandler {
     }
 
     pub async fn handle_message(&self, message: IncomingMessage) -> anyhow::Result<()> {
+        if !is_user_allowed(&self.allowed_user_ids, &message.user) {
+            tracing::info!(
+                platform = %message.user.platform,
+                user_id = %message.user.user_id,
+                "gateway allowlist denied unlisted user"
+            );
+            return Ok(());
+        }
+
         let pairing = self.pairing_store.get(&message.user).await?;
 
         match pairing {
@@ -244,11 +256,11 @@ impl GatewayHandler {
         let Some(request_id) = pending.request_ids.front().cloned() else {
             return Ok(());
         };
-        let agent = pending.agent.clone();
+        let services = pending.services.clone();
         let session_id = pending.session_id.clone();
         let cancel_token = pending.cancel_token.clone();
         drop(pending_confirmations);
-        if let Err(error) = agent
+        if let Err(error) = services
             .submit_tool_confirmation(&session_id, &request_id, permission)
             .await
         {
@@ -300,8 +312,8 @@ impl GatewayHandler {
 
         let config = Config::global();
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .session_manager
             .create_session(
                 working_dir,
                 session_name,
@@ -310,7 +322,7 @@ impl GatewayHandler {
             )
             .await?;
 
-        let manager = self.agent_manager.session_manager();
+        let manager = &self.services.session_manager;
 
         // Store the current provider and model config on the session so the agent
         // can be restored after LRU eviction, matching the start_agent flow.
@@ -327,20 +339,17 @@ impl GatewayHandler {
             }
         }
 
-        // Store default extensions so load_extensions_from_session works.
         let mut extensions = get_enabled_extensions();
         extensions.extend(crate::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&session.working_dir),
         ));
-        let extensions_state = EnabledExtensionsState::new(extensions);
-        let mut extension_data = session.extension_data.clone();
-        if let Err(e) = extensions_state.to_extension_data(&mut extension_data) {
-            tracing::warn!(error = %e, "failed to initialize gateway session extensions");
-        } else {
-            update = update.extension_data(extension_data);
-        }
-
         update.apply().await?;
+        if let Err(e) = manager
+            .update_enabled_extensions(&session.id, |selected| *selected = extensions)
+            .await
+        {
+            tracing::warn!(error = %e, "failed to initialize gateway session extensions");
+        }
 
         let now = chrono::Utc::now().timestamp();
         self.pairing_store
@@ -367,12 +376,10 @@ impl GatewayHandler {
 
     /// Sync the session's provider, model, and extensions with the current
     /// global config so gateway sessions always reflect what the user has
-    /// configured in the desktop app.  Returns `true` if extensions changed
-    /// (which means the caller must recreate the agent so stale extension
-    /// processes are torn down).
-    async fn sync_session_config(&self, session: &Session) -> anyhow::Result<bool> {
+    /// configured in the desktop app.
+    async fn sync_session_config(&self, session: &Session) -> anyhow::Result<()> {
         let config = Config::global();
-        let manager = self.agent_manager.session_manager();
+        let manager = &self.services.session_manager;
 
         // --- current global config ---
         let current_provider = config.get_goose_provider().ok();
@@ -396,7 +403,7 @@ impl GatewayHandler {
         let mode_changed = current_mode != session.goose_mode;
 
         if !provider_changed && !model_changed && !extensions_changed && !mode_changed {
-            return Ok(false);
+            return Ok(());
         }
 
         tracing::info!(
@@ -422,22 +429,23 @@ impl GatewayHandler {
             }
         }
 
-        if extensions_changed {
-            let extensions_state = EnabledExtensionsState::new(current_extensions);
-            let mut extension_data = session.extension_data.clone();
-            if let Err(e) = extensions_state.to_extension_data(&mut extension_data) {
-                tracing::warn!(error = %e, "failed to update gateway session extensions");
-            } else {
-                update = update.extension_data(extension_data);
-            }
-        }
-
         if mode_changed {
             update = update.goose_mode(current_mode);
         }
 
         update.apply().await?;
-        Ok(extensions_changed)
+        if extensions_changed {
+            match manager
+                .update_enabled_extensions(&session.id, |selected| *selected = current_extensions)
+                .await
+            {
+                Ok(_) => self.services.providers.release(&session.id),
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to update gateway session extensions");
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn relay_to_session(
@@ -450,50 +458,25 @@ impl GatewayHandler {
             .await?;
 
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .session_manager
             .get_session(session_id, false)
             .await?;
 
-        // Sync provider/model/extensions with the user's current desktop config.
-        // If extensions changed we must tear down the old agent so stale
-        // extension processes don't linger.
-        let extensions_changed = self.sync_session_config(&session).await?;
-        if extensions_changed {
-            self.agent_manager
-                .remove_session_if_loaded(session_id)
-                .await?;
-        }
+        self.sync_session_config(&session).await?;
 
-        let agent = match self
-            .agent_manager
-            .get_or_create_agent(session_id.to_string())
-            .await
-        {
-            Ok(agent) => agent,
-            Err(error) if crate::acp::is_auth_required(&error) => {
-                self.gateway
-                    .send_message(
-                        &message.user,
-                        OutgoingMessage::Text {
-                            body: format!("⚠️ Failed to configure provider: {error}"),
-                        },
-                    )
-                    .await?;
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
+        self.services.touch_session(session_id).await;
+        let services = Arc::clone(&self.services);
 
         // Re-read the session after sync so restore picks up the new values.
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .session_manager
             .get_session(session_id, false)
             .await?;
 
         // Ensure provider is configured (handles first use and LRU eviction).
-        if let Err(e) = agent.restore_provider_from_session(&session).await {
+        if let Err(e) = services.restore_provider_from_session(&session).await {
             self.gateway
                 .send_message(
                     &message.user,
@@ -505,10 +488,8 @@ impl GatewayHandler {
             return Ok(());
         }
 
-        // Load extensions (skips any already loaded on the agent).
-        agent.load_extensions_from_session(&session).await;
-
         let cancel = CancellationToken::new();
+        let cancel_for_reply = cancel.clone();
         let user_message = Message::user().with_text(&message.text);
 
         // Cap tool-calling loops so the agent doesn't run away doing
@@ -529,11 +510,10 @@ impl GatewayHandler {
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(max_turns),
-            retry_config: None,
         };
 
-        let mut stream = match agent
-            .reply(user_message, session_config, Some(cancel.clone()))
+        let mut stream = match services
+            .reply(user_message, session_config, Some(cancel_for_reply))
             .await
         {
             Ok(s) => s,
@@ -603,6 +583,9 @@ impl GatewayHandler {
                                     if !t.text.is_empty() {
                                         pending_text.push_str(&t.text);
                                     }
+                                }
+                                MessageContent::Error(error) => {
+                                    pending_text.push_str(&error.message);
                                 }
                                 MessageContent::ToolRequest(req) => {
                                     // Flush any accumulated text before
@@ -685,7 +668,7 @@ impl GatewayHandler {
                                                 pending.request_ids.push_back(id.clone());
                                             })
                                             .or_insert_with(|| PendingConfirmation {
-                                                agent: agent.clone(),
+                                                services: services.clone(),
                                                 session_id: session_id.to_string(),
                                                 request_ids: VecDeque::from([id.clone()]),
                                                 cancel_token: cancel.clone(),
@@ -721,7 +704,7 @@ impl GatewayHandler {
                                                 pending.remove(&message.user);
                                             }
                                             drop(pending);
-                                            if let Err(error) = agent
+                                            if let Err(error) = services
                                                 .submit_tool_confirmation(
                                                     session_id,
                                                     id,
@@ -825,6 +808,34 @@ fn gateway_working_dir(platform: &str, user_id: &str) -> PathBuf {
         .join(user_id)
 }
 
+/// Operator-configured list of platform user IDs that may pair with the gateway,
+/// read from `platform_config.allowed_user_ids`. An absent or empty list keeps
+/// the default behavior of letting anyone attempt pairing.
+fn allowed_user_ids_from_config(config: &GatewayConfig) -> Option<HashSet<String>> {
+    let ids: HashSet<String> = config.platform_config["allowed_user_ids"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|id| {
+            id.as_str()
+                .map(ToOwned::to_owned)
+                .or_else(|| id.as_u64().map(|n| n.to_string()))
+        })
+        .collect();
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
+}
+
+fn is_user_allowed(allowed: &Option<HashSet<String>>, user: &PlatformUser) -> bool {
+    match allowed {
+        None => true,
+        Some(ids) => ids.contains(&user.user_id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -850,5 +861,54 @@ mod tests {
     #[test]
     fn gateway_override_used_when_global_unset() {
         assert_eq!(resolve_gateway_max_turns(Some(25), None), 25);
+    }
+
+    fn platform_user(user_id: &str) -> PlatformUser {
+        PlatformUser {
+            platform: "telegram".to_string(),
+            user_id: user_id.to_string(),
+            display_name: None,
+        }
+    }
+
+    fn config_with_platform(platform_config: serde_json::Value) -> GatewayConfig {
+        GatewayConfig {
+            gateway_type: "telegram".to_string(),
+            platform_config,
+            max_sessions: 1,
+        }
+    }
+
+    #[test]
+    fn allowlist_absent_or_empty_allows_everyone() {
+        for platform_config in [
+            serde_json::json!({}),
+            serde_json::json!({"allowed_user_ids": []}),
+        ] {
+            let allowed = allowed_user_ids_from_config(&config_with_platform(platform_config));
+            assert!(allowed.is_none());
+            assert!(is_user_allowed(&allowed, &platform_user("999999")));
+        }
+    }
+
+    #[test]
+    fn allowlist_admits_listed_and_blocks_unlisted_users() {
+        let config = config_with_platform(serde_json::json!({"allowed_user_ids": ["111", 222]}));
+        let allowed = allowed_user_ids_from_config(&config).expect("allowlist should be set");
+        assert_eq!(allowed.len(), 2);
+        assert!(is_user_allowed(
+            &Some(allowed.clone()),
+            &platform_user("111")
+        ));
+        assert!(is_user_allowed(&Some(allowed), &platform_user("222")));
+
+        let allowed = allowed_user_ids_from_config(&config).expect("allowlist should be set");
+        assert!(!is_user_allowed(&Some(allowed), &platform_user("333")));
+    }
+
+    #[test]
+    fn allowlist_ignores_non_id_values() {
+        let config = config_with_platform(serde_json::json!({"allowed_user_ids": [true, null]}));
+        assert!(allowed_user_ids_from_config(&config).is_none());
     }
 }

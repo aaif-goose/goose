@@ -19,7 +19,6 @@ The Goose Desktop App is an Electron application built with TypeScript, React, a
   - `/renderer.tsx`: React entry point for the renderer process
   - `/App.tsx`: Main React component that manages views
   - `/components`: React components (page views, UI components, icons)
-  - `/api`: API client code
   - `/utils`: Utility functions
   - `/hooks`: React hooks
   - `/types`: TypeScript type definitions
@@ -57,7 +56,7 @@ The Goose Desktop App is an Electron application built with TypeScript, React, a
 ## State Management
 
 - The app uses React's Context API for global state
-- Look at existing contexts like `ConfigContext.tsx` and `ModelContext.tsx` for examples
+- Look at existing contexts like `src/components/ConfigContext.tsx` and `src/contexts/ChatContext.tsx` for examples
 - For local state, use React hooks like `useState` and `useEffect`
 
 ## Styling

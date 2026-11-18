@@ -189,17 +189,6 @@
     "environmentVariables": []
   },
   {
-    "id": "council-of-mine",
-    "name": "Council of Mine",
-    "description": "LLM council debate with 9 distinct personas for decision-making",
-    "command": "uvx --from git+https://github.com/block/mcp-council-of-mine mcp_council_of_mine",
-    "link": "https://github.com/block/mcp-council-of-mine",
-    "installation_notes": "Requires uv to be installed (https://github.com/astral-sh/uv). Installs via uvx from GitHub.",
-    "is_builtin": false,
-    "endorsed": true,
-    "environmentVariables": []
-  },
-  {
     "id": "datahub-mcp",
     "name": "DataHub",
     "description": "Data discovery and metadata platform for exploring datasets, lineage, and queries",
@@ -645,18 +634,6 @@
     "installation_notes": "Install using npx package manager.",
     "is_builtin": false,
     "endorsed": false,
-    "environmentVariables": []
-  },
-  {
-    "id": "rube-mcp",
-    "name": "Rube",
-    "description": "Connect with 500+ apps like Slack, Gmail, Notion and more through unified integrations",
-    "type": "streamable-http",
-    "url": "https://rube.app/mcp",
-    "link": "https://rube.app",
-    "installation_notes": "Streamable HTTP extension with OAuth browser authentication to your Rube account.",
-    "is_builtin": false,
-    "endorsed": true,
     "environmentVariables": []
   },
   {

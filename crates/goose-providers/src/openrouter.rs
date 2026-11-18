@@ -4,15 +4,20 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::api_client::ApiClient;
 
 pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + Sync>;
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
+use crate::canonical::{maybe_get_canonical_model_with_variant_fallback, strip_openrouter_variant};
 use crate::conversation::message::Message;
+use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
 use crate::formats::openai::create_request;
+use crate::http_status::read_json_response;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{handle_status, stream_openai_compat};
 use crate::openrouter_format;
@@ -22,25 +27,37 @@ use rmcp::model::Tool;
 
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
-pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
+pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5.5";
+pub const OPENROUTER_DECISION_DEFAULT_MODEL: &str = "typesafe/jev-1.13";
 
-// OpenRouter can run many models, we suggest the default
 pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[
-    "x-ai/grok-code-fast-1",
-    "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-sonnet-4",
-    "anthropic/claude-opus-4.1",
-    "anthropic/claude-opus-4",
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-    "deepseek/deepseek-r1-0528",
-    "qwen/qwen3-coder",
-    "moonshotai/kimi-k2",
+    OPENROUTER_DEFAULT_MODEL,
+    "anthropic/claude-opus-5.5",
+    "google/gemini-3.5-flash",
+    "x-ai/grok-4.7",
+    "deepseek/deepseek-v4-pro",
+    "qwen/qwen3.8-flash",
+    "moonshotai/kimi-k3",
 ];
 pub const OPENROUTER_DOC_URL: &str = "https://openrouter.ai/models";
 
 const GEMINI_SCHEMA_REF_KEY: &str = "$ref";
 const GEMINI_SAFE_SCHEMA_REF_KEY_BASE: &str = "dollar_ref";
+
+const MODELS_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+const MODELS_SUCCESS_TTL: Duration = Duration::from_secs(60 * 60);
+const MODELS_FAILURE_TTL: Duration = Duration::from_secs(60);
+
+struct OpenRouterModel {
+    id: String,
+    context_length: Option<usize>,
+    supports_tools: bool,
+}
+
+struct CachedModels {
+    models: Result<Arc<[OpenRouterModel]>, ProviderError>,
+    expires_at: Instant,
+}
 
 #[derive(serde::Serialize)]
 pub struct OpenRouterProvider {
@@ -53,6 +70,8 @@ pub struct OpenRouterProvider {
     configured_parameters: Option<HashMap<String, Value>>,
     #[serde(skip)]
     session_id_provider: Option<OpenRouterSessionIdProvider>,
+    #[serde(skip)]
+    cached_models: tokio::sync::Mutex<Option<CachedModels>>,
 }
 
 impl OpenRouterProvider {
@@ -67,7 +86,95 @@ impl OpenRouterProvider {
             name: OPENROUTER_PROVIDER_NAME.to_string(),
             configured_parameters,
             session_id_provider,
+            cached_models: tokio::sync::Mutex::new(None),
         }
+    }
+
+    async fn get_or_fetch_models(&self) -> Result<Arc<[OpenRouterModel]>, ProviderError> {
+        let mut cache = self.cached_models.lock().await;
+        if let Some(cached) = cache
+            .as_ref()
+            .filter(|cached| Instant::now() < cached.expires_at)
+        {
+            return cached.models.clone();
+        }
+
+        let fetched = tokio::time::timeout(MODELS_DISCOVERY_TIMEOUT, self.fetch_models_from_api())
+            .await
+            .unwrap_or_else(|_| {
+                Err(ProviderError::RequestFailed(
+                    "Timed out fetching models from OpenRouter API".to_string(),
+                ))
+            });
+        let previous = cache.take().and_then(|cached| cached.models.ok());
+        let (models, ttl) = match (fetched, previous) {
+            (Ok(models), _) => (Ok(models), MODELS_SUCCESS_TTL),
+            (Err(error), Some(previous)) => {
+                tracing::warn!(%error, "Failed to refresh OpenRouter models; keeping the previous list");
+                (Ok(previous), MODELS_FAILURE_TTL)
+            }
+            (Err(error), None) => (Err(error), MODELS_FAILURE_TTL),
+        };
+        cache
+            .insert(CachedModels {
+                models,
+                expires_at: Instant::now() + ttl,
+            })
+            .models
+            .clone()
+    }
+
+    async fn fetch_models_from_api(&self) -> Result<Arc<[OpenRouterModel]>, ProviderError> {
+        let response = self
+            .api_client
+            .request("api/v1/models")
+            .response_get()
+            .await
+            .map_err(|e| {
+                ProviderError::RequestFailed(format!(
+                    "Failed to fetch models from OpenRouter API: {}",
+                    e
+                ))
+            })?;
+
+        let json: serde_json::Value = response.json().await.map_err(|e| {
+            ProviderError::RequestFailed(format!(
+                "Failed to parse OpenRouter API response as JSON: {}",
+                e
+            ))
+        })?;
+
+        if let Some(err_obj) = json.get("error") {
+            let msg = err_obj
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            return Err(ProviderError::RequestFailed(format!(
+                "OpenRouter API returned an error: {}",
+                msg
+            )));
+        }
+
+        let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
+            ProviderError::UsageError("Missing data field in JSON response".into())
+        })?;
+
+        Ok(data
+            .iter()
+            .filter_map(|model| {
+                Some(OpenRouterModel {
+                    id: model.get("id").and_then(|v| v.as_str())?.to_string(),
+                    context_length: model
+                        .get("context_length")
+                        .and_then(|v| v.as_u64())
+                        .map(|limit| limit as usize),
+                    supports_tools: model
+                        .get("supported_parameters")
+                        .and_then(|v| v.as_array())
+                        .is_some_and(|params| params.iter().any(|p| p.as_str() == Some("tools"))),
+                })
+            })
+            .collect())
     }
 
     async fn post_chat_completions(
@@ -395,6 +502,57 @@ impl crate::base::ProviderDescriptor for OpenRouterProvider {
     }
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct OpenRouterDecisionOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+impl OpenRouterProvider {
+    pub async fn create_decision_with_options(
+        &self,
+        request: &DecisionRequest,
+        options: &OpenRouterDecisionOptions,
+    ) -> Result<DecisionResponse, ProviderError> {
+        let mut payload = serde_json::to_value(request).map_err(|error| {
+            ProviderError::RequestFailed(format!("Failed to serialize Decisions request: {error}"))
+        })?;
+        let option_values = serde_json::to_value(options).map_err(|error| {
+            ProviderError::RequestFailed(format!(
+                "Failed to serialize OpenRouter Decisions options: {error}"
+            ))
+        })?;
+        if let (Some(payload), Some(options)) = (payload.as_object_mut(), option_values.as_object())
+        {
+            payload.extend(options.clone());
+        }
+        let response = self
+            .api_client
+            .request("api/alpha/decisions")
+            .response_post(&payload)
+            .await?;
+        let response = handle_status(response).await?;
+        read_json_response(response).await
+    }
+}
+
+#[async_trait]
+impl DecisionProvider for OpenRouterProvider {
+    async fn create_decision(
+        &self,
+        request: &DecisionRequest,
+    ) -> Result<DecisionResponse, ProviderError> {
+        self.create_decision_with_options(request, &OpenRouterDecisionOptions::default())
+            .await
+    }
+}
+
 #[async_trait]
 impl Provider for OpenRouterProvider {
     fn get_name(&self) -> &str {
@@ -405,58 +563,36 @@ impl Provider for OpenRouterProvider {
         true
     }
 
-    async fn fetch_recommended_models(&self, toolshim: bool) -> Result<Vec<String>, ProviderError> {
-        let response = self
-            .api_client
-            .request("api/v1/models")
-            .response_get()
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!(
-                    "Failed to fetch models from OpenRouter API: {}",
-                    e
-                ))
-            })?;
-
-        let json: serde_json::Value = response.json().await.map_err(|e| {
-            ProviderError::RequestFailed(format!(
-                "Failed to parse OpenRouter API response as JSON: {}",
-                e
-            ))
-        })?;
-
-        if let Some(err_obj) = json.get("error") {
-            let msg = err_obj
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            return Err(ProviderError::RequestFailed(format!(
-                "OpenRouter API returned an error: {}",
-                msg
-            )));
-        }
-
-        let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
-            ProviderError::UsageError("Missing data field in JSON response".into())
-        })?;
-
-        let mut models: Vec<String> = data
-            .iter()
-            .filter_map(|model| {
-                let id = model.get("id").and_then(|v| v.as_str())?;
-                if toolshim {
-                    return Some(id.to_string());
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        crate::context_limit::ContextLimitResolver::new(&self.name)
+            .resolve(model, override_limit, || async {
+                let canonical = maybe_get_canonical_model_with_variant_fallback(&self.name, model);
+                let base = strip_openrouter_variant(model);
+                // Exact catalog rows outrank live exact IDs; base fallbacks come after both.
+                if let Some((canonical, false)) = &canonical {
+                    return Ok(Some(canonical.limit.context));
                 }
-                let supports_tools = model
-                    .get("supported_parameters")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|params| params.iter().any(|p| p.as_str() == Some("tools")));
-                if supports_tools {
-                    Some(id.to_string())
-                } else {
-                    None
-                }
+                let models = self.get_or_fetch_models().await?;
+                Ok(models
+                    .iter()
+                    .find(|info| info.id == model)
+                    .and_then(|info| info.context_length)
+                    .or_else(|| canonical.map(|(canonical, _)| canonical.limit.context))
+                    .or_else(|| {
+                        base.and_then(|base| models.iter().find(|info| info.id == base))
+                            .and_then(|info| info.context_length)
+                    }))
             })
+            .await
+    }
+
+    async fn fetch_recommended_models(&self, toolshim: bool) -> Result<Vec<String>, ProviderError> {
+        let mut models: Vec<String> = self
+            .get_or_fetch_models()
+            .await?
+            .iter()
+            .filter(|model| toolshim || model.supports_tools)
+            .map(|model| model.id.clone())
             .collect();
         models.sort();
         Ok(models)
@@ -514,8 +650,11 @@ impl Provider for OpenRouterProvider {
         let sent_reasoning_disable =
             openrouter_format::apply_reasoning_config(&mut payload, model_config);
 
+        // `transforms` is intentionally not set: OpenRouter defaults to applying
+        // `middle-out` for endpoints with <=8k context, and large-context models
+        // don't benefit from it. Users who want to force a transform can opt in
+        // via `OPENROUTER_PARAMETERS`.
         if let Some(obj) = payload.as_object_mut() {
-            obj.insert("transforms".to_string(), json!(["middle-out"]));
             obj.insert("usage".to_string(), json!({ "include": true }));
         }
 
@@ -568,6 +707,38 @@ mod tests {
             .config_keys
             .iter()
             .any(|key| key.name == OPENROUTER_PARAMETERS_CONFIG_KEY));
+    }
+
+    #[test]
+    fn metadata_default_and_known_models_are_in_catalog() {
+        let metadata = OpenRouterProvider::metadata();
+        let registry = crate::canonical::CanonicalModelRegistry::bundled().unwrap();
+
+        assert!(metadata
+            .known_models
+            .iter()
+            .any(|model| model.name == metadata.default_model));
+
+        for model in &metadata.known_models {
+            let canonical = registry
+                .get(&metadata.name, &model.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "OpenRouter model {} is missing from the catalog",
+                        model.name
+                    )
+                });
+            assert!(canonical.tool_call, "{} must support tools", model.name);
+            assert!(
+                canonical
+                    .modalities
+                    .input
+                    .contains(&crate::canonical::Modality::Text),
+                "{} must support text input",
+                model.name
+            );
+            assert!(canonical.limit.context > 0);
+        }
     }
 
     #[test]
@@ -639,6 +810,350 @@ mod tests {
             .stream(&config, "system", &[Message::user().with_text("hi")], &[])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn stream_does_not_set_transforms_field() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string("data: [DONE]\n\n"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let provider = OpenRouterProvider::new(
+            ApiClient::new_with_tls(
+                server.uri(),
+                crate::api_client::AuthMethod::BearerToken("test-key".to_string()),
+                None,
+            )
+            .unwrap(),
+            None,
+            None,
+        );
+
+        let config = model_config("z-ai/glm-5.2");
+
+        let _stream = provider
+            .stream(&config, "system", &[Message::user().with_text("hi")], &[])
+            .await
+            .unwrap();
+
+        let received = server.received_requests().await.unwrap();
+        assert_eq!(received.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+        assert!(
+            body.get("transforms").is_none(),
+            "transforms must not be set unconditionally, got body: {}",
+            body
+        );
+    }
+
+    const MODEL_IN_CATALOG: &str = "anthropic/claude-sonnet-4.5";
+    const MODEL_NOT_IN_CATALOG: &str = "test-vendor/not-in-catalog";
+
+    fn models_response() -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                {
+                    "id": MODEL_NOT_IN_CATALOG,
+                    "context_length": 1_048_576,
+                    "supported_parameters": ["tools"]
+                },
+                {
+                    "id": MODEL_IN_CATALOG,
+                    "context_length": 4_096,
+                    "supported_parameters": ["tools"]
+                },
+                {
+                    "id": "test-vendor/no-tools",
+                    "context_length": 32_768,
+                    "supported_parameters": ["temperature"]
+                }
+            ]
+        }))
+    }
+
+    async fn models_server(
+        response: wiremock::ResponseTemplate,
+        expected_requests: u64,
+    ) -> wiremock::MockServer {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models"))
+            .respond_with(response)
+            .expect(expected_requests)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn provider_for(server: &wiremock::MockServer) -> OpenRouterProvider {
+        OpenRouterProvider::new(
+            ApiClient::new_with_tls(
+                server.uri(),
+                crate::api_client::AuthMethod::BearerToken("test-key".to_string()),
+                None,
+            )
+            .unwrap(),
+            None,
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn context_limit_uses_reported_length_for_model_not_in_catalog() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_uses_base_model_for_variant_not_in_catalog() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{MODEL_NOT_IN_CATALOG}:nitro"), None)
+                .await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_keeps_exact_variant_precedence() {
+        let variant = format!("{MODEL_NOT_IN_CATALOG}:nitro");
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                { "id": MODEL_NOT_IN_CATALOG, "context_length": 1_048_576 },
+                { "id": variant, "context_length": 64_000 }
+            ]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(&variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_live_exact_variant_over_catalog_base() {
+        let variant = "deepseek/deepseek-v4-flash:nitro";
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": variant, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_catalog_base_when_live_variant_is_missing() {
+        let model = "deepseek/deepseek-v4-flash";
+        let catalog_limit =
+            crate::canonical::maybe_get_canonical_model(OPENROUTER_PROVIDER_NAME, model)
+                .unwrap()
+                .limit
+                .context;
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": model, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{model}:nitro"), None)
+                .await,
+            catalog_limit
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_keeps_override_and_catalog_precedence_without_fetching() {
+        let server = models_server(models_response(), 0).await;
+        let provider = provider_for(&server);
+        let catalog_limit =
+            crate::canonical::maybe_get_canonical_model(OPENROUTER_PROVIDER_NAME, MODEL_IN_CATALOG)
+                .unwrap()
+                .limit
+                .context;
+
+        assert_eq!(
+            provider
+                .get_context_limit(MODEL_NOT_IN_CATALOG, Some(64_000))
+                .await,
+            64_000
+        );
+        assert_eq!(
+            provider.get_context_limit(MODEL_IN_CATALOG, None).await,
+            catalog_limit
+        );
+    }
+
+    #[test_case::test_case(wiremock::ResponseTemplate::new(500) ; "server error")]
+    #[test_case::test_case(
+        wiremock::ResponseTemplate::new(200).set_body_string("not json") ; "invalid json"
+    )]
+    #[test_case::test_case(models_response().set_delay(Duration::from_secs(10)) ; "timeout")]
+    #[tokio::test]
+    async fn context_limit_falls_back_and_caches_models_failure(
+        response: wiremock::ResponseTemplate,
+    ) {
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        for _ in 0..2 {
+            assert_eq!(
+                provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+                crate::model::DEFAULT_CONTEXT_LIMIT
+            );
+        }
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert!(provider.fetch_recommended_models(false).await.is_err());
+    }
+
+    fn previous_models(context_length: usize) -> Arc<[OpenRouterModel]> {
+        Arc::from([OpenRouterModel {
+            id: MODEL_NOT_IN_CATALOG.to_string(),
+            context_length: Some(context_length),
+            supports_tools: true,
+        }])
+    }
+
+    async fn seed_expired_cache(
+        provider: &OpenRouterProvider,
+        models: Result<Arc<[OpenRouterModel]>, ProviderError>,
+    ) {
+        *provider.cached_models.lock().await = Some(CachedModels {
+            models,
+            expires_at: Instant::now(),
+        });
+    }
+
+    #[tokio::test]
+    async fn context_limit_refetches_models_after_failure_ttl() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+        seed_expired_cache(
+            &provider,
+            Err(ProviderError::RequestFailed("earlier failure".to_string())),
+        )
+        .await;
+
+        assert_eq!(
+            provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_refetches_models_after_success_ttl() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+        seed_expired_cache(&provider, Ok(previous_models(131_072))).await;
+
+        for _ in 0..2 {
+            assert_eq!(
+                provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+                1_048_576
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn context_limit_keeps_previous_models_when_refetch_fails() {
+        let server = models_server(wiremock::ResponseTemplate::new(500), 2).await;
+        let provider = provider_for(&server);
+        seed_expired_cache(&provider, Ok(previous_models(131_072))).await;
+
+        for _ in 0..2 {
+            assert_eq!(
+                provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+                131_072
+            );
+        }
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        let retry_at = provider
+            .cached_models
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .expires_at;
+        assert!(retry_at <= Instant::now() + MODELS_FAILURE_TTL);
+
+        provider
+            .cached_models
+            .lock()
+            .await
+            .as_mut()
+            .unwrap()
+            .expires_at = Instant::now();
+        assert_eq!(
+            provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+            131_072
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_fetches_models_once() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        for _ in 0..3 {
+            assert_eq!(
+                provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
+                1_048_576
+            );
+        }
+        assert_eq!(
+            provider
+                .get_context_limit("test-vendor/no-tools", None)
+                .await,
+            32_768
+        );
+    }
+
+    #[tokio::test]
+    async fn recommended_models_and_context_limit_share_one_fetch() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        let (recommended, context_limit) = tokio::join!(
+            provider.fetch_recommended_models(false),
+            provider.get_context_limit(MODEL_NOT_IN_CATALOG, None)
+        );
+
+        assert_eq!(
+            recommended.unwrap(),
+            vec![MODEL_IN_CATALOG, MODEL_NOT_IN_CATALOG]
+        );
+        assert_eq!(context_limit, 1_048_576);
+        assert_eq!(
+            provider.fetch_recommended_models(true).await.unwrap(),
+            vec![
+                MODEL_IN_CATALOG,
+                "test-vendor/no-tools",
+                MODEL_NOT_IN_CATALOG
+            ]
+        );
     }
 
     #[test]

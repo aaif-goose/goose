@@ -1,4 +1,7 @@
-use crate::formats::anthropic::{AnthropicFormatOptions, ANTHROPIC_PROVIDER_NAME};
+use crate::anthropic::beta_header_value;
+use crate::formats::anthropic::{
+    block_binding_behavior, AnthropicFormatOptions, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
+};
 use crate::formats::openai::{self, extract_reasoning_effort, is_openai_responses_model};
 use crate::http_status::{read_error_body, read_json_response};
 use crate::images::ImageFormat;
@@ -18,7 +21,7 @@ use tokio_util::io::StreamReader;
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContentBlock};
 use crate::databricks_auth::{
     DatabricksAuth, DatabricksAuthProvider, DatabricksOauthTokenProvider, DatabricksRefreshHook,
     DatabricksTokenResolver,
@@ -34,7 +37,9 @@ use crate::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
+use crate::thinking::ThinkingEffort;
 use rmcp::model::Tool;
+use uuid::Uuid;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
 const DATABRICKS_V2_DEFAULT_GATEWAY_PATH: &str = "ai-gateway";
@@ -105,6 +110,11 @@ pub struct DatabricksV2Provider {
     refresh_hook: Option<DatabricksRefreshHook>,
     #[serde(skip)]
     gateway_path: String,
+    /// Models that rejected a replayed thinking block as bound to a different
+    /// prefix. Only those get `block_binding`: older Claude models on the gateway
+    /// reject the field itself.
+    #[serde(skip)]
+    binding_models: Arc<Mutex<HashSet<String>>>,
 }
 
 impl DatabricksV2Provider {
@@ -152,6 +162,7 @@ impl DatabricksV2Provider {
             token_cache,
             refresh_hook,
             gateway_path: DATABRICKS_V2_DEFAULT_GATEWAY_PATH.to_string(),
+            binding_models: Arc::default(),
         })
     }
 
@@ -225,10 +236,10 @@ impl DatabricksV2Provider {
         let (clean_name, _) = extract_reasoning_effort(routing_name);
         let lower = clean_name.to_lowercase();
 
+        // Claude model services also serve `anthropic/v1/messages`; the MLflow
+        // chat route drops the prompt-cache breakpoints Anthropic needs.
         if is_openai_responses_model(&clean_name) || Self::looks_like_gpt5(&lower) {
             DatabricksV2Route::OpenAiResponses
-        } else if is_model_service {
-            DatabricksV2Route::MlflowChatCompletions
         } else if Self::is_claude_model(&lower) {
             DatabricksV2Route::AnthropicMessages
         } else {
@@ -252,6 +263,42 @@ impl DatabricksV2Provider {
 
     fn is_claude_model(model_name: &str) -> bool {
         model_name.contains("claude")
+    }
+
+    fn service_or_endpoint_name(model_name: &str) -> String {
+        let name = if Self::is_model_service_fqn(model_name) {
+            model_name.rsplit('.').next().unwrap_or(model_name)
+        } else {
+            model_name
+        };
+        name.to_lowercase()
+    }
+
+    fn is_gemini_model(model_name: &str) -> bool {
+        Self::service_or_endpoint_name(model_name).contains("gemini")
+    }
+
+    /// Gemini 1.x and 2.x take a thinking budget, not a thinking level.
+    fn is_budget_thinking_gemini(model_name: &str) -> bool {
+        let name = Self::service_or_endpoint_name(model_name);
+        ["gemini-1", "gemini-2"]
+            .iter()
+            .any(|family| name.contains(family))
+    }
+
+    fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
+        if !model_config.is_reasoning_model()
+            || !(model_config.is_glm_5_3_reasoning_model()
+                || model_config.is_kimi_k3_reasoning_model())
+        {
+            return None;
+        }
+
+        Some(match model_config.thinking_effort() {
+            Some(ThinkingEffort::Off | ThinkingEffort::Low) => "low",
+            Some(ThinkingEffort::Medium | ThinkingEffort::High) => "high",
+            Some(ThinkingEffort::Max) | None => "max",
+        })
     }
 
     fn name_looks_chat_capable(name: &str) -> bool {
@@ -371,8 +418,46 @@ impl DatabricksV2Provider {
             &ImageFormat::OpenAi,
             true,
         )?;
+        // MLflow chat uses system; Gemini rejects the OpenAI developer role.
+        payload["messages"][0]["role"] = "system".into();
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
+        }
+        // The gateway copies fields it doesn't translate into Gemini's `generation_config`.
+        // Gemini rejects `stream_options` there, and the gateway doesn't translate
+        // `reasoning_effort` for every Gemini model, but it does pass `thinking_config` through.
+        // Gemini 1.x and 2.x keep `reasoning_effort` because they don't accept a thinking level.
+        if Self::is_gemini_model(&model_config.model_name) {
+            let use_thinking_level = !Self::is_budget_thinking_gemini(&model_config.model_name);
+            if let Some(object) = payload.as_object_mut() {
+                object.remove("stream_options");
+                if let Some(mut effort) = use_thinking_level
+                    .then(|| object.remove("reasoning_effort"))
+                    .flatten()
+                {
+                    // Gemini 3 Pro has no medium level; match the native Gemini formatter.
+                    if effort == "medium"
+                        && Self::service_or_endpoint_name(&model_config.model_name)
+                            .contains("gemini-3-pro")
+                    {
+                        effort = Value::String("low".to_string());
+                    }
+                    // Keep any `thinking_config` the user set in request params.
+                    let thinking = object
+                        .entry("thinking_config")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(thinking) = thinking.as_object_mut() {
+                        thinking.entry("thinking_level").or_insert(effort);
+                        // Without this the gateway stops streaming reasoning text.
+                        thinking
+                            .entry("include_thoughts")
+                            .or_insert(Value::Bool(true));
+                    }
+                }
+            }
+        }
+        if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
+            payload["reasoning_effort"] = Value::String(effort.to_string());
         }
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(model_config.max_output_tokens());
@@ -395,7 +480,71 @@ impl DatabricksV2Provider {
                 let _ = log.error(e);
             })?;
 
-        stream_openai_compat(response, log)
+        let stream = stream_openai_compat(response, log)?;
+        if Self::is_gemini_model(&model_config.model_name) {
+            return Ok(Self::with_unique_tool_call_ids(stream));
+        }
+        Ok(stream)
+    }
+
+    /// The gateway gives each Gemini tool call the function's name as its id, so two
+    /// `shell` calls, in one response or in two turns, share an id and goose loses all
+    /// but one of them. The gateway pairs tool results by whatever id we send back, so
+    /// give each call its own id.
+    fn with_unique_tool_call_ids(stream: MessageStream) -> MessageStream {
+        Box::pin(stream.map_ok(|(message, usage)| {
+            let message = message.map(|mut message| {
+                for content in &mut message.content {
+                    if let MessageContentBlock::ToolRequest(request) = content {
+                        request.id = format!("call_{}", Uuid::new_v4().simple());
+                    }
+                }
+                message
+            });
+            (message, usage)
+        }))
+    }
+
+    fn anthropic_messages_payload(
+        &self,
+        model_config: &ModelConfig,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+        drop_mismatched_thinking: bool,
+    ) -> Result<Value> {
+        let options = if drop_mismatched_thinking {
+            AnthropicFormatOptions::native()
+        } else {
+            AnthropicFormatOptions::default()
+        };
+        let mut payload = anthropic::create_request(
+            ANTHROPIC_PROVIDER_NAME,
+            model_config,
+            system,
+            messages,
+            tools,
+            options,
+        )?;
+        payload["stream"] = Value::Bool(true);
+        Ok(payload)
+    }
+
+    async fn post_anthropic_messages(
+        &self,
+        model_config: &ModelConfig,
+        payload: &Value,
+    ) -> Result<reqwest::Response, ProviderError> {
+        let beta_header = beta_header_value(&self.api_client, model_config, payload);
+        let path = self.route_path(DatabricksV2Route::AnthropicMessages);
+        self.with_retry(|| async {
+            let mut request = self.api_client.request(&path).model_headers(model_config)?;
+            if let Some(beta) = &beta_header {
+                request = request.header("anthropic-beta", beta)?;
+            }
+            handle_status(request.streaming(true).response_post(payload).await?).await
+        })
+        .await
     }
 
     async fn stream_anthropic_messages(
@@ -405,32 +554,35 @@ impl DatabricksV2Provider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = anthropic::create_request(
-            ANTHROPIC_PROVIDER_NAME,
-            model_config,
-            system,
-            messages,
-            tools,
-            AnthropicFormatOptions::default(),
-        )?;
-        payload["stream"] = Value::Bool(true);
+        let model = &model_config.model_name;
+        let binds = self.binding_models.lock().unwrap().contains(model);
+        let payload =
+            self.anthropic_messages_payload(model_config, system, messages, tools, binds)?;
         let mut log = start_log(model_config, &payload)?;
 
-        let response = self
-            .with_retry(|| async {
-                let resp = self
-                    .api_client
-                    .request(&self.route_path(DatabricksV2Route::AnthropicMessages))
-                    .model_headers(model_config)?
-                    .streaming(true)
-                    .response_post(&payload)
-                    .await?;
-                handle_status(resp).await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
+        let response = match self.post_anthropic_messages(model_config, &payload).await {
+            Err(ProviderError::RequestFailed(message))
+                if !binds && Self::is_thinking_binding_error(&message) =>
+            {
+                let retry =
+                    self.anthropic_messages_payload(model_config, system, messages, tools, true)?;
+                if block_binding_behavior(&retry) != Some(PrefixMismatchBehavior::DropBlock) {
+                    Err(ProviderError::RequestFailed(message))
+                } else {
+                    let _ = log.error(&message);
+                    log = start_log(model_config, &retry)?;
+                    self.post_anthropic_messages(model_config, &retry)
+                        .await
+                        .inspect(|_| {
+                            self.binding_models.lock().unwrap().insert(model.clone());
+                        })
+                }
+            }
+            other => other,
+        }
+        .inspect_err(|e| {
+            let _ = log.error(e);
+        })?;
 
         let stream = response.bytes_stream().map_err(io::Error::other);
 
@@ -447,6 +599,10 @@ impl DatabricksV2Provider {
                 yield (message, usage);
             }
         }))
+    }
+
+    fn is_thinking_binding_error(message: &str) -> bool {
+        message.contains("bound to a different conversation")
     }
 }
 
@@ -616,6 +772,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn always_on_effort_mapping_preserves_supported_values() {
+        for model in [
+            "catalog.schema.goose-glm-5-3",
+            "catalog.schema.goose-kimi-k3",
+        ] {
+            for (effort, expected) in [
+                (None, "max"),
+                (Some(ThinkingEffort::Off), "low"),
+                (Some(ThinkingEffort::Low), "low"),
+                (Some(ThinkingEffort::Medium), "high"),
+                (Some(ThinkingEffort::High), "high"),
+                (Some(ThinkingEffort::Max), "max"),
+            ] {
+                let mut config = ModelConfig::new(model).with_default_thinking_effort(effort);
+                assert_eq!(
+                    DatabricksV2Provider::always_on_reasoning_effort(&config),
+                    Some(expected)
+                );
+                config.reasoning = Some(false);
+                assert_eq!(
+                    DatabricksV2Provider::always_on_reasoning_effort(&config),
+                    None
+                );
+            }
+        }
+        assert_eq!(
+            DatabricksV2Provider::always_on_reasoning_effort(&ModelConfig::new(
+                "catalog.schema.custom"
+            )),
+            None
+        );
+    }
+
+    #[test]
     fn routes_known_model_families() {
         for model in [
             "databricks-gpt-5-5",
@@ -629,7 +819,12 @@ mod tests {
             );
         }
 
-        for model in ["databricks-claude-opus-4-7", "databricks-claude-sonnet-4-6"] {
+        for model in [
+            "databricks-claude-opus-4-7",
+            "databricks-claude-sonnet-4-6",
+            "catalog.schema.claude-alias",
+            "data_workflow_tools.goose.goose-claude-fable-5-1",
+        ] {
             assert_eq!(
                 DatabricksV2Provider::route_for_model(model),
                 DatabricksV2Route::AnthropicMessages,
@@ -639,10 +834,6 @@ mod tests {
 
         assert_eq!(
             DatabricksV2Provider::route_for_model("custom-model"),
-            DatabricksV2Route::MlflowChatCompletions
-        );
-        assert_eq!(
-            DatabricksV2Provider::route_for_model("catalog.schema.claude-alias"),
             DatabricksV2Route::MlflowChatCompletions
         );
     }
@@ -742,6 +933,23 @@ mod tests {
     }
 
     #[test]
+    fn detects_gemini_only_from_the_service_or_endpoint_name() {
+        for model in [
+            "catalog.schema.goose-Gemini-3-pro",
+            "databricks-gemini-3-pro",
+            "gemini-3.6-flash",
+        ] {
+            assert!(
+                DatabricksV2Provider::is_gemini_model(model),
+                "{model} is a Gemini model"
+            );
+        }
+        assert!(!DatabricksV2Provider::is_gemini_model(
+            "team.gemini.kimi-chat"
+        ));
+    }
+
+    #[test]
     fn routes_model_service_fqns_to_mlflow() {
         for model in ["team.claude.kimi-chat", "gpt-5.schema.kimi-chat"] {
             assert_eq!(
@@ -755,7 +963,7 @@ mod tests {
     mod gateway_path {
         use super::*;
         use serde_json::json;
-        use wiremock::matchers::{body_partial_json, method, path};
+        use wiremock::matchers::{body_partial_json, header, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         fn provider(host: String) -> DatabricksV2Provider {
@@ -869,6 +1077,437 @@ mod tests {
                 .complete(&ModelConfig::new(model), "system", &[], &[])
                 .await
                 .expect("GPT-6 model service should use the Responses API");
+        }
+
+        #[tokio::test]
+        async fn model_service_claude_uses_messages_route_with_cache_breakpoints() {
+            let model = "data_workflow_tools.goose.goose-claude-fable-5-1";
+            let body = concat!(
+                r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}"#,
+                "\n",
+                r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#,
+                "\n",
+                r#"data: {"type":"message_stop"}"#,
+                "\n",
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "system": [{"cache_control": {"type": "ephemeral"}}],
+                    "thinking": {"type": "adaptive", "display": "summarized"}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(
+                    &ModelConfig::new(model),
+                    "system",
+                    &[
+                        Message::user().with_text("hi"),
+                        Message::assistant().with_text("hello"),
+                        Message::user().with_text("continue"),
+                    ],
+                    &[],
+                )
+                .await
+                .expect("Claude model service should use the Anthropic Messages API");
+        }
+
+        const BINDING_ERROR: &str = r#"{"error_code":"BAD_REQUEST","message":"{\"message\":\"messages.1.content.0: Invalid `signature` in `thinking` block. The block is bound to a different conversation. Remove the block, or set `thinking.block_binding.prefix_mismatch_behavior` to \\\"drop_block\\\". That setting requires the `thinking-binding-controls-2026-08-01` value in the `anthropic-beta` header. The `system` prompt differs from the one this block was created with.\"}"}"#;
+
+        fn has_block_binding(request: &wiremock::Request) -> bool {
+            serde_json::from_slice::<Value>(&request.body)
+                .unwrap()
+                .pointer("/thinking/block_binding")
+                .is_some()
+        }
+
+        async fn complete_fable_5_2(provider: &DatabricksV2Provider) -> Result<(), ProviderError> {
+            provider
+                .complete(
+                    &ModelConfig::new("system.ai.claude-fable-5-2"),
+                    "system",
+                    &[Message::user().with_text("hi")],
+                    &[],
+                )
+                .await
+                .map(|_| ())
+        }
+
+        #[tokio::test]
+        async fn claude_drops_thinking_bound_to_another_prefix_and_remembers_the_model() {
+            let body = concat!(
+                r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}"#,
+                "\n",
+                r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#,
+                "\n",
+                r#"data: {"type":"message_stop"}"#,
+                "\n",
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .and(|request: &wiremock::Request| !has_block_binding(request))
+                .respond_with(ResponseTemplate::new(400).set_body_string(BINDING_ERROR))
+                .expect(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .and(header(
+                    "anthropic-beta",
+                    "thinking-binding-controls-2026-08-01",
+                ))
+                .and(body_partial_json(json!({
+                    "thinking": {"block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(2)
+                .mount(&server)
+                .await;
+
+            let provider = provider(server.uri());
+            complete_fable_5_2(&provider)
+                .await
+                .expect("the binding error should be retried with drop_block");
+            complete_fable_5_2(&provider)
+                .await
+                .expect("later requests should send drop_block up front");
+        }
+
+        #[tokio::test]
+        async fn claude_does_not_retry_other_bad_requests() {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .respond_with(ResponseTemplate::new(400).set_body_string(
+                    r#"{"message":"messages.1.content.0: Invalid `signature` in `thinking` block."}"#,
+                ))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let error = complete_fable_5_2(&provider(server.uri()))
+                .await
+                .unwrap_err();
+            assert!(matches!(error, ProviderError::RequestFailed(_)), "{error}");
+        }
+
+        #[test_case::test_case("catalog.schema.goose-glm-5-3" ; "glm 5.3")]
+        #[test_case::test_case("catalog.schema.goose-kimi-k3" ; "kimi k3")]
+        #[tokio::test]
+        async fn model_service_forwards_reasoning_effort(model: &str) {
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "reasoning_effort": "high"
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(
+                    &ModelConfig::new(model).with_thinking_effort(ThinkingEffort::High),
+                    "system",
+                    &[],
+                    &[],
+                )
+                .await
+                .expect("model service should receive reasoning effort");
+        }
+
+        #[test_case::test_case("catalog.schema.goose-gemini-3-pro" ; "model service")]
+        #[test_case::test_case("databricks-gemini-3-pro" ; "serving endpoint")]
+        #[tokio::test]
+        async fn gemini_omits_stream_options_and_keeps_usage(model: &str) {
+            let delta = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{"content":"Hello"}},"finish_reason":null}}]}}"#
+            );
+            let last = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}}}"#
+            );
+            let body = format!("{delta}\n\n{last}\n\ndata: [DONE]\n\n");
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({"model": model, "stream": true})))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let (message, usage) = provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("Gemini should stream without stream_options");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("stream_options").is_none());
+            assert_eq!(message.as_concat_text(), "Hello");
+            assert_eq!(usage.usage.input_tokens, Some(7));
+            assert_eq!(usage.usage.output_tokens, Some(2));
+            assert_eq!(usage.usage.total_tokens, Some(9));
+        }
+
+        #[tokio::test]
+        async fn gemini_sends_thinking_level_instead_of_reasoning_effort() {
+            let model = "system.ai.gemini-4-argon";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "thinking_config": {"thinking_level": "high", "include_thoughts": true}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model).with_thinking_effort(ThinkingEffort::High);
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should receive a thinking level");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("reasoning_effort").is_none());
+        }
+
+        #[test_case::test_case("system.ai.gemini-3-pro", "low" ; "gemini 3 pro")]
+        #[test_case::test_case("system.ai.gemini-3-1-pro", "medium" ; "gemini 3.1 pro")]
+        #[tokio::test]
+        async fn gemini_medium_effort_thinking_level(model: &str, level: &str) {
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model).with_thinking_effort(ThinkingEffort::Medium);
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should receive a thinking level");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(request["thinking_config"]["thinking_level"], json!(level));
+        }
+
+        #[tokio::test]
+        async fn gemini_2_5_keeps_reasoning_effort() {
+            let model = "system.ai.gemini-2-5-flash";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "reasoning_effort": "high"
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model).with_thinking_effort(ThinkingEffort::High);
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini 2.5 should keep reasoning effort");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("thinking_config").is_none());
+            assert!(request.get("stream_options").is_none());
+        }
+
+        #[tokio::test]
+        async fn gemini_thinking_level_keeps_user_thinking_config() {
+            let model = "system.ai.gemini-4-argon";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model)
+                .with_thinking_effort(ThinkingEffort::High)
+                .with_merged_request_params(std::collections::HashMap::from([(
+                    "thinking_config".to_string(),
+                    json!({"include_thoughts": false}),
+                )]));
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should keep the user's thinking config");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(
+                request["thinking_config"],
+                json!({"include_thoughts": false, "thinking_level": "high"})
+            );
+            assert!(request.get("reasoning_effort").is_none());
+        }
+
+        #[test_case::test_case("system.ai.gemini-4-carbon", true ; "gemini")]
+        #[test_case::test_case("catalog.schema.goose-glm-5-3", false ; "not gemini")]
+        #[tokio::test]
+        async fn gemini_tool_calls_get_unique_ids(model: &str, rewritten: bool) {
+            // The gateway names each Gemini tool call after its function.
+            let call = |index: u32, command: &str, signature: &str| {
+                format!(
+                    r#"data: {{"model":"{model}","choices":[{{"delta":{{"role":"assistant","content":null,"tool_calls":[{{{signature}"id":"shell","function":{{"name":"shell","arguments":"{{\"command\":\"{command}\"}}"}},"type":"function","index":{index}}}]}},"finish_reason":null}}]}}"#
+                )
+            };
+            let last = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{"role":"assistant","content":null}},"finish_reason":"stop"}}]}}"#
+            );
+            let body = format!(
+                "{}\n\n{}\n\n{last}\n\ndata: [DONE]\n\n",
+                call(0, "echo a", r#""thoughtSignature":"sig_a","#),
+                call(1, "echo b", "")
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let (message, _) = provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("tool calls should stream");
+
+            let requests: Vec<_> = message
+                .content
+                .iter()
+                .filter_map(|content| content.as_tool_request())
+                .collect();
+            assert_eq!(requests.len(), 2);
+            let commands: Vec<_> = requests
+                .iter()
+                .map(|request| {
+                    request
+                        .tool_call
+                        .as_ref()
+                        .unwrap()
+                        .arguments
+                        .as_ref()
+                        .unwrap()["command"]
+                        .clone()
+                })
+                .collect();
+            assert_eq!(commands, vec![json!("echo a"), json!("echo b")]);
+            assert_eq!(
+                requests[0].metadata.as_ref().unwrap()["thoughtSignature"],
+                "sig_a"
+            );
+            if rewritten {
+                assert_ne!(requests[0].id, requests[1].id);
+                assert!(requests.iter().all(|request| request.id != "shell"));
+            } else {
+                assert!(requests.iter().all(|request| request.id == "shell"));
+            }
+        }
+
+        #[tokio::test]
+        async fn non_gemini_model_service_keeps_stream_options() {
+            let model = "catalog.schema.goose-kimi-k3";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "stream_options": {"include_usage": true}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("non-Gemini model service should keep stream_options");
         }
 
         #[tokio::test]

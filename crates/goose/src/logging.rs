@@ -1,7 +1,7 @@
 use crate::config::paths::Paths;
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use tracing_appender::rolling::Rotation;
 use tracing_subscriber::{
@@ -126,10 +126,111 @@ pub fn prepare_log_directory(component: &str, use_date_subdir: bool) -> Result<P
         component_dir
     };
 
-    fs::create_dir_all(&log_dir)
+    create_log_dir(&log_dir)
         .with_context(|| format!("Failed to create log directory: {:?}", log_dir))?;
 
     Ok(log_dir)
+}
+
+#[cfg(unix)]
+fn create_log_dir(log_dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    // Component logs keep working on layouts that the request log refuses.
+    let _ = open_private_log_dir();
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(log_dir)
+}
+
+#[cfg(not(unix))]
+fn create_log_dir(log_dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(log_dir)
+}
+
+/// Creates the base log directory as 0700 if it is missing, then opens it without
+/// following symlinks, checks that the current user owns it and narrows it to 0700.
+/// Request logs hold full prompts, so they are created relative to this handle.
+#[cfg(unix)]
+pub(crate) fn open_private_log_dir() -> Result<fs::File> {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+
+    let log_dir = Paths::in_state_dir("logs");
+    if let Some(parent) = log_dir.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::DirBuilder::new().mode(0o700).create(&log_dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => {
+            return Err(error)
+                .with_context(|| format!("Failed to create log directory {}", log_dir.display()));
+        }
+        _ => {}
+    }
+    let metadata = fs::symlink_metadata(&log_dir)?;
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!("Log directory {} is a symbolic link", log_dir.display());
+    }
+    // The umask can remove owner bits from the creation mode, and the directory
+    // has to be readable before it can be opened.
+    if metadata.is_dir() && metadata.permissions().mode() & 0o700 != 0o700 {
+        check_log_dir_owner(&metadata, &log_dir, current_uid())?;
+        let path = std::ffi::CString::new(log_dir.as_os_str().as_bytes())?;
+        chmod_no_follow(libc::AT_FDCWD, &path, 0o700).with_context(|| {
+            format!(
+                "Failed to change the mode of log directory {}",
+                log_dir.display()
+            )
+        })?;
+    }
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(&log_dir)
+        .with_context(|| format!("Failed to open log directory {}", log_dir.display()))?;
+    let opened = directory.metadata()?;
+    if (opened.dev(), opened.ino()) != (metadata.dev(), metadata.ino()) {
+        anyhow::bail!(
+            "Log directory {} changed while it was being opened",
+            log_dir.display()
+        );
+    }
+    check_log_dir_owner(&opened, &log_dir, current_uid())?;
+    if opened.permissions().mode() & 0o777 != 0o700 {
+        directory.set_permissions(fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(directory)
+}
+
+/// Changes the mode of `name` relative to `dir`, but fails instead of following a
+/// symlink, so a path that was swapped after it was checked cannot redirect it.
+#[cfg(unix)]
+pub(crate) fn chmod_no_follow(
+    dir: libc::c_int,
+    name: &std::ffi::CStr,
+    mode: libc::mode_t,
+) -> std::io::Result<()> {
+    if unsafe { libc::fchmodat(dir, name.as_ptr(), mode, libc::AT_SYMLINK_NOFOLLOW) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn current_uid() -> u32 {
+    unsafe { libc::geteuid() }
+}
+
+#[cfg(unix)]
+fn check_log_dir_owner(metadata: &fs::Metadata, path: &Path, owner: u32) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    if metadata.uid() != owner {
+        anyhow::bail!("Log directory {} is owned by another user", path.display());
+    }
+    Ok(())
 }
 
 pub fn cleanup_old_logs(component: &str) -> Result<()> {
@@ -268,5 +369,38 @@ mod tests {
                 assert_ne!(created_dirs[i], created_dirs[j]);
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn log_directory_owned_by_another_user_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = fs::metadata(dir.path()).unwrap();
+
+        assert!(check_log_dir_owner(&metadata, dir.path(), current_uid()).is_ok());
+        let error = check_log_dir_owner(&metadata, dir.path(), current_uid() + 1).unwrap_err();
+        assert!(error.to_string().contains("owned by another user"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn chmod_no_follow_leaves_a_symlink_target_alone() {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        fs::write(&target, "outside").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.path().join("link");
+        symlink(&target, &link).unwrap();
+
+        let link = std::ffi::CString::new(link.as_os_str().as_bytes()).unwrap();
+        let _ = chmod_no_follow(libc::AT_FDCWD, &link, 0o700);
+
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
     }
 }

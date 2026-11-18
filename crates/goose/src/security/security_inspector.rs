@@ -18,13 +18,6 @@ impl SecurityInspector {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn enabled() -> Self {
-        Self {
-            security_manager: SecurityManager::enabled(),
-        }
-    }
-
     /// Convert SecurityResult to InspectionResult
     fn convert_security_result(
         &self,

@@ -1,20 +1,21 @@
-pub mod edit;
+mod edit;
 pub mod image;
 pub mod shell;
 mod shell_output_streaming;
+mod shell_process;
 pub mod tree;
 
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
+use goose_agent::mcp::client::Error;
 use image::{ImageReadParams, ImageTool};
 use indoc::indoc;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListToolsResult, ServerCapabilities, TextContent, Tool, ToolAnnotations,
+    ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde_json::Value;
@@ -74,14 +75,14 @@ fn developer_instructions() -> &'static str {
 }
 
 impl DeveloperClient {
-    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Developer"))
             .with_instructions(developer_instructions());
 
         Ok(Self {
             info,
-            shell_tool: Arc::new(ShellTool::new(context.use_login_shell_path)?),
+            shell_tool: Arc::new(ShellTool::new()?),
             edit_tools: Arc::new(EditTools::new()),
             tree_tool: Arc::new(TreeTool::new()),
             image_tool: Arc::new(ImageTool::new()),
@@ -96,7 +97,7 @@ impl DeveloperClient {
             .clone()
     }
 
-    pub fn parse_args<T: serde::de::DeserializeOwned>(
+    fn parse_args<T: serde::de::DeserializeOwned>(
         arguments: Option<JsonObject>,
     ) -> Result<T, String> {
         let value = arguments
@@ -159,7 +160,10 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "tree".to_string(),
-                "List a directory tree with line counts. Traversal respects .gitignore rules.".to_string(),
+                "List a directory tree with line counts. Traversal respects .gitignore rules. \
+                 Cloud-storage placeholders that are not downloaded to this machine are listed \
+                 by size instead of being read."
+                    .to_string(),
                 Self::schema::<TreeParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
@@ -171,7 +175,7 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "read_image".to_string(),
-                "Read an image from a local file path or http(s) URL and return it as image content for the model to inspect. Supports png, jpeg, gif, and webp.".to_string(),
+                "Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).".to_string(),
                 Self::schema::<ImageReadParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
@@ -186,19 +190,9 @@ impl DeveloperClient {
 }
 
 #[async_trait]
-impl McpClientTrait for DeveloperClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+impl PlatformExtension for DeveloperClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(
@@ -264,7 +258,6 @@ impl McpClientTrait for DeveloperClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionManager;
     use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;
@@ -291,14 +284,17 @@ mod tests {
         assert_eq!(annotations.open_world_hint, Some(true));
     }
 
-    fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {
-        PlatformExtensionContext {
-            extension_manager: None,
-            session_manager: Arc::new(SessionManager::new(data_dir)),
-            scheduler: None,
-            session: None,
-            use_login_shell_path: false,
-        }
+    #[test]
+    fn read_image_description_identifies_its_image_only_purpose() {
+        let read_image = DeveloperClient::get_tools()
+            .into_iter()
+            .find(|tool| tool.name == "read_image")
+            .unwrap();
+
+        assert_eq!(
+            read_image.description.as_deref(),
+            Some("Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).")
+        );
     }
 
     fn first_text(result: &CallToolResult) -> &str {
@@ -311,7 +307,7 @@ mod tests {
     #[tokio::test]
     async fn developer_client_uses_working_dir_for_file_tools() {
         let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
 
@@ -357,8 +353,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn developer_client_passes_session_id_to_shell_tool() {
-        let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let ctx = ToolCallContext::new("session-789".to_owned(), None, None);
 
         let result = client
@@ -379,9 +374,31 @@ mod tests {
 
     #[cfg(not(windows))]
     #[tokio::test]
+    async fn developer_client_sets_agent_environment_for_shell_tool() {
+        let client = DeveloperClient::new().unwrap();
+        let ctx = ToolCallContext::new("session".to_owned(), None, None);
+
+        let result = client
+            .call_tool(
+                &ctx,
+                "shell",
+                Some(object!({
+                    "command": "printf '%s %s' \"$AGENT\" \"$GOOSE_TERMINAL\""
+                })),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(first_text(&result), "goose 1");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
     async fn developer_client_uses_working_dir_for_shell_tool() {
         let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
 

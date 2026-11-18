@@ -139,7 +139,7 @@ pub fn convert(content: &str) -> Result<String> {
             let stub = ResponsesApiResponse {
                 id: session_id.clone(),
                 object: "response".to_string(),
-                created_at: created,
+                created_at: created as f64,
                 status: "completed".to_string(),
                 model: String::new(),
                 output: vec![item],
@@ -253,14 +253,11 @@ pub fn convert(content: &str) -> Result<String> {
         created_at,
         updated_at,
         usage: Usage::new(
-            (total_input > 0).then_some(total_input as i32),
-            (total_output > 0).then_some(total_output as i32),
+            (total_input > 0).then_some(total_input),
+            (total_output > 0).then_some(total_output),
             None,
         )
-        .with_cache_tokens(
-            (total_cache_read > 0).then_some(total_cache_read as i32),
-            None,
-        ),
+        .with_cache_tokens((total_cache_read > 0).then_some(total_cache_read), None),
         accumulated_cost: None,
         conversation,
     });

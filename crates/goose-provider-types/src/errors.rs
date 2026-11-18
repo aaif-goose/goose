@@ -84,6 +84,26 @@ impl ProviderError {
         }
     }
 
+    /// Mutable access to the detail text, for annotating an error after it was built.
+    pub fn details_mut(&mut self) -> Option<&mut String> {
+        match self {
+            ProviderError::NotConfigured => None,
+            ProviderError::Authentication(details)
+            | ProviderError::ContextLengthExceeded(details)
+            | ProviderError::ServerError(details)
+            | ProviderError::NetworkError(details)
+            | ProviderError::RequestFailed(details)
+            | ProviderError::InvalidValue(details)
+            | ProviderError::ExecutionError(details)
+            | ProviderError::UsageError(details)
+            | ProviderError::NotImplemented(details)
+            | ProviderError::EndpointNotFound(details) => Some(details),
+            ProviderError::RateLimitExceeded { details, .. }
+            | ProviderError::CreditsExhausted { details, .. }
+            | ProviderError::Refusal { details, .. } => Some(details),
+        }
+    }
+
     pub fn is_endpoint_not_found(&self) -> bool {
         matches!(self, ProviderError::EndpointNotFound(_))
     }
@@ -98,8 +118,19 @@ impl ProviderError {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn is_connect_error(error: &reqwest::Error) -> bool {
+    error.is_connect()
+}
+
+// reqwest's wasm client does not expose is_connect
+#[cfg(target_arch = "wasm32")]
+fn is_connect_error(_error: &reqwest::Error) -> bool {
+    false
+}
+
 fn is_network_error(err: &reqwest::Error) -> bool {
-    err.is_connect() || err.is_timeout() || (err.status().is_none() && err.is_request())
+    is_connect_error(err) || err.is_timeout() || (err.status().is_none() && err.is_request())
 }
 
 fn sanitized_reqwest_url(error: &reqwest::Error) -> Option<String> {
@@ -131,7 +162,7 @@ fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
     if is_network_error(error) {
         let msg = if error.is_timeout() {
             "Request timed out — check your network connection and try again.".to_string()
-        } else if error.is_connect() {
+        } else if is_connect_error(error) {
             if let Some(url) = error.url() {
                 if let Some(host) = url.host_str() {
                     let port_info = url.port().map(|p| format!(":{}", p)).unwrap_or_default();

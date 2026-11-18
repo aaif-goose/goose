@@ -24,11 +24,17 @@ version_group = "gdk"
 name = "goose-local-inference"
 release = true
 version_group = "gdk"
+# cargo-semver-checks builds with --all-features, which turns on cuda/vulkan and
+# requires a CUDA Toolkit the release runner doesn't have.
+semver_check = false
 
 [[package]]
 name = "goose-providers"
 release = true
 version_group = "gdk"
+# Same as goose-local-inference: --all-features pulls in the cuda/vulkan
+# accelerator features through the optional local-inference dependency.
+semver_check = false
 
 [[package]]
 name = "goose-agent"

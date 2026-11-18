@@ -96,18 +96,18 @@ Beyond prompt injection detection, goose automatically:
 
 ### Configuring Detection Threshold
 
-The threshold (0.01-1.0) controls how strict detection is:
+The threshold (0.01-1.0) controls how strict detection is. A tool call is flagged when its confidence score is at or above the threshold, so **lower values are more sensitive** and flag more aggressively:
 
 | Threshold | Sensitivity | Use When |
 |-----------|------------|----------|
-| **0.01-0.50** | Very lenient | You're experienced and understand the risks |
-| **0.50-0.70** | Balanced | General development work (good default) |
-| **0.70-0.90** | Strict | Working with sensitive data or systems |
-| **0.90-1.00** | Maximum | High-security environments |
+| **0.01-0.30** | Maximum | High-security environments |
+| **0.30-0.60** | Strict | Working with sensitive data or systems |
+| **0.60-0.80** | Balanced | General development work (good default) |
+| **0.80-1.00** | Very lenient | You're experienced and understand the risks |
 
 When the injection prompt detection feature is enabled, the default threshold is 0.8 (recommended for most users).
 
-Lower thresholds mean fewer alerts but might miss threats. Higher thresholds catch more potential issues but may flag legitimate operations. You can control this sensitivity/convenience tradeoff based on your needs.
+Lower thresholds catch more potential issues but may flag legitimate operations. Higher thresholds mean fewer alerts but might miss threats. You can control this sensitivity/convenience tradeoff based on your needs.
 
 ## Enhanced Detection with Machine Learning
 

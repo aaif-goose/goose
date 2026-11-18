@@ -2,19 +2,23 @@ use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
-use goose::agents::GoosePlatform;
+use goose::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
+#[cfg(feature = "bundled-mcp")]
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
+#[cfg(feature = "acp-http")]
 use goose::source_roots::SourceRoot;
+#[cfg(feature = "bundled-mcp")]
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
+#[cfg(feature = "bundled-mcp")]
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
-use crate::commands::configure::handle_configure;
+use crate::commands::configure::{configure_provider_dialog, handle_configure};
 use crate::commands::info::handle_info;
 use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
@@ -24,23 +28,28 @@ use crate::commands::term::{
     handle_term_info, handle_term_init, handle_term_log, handle_term_run, Shell,
 };
 
+#[cfg(feature = "scheduler")]
 use crate::commands::schedule::{
     handle_schedule_add, handle_schedule_cron_help, handle_schedule_list, handle_schedule_remove,
     handle_schedule_run_now, handle_schedule_services_status, handle_schedule_services_stop,
     handle_schedule_sessions,
 };
-use crate::commands::session::{handle_session_list, handle_session_remove};
+use crate::commands::session::{handle_session_list, handle_session_remove, handle_session_rename};
 use crate::commands::skills::handle_skills_list;
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
-use crate::session::{build_session, SessionBuilderConfig};
+use crate::session::{
+    build_session, is_provider_unavailable_error, try_build_session, SessionBuilderConfig,
+};
 use goose::agents::Container;
 use goose::session::session_manager::SessionType;
 use goose::session::SessionManager;
 use std::io::Read;
 use std::path::PathBuf;
+#[cfg(feature = "acp-http")]
 const GOOSE_SERVER_SECRET_KEY_ENV: &str = "GOOSE_SERVER__SECRET_KEY";
 
+#[cfg(feature = "acp-http")]
 fn generate_serve_secret_key() -> String {
     use rand::distr::{Alphanumeric, SampleString};
 
@@ -564,36 +573,17 @@ enum SessionCommand {
         #[arg(
             long = "format",
             value_name = "FORMAT",
-            help = "Output format (markdown, json, yaml)",
+            help = "Output format (markdown, json, yaml, html)",
             default_value = "markdown"
         )]
         format: String,
-
-        #[arg(
-            long = "nostr",
-            help = "Publish the JSON session export as an encrypted Nostr event and print a Goose share link"
-        )]
-        nostr: bool,
-
-        #[arg(
-            long = "relay",
-            value_name = "RELAY",
-            help = "Nostr relay URL to publish to (can be specified multiple times)",
-            action = clap::ArgAction::Append
-        )]
-        relays: Vec<String>,
     },
-    #[command(
-        about = "Import a session from JSON, a Claude Code / Codex / Pi .jsonl, or an encrypted Nostr share link"
-    )]
+    #[command(about = "Import a session from JSON or a Claude Code / Codex / Pi .jsonl")]
     Import {
         #[arg(
-            help = "Path to a goose session export, a Claude Code, Codex, or Pi .jsonl transcript, or a goose://sessions/nostr share link"
+            help = "Path to a goose session export, or a Claude Code, Codex, or Pi .jsonl transcript"
         )]
         input: String,
-
-        #[arg(long = "nostr", help = "Treat input as an encrypted Nostr share link")]
-        nostr: bool,
     },
     #[command(name = "diagnostics")]
     Diagnostics {
@@ -603,8 +593,22 @@ enum SessionCommand {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
     },
+    #[command(about = "Rename a session")]
+    Rename {
+        #[arg(
+            long = "session-id",
+            alias = "id",
+            value_name = "SESSION_ID",
+            help = "Session ID to rename (e.g., '20250921_143022'). If omitted, prompts interactively."
+        )]
+        session_id: Option<String>,
+
+        #[arg(short = 'n', long = "new-name", help = "New name for the session")]
+        new_name: String,
+    },
 }
 
+#[cfg(feature = "scheduler")]
 #[derive(Subcommand, Debug)]
 enum SchedulerCommand {
     #[command(about = "Add a new scheduled job")]
@@ -834,6 +838,7 @@ enum Command {
     Doctor {},
 
     /// Manage system prompts and behaviors
+    #[cfg(feature = "bundled-mcp")]
     #[command(about = "Run one of the mcp servers bundled with goose")]
     Mcp {
         #[arg(value_parser = clap::value_parser!(McpCommand))]
@@ -866,6 +871,7 @@ enum Command {
     },
 
     /// Start ACP server over HTTP and WebSocket
+    #[cfg(feature = "acp-http")]
     #[command(about = "Start ACP server over HTTP and WebSocket")]
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -1035,6 +1041,7 @@ enum Command {
     },
 
     /// Manage scheduled jobs
+    #[cfg(feature = "scheduler")]
     #[command(about = "Manage scheduled jobs", visible_alias = "sched")]
     Schedule {
         #[command(subcommand)]
@@ -1107,105 +1114,6 @@ enum Command {
         bin_name: String,
     },
 
-    /// Local code review.
-    ///
-    /// Discovers `**/.agents/checks/*.md` subagent reviewers and
-    /// `**/.agents/REVIEW.md` scoped prompt overrides, builds a review
-    /// request from the working tree (or an explicit diff range), and
-    /// runs the review through goose.
-    #[command(about = "Review the current diff using goose")]
-    Review {
-        /// Diff range to review (e.g. "main...HEAD"). Defaults to the working
-        /// tree vs HEAD.
-        #[arg(value_name = "RANGE")]
-        range: Option<String>,
-
-        /// Path to a Markdown file with a custom base review prompt. Replaces
-        /// the embedded default prompt.
-        #[arg(long = "prompt", value_name = "FILE")]
-        prompt: Option<PathBuf>,
-
-        /// Default model used for the main review agent and for any check
-        /// that does not declare its own `model:` in frontmatter.
-        #[arg(long = "model", value_name = "MODEL")]
-        model: Option<String>,
-
-        /// Provider for the main review agent.
-        #[arg(long = "provider", value_name = "PROVIDER")]
-        provider: Option<String>,
-
-        /// Force every discovered check to use this model, regardless of
-        /// the check's own `model:` field.
-        #[arg(long = "override-model", value_name = "MODEL")]
-        override_model: Option<String>,
-
-        /// Default `turn-limit` for orchestrated main-pass subprocesses and
-        /// for checks that do not declare their own. Does not cap the legacy
-        /// `--no-orchestrate` in-process main agent.
-        #[arg(long = "turn-limit", value_name = "N")]
-        turn_limit: Option<usize>,
-
-        /// Print the assembled review prompt and discovered checks instead of
-        /// running the review.
-        #[arg(long = "dry-run")]
-        dry_run: bool,
-
-        /// Suppress non-result output from the underlying agent.
-        #[arg(long, short = 'q')]
-        quiet: bool,
-
-        /// Disable the Rust-driven parallel orchestrator and fall back to
-        /// the single-prompt path that asks the main agent to delegate
-        /// each check via `delegate(... async: true ...)`. The default
-        /// orchestrator dispatches one `goose run` subprocess per check
-        /// (capped at 4 concurrent), bounding wall-clock to the slowest
-        /// single check rather than waiting on the model to issue
-        /// dispatches.
-        /// Checks with an explicit tool allowlist require the default orchestrator.
-        #[arg(long = "no-orchestrate")]
-        no_orchestrate: bool,
-
-        /// Additional free-form instructions to prepend to the review
-        /// (e.g. PR intent, commit-message context, "this is a refactor,
-        /// flag any behavior change"). Mirrors `amp review --instructions`
-        /// for drop-in compatibility with existing reviewer wrappers.
-        #[arg(long = "instructions", short = 'i', value_name = "TEXT")]
-        instructions: Option<String>,
-
-        /// Restrict the review to a specific set of files. Other files in
-        /// the diff are still passed to the agent for context but are
-        /// excluded from the assembled diff sent to checks. Mirrors
-        /// `amp review --files`.
-        #[arg(long = "files", short = 'f', value_name = "FILE", num_args = 1..)]
-        files: Vec<String>,
-
-        /// Only run checks whose `name` matches one of these. Other
-        /// discovered checks are skipped. Mirrors `amp review --check-filter`.
-        #[arg(long = "check-filter", short = 'c', value_name = "NAME", num_args = 1..)]
-        check_filter: Vec<String>,
-
-        /// Alternate directory to search for `.agents/checks/*.md` instead
-        /// of the repo root. Mirrors `amp review --check-scope`.
-        #[arg(long = "check-scope", short = 's', value_name = "DIR")]
-        check_scope: Option<PathBuf>,
-
-        /// Skip the main correctness pass and only run check subagents.
-        /// Mirrors `amp review --checks-only`.
-        #[arg(long = "checks-only")]
-        checks_only: bool,
-
-        /// Print only the diff summary; skip the full review.
-        /// Mirrors `amp review --summary-only`.
-        #[arg(long = "summary-only")]
-        summary_only: bool,
-
-        /// Minimum severity to display. Findings below this rank are
-        /// dropped from the output. Default is `medium`, matching
-        /// Amp's CLI which hides `low` from review output. Pass
-        /// `--severity low` to surface every finding.
-        #[arg(long = "severity", value_name = "LEVEL", default_value = "medium")]
-        severity: String,
-    },
     #[command(
         name = "validate-extensions",
         about = "Validate a bundled-extensions.json file",
@@ -1320,6 +1228,17 @@ enum TermCommand {
             long_help = "When enabled, anything you type that isn't a valid command will be sent to goose. Supported for zsh, bash, and nu."
         )]
         default: bool,
+
+        /// Record recent shell commands as context for @goose
+        #[arg(
+            long = "dangerous-include-history",
+            help = "Record recent shell commands as context for @goose",
+            long_help = "When enabled, goose records recent shell commands and includes them as \
+                         context when you ask @goose a question.\n\n\
+                         WARNING: command lines can contain credentials and other sensitive data, \
+                         which will be sent to the configured model provider."
+        )]
+        include_history: bool,
     },
 
     /// Log a shell command (called by shell hook)
@@ -1396,14 +1315,17 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Configure {}) => "configure",
         Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
+        #[cfg(feature = "bundled-mcp")]
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
         #[cfg(feature = "roaming")]
         Some(Command::Roam { .. }) => "roam",
+        #[cfg(feature = "acp-http")]
         Some(Command::Serve { .. }) => "serve",
         Some(Command::Session { .. }) => "session",
         Some(Command::Run { .. }) => "run",
         Some(Command::Gateway { .. }) => "gateway",
+        #[cfg(feature = "scheduler")]
         Some(Command::Schedule { .. }) => "schedule",
         #[cfg(feature = "update")]
         Some(Command::Update { .. }) => "update",
@@ -1414,7 +1336,6 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
-        Some(Command::Review { .. }) => "review",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
         Some(Command::McpProbe { .. }) => "mcp-probe",
         None => "default_session",
@@ -1455,7 +1376,8 @@ enum McpProbeElicitation {
 }
 
 async fn handle_mcp_probe(extension_command: String, script_path: Option<String>) -> Result<()> {
-    use goose::agents::{Agent, AgentConfig, ToolCallContext};
+    use goose::agents::extension_manager::CallRequest;
+    use goose::agents::{StateMachineServices, StateMachineServicesConfig};
     use goose::config::ExtensionConfig;
     use rmcp::model::{ElicitRequestParams, ElicitResult, ElicitationAction};
     use tokio_util::sync::CancellationToken;
@@ -1493,7 +1415,13 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         crate::session::CliSession::parse_stdio_extension(&extension_command)?
     };
     match &mut extension {
-        ExtensionConfig::Stdio { name, .. } | ExtensionConfig::StreamableHttp { name, .. } => {
+        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            name, ..
+        })
+        | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            name,
+            ..
+        }) => {
             *name = "probe".to_string();
         }
         _ => unreachable!("MCP probe only creates stdio or streamable HTTP extensions"),
@@ -1510,21 +1438,15 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     }
 
     let config = goose::config::Config::global();
-    let mut agent_config = AgentConfig::new(
-        std::sync::Arc::new(SessionManager::instance()),
-        goose::config::permission::PermissionManager::instance(),
-        None,
-        config.get_goose_mode().unwrap_or_default(),
-        true,
-        GoosePlatform::GooseCli,
-    );
+    let mut services_config = StateMachineServicesConfig::cli();
+    services_config.disable_session_naming = true;
     if let Some(protocol_version) = script.protocol_version.as_deref() {
-        agent_config.mcp_protocol_version = Some(serde_json::from_value(
+        services_config.mcp_protocol_version = Some(serde_json::from_value(
             serde_json::Value::String(protocol_version.to_string()),
         )?);
     }
     if let Some(action) = script.elicitation.clone() {
-        agent_config.elicitation_handler =
+        services_config.elicitation_handler =
             Some(std::sync::Arc::new(move |request| match &action {
                 McpProbeElicitation::Accept { content } => {
                     ElicitResult::new(ElicitationAction::Accept).with_content(content.clone())
@@ -1555,61 +1477,53 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
                 McpProbeElicitation::Cancel => ElicitResult::new(ElicitationAction::Cancel),
             }));
     }
-    let agent = Agent::with_config(agent_config);
-    let session = agent
-        .config
+    let services = StateMachineServices::with_config(services_config);
+    let session = services
         .session_manager
         .create_session(
             std::env::current_dir()?,
             "MCP Probe".to_string(),
             goose::session::session_manager::SessionType::Hidden,
-            agent.config.goose_mode,
+            config.get_goose_mode().unwrap_or_default(),
         )
         .await?;
     let session_id = session.id.as_str();
-    agent.add_extension(extension, session_id).await?;
+    services.enable_extension(session_id, extension).await?;
 
     let mut results = Vec::new();
     for step in script.steps {
+        let lease = services.current_tools(session_id).await?;
         let result = match step {
             McpProbeStep::ListTools => serde_json::json!({
                 "action": "listTools",
-                "result": agent.extension_manager.list_tools_from_extension(
-                    session_id,
+                "result": lease.list_tools_from_extension(
                     "probe",
                     CancellationToken::new(),
                 ).await?,
             }),
             McpProbeStep::ListPrompts => serde_json::json!({
                 "action": "listPrompts",
-                "result": agent.extension_manager.list_prompts_from_extension(
-                    session_id,
+                "result": lease.mcp.list_prompts_from_extension(
                     "probe",
                     CancellationToken::new(),
                 ).await?,
             }),
             McpProbeStep::ListResources => serde_json::json!({
                 "action": "listResources",
-                "result": agent.extension_manager.list_resources_result_from_extension(
-                    session_id,
+                "result": lease.list_resources_result_from_extension(
                     "probe",
                     CancellationToken::new(),
                 ).await?,
             }),
             McpProbeStep::CallTool { name, arguments } => {
                 let scoped_name = format!("probe__{name}");
-                let ctx = ToolCallContext::new(
-                    session_id.to_string(),
-                    Some(std::env::current_dir()?),
-                    Some("mcp-probe-tool-call".to_string()),
-                );
-                let result = agent
-                    .extension_manager
-                    .dispatch_tool_call(
-                        &ctx,
+                let result = lease
+                    .call(
                         rmcp::model::CallToolRequestParams::new(scoped_name)
                             .with_arguments(arguments),
+                        CallRequest::new("mcp-probe-tool-call"),
                         CancellationToken::new(),
+                        &services,
                     )
                     .await?
                     .result
@@ -1626,6 +1540,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     Ok(())
 }
 
+#[cfg(feature = "bundled-mcp")]
 async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     let name = server.name();
     let _ = crate::logging::setup_logging(Some(&format!("mcp-{name}")));
@@ -1638,6 +1553,7 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "acp-http")]
 struct ServeCommandArgs {
     host: String,
 
@@ -1773,6 +1689,7 @@ async fn start_roam_share(
     Ok(node)
 }
 
+#[cfg(feature = "acp-http")]
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     use axum::http::HeaderValue;
     use goose::acp::server::AcpBuiltinSelection;
@@ -1814,7 +1731,6 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
-        data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         goose_platform: platform.into(),
         additional_source_roots,
@@ -1947,8 +1863,6 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             identifier,
             output,
             format,
-            nostr,
-            relays,
         } => {
             let session_manager = SessionManager::instance();
             let session_identifier = if let Some(id) = identifier {
@@ -1966,17 +1880,11 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                     }
                 }
             };
-            crate::commands::session::handle_session_export(
-                session_identifier,
-                output,
-                format,
-                nostr,
-                relays,
-            )
-            .await?;
+            crate::commands::session::handle_session_export(session_identifier, output, format)
+                .await?;
         }
-        SessionCommand::Import { input, nostr } => {
-            crate::commands::session::handle_session_import(input, nostr).await?;
+        SessionCommand::Import { input } => {
+            crate::commands::session::handle_session_import(input).await?;
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
@@ -1996,6 +1904,28 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                 }
             };
             crate::commands::session::handle_diagnostics(&session_id, output).await?;
+        }
+        SessionCommand::Rename {
+            session_id,
+            new_name,
+        } => {
+            let session_manager = SessionManager::instance();
+            let session_id = if let Some(id) = session_id {
+                id
+            } else {
+                match crate::commands::session::prompt_interactive_session_selection(
+                    &session_manager,
+                )
+                .await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        return Ok(());
+                    }
+                }
+            };
+            handle_session_rename(session_id, new_name).await?;
         }
     }
     Ok(())
@@ -2354,20 +2284,29 @@ async fn handle_run_command(
 async fn handle_gateway_command(command: GatewayCommand) -> Result<()> {
     use crate::commands::gateway;
 
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
     match command {
-        GatewayCommand::Status {} => gateway::handle_gateway_status().await,
+        GatewayCommand::Status {} => gateway::handle_gateway_status(services).await,
         GatewayCommand::Start {
             gateway_type,
             bot_token,
         } => {
-            let platform_config = serde_json::json!({ "bot_token": bot_token });
-            gateway::handle_gateway_start(gateway_type, platform_config).await
+            let mut platform_config = serde_json::json!({ "bot_token": bot_token });
+            if let Some(ids) = goose::gateway::manager::saved_allowed_user_ids(&gateway_type) {
+                platform_config["allowed_user_ids"] = serde_json::json!(ids);
+            }
+            gateway::handle_gateway_start(services, gateway_type, platform_config).await
         }
-        GatewayCommand::Stop { gateway_type } => gateway::handle_gateway_stop(gateway_type).await,
-        GatewayCommand::Pair { gateway_type } => gateway::handle_gateway_pair(gateway_type).await,
+        GatewayCommand::Stop { gateway_type } => {
+            gateway::handle_gateway_stop(services, gateway_type).await
+        }
+        GatewayCommand::Pair { gateway_type } => {
+            gateway::handle_gateway_pair(services, gateway_type).await
+        }
     }
 }
 
+#[cfg(feature = "scheduler")]
 async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
     match command {
         SchedulerCommand::Add {
@@ -2480,7 +2419,8 @@ async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
             shell,
             name,
             default,
-        } => handle_term_init(shell, name, default).await,
+            include_history,
+        } => handle_term_init(shell, name, default, include_history).await,
         TermCommand::Log { command } => handle_term_log(command).await,
         TermCommand::Run { prompt } => handle_term_run(prompt).await,
         TermCommand::Info => handle_term_info().await,
@@ -2819,7 +2759,7 @@ async fn handle_default_session() -> Result<()> {
     let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
     let session_id = get_or_create_session_id(None, false, false, goose_mode).await?;
 
-    let mut session = build_session(SessionBuilderConfig {
+    let mut session = match try_build_session(SessionBuilderConfig {
         session_id,
         resume: false,
         fork: false,
@@ -2842,11 +2782,21 @@ async fn handle_default_session() -> Result<()> {
         container: None,
         stats: false,
     })
-    .await;
+    .await
+    {
+        Ok(session) => session,
+        Err(error) if is_provider_unavailable_error(&error) => loop {
+            if configure_provider_dialog().await? {
+                return Ok(());
+            }
+        },
+        Err(error) => return Err(error),
+    };
     session.interactive(None).await
 }
 
 pub async fn cli() -> anyhow::Result<()> {
+    #[cfg(feature = "bundled-mcp")]
     register_builtin_extensions(goose_mcp::BUILTIN_EXTENSIONS.clone());
 
     let cli = Cli::parse();
@@ -2867,6 +2817,7 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
+        #[cfg(feature = "bundled-mcp")]
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp {
             builtins,
@@ -2874,6 +2825,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }) => goose::acp::server::run(builtins, enable_scheduler).await,
         #[cfg(feature = "roaming")]
         Some(Command::Roam { command }) => handle_roam_command(command).await,
+        #[cfg(feature = "acp-http")]
         Some(Command::Serve {
             host,
             port,
@@ -2953,6 +2905,7 @@ pub async fn cli() -> anyhow::Result<()> {
             .await
         }
         Some(Command::Gateway { command }) => handle_gateway_command(command).await,
+        #[cfg(feature = "scheduler")]
         Some(Command::Schedule { command }) => handle_schedule_command(command).await,
         #[cfg(feature = "update")]
         Some(Command::Update {
@@ -2968,45 +2921,6 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
-        Some(Command::Review {
-            range,
-            prompt,
-            model,
-            provider,
-            override_model,
-            turn_limit,
-            dry_run,
-            quiet,
-            no_orchestrate,
-            instructions,
-            files,
-            check_filter,
-            check_scope,
-            checks_only,
-            summary_only,
-            severity,
-        }) => {
-            use crate::commands::review::{handle_review, ReviewOptions};
-            handle_review(ReviewOptions {
-                range,
-                prompt_file: prompt,
-                default_model: model,
-                provider,
-                override_model,
-                default_turn_limit: turn_limit,
-                dry_run,
-                quiet,
-                no_orchestrate,
-                instructions,
-                files,
-                check_filter,
-                check_scope,
-                checks_only,
-                summary_only,
-                severity,
-            })
-            .await
-        }
         Some(Command::ValidateExtensions { file }) => {
             use goose::agents::validate_extensions::validate_bundled_extensions;
             match validate_bundled_extensions(&file) {
@@ -3165,6 +3079,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "acp-http")]
     #[test]
     fn serve_command_accepts_dangerously_unauthenticated_flag() {
         let cli = Cli::try_parse_from([
@@ -3191,83 +3106,6 @@ mod tests {
                 );
             }
             _ => panic!("expected serve command"),
-        }
-    }
-
-    #[test]
-    fn review_command_accepts_options() {
-        let cli = Cli::try_parse_from([
-            "goose",
-            "review",
-            "origin/main...HEAD",
-            "--prompt",
-            "REVIEW.md",
-            "--model",
-            "test-model",
-            "--provider",
-            "openai",
-            "--override-model",
-            "check-model",
-            "--turn-limit",
-            "4",
-            "--dry-run",
-            "--quiet",
-            "--no-orchestrate",
-            "--instructions",
-            "focus on correctness",
-            "--files",
-            "src/lib.rs",
-            "--check-filter",
-            "security",
-            "--check-scope",
-            ".agents",
-            "--checks-only",
-            "--summary-only",
-            "--severity",
-            "low",
-        ])
-        .expect("parse failed");
-
-        match cli.command {
-            Some(Command::Review {
-                range,
-                prompt,
-                model,
-                provider,
-                override_model,
-                turn_limit,
-                dry_run,
-                quiet,
-                no_orchestrate,
-                instructions,
-                files,
-                check_filter,
-                check_scope,
-                checks_only,
-                summary_only,
-                severity,
-            }) => {
-                assert_eq!(range.as_deref(), Some("origin/main...HEAD"));
-                assert_eq!(prompt.as_deref(), Some(std::path::Path::new("REVIEW.md")));
-                assert_eq!(model.as_deref(), Some("test-model"));
-                assert_eq!(provider.as_deref(), Some("openai"));
-                assert_eq!(override_model.as_deref(), Some("check-model"));
-                assert_eq!(turn_limit, Some(4));
-                assert!(dry_run);
-                assert!(quiet);
-                assert!(no_orchestrate);
-                assert_eq!(instructions.as_deref(), Some("focus on correctness"));
-                assert_eq!(files, vec!["src/lib.rs"]);
-                assert_eq!(check_filter, vec!["security"]);
-                assert_eq!(
-                    check_scope.as_deref(),
-                    Some(std::path::Path::new(".agents"))
-                );
-                assert!(checks_only);
-                assert!(summary_only);
-                assert_eq!(severity, "low");
-            }
-            _ => panic!("expected review command"),
         }
     }
 

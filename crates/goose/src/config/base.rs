@@ -14,6 +14,7 @@ use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -124,6 +125,7 @@ pub struct Config {
     secrets: SecretStorage,
     guard: Mutex<()>,
     secrets_cache: Arc<Mutex<Option<HashMap<String, Value>>>>,
+    generation: AtomicU64,
 }
 
 enum SecretStorage {
@@ -134,6 +136,16 @@ enum SecretStorage {
     File {
         path: PathBuf,
     },
+}
+
+enum SecretMutation<T> {
+    Write(T),
+    Unchanged(T),
+}
+
+pub(crate) enum SecretUpdate<V, R> {
+    Write(V, R),
+    Unchanged(R),
 }
 
 // Global instance
@@ -201,6 +213,7 @@ impl Default for Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         };
 
         let keyring_disabled = env::var("GOOSE_DISABLE_KEYRING").is_ok()
@@ -213,6 +226,7 @@ impl Default for Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         }
     }
 }
@@ -431,6 +445,7 @@ impl Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -449,6 +464,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -463,6 +479,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -653,6 +670,7 @@ impl Config {
 
         // Atomically replace the original file
         std::fs::rename(&temp_path, &target_path)?;
+        self.generation.fetch_add(1, Ordering::Relaxed);
 
         Ok(())
     }
@@ -776,6 +794,60 @@ impl Config {
         }
     }
 
+    /// Like `get_param`, but an unreadable config file or a non-Unicode environment value is
+    /// an error rather than a missing key.
+    pub(crate) fn get_param_strict<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<T, ConfigError> {
+        let env_key = key.to_uppercase();
+        match env::var(&env_key) {
+            Ok(value) => Ok(serde_json::from_value(Self::parse_env_value(&value)?)?),
+            Err(env::VarError::NotPresent) => {
+                let value = self
+                    .load_strict()?
+                    .remove(key)
+                    .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+                Ok(serde_yaml::from_value(value)?)
+            }
+            Err(env::VarError::NotUnicode(_)) => Err(ConfigError::DeserializeError(format!(
+                "{env_key} contains non-Unicode data"
+            ))),
+        }
+    }
+
+    pub(crate) fn get_param_source_values<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<Vec<T>, ConfigError> {
+        let mut source_values = Vec::new();
+        let env_key = key.to_uppercase();
+        if let Some(value) = env::var_os(&env_key) {
+            let value = value.into_string().map_err(|_| {
+                ConfigError::DeserializeError(format!(
+                    "environment variable {env_key} is not valid UTF-8"
+                ))
+            })?;
+            source_values.push(serde_json::from_value(Self::parse_env_value(&value)?)?);
+        }
+
+        for path in &self.config_paths {
+            let content = match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let mut values = parse_yaml_content(&content)?;
+            crate::config::migrations::run_read_migrations(&mut values);
+            let Some(value) = values.get(key) else {
+                continue;
+            };
+            source_values.push(serde_yaml::from_value(value.clone())?);
+        }
+
+        Ok(source_values)
+    }
+
     /// Read-modify-write a configuration value atomically through the write path.
     pub fn update_param<T, V, F>(&self, key: &str, f: F) -> Result<(), ConfigError>
     where
@@ -883,6 +955,22 @@ impl Config {
             .and_then(|v| Ok(serde_json::from_value(v.clone())?))
     }
 
+    /// Like `get_secret`, but reads storage without the process's secrets cache, so a value
+    /// another process wrote since is seen. Leaves the cache and `generation` untouched.
+    pub fn get_secret_uncached<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<T, ConfigError> {
+        if let Ok(val) = env::var(key.to_uppercase()) {
+            return Ok(serde_json::from_value(Self::parse_env_value(&val)?)?);
+        }
+        let value = self
+            .load_secrets_from_storage()?
+            .remove(key)
+            .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Get secrets. If primary is in env, use env for all keys. Otherwise, use secret storage.
     pub fn get_secrets(
         &self,
@@ -987,15 +1075,20 @@ impl Config {
         Ok(())
     }
 
-    fn mutate_secrets(
+    fn mutate_secrets<T>(
         &self,
-        mutate: impl FnOnce(&mut HashMap<String, Value>),
-    ) -> Result<(), ConfigError> {
+        mutate: impl FnOnce(&mut HashMap<String, Value>) -> Result<SecretMutation<T>, ConfigError>,
+    ) -> Result<T, ConfigError> {
         let _guard = self.guard.lock().unwrap();
         let _storage_lock = self.lock_secrets_for_mutation()?;
         let mut values = self.load_secrets_from_storage()?;
-        mutate(&mut values);
-        self.write_all_secrets(&values)
+        match mutate(&mut values)? {
+            SecretMutation::Write(result) => {
+                self.write_all_secrets(&values)?;
+                Ok(result)
+            }
+            SecretMutation::Unchanged(result) => Ok(result),
+        }
     }
 
     /// Set a secret value in the system keyring.
@@ -1019,6 +1112,33 @@ impl Config {
         let value = serde_json::to_value(value)?;
         self.mutate_secrets(|values| {
             values.insert(key.to_string(), value);
+            Ok(SecretMutation::Write(()))
+        })
+    }
+
+    pub(crate) fn update_secret<T, V, R>(
+        &self,
+        key: &str,
+        update: impl FnOnce(T) -> SecretUpdate<V, R>,
+    ) -> Result<R, ConfigError>
+    where
+        T: for<'de> Deserialize<'de> + Default,
+        V: Serialize,
+    {
+        self.mutate_secrets(|values| {
+            let current = values
+                .get(key)
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?
+                .unwrap_or_default();
+            match update(current) {
+                SecretUpdate::Write(updated, result) => {
+                    values.insert(key.to_string(), serde_json::to_value(updated)?);
+                    Ok(SecretMutation::Write(result))
+                }
+                SecretUpdate::Unchanged(result) => Ok(SecretMutation::Unchanged(result)),
+            }
         })
     }
 
@@ -1036,6 +1156,7 @@ impl Config {
             for (key, value) in updates {
                 values.insert(key.clone(), value.clone());
             }
+            Ok(SecretMutation::Write(()))
         })
     }
 
@@ -1052,6 +1173,7 @@ impl Config {
     pub fn delete_secret(&self, key: &str) -> Result<(), ConfigError> {
         self.mutate_secrets(|values| {
             values.remove(key);
+            Ok(SecretMutation::Write(()))
         })
     }
 
@@ -1065,6 +1187,7 @@ impl Config {
             for key in keys {
                 values.remove(key);
             }
+            Ok(SecretMutation::Write(()))
         })
     }
 
@@ -1109,6 +1232,12 @@ impl Config {
     pub fn invalidate_secrets_cache(&self) {
         let mut cache = self.secrets_cache.lock().unwrap();
         *cache = None;
+        self.generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Changes whenever this process writes config or secrets.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
     }
 
     /// Check if an error string indicates a keyring availability issue that should trigger fallback
@@ -1185,22 +1314,11 @@ config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
 impl Config {
-    pub(crate) fn get_goose_mode_strict(&self) -> Result<GooseMode, ConfigError> {
-        match env::var("GOOSE_MODE") {
-            Ok(value) => {
-                let value = Self::parse_env_value(&value)?;
-                Ok(serde_json::from_value(value)?)
-            }
-            Err(env::VarError::NotPresent) => {
-                let values = self.load_strict()?;
-                let value = values
-                    .get("GOOSE_MODE")
-                    .ok_or_else(|| ConfigError::NotFound("GOOSE_MODE".to_string()))?;
-                Ok(serde_yaml::from_value(value.clone())?)
-            }
-            Err(env::VarError::NotUnicode(_)) => Err(ConfigError::DeserializeError(
-                "GOOSE_MODE contains non-Unicode data".to_string(),
-            )),
+    pub(crate) fn resolve_goose_mode(&self) -> Result<GooseMode, ConfigError> {
+        match self.get_param_strict("GOOSE_MODE") {
+            Ok(mode) => Ok(mode),
+            Err(ConfigError::NotFound(_)) => Ok(GooseMode::Auto),
+            Err(error) => Err(error),
         }
     }
 }
@@ -1237,6 +1355,10 @@ config_value!(GOOSE_MAX_ACTIVE_AGENTS, usize);
 config_value!(GOOSE_DISABLE_SESSION_NAMING, bool);
 
 impl Config {
+    pub(crate) fn default_max_turns(&self) -> u32 {
+        self.get_param::<u32>("GOOSE_MAX_TURNS").unwrap_or(1000)
+    }
+
     pub fn get_goose_context_limit(&self) -> Result<Option<usize>, ConfigError> {
         match self.get_param::<usize>("GOOSE_CONTEXT_LIMIT") {
             Ok(0) => Err(ConfigError::DeserializeError(
@@ -1360,11 +1482,49 @@ pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
     parse_yaml_content(&init_content)
 }
 
+impl crate::agents::extension_config::ExtensionConfigResolver for Config {
+    fn get_secret(&self, key: &str) -> anyhow::Result<String> {
+        Ok(self.get_secret::<String>(key)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serial_test::serial;
     use tempfile::{NamedTempFile, TempDir};
+
+    #[test]
+    fn resolve_goose_mode_defaults_only_when_missing() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+
+        assert_eq!(config.resolve_goose_mode().unwrap(), GooseMode::Auto);
+        for mode in [GooseMode::Auto, GooseMode::SmartApprove, GooseMode::Approve] {
+            config.set_goose_mode(mode).unwrap();
+            assert_eq!(config.resolve_goose_mode().unwrap(), mode);
+        }
+
+        std::fs::write(config_file.path(), "GOOSE_MODE: invalid\n").unwrap();
+        assert!(matches!(
+            config.resolve_goose_mode(),
+            Err(ConfigError::DeserializeError(_))
+        ));
+    }
+
+    #[test]
+    fn resolve_goose_mode_rejects_invalid_environment_value() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("invalid"))]);
+        let config = new_test_config();
+        assert!(matches!(
+            config.resolve_goose_mode(),
+            Err(ConfigError::DeserializeError(_))
+        ));
+    }
+
     #[test]
     fn test_basic_config() -> Result<(), ConfigError> {
         let config = new_test_config();
@@ -1661,6 +1821,31 @@ mod tests {
 
         first.invalidate_secrets_cache();
         assert_eq!(first.get_secret::<String>("key")?, "updated");
+
+        Ok(())
+    }
+
+    #[test]
+    fn uncached_secret_reads_see_other_writers_without_touching_the_cache(
+    ) -> Result<(), ConfigError> {
+        let directory = TempDir::new().unwrap();
+        let config_path = directory.path().join("config.yaml");
+        let secrets_path = directory.path().join("secrets.yaml");
+        let first = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        let second = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+
+        first.set_secret("key", &"initial")?;
+        assert_eq!(first.get_secret::<String>("key")?, "initial");
+        let generation = first.generation();
+
+        second.set_secret("key", &"updated")?;
+        assert_eq!(first.get_secret_uncached::<String>("key")?, "updated");
+        assert_eq!(first.get_secret::<String>("key")?, "initial");
+        assert_eq!(first.generation(), generation);
+        assert!(matches!(
+            first.get_secret_uncached::<String>("missing"),
+            Err(ConfigError::NotFound(_))
+        ));
 
         Ok(())
     }

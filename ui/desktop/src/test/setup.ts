@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { vi, afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
@@ -71,6 +71,7 @@ const mockSettings: Record<string, unknown> = {
   responseStyle: 'concise',
   showPricing: true,
   seenAnnouncementIds: [],
+  showThinking: 'collapsed',
 };
 
 // Mock window.electron for renderer process
@@ -86,6 +87,8 @@ Object.defineProperty(window, 'electron', {
     reloadApp: vi.fn(),
     showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
     getIsFullScreen: vi.fn(() => Promise.resolve(false)),
+    logInfo: vi.fn(),
+    logError: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
   },

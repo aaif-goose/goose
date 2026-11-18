@@ -1,7 +1,9 @@
 import { app } from 'electron';
 import { compareVersions } from 'compare-versions';
+import { z } from 'zod';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from './logger';
@@ -162,11 +164,21 @@ const SHARED_DIRECTORY_NAMES = new Set([
 
 async function pathExists(target: string): Promise<boolean> {
   try {
-    await fs.access(target);
+    await fs.stat(target);
     return true;
   } catch {
     return false;
   }
+}
+
+// electron-builder's NSIS installer writes its uninstaller beside the executable. A copy it set
+// up updates by running the next installer; replacing its directory would delete the uninstaller.
+export function isInstallerManaged(exePath: string): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+  const uninstaller = `Uninstall ${path.basename(exePath, '.exe')}.exe`;
+  return existsSync(path.join(path.dirname(exePath), uninstaller));
 }
 
 function isSharedDirectory(dir: string): boolean {
@@ -242,6 +254,10 @@ export async function resolveInstallTarget(exePath: string): Promise<InstallTarg
 
   const installDir = path.dirname(resolvedExePath);
 
+  if (isInstallerManaged(resolvedExePath)) {
+    throw new Error(`Refusing to auto-update: ${installDir} was set up by the installer`);
+  }
+
   if (!(await isPackagedAppDirectory(installDir))) {
     throw new Error(
       `Refusing to auto-update: ${installDir} does not look like an app install directory`
@@ -315,8 +331,21 @@ async function writeSwapScript(options: {
       `}`,
       `Write-Log 'app has exited; swapping install'`,
       `Remove-Item -LiteralPath ${powershellQuote(backupPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
-      `Move-Item -LiteralPath ${powershellQuote(targetPath)} -Destination ${powershellQuote(backupPath)} -Force`,
-      `if (Test-Path -LiteralPath ${powershellQuote(targetPath)}) { throw 'Could not move previous install aside' }`,
+      `$moveAttempt = 0`,
+      `while ($true) {`,
+      `  try {`,
+      `    Move-Item -LiteralPath ${powershellQuote(targetPath)} -Destination ${powershellQuote(backupPath)} -Force -ErrorAction Stop`,
+      `    break`,
+      `  } catch {`,
+      `    $moveAttempt = $moveAttempt + 1`,
+      `    if ($moveAttempt -ge 20) {`,
+      `      Write-Log "could not move previous install aside: $_"`,
+      `      Start-Process -FilePath ${powershellQuote(relaunchPath)}`,
+      `      exit 1`,
+      `    }`,
+      `    Start-Sleep -Milliseconds 500`,
+      `  }`,
+      `}`,
       `try {`,
       `  New-Item -ItemType Directory -Path ${powershellQuote(targetPath)} -Force -ErrorAction Stop | Out-Null`,
       `  $payloadEntries = (Get-ChildItem -LiteralPath ${powershellQuote(payloadPath)} -Force).FullName`,
@@ -326,6 +355,7 @@ async function writeSwapScript(options: {
       `  if (-not (Test-Path -LiteralPath ${installedExe})) { throw 'Updated install is missing its executable' }`,
       `  Remove-Item -LiteralPath ${powershellQuote(backupPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
       `} catch {`,
+      `  Write-Log "could not install update; restoring previous install: $_"`,
       `  Remove-Item -LiteralPath ${powershellQuote(targetPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
       `  Move-Item -LiteralPath ${powershellQuote(backupPath)} -Destination ${powershellQuote(targetPath)} -Force`,
       `}`,
@@ -336,9 +366,19 @@ async function writeSwapScript(options: {
     ].join('\r\n');
 
     await fs.writeFile(scriptPath, script);
+
+    const launcherPath = path.join(stagingDir, 'launch-swap.ps1');
+    const swapArgs = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${scriptPath}"`;
+    const launcher = [
+      `$ErrorActionPreference = 'Stop'`,
+      `Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -WorkingDirectory ${powershellQuote(path.dirname(stagingDir))} -ArgumentList ${powershellQuote(swapArgs)}`,
+      '',
+    ].join('\r\n');
+    await fs.writeFile(launcherPath, launcher);
+
     return {
       command: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', launcherPath],
     };
   }
 
@@ -391,17 +431,13 @@ async function writeSwapScript(options: {
   return { command: '/bin/sh', args: [scriptPath] };
 }
 
-// Node's detached flag becomes DETACHED_PROCESS on Windows, which leaves the child with no
-// console, and powershell.exe exits before its first statement without one. windowsHide still
-// allocates a console without showing a window, and Windows keeps a child alive after its
-// parent exits, so the swap outlives the quit without detaching. POSIX still detaches so the
-// script survives the app's process group going away.
-export function launchSwapScript(swap: SwapCommand): void {
-  const child = spawn(swap.command, swap.args, {
-    detached: process.platform !== 'win32',
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+export async function launchSwapScript(swap: SwapCommand): Promise<void> {
+  if (process.platform === 'win32') {
+    await runCommand(swap.command, swap.args);
+    return;
+  }
+
+  const child = spawn(swap.command, swap.args, { detached: true, stdio: 'ignore' });
   child.unref();
 }
 
@@ -523,6 +559,34 @@ export class GitHubUpdater {
       // Find the appropriate download URL based on platform
       const platform = process.platform;
       const arch = process.arch;
+      if (platform === 'darwin') {
+        const requirementsAsset = release.assets.find(
+          (asset) => asset.name === 'mac-update-requirements.json'
+        );
+        if (!requirementsAsset) {
+          throw new Error('This release does not include macOS compatibility information.');
+        }
+        const requirementsResponse = await fetch(requirementsAsset.browser_download_url, {
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!requirementsResponse.ok) {
+          throw new Error('Unable to check macOS update compatibility. Please try again later.');
+        }
+        const requirements = z
+          .object({
+            version: z.literal(latestVersion),
+            minimumMacOSVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+          })
+          .safeParse(await requirementsResponse.json());
+        if (!requirements.success) {
+          throw new Error('This release has invalid macOS compatibility information.');
+        }
+        if (
+          compareVersions(process.getSystemVersion(), requirements.data.minimumMacOSVersion) < 0
+        ) {
+          return { updateAvailable: false, latestVersion };
+        }
+      }
       let downloadUrl: string | undefined;
       let assetName: string;
 
@@ -679,13 +743,14 @@ export class GitHubUpdater {
       const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
       log.info(`GitHubUpdater: Buffer created - ${buffer.length} bytes`);
 
-      const stagingDir = path.join(os.tmpdir(), `goose-update-${latestVersion}-${Date.now()}`);
-      await fs.mkdir(stagingDir, { recursive: true });
+      const stagingDir = await fs.mkdtemp(
+        path.join(await fs.realpath(os.tmpdir()), 'goose-update-')
+      );
       const fileName = `${this.bundleName}-${latestVersion}.zip`;
       const downloadPath = path.join(stagingDir, fileName);
 
       log.info(`GitHubUpdater: Writing file to ${downloadPath}...`);
-      await fs.writeFile(downloadPath, buffer);
+      await fs.writeFile(downloadPath, buffer, { flag: 'wx', mode: 0o600 });
 
       const totalDuration = Date.now() - downloadStartTime;
       log.info(`=== GitHubUpdater: DOWNLOAD COMPLETE in ${totalDuration}ms ===`);
@@ -728,7 +793,7 @@ export class GitHubUpdater {
         pid: process.pid,
       });
 
-      launchSwapScript(swap);
+      await launchSwapScript(swap);
 
       log.info('=== GitHubUpdater: SWAP SCRIPT LAUNCHED, app will quit ===');
       return { success: true };

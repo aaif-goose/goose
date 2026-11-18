@@ -15,7 +15,7 @@ We embraced this reality and put goose to work on its own backlog.
 
 <!--truncate-->
 
-We actually used goose pre-1.0 to help us build goose 1.0. The original goose was a Python CLI, but we needed to move quickly to Rust, Electron, and an [MCP-native](https://modelcontextprotocol.io) architecture. goose helped us make that transition. Using it to triage issues and review changes felt like a natural extension, so we embedded goose directly into a [GitHub Action](https://github.com/aaif-goose/goose/blob/main/.github/workflows/goose-issue-solver.yml).
+We actually used goose pre-1.0 to help us build goose 1.0. The original goose was a Python CLI, but we needed to move quickly to Rust, Electron, and an [MCP-native](https://modelcontextprotocol.io) architecture. goose helped us make that transition. Using it to triage issues and review changes felt like a natural extension, so we embedded goose directly into a [GitHub Action](https://github.com/aaif-goose/goose/blob/c525364c33753ce6e077a33da1e2bd738a7e653c/.github/workflows/goose-issue-solver.yml).
 
 :::note Credit
 That GitHub Action workflow was built by [Tyler Longwell](https://github.com/tlongwell-block), who took an idea we had been exploring manually and turned it into something any maintainer could trigger with a single comment.
@@ -59,7 +59,7 @@ Maintainers summon goose with `/goose` followed by a prompt as a comment on an i
 
 But there's more happening under the hood than a simple prompt like "/goose fix this."
 
-The workflow uses a [recipe](https://github.com/aaif-goose/goose/blob/main/.github/workflows/goose-issue-solver.yml#L14-L78) that defines phases to ensure goose actually accomplishes the job and doesn't do more than we ask it to.
+The workflow uses a [recipe](https://github.com/aaif-goose/goose/blob/c525364c33753ce6e077a33da1e2bd738a7e653c/.github/workflows/goose-issue-solver.yml#L14-L78) that defines phases to ensure goose actually accomplishes the job and doesn't do more than we ask it to.
 
 | Phase      | What goose does                                       | Why it matters                                                        |
 | ---------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
@@ -70,7 +70,7 @@ The workflow uses a [recipe](https://github.com/aaif-goose/goose/blob/main/.gith
 | Verify     | Run tests and linters                                 | Catches obvious failures before a human sees the PR                   |
 | Confirm    | Reread the original issue and requirements            | Prevents the AI from declaring victory while forgetting half the task |
 
-The [recipe](https://github.com/aaif-goose/goose/blob/main/.github/workflows/goose-issue-solver.yml) also gives goose access to the [TODO extension](/docs/mcp/todo-mcp), a built-in tool that acts as external memory. The phases tell goose *what* to do. The TODO helps goose *remember* what it's doing. As goose reads through the codebase and builds a solution, its context window fills up and earlier instructions can be compressed or lost. The TODO persists, so goose can always check what it's done and what's left.
+The [recipe](https://github.com/aaif-goose/goose/blob/c525364c33753ce6e077a33da1e2bd738a7e653c/.github/workflows/goose-issue-solver.yml) also gives goose access to the [TODO extension](/docs/mcp/todo-mcp), a built-in tool that acts as external memory. The phases tell goose *what* to do. The TODO helps goose *remember* what it's doing. As goose reads through the codebase and builds a solution, its context window fills up and earlier instructions can be compressed or lost. The TODO persists, so goose can always check what it's done and what's left.
 
 The workflow also enforces guardrails around who can invoke `/goose`, which files it's allowed to touch, and the requirement that a maintainer review and approve every PR.
 
@@ -80,7 +80,7 @@ The future we're aiming for isn't one where AI replaces maintainers. It's one wh
 
 If that becomes the norm, open source scales differently.
 
-The [GitHub Action workflow](https://github.com/aaif-goose/goose/blob/main/.github/workflows/goose-issue-solver.yml) is public for anyone who wants to explore this pattern in their own CI pipeline.  
+The [GitHub Action workflow](https://github.com/aaif-goose/goose/blob/c525364c33753ce6e077a33da1e2bd738a7e653c/.github/workflows/goose-issue-solver.yml) is public for anyone who wants to explore this pattern in their own CI pipeline.  
 
 <head>
   <meta property="og:title" content="How We Use goose to Maintain goose" />

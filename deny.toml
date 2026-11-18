@@ -6,8 +6,41 @@ yanked = "deny"
 unmaintained = "none"
 unsound = "none"
 
-ignore = [
-    # rsa: Marvin Attack timing sidechannel. No safe upgrade is available, and
-    # the reachable path is through jsonwebtoken.
-    "RUSTSEC-2023-0071",
-]
+# These releases require zip 8 but only read or write individual archive entries;
+# none calls ZipArchive::extract or ZipStreamReader::extract. Goose uses zip 9.
+# Reassess if these dependencies or their zip callers change. Reviewed versions:
+# docx-rs 0.4.22, umya-spreadsheet 3.1.1.
+# Remove when releases supporting zip 9 are available:
+# https://github.com/bokuweb/docx-rs/issues/943
+# https://github.com/MathNya/umya-spreadsheet/issues/383
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0367"
+reason = "The reviewed dependents do not call the extraction helpers that preserve privileged Unix permission bits."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0368"
+reason = "The reviewed dependents do not call the extraction helpers that create archive symlinks."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0369"
+reason = "The reviewed dependents do not call the extraction helpers that apply permissions through symlinks."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0429"
+reason = "The reviewed dependents do not call the extraction helper that sizes symlink targets from the declared entry size."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0545"
+reason = "The reviewed dependents build zip without the aes-crypto feature, so AES-encrypted entries are never read."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0546"
+reason = "The reviewed dependents do not call ZipArchive::extract."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0547"
+reason = "The reviewed dependents build zip without the legacy-zip feature, so the Shrink, Reduce and Implode decoders are not compiled."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0548"
+reason = "The reviewed dependents do not use ZipStreamReader."

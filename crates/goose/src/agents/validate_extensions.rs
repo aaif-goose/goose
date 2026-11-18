@@ -39,6 +39,17 @@ pub fn validate_bundled_extensions(path: &Path) -> Result<String> {
             }
         };
 
+        if !matches!(
+            meta.extension_type.as_str(),
+            "builtin" | "platform" | "stdio" | "streamable_http"
+        ) {
+            errors.push(format!(
+                "[{index}] {} (id={}): unknown variant `{}`",
+                meta.name, meta.id, meta.extension_type
+            ));
+            continue;
+        }
+
         // Check for common field name mistakes before full deserialization
         if meta.extension_type == "streamable_http"
             && entry.get("url").is_some()

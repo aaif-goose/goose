@@ -6,7 +6,7 @@ sidebar_label: goose Permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { PanelLeft, Tornado } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 
 goose’s permissions determine how much autonomy it has when modifying files, using extensions, and performing automated actions. By selecting a permission mode, you have full control over how goose interacts with your development environment.
 
@@ -29,7 +29,6 @@ goose’s permissions determine how much autonomy it has when modifying files, u
 | **Completely Autonomous** | goose can modify files, use extensions, and delete files **without requiring approval** | Users who want **full automation** and seamless integration into their workflow |
 | **Manual Approval** | goose **asks for confirmation** before using any tools or extensions (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions)) | Users who want to **review and approve** every change and tool usage |
 | **Smart Approval** | goose uses a risk-based approach to **automatically approve low-risk actions** and **flag others** for approval (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions))  | Users who want a **balanced mix of autonomy and oversight** based on the action’s impact |
-| **Chat Only** | goose **only engages in chat**, with no extension use or file modifications | Users who prefer a **conversational AI experience** for analysis, writing, and reasoning tasks without automation |
 
 :::warning
 `Autonomous Mode` is applied by default.
@@ -42,20 +41,12 @@ Here's how to configure:
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
 
-    You can change modes before or during a session and it will take effect immediately.
+    Each session has its own permission mode. Use Settings to choose the default mode for new sessions. Existing sessions keep their current mode when you change this default.
 
-     <Tabs groupId="method">
-      <TabItem value="session" label="In Session" default>
-
-      Click the <Tornado className="inline" size={16} /> mode button from the bottom menu. 
-      </TabItem>
-      <TabItem value="settings" label="From Settings">
-        1. Click the <PanelLeft className="inline" size={16} /> button on the top-left to open the sidebar.
-        2. Click the `Settings` button on the sidebar.
-        3. Click `Chat`.
-        4. Under `Mode`, choose the mode you'd like.
-      </TabItem>
-    </Tabs>   
+    1. Click the <PanelLeft className="inline" size={16} /> button on the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click `Chat`.
+    4. Under `Default Mode`, choose the mode you'd like.
   </TabItem>
   <TabItem value="cli" label="goose CLI">
 
@@ -66,7 +57,6 @@ Here's how to configure:
         * Autonomous: `/mode auto`
         * Smart Approve: `/mode smart_approve`
         * Approve: `/mode approve`
-        * Chat: `/mode chat`     
       </TabItem>
       <TabItem value="settings" label="From Settings">
         1. Run the following command:
@@ -130,7 +120,6 @@ Here's how to configure:
         // highlight-end
         |  ○ Approve Mode
         |  ○ Smart Approve Mode    
-        |  ○ Chat Mode
         |
         └  Set to Auto Mode - full file modification enabled
         ```     

@@ -4,23 +4,18 @@ use serde_json::Value;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
-use crate::agents::state_machine::ops_stop_hook::DENIED;
-use crate::agents::state_machine::ops_unknown_tool::UNCLAIMED_TOOL_ERROR;
-use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
+use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
-use crate::permission::Permission;
 
-struct HookTestEnv {
+pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
     plugin_dir: std::path::PathBuf,
 }
 
 impl HookTestEnv {
-    fn new(event: &str, script: &str) -> Self {
+    pub(in crate::agents::state_machine) fn new(event: &str, script: &str) -> Self {
         let temp_dir = tempfile::tempdir().unwrap();
         let plugin_dir = temp_dir.path().join("test-plugin");
         std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
@@ -38,7 +33,7 @@ impl HookTestEnv {
         }
     }
 
-    fn hook_manager(&self) -> crate::hooks::HookManager {
+    pub(in crate::agents::state_machine) fn hook_manager(&self) -> crate::hooks::HookManager {
         use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
         crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
             name: "test-plugin".into(),
@@ -61,7 +56,7 @@ impl HookTestEnv {
         .expect("hook context is valid JSON")
     }
 
-    fn payloads(&self) -> Vec<Value> {
+    pub(in crate::agents::state_machine) fn payloads(&self) -> Vec<Value> {
         std::fs::read_to_string(self.plugin_dir.join("hook.log"))
             .unwrap_or_default()
             .lines()
@@ -71,10 +66,10 @@ impl HookTestEnv {
 }
 
 const LOG_AND_ALLOW_SCRIPT: &str = "#!/bin/sh\necho ran >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
-const LOG_AND_BLOCK_SCRIPT: &str =
+pub(in crate::agents::state_machine) const LOG_AND_BLOCK_SCRIPT: &str =
     "#!/bin/sh\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
 const LOG_CONTEXT_AND_BLOCK_SCRIPT: &str = "#!/bin/sh\ncat > \"$PLUGIN_ROOT/context.json\"\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
-const RECORD_AND_ALLOW_SCRIPT: &str =
+pub(in crate::agents::state_machine) const RECORD_AND_ALLOW_SCRIPT: &str =
     "#!/bin/sh\npayload=$(cat)\nprintf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
 const RECORD_AND_BLOCK_MARKER_SCRIPT: &str = "#!/bin/sh
 payload=$(cat)
@@ -128,7 +123,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
             .iter()
             .filter(|message| message
                 .metadata
-                .operation_note("stop_hook", DENIED)
+                .operation_note("stop_hook", "denied")
                 .is_some())
             .count(),
         2
@@ -151,7 +146,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
 
     pipeline.run(["keep going"]).await?;
     assert_eq!(api.call_count(), MAX_TURNS as usize);
-    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64 - 1);
+    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64);
     assert_eq!(maxed.invocations(), 0);
 
     Ok(())
@@ -265,7 +260,7 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
             .iter()
             .filter(|message| message
                 .metadata
-                .operation_note("stop_hook", DENIED)
+                .operation_note("stop_hook", "denied")
                 .is_some())
             .count(),
         1
@@ -285,6 +280,26 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
 }
 
 #[tokio::test]
+async fn stop_hook_block_cap_resets_for_each_user_message() -> Result<()> {
+    let blocked = HookTestEnv::new("Stop", LOG_AND_BLOCK_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(blocked.hook_manager())
+        .with_stop_hook_block_cap(1);
+    api.on("first").reply("done");
+
+    pipeline.run(["first"]).await?;
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(blocked.invocations(), 2);
+
+    pipeline.run(["second"]).await?;
+    assert_eq!(api.call_count(), 4);
+    assert_eq!(blocked.invocations(), 4);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> {
     let session_start = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
@@ -297,6 +312,16 @@ async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> 
     pipeline.run(["first", "second"]).await?;
     assert_eq!(session_start.invocations(), 1);
     assert_eq!(api.call_count(), 2);
+
+    let opened_by_client = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(opened_by_client.hook_manager());
+    pipeline
+        .seed([crate::agents::session_hooks::session_start_message(&[])])
+        .await?;
+    api.on("first").reply("ok");
+    pipeline.run(["first"]).await?;
+    assert_eq!(opened_by_client.invocations(), 0);
 
     let prompt_submit = HookTestEnv::new("UserPromptSubmit", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
@@ -590,7 +615,7 @@ async fn pre_tool_use_result_reports_unevaluated_when_the_only_hook_exits_withou
 }
 
 /// Builds a recipe whose structured response forces the model through
-/// `recipe__final_output`, which `RecipeOperation` executes itself rather than
+/// `recipe__final_output`, which `FinalOutputOperation` executes itself rather than
 /// handing to `ToolExecutionOperation`.
 fn final_output_recipe() -> crate::recipe::Recipe {
     crate::recipe::Recipe::builder()
@@ -608,14 +633,9 @@ fn final_output_recipe() -> crate::recipe::Recipe {
         .expect("valid recipe")
 }
 
-/// recipe final-output parity: the call `RecipeOperation` executes directly still
-/// emits `PreToolUse` and `PreToolUseResult`, correlated by one `tool_call_id`.
 #[tokio::test]
-async fn recipe_final_output_emits_pre_tool_use_and_result_with_matching_id() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
+async fn recipe_final_output_runs_no_tool_hooks() -> Result<()> {
+    let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
@@ -624,237 +644,104 @@ async fn recipe_final_output_emits_pre_tool_use_and_result_with_matching_id() ->
         serde_json::json!({ "answer": "done" }),
     );
 
-    pipeline.run(["produce the answer"]).await?;
+    let result = pipeline.run(["produce the answer"]).await?;
 
-    let pres = env.payloads("pre.log");
-    let results = env.payloads("result.log");
-    assert_eq!(
-        pres.len(),
-        1,
-        "PreToolUse must fire for recipe final output"
-    );
-    assert_eq!(
-        results.len(),
-        1,
-        "PreToolUseResult must fire for recipe final output"
-    );
-    assert_eq!(pres[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["event"], "PreToolUseResult");
-    assert_eq!(results[0]["decision"], "allow");
-    assert_eq!(
-        pres[0]["tool_call_id"], results[0]["tool_call_id"],
-        "PreToolUse and PreToolUseResult must carry the same tool_call_id"
-    );
-    assert!(pres[0]["tool_call_id"]
-        .as_str()
-        .is_some_and(|id| !id.is_empty()));
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    assert!(env.payloads("pre.log").is_empty());
+    assert!(env.payloads("result.log").is_empty());
+    assert!(env.payloads("post.log").is_empty());
+    assert!(env.payloads("postfail.log").is_empty());
     Ok(())
 }
 
-/// recipe final-output parity: the post-tool event fires once the call completes,
-/// carrying the id the pre events carried.
 #[tokio::test]
-async fn recipe_final_output_emits_post_tool_event() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
+async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Result<()> {
+    let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    pipeline.run(["produce the answer"]).await?;
-
-    let pres = env.payloads("pre.log");
-    let posts = env.payloads("post.log");
-    assert_eq!(pres.len(), 1);
-    assert_eq!(
-        posts.len(),
-        1,
-        "PostToolUse must fire for a successful recipe final output"
-    );
-    assert_eq!(posts[0]["event"], "PostToolUse");
-    assert_eq!(posts[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(
-        posts[0]["tool_call_id"], pres[0]["tool_call_id"],
-        "the post event must carry the same tool_call_id as the pre events"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn recipe_final_output_waits_for_sibling_tools_and_is_emitted_once() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("finish and add").calls([
         (
-            "final-output",
+            "early-output",
             FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "done" }),
+            serde_json::json!({ "answer": "guess" }),
         ),
         ("side-effect", ADD, value(1)),
     ]);
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "done" }),
+    );
 
     let result = pipeline.run(["finish and add"]).await?;
 
     assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(api.call_count(), 2);
+    assert!(api.calls()[1].input_contains("result: 1"));
     let messages = result.conversation().messages();
-    let side_effect_response = messages
+    assert_tool_transcript_bijection(messages);
+    assert!(messages
         .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
-        })
-        .expect("sibling tool response");
-    let final_answers: Vec<_> = messages
+        .all(|message| message.as_concat_text() != r#"{"answer":"guess"}"#));
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    let pre_hooked: Vec<_> = env
+        .payloads("pre.log")
         .iter()
-        .enumerate()
-        .filter(|(_, message)| message.as_concat_text() == r#"{"answer":"done"}"#)
+        .map(|payload| payload["tool_call_id"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(final_answers.len(), 1, "final output must be emitted once");
-    assert!(
-        side_effect_response < final_answers[0].0,
-        "final output must wait until sibling tools finish"
-    );
+    assert!(!pre_hooked.contains(&"early-output".to_string()));
+    assert!(pre_hooked.contains(&"side-effect".to_string()));
+    assert!(env
+        .payloads("pre.log")
+        .iter()
+        .all(|payload| payload["tool_name"] != FINAL_OUTPUT_TOOL_NAME));
     Ok(())
 }
 
 #[tokio::test]
-async fn recipe_final_output_waits_for_approval_pending_sibling() -> Result<()> {
+async fn rejected_final_output_after_a_stop_hook_block_does_not_reshow_the_blocked_output(
+) -> Result<()> {
+    let blocked = HookTestEnv::new("Stop", RECORD_AND_BLOCK_MARKER_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
-    pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::AlwaysAllow);
+    let pipeline = pipeline.with_hook_manager(blocked.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish after approval").calls([
-        (
-            "final-output",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "approved" }),
-        ),
-        (
-            "side-effect",
-            MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-            serde_json::json!({
-                "action": "enable",
-                "extension_name": "analyze"
-            }),
-        ),
-    ]);
-
-    let awaiting_approval = pipeline.run(["finish after approval"]).await?;
-    assert!(
-        awaiting_approval
-            .conversation()
-            .messages()
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"approved"}"#),
-        "final output must wait while a sibling needs approval"
-    );
-
-    pipeline
-        .confirm("side-effect", Permission::AllowOnce)
-        .await?;
-    let result = pipeline.resume().await?;
-
-    let messages = result.conversation().messages();
-    let sibling_response = messages
-        .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
-        })
-        .expect("approved sibling response");
-    let final_answers = result
-        .conversation()
-        .messages()
-        .iter()
-        .filter(|message| message.as_concat_text() == r#"{"answer":"approved"}"#)
-        .count();
-    assert_eq!(final_answers, 1, "approved final output must emit once");
-    let final_answer = messages
-        .iter()
-        .position(|message| message.as_concat_text() == r#"{"answer":"approved"}"#)
-        .expect("approved final output");
-    assert!(
-        sibling_response < final_answer,
-        "the approved sibling must execute before finalization"
-    );
-    result.assert_message(-1, Agent, r#"{"answer":"approved"}"#);
-    Ok(())
-}
-
-/// recipe final-output parity: a denying hook stops the call. The final-output
-/// tool never runs, so the recipe never reports a successful structured answer,
-/// and no post event fires — the same shape a denied ordinary tool call has.
-#[tokio::test]
-async fn recipe_final_output_denied_by_hook_does_not_execute() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_max_turns(2);
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
+    api.on("finish").call(
         FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
+        serde_json::json!({ "answer": "policy marker" }),
     );
-    api.on("denied by policy hook").reply("understood");
-
-    let result = pipeline.run(["produce the answer"]).await?;
-
-    let results = env.payloads("result.log");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["decision"], "deny");
-    assert_eq!(results[0]["blocked_by"], "test-plugin");
-    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-
-    assert!(
-        env.payloads("post.log").is_empty(),
-        "PostToolUse must not fire for a denied final-output call"
-    );
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "PostToolUseFailure must not fire for a denied final-output call"
+    api.on("blocked ending this turn").calls([
+        ("side-effect", ADD, value(1)),
+        (
+            "early-output",
+            FINAL_OUTPUT_TOOL_NAME,
+            serde_json::json!({ "answer": "guess" }),
+        ),
+    ]);
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "fixed" }),
     );
 
-    let produced_answer = result
+    let result = pipeline.run(["finish"]).await?;
+
+    assert_eq!(api.call_count(), 3);
+    let shown: Vec<String> = result
         .conversation()
         .messages()
         .iter()
-        .any(|message| message.as_concat_text().contains("\"answer\""));
-    assert!(
-        !produced_answer,
-        "a denied final-output call must not execute the tool"
+        .filter(|message| message.role == Role::Assistant)
+        .map(Message::as_concat_text)
+        .filter(|text| text.contains("answer"))
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            r#"{"answer":"policy marker"}"#.to_string(),
+            r#"{"answer":"fixed"}"#.to_string()
+        ]
     );
+    result.assert_message(-1, Agent, r#"{"answer":"fixed"}"#);
     Ok(())
 }
 
@@ -1001,51 +888,6 @@ async fn load_skill_denied_by_hook_does_not_execute() -> Result<()> {
 }
 
 #[tokio::test]
-async fn unadvertised_unknown_tool_skips_pre_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn unadvertised_unknown_tool_skips_post_tool_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("recovered");
-
-    pipeline.run(["try the missing tool"]).await?;
-
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn unadvertised_inactive_final_output_skips_hooks() -> Result<()> {
     let env = RecordingHookEnv::new(&[(
         "PostToolUseFailure",
@@ -1065,21 +907,6 @@ async fn unadvertised_inactive_final_output_skips_hooks() -> Result<()> {
 
     result.assert_message(-2, ToolResponse, "not available");
     assert!(env.payloads("postfail.log").is_empty());
-    let response_metadata = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .find_map(|content| match content {
-            MessageContent::ToolResponse(response) => response.metadata.as_ref(),
-            _ => None,
-        });
-    assert!(response_metadata.is_some_and(|metadata| {
-        metadata
-            .get(UNCLAIMED_TOOL_ERROR)
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-    }));
     Ok(())
 }
 
@@ -1148,99 +975,11 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());
     assert!(env.payloads("postfail.log").is_empty());
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
-    Ok(())
-}
-
-#[tokio::test]
-async fn chat_mode_does_not_collect_skipped_recipe_final_output_or_run_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
-        .await
-        .with_max_turns(2);
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
+    result.assert_message(
+        -2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request.",
     );
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("continued without the final output tool");
-
-    let result = pipeline.run(["produce the answer"]).await?;
-
-    let messages = result.conversation().messages();
-    let emitted_chat_skip = messages
-        .iter()
-        .flat_map(|message| &message.content)
-        .any(|content| match content {
-            MessageContent::ToolResponse(response) => {
-                response.tool_result.as_ref().is_ok_and(|result| {
-                    result.content.iter().any(|content| {
-                        content
-                            .as_text()
-                            .is_some_and(|text| text.text == CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-                    })
-                })
-            }
-            _ => false,
-        });
-    assert!(emitted_chat_skip, "Chat mode must emit its skip response");
-    assert!(
-        messages
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"done"}"#),
-        "a skipped final-output call must not be collected"
-    );
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn chat_mode_rejects_unadvertised_unknown_tool_without_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
-        .await;
-    api.on("try the missing tool")
-        .unadvertised_call("missing__tool", serde_json::json!({}));
-    api.on("not available").reply("hidden tool rejected");
-
-    let result = pipeline.run(["try the missing tool"]).await?;
-
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
-    result.assert_message(-1, Agent, "hidden tool rejected");
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
     Ok(())
 }
 
@@ -1269,7 +1008,11 @@ async fn unadvertised_unknown_tool_skips_permission_and_tool_hooks() -> Result<(
 
     let result = pipeline.run(["try the missing tool"]).await?;
 
-    result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
+    result.assert_message(
+        -2,
+        ToolResponse,
+        "Tool 'missing__tool' was not available in this request.",
+    );
     assert!(env.payloads("pre.log").is_empty());
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());
@@ -1314,13 +1057,6 @@ fn assert_tool_transcript_bijection(messages: &[Message]) {
     }
 }
 
-fn lifecycle_ids(env: &RecordingHookEnv, log: &str) -> Vec<String> {
-    env.payloads(log)
-        .iter()
-        .filter_map(|payload| payload["tool_call_id"].as_str().map(str::to_string))
-        .collect()
-}
-
 fn recording_lifecycle_env() -> RecordingHookEnv {
     RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
@@ -1335,124 +1071,27 @@ fn recording_lifecycle_env() -> RecordingHookEnv {
     ])
 }
 
-/// A final-output call refused by permission is answered like any other declined
-/// tool. RecipeOperation matches on Execute alone, so before the fix nothing
-/// answered this request at all.
 #[tokio::test]
-async fn recipe_final_output_denied_by_permission_receives_declined_response() -> Result<()> {
-    let env = recording_lifecycle_env();
+async fn approve_mode_accepts_recipe_final_output_without_permission_checks() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Approve)
-        .await;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
     pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::NeverAllow);
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("finish now").call(
         FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "denied" }),
+        serde_json::json!({ "answer": "done" }),
     );
-    api.on("declined to run this tool").reply("understood");
 
     let result = pipeline.run(["finish now"]).await?;
+
+    assert_eq!(api.call_count(), 1);
     let messages = result.conversation().messages();
     assert_tool_transcript_bijection(messages);
-
-    let declined = messages
+    assert!(messages
         .iter()
         .flat_map(|message| &message.content)
-        .filter(|content| match content {
-            MessageContent::ToolResponse(response) => {
-                response.tool_result.as_ref().is_ok_and(|result| {
-                    result.content.iter().any(|block| {
-                        block
-                            .as_text()
-                            .is_some_and(|text| text.text == DECLINED_RESPONSE)
-                    })
-                })
-            }
-            _ => false,
-        })
-        .count();
-    assert_eq!(
-        declined, 1,
-        "the declined call must get one DECLINED_RESPONSE"
-    );
-
-    assert!(
-        env.payloads("pre.log").is_empty(),
-        "no PreToolUse on decline"
-    );
-    assert!(
-        env.payloads("result.log").is_empty(),
-        "no PreToolUseResult on decline"
-    );
-    assert!(
-        env.payloads("post.log").is_empty(),
-        "no PostToolUse on decline"
-    );
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "no PostToolUseFailure on decline"
-    );
-    Ok(())
-}
-
-/// Two final-output calls in one assistant block both get answered, each with its
-/// own lifecycle, and the last valid one is published. Before the fix the pair
-/// deadlocked: each waited for the other and neither was answered.
-#[tokio::test]
-async fn duplicate_final_output_calls_are_each_answered_and_last_valid_wins() -> Result<()> {
-    let env = recording_lifecycle_env();
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish twice").calls([
-        (
-            "final-a",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "first" }),
-        ),
-        (
-            "final-b",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "second" }),
-        ),
-    ]);
-
-    let result = pipeline.run(["finish twice"]).await?;
-    let messages = result.conversation().messages();
-    assert_tool_transcript_bijection(messages);
-
-    // Assert the recorded order, not just membership: execution order is what
-    // decides which call wins, so sorting here would erase the property.
-    let pre = lifecycle_ids(&env, "pre.log");
-    let results = lifecycle_ids(&env, "result.log");
-    let posts = lifecycle_ids(&env, "post.log");
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "both calls succeed, so no post-failure event may be recorded"
-    );
-    let expected = vec!["final-a".to_string(), "final-b".to_string()];
-    assert_eq!(pre, expected, "both calls need a PreToolUse");
-    assert_eq!(results, expected, "both calls need a PreToolUseResult");
-    assert_eq!(posts, expected, "both calls need a post event");
-
-    let published: Vec<_> = messages
-        .iter()
-        .filter(|message| message.as_concat_text() == r#"{"answer":"second"}"#)
-        .collect();
-    assert_eq!(
-        published.len(),
-        1,
-        "the last valid final output is published exactly once"
-    );
-    assert!(
-        messages
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"first"}"#),
-        "the superseded final output must not be published"
-    );
+        .all(|content| !matches!(content, MessageContent::ActionRequired(_))));
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
     Ok(())
 }
 
@@ -1501,45 +1140,47 @@ async fn malformed_final_output_call_receives_parse_error_and_no_lifecycle() -> 
     Ok(())
 }
 
-/// An unfinished ordinary sibling still delays publication, and every request in
-/// the block is answered exactly once.
 #[tokio::test]
-async fn final_output_waits_for_ordinary_sibling_and_answers_every_request() -> Result<()> {
+async fn two_final_outputs_in_one_reply_are_both_rejected() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish and add").calls([
+    api.on("finish twice").calls([
         (
-            "final-output",
+            "first-output",
             FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "after sibling" }),
+            serde_json::json!({ "answer": "first" }),
         ),
-        ("side-effect", ADD, value(1)),
+        (
+            "second-output",
+            FINAL_OUTPUT_TOOL_NAME,
+            serde_json::json!({ "answer": "second" }),
+        ),
     ]);
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "alone" }),
+    );
 
-    let result = pipeline.run(["finish and add"]).await?;
+    let result = pipeline.run(["finish twice"]).await?;
+
+    assert_eq!(api.call_count(), 2);
     let messages = result.conversation().messages();
     assert_tool_transcript_bijection(messages);
-    assert_eq!(pipeline.calculator_total(), 1);
-
-    let sibling_answer = messages
+    let rejected = messages
         .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
+        .flat_map(|message| &message.content)
+        .filter(|content| {
+            matches!(
+                content,
+                MessageContent::ToolResponse(response)
+                    if response.tool_result.as_ref().is_err_and(|error| {
+                        error.message.ends_with(FINAL_OUTPUT_NOT_ALONE_MESSAGE)
+                    })
+            )
         })
-        .expect("sibling tool response");
-    let published = messages
-        .iter()
-        .position(|message| message.as_concat_text() == r#"{"answer":"after sibling"}"#)
-        .expect("published final output");
-    assert!(
-        sibling_answer < published,
-        "final output must wait until the ordinary sibling finishes"
-    );
+        .count();
+    assert_eq!(rejected, 2);
+    result.assert_message(-1, Agent, r#"{"answer":"alone"}"#);
     Ok(())
 }
 
@@ -1604,14 +1245,116 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
         .iter()
         .flat_map(|message| &message.content)
         .find_map(|content| match content {
-            MessageContent::ToolResponse(response) => response.tool_result.as_ref().err(),
+            MessageContent::ToolResponse(response) => response
+                .tool_result
+                .as_ref()
+                .ok()
+                .filter(|result| result.is_error == Some(true))
+                .and_then(|result| result.content[0].as_text())
+                .map(|text| text.text.clone()),
             _ => None,
         })
         .expect("blocked tool response");
     assert!(
-        tool_error.message.ends_with(HOOK_FAILURE_REFUSAL),
-        "expected the shared refusal, got {}",
-        tool_error.message
+        tool_error.ends_with(HOOK_FAILURE_REFUSAL),
+        "expected the shared refusal, got {tool_error}"
     );
+    Ok(())
+}
+
+const BANG_COMMAND_NO_TOOL_RUNS: &str = "!echo hi";
+
+#[tokio::test]
+async fn unclaimed_offered_call_gets_pre_and_failed_post_hooks() -> Result<()> {
+    let env = RecordingHookEnv::new(&[
+        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+
+    pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    assert_eq!(env.payloads("result.log").len(), 1);
+    assert_eq!(env.payloads("postfail.log").len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn pre_tool_denial_answers_an_unclaimed_call_with_the_hook_reason() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT)]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+
+    let result = pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    result.assert_message(-1, ToolResponse, "blocked by test policy");
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_reports_the_current_call_when_a_provider_reuses_its_id() -> Result<()> {
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    api.on("add one").calls([("reused", ADD, value(1))]);
+    api.on("result: 1").reply("done");
+    api.on("add two").calls([("reused", ADD, value(2))]);
+    api.on("result: 3").reply("done");
+
+    pipeline.run(["add one", "add two"]).await?;
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[1]["tool_input"], value(2));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_call_that_finished_before_stop_still_gets_its_post_hook() -> Result<()> {
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    use super::calculator_extension::REQUEST_VALUE;
+
+    let env = RecordingHookEnv::new(&[("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT)]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+    api.on("add while waiting for input").calls([
+        ("call_add", ADD, value(1)),
+        ("call_input", REQUEST_VALUE, serde_json::json!({})),
+    ]);
+    let cancel = CancellationToken::new();
+    let stop_once_added = async {
+        pipeline.wait_for_calculator_result().await;
+        cancel.cancel();
+    };
+
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            pipeline.run_with_cancel("add while waiting for input", cancel.clone()),
+            stop_once_added
+        )
+    })
+    .await?;
+    let result = result?;
+    result.assert_message(-2, ToolResponse, "result: 1");
+    assert_eq!(pipeline.calculator_total(), 1);
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["tool_call_id"], "call_add");
     Ok(())
 }

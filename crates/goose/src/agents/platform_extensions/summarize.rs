@@ -5,17 +5,18 @@ use crate::agents::tool_execution::ToolCallContext;
 use async_trait::async_trait;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
+use goose_agent::mcp::client::Error;
 
 pub static EXTENSION_NAME: &str = "summarize";
 
@@ -48,24 +49,6 @@ impl SummarizeClient {
         Ok(Self { info, context })
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
-            .as_ref()
-            .ok_or("Provider not available")?
-            .clone();
-
-        Ok(provider)
-    }
-
     fn get_tools() -> Vec<Tool> {
         let schema = schema_for!(SummarizeParams);
         let schema_value =
@@ -83,19 +66,9 @@ impl SummarizeClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SummarizeClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+impl PlatformExtension for SummarizeClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(
@@ -139,7 +112,7 @@ impl McpClientTrait for SummarizeClient {
             )]));
         }
 
-        let provider = match self.get_provider().await {
+        let provider = match self.context.provider_for_session(&ctx.session_id).await {
             Ok(p) => p,
             Err(e) => {
                 return Ok(CallToolResult::error(vec![ContentBlock::text(format!(

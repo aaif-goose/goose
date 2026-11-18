@@ -104,9 +104,6 @@ load()
 load(source: "release-notes")
 delegate(source: "release-notes")
 delegate(instructions: "Review these docs and report stale links")
-delegate(source: "release-notes", async: true)
-load(source: "20260219_1", peek: true)
-load(source: "20260219_1")
 ```
 
-Calling `load()` with no arguments lists available sources. For background tasks, `delegate(..., async: true)` returns a task id, and `load(source: "<task_id>")` waits for the result.
+Calling `load()` with no arguments lists available sources. `delegate` waits for the subagent to finish and returns its result.

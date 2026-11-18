@@ -8,46 +8,31 @@ use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io;
 use tokio::pin;
 use tokio_util::io::StreamReader;
 
 use super::api_client::ApiClient;
-use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata};
+use super::base::{
+    known_models_from_registry, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
+};
+pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
-    create_request_for_model, response_to_streaming_message, AnthropicFormatOptions,
-    ANTHROPIC_PROVIDER_NAME,
+    block_binding_behavior, create_request_for_model, error_for_type,
+    is_reserved_request_param_key, is_thinking_signature_error, response_to_streaming_message,
+    PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD,
+    THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
+use crate::http_status::extract_request_id;
 use crate::model::ModelConfig;
 use rmcp::model::Tool;
 
 pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
-const ANTHROPIC_KNOWN_MODELS: &[&str] = &[
-    "claude-opus-5",
-    "claude-sonnet-5",
-    "claude-fable-5",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    // Claude 4.6 models
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    // Claude 4.5 models with aliases
-    "claude-sonnet-4-5",
-    "claude-sonnet-4-5-20250929",
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-    "claude-opus-4-5",
-    "claude-opus-4-5-20251101",
-    // Legacy Claude 4.0 models
-    "claude-sonnet-4-0",
-    "claude-sonnet-4-20250514",
-    "claude-opus-4-0",
-    "claude-opus-4-20250514",
-];
 
 const ANTHROPIC_DOC_URL: &str = "https://docs.anthropic.com/en/docs/about-claude/models";
 pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
@@ -162,6 +147,60 @@ impl AnthropicProviderBuilder {
 }
 
 impl AnthropicProvider {
+    fn streaming_payload(
+        &self,
+        model_config: &ModelConfig,
+        wire_model: &str,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+        format_options: AnthropicFormatOptions,
+    ) -> Result<Value, ProviderError> {
+        let mut payload = create_request_for_model(
+            &self.name,
+            model_config,
+            wire_model,
+            system,
+            messages,
+            tools,
+            format_options,
+        )?;
+        payload["stream"] = Value::Bool(true);
+        if let Some(params) = self
+            .declared_model(&model_config.model_name)
+            .and_then(|m| m.request_params.as_ref())
+        {
+            apply_declared_request_params(&mut payload, params);
+        }
+        Ok(payload)
+    }
+
+    fn declared_model(&self, model_name: &str) -> Option<&ModelInfo> {
+        self.custom_models
+            .as_ref()?
+            .iter()
+            .find(|m| m.name == model_name)
+    }
+
+    async fn post_messages(
+        &self,
+        model_config: &ModelConfig,
+        payload: &Value,
+    ) -> Result<reqwest::Response, ProviderError> {
+        let beta_header = beta_header_value(&self.api_client, model_config, payload);
+        self.with_retry(|| async {
+            let mut request = self
+                .api_client
+                .request("v1/messages")
+                .model_headers(model_config)?;
+            if let Some(beta) = &beta_header {
+                request = request.header("anthropic-beta", beta)?;
+            }
+            handle_status(request.streaming(true).response_post(payload).await?).await
+        })
+        .await
+    }
+
     pub async fn stream_for_model(
         &self,
         model_config: &ModelConfig,
@@ -170,8 +209,7 @@ impl AnthropicProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = create_request_for_model(
-            ANTHROPIC_PROVIDER_NAME,
+        let payload = self.streaming_payload(
             model_config,
             wire_model,
             system,
@@ -179,24 +217,35 @@ impl AnthropicProvider {
             tools,
             self.format_options.clone(),
         )?;
-        payload["stream"] = Value::Bool(true);
         let mut log = start_log(model_config, &payload)?;
-        let response = self
-            .with_retry(|| async {
-                handle_status(
-                    self.api_client
-                        .request("v1/messages")
-                        .model_headers(model_config)?
-                        .streaming(true)
-                        .response_post(&payload)
-                        .await?,
-                )
-                .await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
+        let response = match self.post_messages(model_config, &payload).await {
+            Err(ProviderError::RequestFailed(message))
+                if is_thinking_signature_error(&message)
+                    && !self.format_options.strip_thinking_history
+                    && block_binding_behavior(&payload) != Some(PrefixMismatchBehavior::Error) =>
+            {
+                tracing::warn!(
+                    error = %message,
+                    "API rejected replayed thinking blocks; retrying once with thinking history stripped. \
+                     The rejected blocks stay in the session, so later requests may repeat this retry"
+                );
+                let _ = log.error(&message);
+                let stripped = AnthropicFormatOptions {
+                    strip_thinking_history: true,
+                    ..self.format_options.clone()
+                };
+                let payload =
+                    self.streaming_payload(model_config, wire_model, system, messages, tools, stripped)?;
+                log = start_log(model_config, &payload)?;
+                self.post_messages(model_config, &payload).await
+            }
+            other => other,
+        }
+        .inspect_err(|e| {
+            let _ = log.error(e);
+        })?;
+        // Must be read before `bytes_stream()` consumes the response.
+        let request_id = extract_request_id(response.headers());
         let stream = response.bytes_stream().map_err(io::Error::other);
         Ok(Box::pin(try_stream! {
             let reader = StreamReader::new(stream);
@@ -204,7 +253,17 @@ impl AnthropicProvider {
             let messages = response_to_streaming_message(framed);
             pin!(messages);
             while let Some(message) = futures::StreamExt::next(&mut messages).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+                let (message, mut usage) = message.map_err(ProviderError::from_stream_error)?;
+                if let Some(usage) = usage.as_mut() {
+                    usage.request_id = request_id.clone();
+                }
+                if let Some(transformations) = usage
+                    .as_ref()
+                    .and_then(|usage| usage.additional_data.as_ref())
+                    .and_then(|data| data.get(INPUT_TRANSFORMATIONS_FIELD))
+                {
+                    log.write(&json!({ INPUT_TRANSFORMATIONS_FIELD: transformations }), None)?;
+                }
                 log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
                 yield (message, usage);
             }
@@ -243,22 +302,10 @@ impl AnthropicProvider {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error")
                 .to_string();
-            let error_type = err_obj.get("type").and_then(Value::as_str);
-            return Err(match error_type {
-                Some("authentication_error" | "permission_error") => {
-                    ProviderError::Authentication(message)
-                }
-                Some("rate_limit_error") => ProviderError::RateLimitExceeded {
-                    details: message,
-                    retry_delay: None,
-                },
-                Some("billing_error") => ProviderError::CreditsExhausted {
-                    details: message,
-                    top_up_url: None,
-                },
-                Some("api_error" | "overloaded_error") => ProviderError::ServerError(message),
-                _ => ProviderError::RequestFailed(message),
-            });
+            return Err(error_for_type(
+                err_obj.get("type").and_then(Value::as_str),
+                message,
+            ));
         }
 
         let arr = match json.get("data").and_then(|v| v.as_array()) {
@@ -281,17 +328,12 @@ impl AnthropicProvider {
 
 impl ProviderDescriptor for AnthropicProvider {
     fn metadata() -> ProviderMetadata {
-        let models: Vec<ModelInfo> = ANTHROPIC_KNOWN_MODELS
-            .iter()
-            .map(|&model_name| ModelInfo::new(model_name).with_context_limit(200_000))
-            .collect();
-
         ProviderMetadata::with_models(
             ANTHROPIC_PROVIDER_NAME,
             "Anthropic",
             "Claude and other models from Anthropic",
             ANTHROPIC_DEFAULT_MODEL,
-            models,
+            known_models_from_registry(ANTHROPIC_PROVIDER_NAME),
             ANTHROPIC_DOC_URL,
             vec![
                 ConfigKey::new("ANTHROPIC_API_KEY", true, true, None, true),
@@ -369,6 +411,15 @@ impl Provider for AnthropicProvider {
         self.fetch_models_from_api().await
     }
 
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        Ok(crate::base::merge_configured_model_info(
+            &self.name,
+            &names,
+            self.custom_models.as_deref().unwrap_or_default(),
+        ))
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,
@@ -384,6 +435,49 @@ impl Provider for AnthropicProvider {
             tools,
         )
         .await
+    }
+}
+
+pub(crate) fn beta_header_value(
+    api_client: &ApiClient,
+    model_config: &ModelConfig,
+    payload: &Value,
+) -> Option<String> {
+    let mut features: Vec<String> = model_config
+        .request_headers
+        .as_ref()
+        .and_then(|headers| {
+            headers
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case("anthropic-beta"))
+                .map(|(_, value)| value.as_str())
+        })
+        .or_else(|| api_client.default_header("anthropic-beta"))
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if block_binding_behavior(payload).is_some()
+        && !features.iter().any(|f| f == THINKING_BINDING_CONTROLS_BETA)
+    {
+        features.push(THINKING_BINDING_CONTROLS_BETA.to_string());
+    }
+    (!features.is_empty()).then(|| features.join(","))
+}
+
+fn apply_declared_request_params(payload: &mut Value, params: &HashMap<String, Value>) {
+    let Some(object) = payload.as_object_mut() else {
+        return;
+    };
+    for (key, value) in params {
+        if !is_reserved_request_param_key(key) {
+            object.insert(key.clone(), value.clone());
+        }
     }
 }
 
@@ -531,6 +625,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(payload["thinking"]["clear_thinking"], false);
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_model_info_preserves_configured_metadata() {
+        let mut provider = make_provider_with_custom_models("http://localhost", vec![]);
+        provider.dynamic_models = Some(false);
+        provider.custom_models = Some(vec![ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("unrecognized-static-model").with_context_limit(4096)
+        }]);
+
+        let models = provider.fetch_supported_model_info().await.unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unrecognized-static-model");
+        assert_eq!(models[0].context_limit, Some(4096));
+        assert!(models[0].reasoning);
     }
 
     fn make_provider_with_custom_models(
@@ -754,5 +865,65 @@ mod tests {
             "expected Authentication error, got: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn beta_header_merges_client_default_with_binding_beta() {
+        let client =
+            ApiClient::new_with_tls("http://localhost".to_string(), AuthMethod::NoAuth, None)
+                .unwrap()
+                .with_header("anthropic-beta", "context-1m-2025-08-07")
+                .unwrap();
+        let payload = json!({
+            "thinking": {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+        });
+        assert_eq!(
+            beta_header_value(&client, &ModelConfig::new("claude-opus-5"), &payload).as_deref(),
+            Some("context-1m-2025-08-07,thinking-binding-controls-2026-08-01")
+        );
+    }
+
+    #[test]
+    fn metadata_comes_from_the_registry() {
+        let metadata = AnthropicProvider::metadata();
+        let sonnet = metadata
+            .known_models
+            .iter()
+            .find(|model| model.name == "claude-sonnet-5-5")
+            .expect("claude-sonnet-5-5 should come from the catalog");
+        assert_eq!(sonnet.context_limit, Some(1_000_000));
+        assert!(
+            metadata
+                .known_models
+                .iter()
+                .all(|model| !model.name.contains('.')),
+            "Anthropic picker ids must be dashed wire names, not dotted catalog names"
+        );
+    }
+
+    #[test]
+    fn apply_declared_request_params_skips_reserved_keys() {
+        let mut payload = json!({
+            "model": "claude-sonnet-4-5",
+            "stream": true,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8096,
+        });
+
+        let params = HashMap::from([
+            ("output_config".to_string(), json!({"effort": "low"})),
+            ("model".to_string(), json!("hijacked")),
+            ("stream".to_string(), json!(false)),
+            ("messages".to_string(), json!([])),
+            ("max_tokens".to_string(), json!(1)),
+        ]);
+
+        apply_declared_request_params(&mut payload, &params);
+
+        assert_eq!(payload["output_config"], json!({"effort": "low"}));
+        assert_eq!(payload["model"], json!("claude-sonnet-4-5"));
+        assert_eq!(payload["stream"], json!(true));
+        assert_eq!(payload["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["max_tokens"], json!(8096));
     }
 }

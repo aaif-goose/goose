@@ -36,11 +36,15 @@ afterEach(async () => {
 describe('resolveInstallTarget', () => {
   it('resolves the .app bundle on macOS', async () => {
     setPlatform('darwin');
-    const exePath = '/Applications/Goose.app/Contents/MacOS/Goose';
+    // The mocked platform does not change `path`, which stays the host
+    // implementation, so build the expectation the same way the code under test
+    // does instead of hardcoding POSIX separators.
+    const bundlePath = path.resolve('/Applications/Goose.app');
+    const exePath = path.join(bundlePath, 'Contents', 'MacOS', 'Goose');
 
     await expect(resolveInstallTarget(exePath)).resolves.toEqual({
-      targetPath: '/Applications/Goose.app',
-      relaunchPath: '/Applications/Goose.app',
+      targetPath: bundlePath,
+      relaunchPath: bundlePath,
       executableRelativePath: path.join('Contents', 'MacOS', 'Goose'),
     });
   });
@@ -115,5 +119,15 @@ describe('resolveInstallTarget', () => {
     await expect(resolveInstallTarget(path.join(home, 'goose'))).rejects.toThrow(
       /Refusing to auto-update/
     );
+  });
+
+  it('refuses to update a copy set up by the Windows installer', async () => {
+    setPlatform('win32');
+    const root = await makeTempDir();
+    const exePath = await makeInstallDir(root, 'Goose');
+    const uninstaller = `Uninstall ${path.basename(exePath, '.exe')}.exe`;
+    await fs.writeFile(path.join(path.dirname(exePath), uninstaller), 'binary');
+
+    await expect(resolveInstallTarget(exePath)).rejects.toThrow(/was set up by the installer/);
   });
 });

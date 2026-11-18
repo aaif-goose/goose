@@ -16,6 +16,17 @@ The issue is the source of truth for work intended for an upstream pull request.
 
 Maintainer-directed work, urgent security fixes, release automation, and local or exploratory changes do not require a Ready issue.
 
+## MCP Server Directory
+
+goose is retiring its project-specific MCP server directory in favor of the [official MCP Registry](https://github.com/modelcontextprotocol/registry) and its `server.json` format.
+
+- Do not add new third-party servers to `documentation/static/servers.json`; these contributions are no longer accepted.
+- Direct server authors to publish to the official MCP Registry instead.
+- Treat the existing goose directory as legacy data while registry-backed discovery and installation are implemented.
+- Changes that maintain, migrate, or remove existing directory entries are allowed when they support the migration and are within an approved issue's scope.
+
+See [Discussion #10830](https://github.com/aaif-goose/goose/discussions/10830) for the decision and migration direction.
+
 ## GitHub Communication
 
 Write issue and pull request comments for humans, not as exhaustive work logs.
@@ -24,12 +35,6 @@ Write issue and pull request comments for humans, not as exhaustive work logs.
 - Keep comments concise; do not repeat context already present in the thread.
 - Use short paragraphs or bullets, and include implementation details only when they affect a decision or review.
 - Prefer one clear summary over multiple incremental comments.
-
-## Agent Loop Migration
-
-We are replacing the legacy agent loop in `crates/goose/src/agents/agent.rs` with the state machine in `crates/goose/src/agents/state_machine/`. The state-machine path is enabled with `GOOSE_STATE_MACHINE=1`.
-
-Until the migration is complete, changes to agent-loop behavior must be implemented and tested in both paths. When reviewing code, check whether a change to either path also applies to the other and flag missing parity.
 
 ## Setup
 ```bash
@@ -48,6 +53,7 @@ just release-binary           # release binary
 
 ### Test
 ```bash
+export GOOSE_DISABLE_KEYRING=1  # avoid system keyring prompts
 cargo test                   # all tests
 cargo test -p goose          # specific crate
 cargo test --package goose --test mcp_integration_test
@@ -74,6 +80,8 @@ ui/desktop/   # Electron app
 ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
+Some workspace crates, including those that make up the GDK, are published to crates.io and expose public APIs. The authoritative list of GDK crates is the `release = true`, `version_group = "gdk"` package set in `release-plz.toml`, which drives the GDK release; run `python3 crates/goose-sdk/scripts/gdk-release.py crates` to print it. Other crates, such as `goose` and `goose-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
+
 ## Development Loop
 ```bash
 # 1. source bin/activate-hermit
@@ -84,14 +92,13 @@ ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ### Run these only if the user has asked you to build/test your changes:
 ```
 # 1. cargo build
-# 2. cargo test -p <crate>
+# 2. GOOSE_DISABLE_KEYRING=1 cargo test -p <crate>
 # 3. cargo clippy --all-targets -- -D warnings
 ```
 
 ## Rules
 
 - Test: Prefer tests/ folder, e.g. crates/goose/tests/
-- Test: When adding features, update goose-self-test.yaml, rebuild, then run `goose run --recipe goose-self-test.yaml` to validate
 - Error: Use anyhow::Result
 - Provider: Implement Provider trait see providers/base.rs
 - MCP: Extensions in crates/goose-mcp/
@@ -121,4 +128,5 @@ ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ## Entry Points
 - CLI: crates/goose-cli/src/main.rs
 - UI: ui/desktop/src/main.ts
-- Agent: crates/goose/src/agents/agent.rs
+- Agent: crates/goose/src/agents/services.rs (`reply`)
+- Agent loop: crates/goose/src/agents/state_machine_builder.rs (the ordered operations), run by crates/goose/src/agents/state_machine/

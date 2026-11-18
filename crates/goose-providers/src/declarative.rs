@@ -13,13 +13,18 @@ pub(crate) mod declarative_providers {
     use super::*;
 
     expose_declarative_providers!(
+        aigateway,
+        aihubmix,
         aimlapi,
         alibaba,
+        amazeeai,
         atomic_chat,
         celeris,
         cerebras,
+        cortecs,
         deepseek,
         empiriolabs,
+        eurouter,
         fireworks,
         friendli,
         futurmix,
@@ -27,7 +32,10 @@ pub(crate) mod declarative_providers {
         iflytek,
         iflytek_astron,
         inception,
+        ionet,
+        lemonade,
         llama_swap,
+        llmman,
         lmstudio,
         lynkr,
         meta,
@@ -39,6 +47,7 @@ pub(crate) mod declarative_providers {
         nvidia,
         ollama_cloud,
         omlx,
+        onysoft,
         opencode_go,
         opencode_zen,
         opper,
@@ -46,6 +55,7 @@ pub(crate) mod declarative_providers {
         ovhcloud,
         perplexity,
         pleumrouter,
+        routerplex,
         routstr,
         sakana,
         saladcloud,
@@ -58,6 +68,7 @@ pub(crate) mod declarative_providers {
         venice,
         vercel_ai_gateway,
         zai,
+        zai_coding_plan,
         zhipu,
     );
 }
@@ -155,6 +166,9 @@ pub struct DeclarativeProviderConfig {
     pub base_url: String,
     pub models: Vec<ModelInfo>,
     pub headers: Option<HashMap<String, String>>,
+    /// Overrides the default `agent-session-id` header name for session ID propagation.
+    #[serde(default)]
+    pub session_id_header_override: Option<String>,
     pub timeout_seconds: Option<u64>,
     pub supports_streaming: Option<bool>,
     #[serde(default = "default_requires_auth")]
@@ -426,6 +440,15 @@ mod tests {
     }
 
     #[test]
+    fn vercel_ai_gateway_json_refreshes_models_against_vercel_catalog() {
+        let config = deserialize_provider_config(crate::vercel_ai_gateway::JSON)
+            .expect("vercel_ai_gateway.json should parse");
+
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.catalog_provider_id.as_deref(), Some("vercel"));
+    }
+
+    #[test]
     fn setup_metadata_rejects_unknown_fields() {
         let mut definition: serde_json::Value = serde_json::from_str(crate::groq::JSON).unwrap();
         definition["setup"]["description"] = json!("This field would be ignored");
@@ -533,6 +556,20 @@ mod tests {
         }
 
         assert!(!seen_ids.is_empty(), "no bundled providers were found");
+    }
+
+    #[test]
+    fn opencode_go_overrides_session_id_header() {
+        let config = fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "opencode_go")
+            .expect("opencode_go should be bundled");
+
+        assert_eq!(
+            config.session_id_header_override.as_deref(),
+            Some("x-opencode-session")
+        );
     }
 
     #[test]

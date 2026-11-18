@@ -19,7 +19,6 @@ const COPILOT_ACP_DOC_URL: &str = "https://github.com/github/copilot-cli";
 pub(crate) const COPILOT_ACP_BINARY: &str = "copilot";
 
 const MODE_AGENT: &str = "https://agentclientprotocol.com/protocol/session-modes#agent";
-const MODE_PLAN: &str = "https://agentclientprotocol.com/protocol/session-modes#plan";
 
 pub struct CopilotAcpProvider;
 
@@ -62,7 +61,7 @@ impl CopilotAcpProvider {
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(COPILOT_ACP_BINARY)?;
-            let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
+            let goose_mode = config.resolve_goose_mode()?;
             let model = if use_default_model {
                 ACP_CURRENT_MODEL.to_string()
             } else {
@@ -80,7 +79,6 @@ impl CopilotAcpProvider {
                 (GooseMode::Auto, vec![MODE_AGENT.to_string()]),
                 (GooseMode::Approve, vec![MODE_AGENT.to_string()]),
                 (GooseMode::SmartApprove, vec![MODE_AGENT.to_string()]),
-                (GooseMode::Chat, vec![MODE_PLAN.to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {
@@ -105,6 +103,8 @@ impl CopilotAcpProvider {
 
 impl ProviderDef for CopilotAcpProvider {
     type Provider = AcpProvider;
+    const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

@@ -1,17 +1,22 @@
 import { useEffect, useState, useRef, type RefObject } from 'react';
 import { IpcRendererEvent } from 'electron';
 import { HashRouter, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router';
-import { importNostrSessionFromDeepLink } from './sessionLinks';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import RecipeParamsModalContainer from './components/RecipeParamsModalContainer';
-import { isRecipeParamsCancelled, isRecipeParameterScopesUnsupported } from './acp/errors';
+import RecipeConsentModalContainer from './components/RecipeConsentModalContainer';
+import {
+  isRecipeDeclined,
+  isRecipeParamsCancelled,
+  isRecipeParameterScopesUnsupported,
+} from './acp/errors';
 import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
+import { acpChatSessionStore } from './acp/chatSessionStore';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
@@ -52,6 +57,7 @@ import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
 import { registerPlatformEventHandlers } from './utils/platform_events';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
+import { useLiveVoice, type LiveVoiceController } from './liveVoice/useLiveVoice';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -59,9 +65,15 @@ function PageViewTracker() {
 }
 
 // Route Components
-const HubRouteWrapper = ({ draftRef }: { draftRef: RefObject<string> }) => {
+const HubRouteWrapper = ({
+  draftRef,
+  liveVoice,
+}: {
+  draftRef: RefObject<string>;
+  liveVoice: LiveVoiceController;
+}) => {
   const setView = useNavigation();
-  return <Hub setView={setView} draftRef={draftRef} />;
+  return <Hub setView={setView} draftRef={draftRef} liveVoice={liveVoice} />;
 };
 
 export function resolveSessionInitialMessage(
@@ -133,7 +145,7 @@ export const PairRouteWrapper = ({
             return prev;
           });
         } catch (error) {
-          if (isRecipeParamsCancelled(error)) {
+          if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) {
             navigate('/');
             return;
           }
@@ -197,7 +209,15 @@ const SettingsRoute = () => {
     viewOptions.section = sectionFromUrl;
   }
 
-  return <SettingsView onClose={() => navigate('/')} setView={setView} viewOptions={viewOptions} />;
+  const closeSettings = () => {
+    if (location.key === 'default') {
+      navigate('/');
+    } else {
+      navigate(-1);
+    }
+  };
+
+  return <SettingsView onClose={closeSettings} setView={setView} viewOptions={viewOptions} />;
 };
 
 const SessionsRoute = () => {
@@ -205,8 +225,7 @@ const SessionsRoute = () => {
 };
 
 const SchedulesRoute = () => {
-  const navigate = useNavigate();
-  return <SchedulesView onClose={() => navigate('/')} />;
+  return <SchedulesView />;
 };
 
 const RecipesRoute = () => {
@@ -258,14 +277,20 @@ const PermissionRoute = () => {
 };
 
 const ConfigureProvidersRoute = () => {
+  const location = useLocation();
   const navigate = useNavigate();
+
+  const closeProviderSettings = () => {
+    if (location.key === 'default') {
+      navigate('/settings', { replace: true, state: { section: 'models' } });
+    } else {
+      navigate(-1);
+    }
+  };
 
   return (
     <div className="w-screen h-screen bg-background-primary">
-      <ProviderSettings
-        onClose={() => navigate('/settings', { state: { section: 'models' } })}
-        isOnboarding={false}
-      />
+      <ProviderSettings onClose={closeProviderSettings} isOnboarding={false} />
     </div>
   );
 };
@@ -306,10 +331,18 @@ const ExtensionsRoute = () => {
 export function AppInner() {
   const [fatalError, setFatalError] = useState<string | null>(null);
 
-  const nostrImportInFlight = useRef<string | null>(null);
-
   const navigate = useNavigate();
+  const location = useLocation();
   const setView = useNavigation();
+  const liveVoice = useLiveVoice();
+  const { activeSessionId: activeLiveVoiceSessionId, stop: stopLiveVoice } = liveVoice;
+
+  useEffect(() => {
+    const hasLiveVoiceEntryPoint = location.pathname === '/' || location.pathname === '/pair';
+    if (!hasLiveVoiceEntryPoint && activeLiveVoiceSessionId) {
+      void stopLiveVoice();
+    }
+  }, [activeLiveVoiceSessionId, location.pathname, stopLiveVoice]);
 
   const [chat, setChat] = useState<ChatType>({
     sessionId: '',
@@ -421,47 +454,6 @@ export function AppInner() {
   }, []);
 
   useEffect(() => {
-    const handleOpenSharedSession = async (_event: IpcRendererEvent, ...args: unknown[]) => {
-      const link = args[0] as string;
-      window.electron.logInfo('Opening session share link');
-
-      if (!link.startsWith('goose://sessions/nostr')) {
-        toast.error('Unsupported session share link');
-        navigate('/sessions');
-        return;
-      }
-
-      if (nostrImportInFlight.current === link) {
-        window.electron.logInfo('Skipping duplicate Nostr deep link import');
-        return;
-      }
-      nostrImportInFlight.current = link;
-
-      try {
-        await importNostrSessionFromDeepLink(link);
-        navigate('/sessions');
-      } catch (error) {
-        console.error('Unexpected error opening Nostr session share:', error);
-        trackErrorWithContext(error, {
-          component: 'AppInner',
-          action: 'open_nostr_session_share',
-          recoverable: true,
-        });
-        toast.error(`Failed to import Nostr session: ${errorMessage(error, 'Unknown error')}`);
-        navigate('/sessions');
-      } finally {
-        if (nostrImportInFlight.current === link) {
-          nostrImportInFlight.current = null;
-        }
-      }
-    };
-    window.electron.on('open-shared-session', handleOpenSharedSession);
-    return () => {
-      window.electron.off('open-shared-session', handleOpenSharedSession);
-    };
-  }, [navigate]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       if ((isMac ? event.metaKey : event.ctrlKey) && event.key === 'n') {
@@ -554,12 +546,21 @@ export function AppInner() {
 
   useEffect(() => {
     const handleNewChat = (_event: IpcRendererEvent, ..._args: unknown[]) => {
-      navigate('/');
+      if (location.pathname === '/') return;
+
+      const sessionId =
+        location.pathname === '/pair'
+          ? new URLSearchParams(location.search).get('resumeSessionId')
+          : null;
+      const workingDir = sessionId
+        ? acpChatSessionStore.getSnapshot(sessionId)?.session?.working_dir
+        : undefined;
+      navigate('/', { state: { workingDir } });
     };
 
     window.electron.on('new-chat', handleNewChat);
     return () => window.electron.off('new-chat', handleNewChat);
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   useEffect(() => {
     const handleFocusInput = (_event: IpcRendererEvent, ..._args: unknown[]) => {
@@ -629,6 +630,7 @@ export function AppInner() {
         pauseOnHover
       />
       <ExtensionInstallModal addExtension={addExtension} setView={setView} />
+      <RecipeConsentModalContainer />
       <RecipeParamsModalContainer />
       <div className="relative w-screen h-screen overflow-hidden bg-background-secondary flex flex-col">
         <div className="titlebar-drag-region" />
@@ -642,12 +644,15 @@ export function AppInner() {
               element={
                 <OnboardingGuard>
                   <ChatProvider chat={chat} setChat={setChat} contextKey="hub">
-                    <AppLayout activeSessions={activeSessions} />
+                    <AppLayout activeSessions={activeSessions} liveVoice={liveVoice} />
                   </ChatProvider>
                 </OnboardingGuard>
               }
             >
-              <Route index element={<HubRouteWrapper draftRef={hubDraftRef} />} />
+              <Route
+                index
+                element={<HubRouteWrapper draftRef={hubDraftRef} liveVoice={liveVoice} />}
+              />
               <Route
                 path="pair"
                 element={

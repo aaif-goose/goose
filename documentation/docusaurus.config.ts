@@ -7,10 +7,6 @@ import tailwindPlugin from "./plugins/tailwind-config.cjs";
 
 require("dotenv").config();
 
-const inkeepApiKey = process.env.INKEEP_API_KEY;
-const inkeepIntegrationId = process.env.INKEEP_INTEGRATION_ID;
-const inkeepOrgId = process.env.INKEEP_ORG_ID;
-
 type SidebarItem = {
   type?: string;
   label?: string;
@@ -69,7 +65,17 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           async sidebarItemsGenerator(args) {
-            const items = await args.defaultSidebarItemsGenerator(args);
+            const generatedItems = await args.defaultSidebarItemsGenerator(args);
+            const items =
+              args.item.dirName === "."
+                ? generatedItems.map((item) =>
+                    item.type === "category" &&
+                    item.link?.type === "doc" &&
+                    item.link.id === "gdk/index"
+                      ? { type: "link" as const, label: "GDK", href: "/docs/gdk" }
+                      : item,
+                  )
+                : generatedItems;
 
             const contextEngineeringItems = [
               {
@@ -150,6 +156,14 @@ const config: Config = {
       {
         redirects: [
           {
+            from: "/docs/gdk/acp/zed",
+            to: "/docs/guides/zed",
+          },
+          {
+            from: "/docs/gdk/sdk",
+            to: "/docs/gdk/reference",
+          },
+          {
             from: "/docs/getting-started/using-goose-free",
             to: "/docs/getting-started/providers#using-goose-for-free",
           },
@@ -227,11 +241,19 @@ const config: Config = {
           },
           {
             from: "/docs/guides/multi-model/creating-plans",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
           },
           {
             from: "/docs/guides/creating-plans",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
+          },
+          {
+            from: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
+          },
+          {
+            from: "/docs/tutorials/plan-feature-devcontainer-setup",
+            to: "/docs/guides/context-engineering",
           },
           {
             from: "/docs/guides/config-file",
@@ -371,6 +393,10 @@ const config: Config = {
             to: "/docs/mcp/repomix-mcp",
           },
           {
+            from: "/docs/mcp/rube-mcp",
+            to: "/docs/getting-started/using-extensions",
+          },
+          {
             from: "/docs/tutorials/selenium-mcp",
             to: "/docs/mcp/selenium-mcp",
           },
@@ -408,7 +434,7 @@ const config: Config = {
           },
           {
             from: "/docs/tutorials/lead-worker",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
           },
         ],
       },
@@ -421,7 +447,6 @@ const config: Config = {
       },
     ],
   ],
-  themes: ["@inkeep/docusaurus/searchBar"],
   themeConfig: {
     // Replace with your project's social card
     image: "img/home-banner.png",
@@ -442,6 +467,12 @@ const config: Config = {
           position: "left",
         },
         {
+          to: "/docs/gdk/",
+          label: "GDK",
+          position: "left",
+        },
+        { to: "/blog", label: "Blog", position: "left" },
+        {
           to: "/docs/category/guides",
           position: "left",
           label: "Docs",
@@ -451,27 +482,6 @@ const config: Config = {
           position: "left",
           label: "Tutorials",
         },
-        { to: "/blog", label: "Blog", position: "left" },
-        {
-          type: "dropdown",
-          label: "Resources",
-          position: "left",
-          items: [
-            {
-              to: "/extensions",
-              label: "Extensions",
-            },
-            {
-              to: "/recipes",
-              label: "Recipe Cookbook",
-            },
-            {
-              to: "deeplink-generator",
-              label: "Deeplink Generator",
-            },
-          ],
-        },
-
         {
           href: "https://discord.gg/n8R5VaWDAn",
           label: "Discord",
@@ -496,6 +506,10 @@ const config: Config = {
             {
               label: "Extensions",
               to: "/extensions",
+            },
+            {
+              label: "GDK",
+              to: "/docs/gdk/",
             },
           ],
         },
@@ -551,22 +565,6 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.nightOwl,
-    },
-    inkeepConfig: {
-      baseSettings: {
-        apiKey: inkeepApiKey,
-        integrationId: inkeepIntegrationId,
-        organizationId: inkeepOrgId,
-        primaryBrandColor: "#1E1E1E",
-      },
-    },
-    announcementBar: {
-      id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
-      content:
-        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
-      backgroundColor: '#20232a',
-      textColor: '#fff',
-      isCloseable: true,
     },
   } satisfies Preset.ThemeConfig,
 };

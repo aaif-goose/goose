@@ -39,6 +39,12 @@ jobs:
           VERSION="${VERSION}-canary+${SHORT_SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+  build-acp:
+    needs: [prepare-version]
+    uses: ./.github/workflows/build-acp.yml
+    with:
+      version: ${{ needs.prepare-version.outputs.version }}
+
   # ------------------------------------
   # 2) Bundle CLI and Desktop (Linux)
   # ------------------------------------
@@ -57,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: download_cli.sh
           path: download_cli.sh
@@ -126,7 +132,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
+    needs: [build-acp, build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing
@@ -134,7 +140,7 @@ jobs:
 
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: '!internal-*'
           merge-multiple: true

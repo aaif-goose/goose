@@ -1,6 +1,6 @@
 use super::*;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_create_source(
         &self,
         req: CreateSourceRequest,

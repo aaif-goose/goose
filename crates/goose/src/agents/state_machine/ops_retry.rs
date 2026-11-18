@@ -8,14 +8,13 @@ use crate::agents::retry::{
     execute_on_failure_command_with_timeout, execute_success_checks_with_timeout,
 };
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect,
-    Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, ends_turn, messages_since_kickoff, not_applicable, yielded, yielded_with, Command,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
 };
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::Conversation;
-use crate::session::Session;
-use tokio::sync::Mutex;
+use crate::session::{GoalState, Session};
 
 pub(super) const NUDGED: &str = "nudged";
 pub(super) const ATTEMPTS: &str = "attempts";
@@ -27,23 +26,20 @@ fn retry_error(error: &str) -> Message {
     )
 }
 
-pub struct RetryOperation<'a> {
-    goal: &'a Mutex<Option<String>>,
-    grind: &'a Mutex<Option<String>>,
+#[derive(Clone, Copy)]
+enum GoalKind {
+    Goal,
+    Grind,
+}
+
+pub struct RetryOperation {
     retry_timeout: Duration,
     on_failure_timeout: Duration,
 }
 
-impl<'a> RetryOperation<'a> {
-    pub fn new(
-        goal: &'a Mutex<Option<String>>,
-        grind: &'a Mutex<Option<String>>,
-        retry_timeout: Duration,
-        on_failure_timeout: Duration,
-    ) -> Self {
+impl RetryOperation {
+    pub fn new(retry_timeout: Duration, on_failure_timeout: Duration) -> Self {
         Self {
-            goal,
-            grind,
             retry_timeout,
             on_failure_timeout,
         }
@@ -80,60 +76,46 @@ impl<'a> RetryOperation<'a> {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for RetryOperation<'_> {
-    fn name(&self) -> &'static str {
-        "retry"
-    }
-
-    async fn run_command(
+    async fn goal_command(
         &self,
-        command: &SlashCommand<'_>,
-        _session: &Session,
+        kind: GoalKind,
+        params: &str,
+        session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let target = match command.command {
-            "goal" => &self.goal,
-            "grind" => &self.grind,
-            _ => return not_applicable(),
+        let mut state = GoalState::of(session);
+        let (name, label, target) = match kind {
+            GoalKind::Goal => ("goal", "goal", &mut state.goal),
+            GoalKind::Grind => ("grind", "grind goal", &mut state.grind),
         };
-        let label = if command.command == "goal" {
-            "goal"
-        } else {
-            "grind goal"
-        };
-        let params = command.params_str;
         let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
 
         let response = if params.is_empty() {
-            match target.lock().await.clone() {
+            match target {
                 Some(value) => Message::assistant().with_text(format!("Current {label}: {value}")),
                 None => Message::assistant().with_text(format!(
                     "No {label} set. Use `/{command_name} <description>` to set one.",
-                    command_name = command.command
+                    command_name = name
                 )),
             }
         } else if !starts_turn {
-            *target.lock().await = None;
-            let text = if command.command == "goal" {
-                "Goal cleared. The agent will finish normally."
-            } else {
-                "Grind cleared. The agent will finish normally."
+            *target = None;
+            let text = match kind {
+                GoalKind::Goal => "Goal cleared. The agent will finish normally.",
+                GoalKind::Grind => "Grind cleared. The agent will finish normally.",
             };
             Message::assistant().with_text(text)
         } else {
-            *target.lock().await = Some(params.to_string());
-            let text = if command.command == "goal" {
-                format!(
+            *target = Some(params.to_string());
+            let text = match kind {
+                GoalKind::Goal => format!(
                     "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
-                )
-            } else {
-                format!(
+                ),
+                GoalKind::Grind => format!(
                     "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {params}"
-                )
+                ),
             };
             Message::assistant().with_text(text)
         };
@@ -148,8 +130,8 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
             .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
         let command_message = command_message.with_visibility(true, false);
         let response = response.with_visibility(true, false);
-        emit.message(command_message).await;
-        let response = emit.message(response).await;
+        emit.message(command_message);
+        let response = emit.message(response);
 
         let mut effects = vec![
             ConversationEffect::SetMessageVisibility {
@@ -160,6 +142,9 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
             .into(),
             response.into(),
         ];
+        if !params.is_empty() {
+            effects.push(GooseEffect::extension_state(&state)?);
+        }
         if starts_turn {
             effects.push(
                 Message::user()
@@ -174,6 +159,44 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
         }
         applied(effects)
     }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for RetryOperation {
+    fn name(&self) -> &'static str {
+        "retry"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(vec![
+            Command::new(
+                "goal",
+                "Set a goal the agent must satisfy before finishing, or clear with /goal off",
+                move |call| {
+                    Box::pin(self.goal_command(
+                        GoalKind::Goal,
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+            Command::new(
+                "grind",
+                "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
+                move |call| {
+                    Box::pin(self.goal_command(
+                        GoalKind::Grind,
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                },
+            ),
+        ])
+    }
 
     async fn run(
         &self,
@@ -186,8 +209,9 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
             return not_applicable();
         }
 
+        let state = GoalState::of(session);
         if !self.goal_was_nudged(messages) {
-            if let Some(goal) = self.goal.lock().await.clone() {
+            if let Some(goal) = &state.goal {
                 let nudge = format!(
                     "Before finishing, check whether the following goal has been fully met:\n\n\
                      **Goal:** {goal}\n\n\
@@ -200,13 +224,12 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
                 emit.message(Message::assistant().with_system_notification(
                     SystemNotificationType::InlineMessage,
                     format!("Goal: {goal}"),
-                ))
-                .await;
+                ));
                 return applied([message.into()]);
             }
         }
 
-        if let Some(grind) = self.grind.lock().await.clone() {
+        if let Some(grind) = &state.grind {
             let nudge = format!(
                 "Keep working. The grind goal is not yet complete:\n\n\
                  **Goal:** {grind}\n\n\
@@ -218,13 +241,13 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
             emit.message(Message::assistant().with_system_notification(
                 SystemNotificationType::InlineMessage,
                 format!("Grind: {grind}"),
-            ))
-            .await;
+            ));
             return applied([message.into()]);
         }
 
-        *self.goal.lock().await = None;
-        *self.grind.lock().await = None;
+        if state.goal.is_some() {
+            return applied([GooseEffect::extension_state(&GoalState::default())?]);
+        }
 
         let Some(retry_config) = Self::retry_config(session) else {
             return not_applicable();
@@ -239,11 +262,17 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
         let success = match success {
             Ok(success) => success,
             Err(error) => {
-                let message = emit.message(retry_error(&error.to_string())).await;
+                let message = emit.message(retry_error(&error.to_string()));
                 return applied([message.into()]);
             }
         };
         if success {
+            if messages
+                .last()
+                .is_some_and(|message| message.content.is_empty())
+            {
+                return yielded();
+            }
             return not_applicable();
         }
 
@@ -261,7 +290,7 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
                 "retry_max_exceeded",
                 &format!("Max retries ({}) exceeded", retry_config.max_retries),
             );
-            let message = emit.message(message).await;
+            let message = emit.message(message);
             return applied([message.into()]);
         }
 
@@ -271,7 +300,7 @@ impl Operation<Session, GooseEffect> for RetryOperation<'_> {
                 .map(Duration::from_secs)
                 .unwrap_or(self.on_failure_timeout);
             if let Err(error) = execute_on_failure_command_with_timeout(command, timeout).await {
-                let message = emit.message(retry_error(&error.to_string())).await;
+                let message = emit.message(retry_error(&error.to_string()));
                 return applied([message.into()]);
             }
         }

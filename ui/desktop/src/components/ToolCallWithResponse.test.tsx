@@ -69,6 +69,23 @@ const toolResponse: ToolResponseMessageContent = {
   },
 };
 
+const failedToolResponse: ToolResponseMessageContent = {
+  type: 'toolResponse',
+  id: 'tool-1',
+  toolResult: {
+    status: 'success',
+    value: {
+      content: [
+        {
+          type: 'text',
+          text: 'this output is important',
+        },
+      ],
+      isError: true,
+    },
+  },
+};
+
 function renderToolCall(response?: ToolResponseMessageContent) {
   return render(
     <ToolCallWithResponse
@@ -109,6 +126,12 @@ describe('ToolCallWithResponse live output', () => {
     expect(await screen.findByText('final result')).toBeInTheDocument();
   });
 
+  it('renders output from a failed tool call', async () => {
+    renderToolCall(failedToolResponse);
+
+    expect(await screen.findByText('this output is important')).toBeInTheDocument();
+  });
+
   it('passes the current ACP permission generation through inline approval', async () => {
     const permissionMessage: Message = {
       content: [
@@ -147,5 +170,54 @@ describe('ToolCallWithResponse live output', () => {
       'permission-generation-1',
       'allow_once'
     );
+  });
+});
+
+describe('Code Mode execution history', () => {
+  beforeEach(() => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue('concise');
+  });
+  it.each([
+    'execute_javascript',
+    'code_execution__execute_javascript',
+    'execute_typescript',
+    'code_execution__execute_typescript',
+  ])('renders code and graph for %s', async (name) => {
+    const user = userEvent.setup({ skipHover: true });
+    render(
+      <ToolCallWithResponse
+        isCancelledMessage={false}
+        toolRequest={{
+          type: 'toolRequest',
+          id: 'code-call',
+          toolCall: {
+            status: 'success',
+            value: {
+              name,
+              arguments: {
+                code: 'async function run() { return 42; }',
+                tool_graph: [
+                  { tool: 'example__inspect', description: 'Inspect example', depends_on: [] },
+                ],
+              },
+            },
+          },
+        }}
+        notifications={[]}
+        isStreamingMessage={false}
+        isPendingApproval={false}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    await user.click(screen.getByText(/ code: async function run/));
+    expect(screen.getByText('1. example__inspect: Inspect example')).toBeInTheDocument();
+    await user.click(screen.getByText('Code'));
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === 'CODE' &&
+          element.textContent?.includes('async function run') === true
+      )
+    ).toBeInTheDocument();
   });
 });

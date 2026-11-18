@@ -1,8 +1,14 @@
 use crate::base::Provider;
 use crate::errors::ProviderError;
+use crate::maybe_send::MaybeSend;
 use async_trait::async_trait;
 use std::future::Future;
 use std::time::Duration;
+
+// wasm32 hosts run without a tokio runtime, so back off on the host's timer.
+#[cfg(target_arch = "wasm32")]
+use gloo_timers::future::sleep;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::time::sleep;
 
 pub const DEFAULT_MAX_RETRIES: usize = 3;
@@ -95,6 +101,9 @@ fn is_permanent_request_failure(message: &str) -> bool {
     PERMANENT_REQUEST_FAILURE_MARKERS
         .iter()
         .any(|marker| message.contains(marker))
+        || crate::formats::anthropic::is_thinking_signature_error(message)
+        || crate::formats::anthropic::is_unsupported_thinking_config_error(message)
+        || crate::formats::openai_responses::is_encrypted_reasoning_error(message)
 }
 
 pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
@@ -113,9 +122,9 @@ pub async fn retry_operation<F, Fut, T>(
     operation: F,
 ) -> Result<T, ProviderError>
 where
-    F: Fn() -> Fut + Send,
-    Fut: Future<Output = Result<T, ProviderError>> + Send,
-    T: Send,
+    F: Fn() -> Fut + MaybeSend,
+    Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+    T: MaybeSend,
 {
     let mut attempts = 0;
 
@@ -152,7 +161,8 @@ where
 /// Trait for retry functionality to keep Provider dyn-compatible.
 ///
 /// All `Provider` implementors get this via the blanket impl below.
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ProviderRetry {
     fn retry_config(&self) -> RetryConfig {
         RetryConfig::default()
@@ -160,9 +170,9 @@ pub trait ProviderRetry {
 
     async fn with_retry<F, Fut, T>(&self, operation: F) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send,
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
     {
         self.with_retry_config(operation, self.retry_config()).await
     }
@@ -173,12 +183,13 @@ pub trait ProviderRetry {
         config: RetryConfig,
     ) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send;
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend;
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<P: Provider> ProviderRetry for P {
     fn retry_config(&self) -> RetryConfig {
         Provider::retry_config(self)
@@ -190,9 +201,9 @@ impl<P: Provider> ProviderRetry for P {
         config: RetryConfig,
     ) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send,
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
     {
         let mut attempts = 0;
         let mut auth_retried = false;
@@ -293,8 +304,20 @@ mod tests {
         assert!(is_permanent_request_failure(
             "These blocks must remain as they were in the original response."
         ));
+        assert!(is_permanent_request_failure(
+            "messages.1.content.0: Invalid `signature` in `thinking` block."
+        ));
+        assert!(is_permanent_request_failure(
+            "\"thinking.type.disabled\" is not supported for this model."
+        ));
+        assert!(is_permanent_request_failure(
+            "To turn thinking off on this model, send \"thinking\": {\"type\": \"between_tools\"}"
+        ));
         assert!(!is_permanent_request_failure(
             "Bad request (400): model not found"
+        ));
+        assert!(!is_permanent_request_failure(
+            "tools.0: Tool type 'web_fetch_20250910' is not supported for this model."
         ));
     }
 

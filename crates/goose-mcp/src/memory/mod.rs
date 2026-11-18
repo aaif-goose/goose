@@ -4,7 +4,7 @@ use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
         CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
-        MetaObject, ServerCapabilities, ServerInfo,
+        MetaObject, ServerCapabilities, ServerConfig,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -509,7 +509,7 @@ impl MemoryServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for MemoryServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
                 "goose-memory",

@@ -81,9 +81,7 @@ interface DirSwitcherProps {
   className: string;
   sessionId: string | undefined;
   workingDir: string;
-  onWorkingDirChange?: (newDir: string) => Promise<void> | void;
-  onRestartStart?: () => void;
-  onRestartEnd?: () => void;
+  onWorkingDirChange: (newDir: string) => Promise<void> | void;
 }
 
 export const DirSwitcher: React.FC<DirSwitcherProps> = ({
@@ -91,8 +89,6 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
   sessionId,
   workingDir,
   onWorkingDirChange,
-  onRestartStart,
-  onRestartEnd,
 }) => {
   const intl = useIntl();
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
@@ -129,19 +125,15 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
 
   const applyDirectoryChange = async (newDir: string) => {
     if (sessionId) {
-      onRestartStart?.();
-
       try {
-        await onWorkingDirChange?.(newDir);
+        await onWorkingDirChange(newDir);
       } catch (error) {
         console.error('[DirSwitcher] Failed to update working directory:', error);
         toast.error(intl.formatMessage(i18n.failedToUpdateWorkingDir));
         return;
-      } finally {
-        onRestartEnd?.();
       }
     } else {
-      await onWorkingDirChange?.(newDir);
+      await onWorkingDirChange(newDir);
     }
 
     // Only record the directory after the backend confirmed the change, so a

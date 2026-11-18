@@ -202,7 +202,6 @@ You can layer multiple controls to match your risk tolerance and workflow:
   | Autonomous<br />CLI: `auto` | No approval required | Best for experienced users in safe environments |
   | Manual Approval<br />CLI: `approve` | Review every action | Recommended for sensitive work or when you want maximum control |
   | Smart Approval<br />CLI: `smart_approve` | AI decides what needs review | Balanced approach |
-  | Chat Only<br />CLI: `chat` | Disable all tools | For maximum security and models that don't support tool-calling |
 
 - **[Tool Permissions](/docs/guides/managing-tools/tool-permissions)** let you set `Always allow`, `Ask before`, and `Never allow` permissions for individual extension tools when in Manual Approval or Smart Approval modes
 
