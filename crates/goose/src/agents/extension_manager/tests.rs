@@ -65,6 +65,7 @@ pub(crate) struct SkillClient {
     info: InitializeResult,
     pub(crate) markdown: String,
     served: Option<String>,
+    pages_forever: bool,
     pub(crate) list_calls: AtomicUsize,
     pub(crate) reads: AtomicUsize,
 }
@@ -91,6 +92,7 @@ impl SkillClient {
             info: InitializeResult::new(capabilities),
             markdown: markdown.to_string(),
             served: None,
+            pages_forever: false,
             list_calls: AtomicUsize::new(0),
             reads: AtomicUsize::new(0),
         }
@@ -100,6 +102,12 @@ impl SkillClient {
     /// describes the original file.
     pub(crate) fn serving(mut self, markdown: &str) -> Self {
         self.served = Some(markdown.to_string());
+        self
+    }
+
+    /// Answers every `skills/list` page with a fresh cursor.
+    pub(crate) fn paging_forever(mut self) -> Self {
+        self.pages_forever = true;
         self
     }
 
@@ -146,11 +154,16 @@ impl McpClientTrait for SkillClient {
         _cursor: Option<String>,
         _cancellation_token: CancellationToken,
     ) -> Result<rmcp::model::ListSkillsResult, Error> {
-        self.list_calls.fetch_add(1, Ordering::SeqCst);
+        let page = self.list_calls.fetch_add(1, Ordering::SeqCst);
         Ok(rmcp::model::ListSkillsResult {
             result_type: Some(rmcp::model::ResultType::COMPLETE),
             ttl_ms: Some(300_000),
-            skills: vec![self.manifest()],
+            skills: if self.pages_forever {
+                Vec::new()
+            } else {
+                vec![self.manifest()]
+            },
+            next_cursor: self.pages_forever.then(|| format!("page-{page}")),
             ..Default::default()
         })
     }
@@ -215,6 +228,24 @@ async fn lease_lists_gets_and_reads_mcp_skills() {
     };
     crate::skills::mcp::verify_skill_markdown(&got, &text).unwrap();
     assert_eq!(client.reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn skills_listing_stops_at_the_page_budget() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
+    let client = Arc::new(SkillClient::new().paging_forever());
+    services
+        .extension_manager
+        .add_mock_extension("endless".to_string(), client.clone())
+        .await;
+
+    let lease = services.scope_tools("session").await.mcp.clone();
+    assert!(lease.skills().await.is_empty());
+    assert_eq!(
+        client.list_calls.load(Ordering::SeqCst),
+        crate::agents::extension_runtime::MAX_SKILL_LIST_PAGES
+    );
 }
 
 #[tokio::test]

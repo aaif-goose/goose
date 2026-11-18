@@ -127,6 +127,11 @@ struct CachedSkills {
     skills: Arc<Vec<Skill>>,
 }
 
+/// Bounds on one extension's `skills/list`, counted over raw entries so
+/// invalid ones also use up the budget.
+pub const MAX_SKILL_LIST_PAGES: usize = 64;
+pub const MAX_LISTED_SKILLS_PER_EXTENSION: usize = 1024;
+
 /// One extension's `skills/list` entries, as the server sent them.
 #[derive(Debug, Clone)]
 pub struct ExtensionSkills {
@@ -333,6 +338,12 @@ impl<C: ExtensionSpec> Extension<C> {
                 .unwrap_or(now);
             expires_at = Some(expires_at.map_or(page_expiry, |current| current.min(page_expiry)));
             skills.extend(page.skills);
+            if skills.len() > MAX_LISTED_SKILLS_PER_EXTENSION
+                || (page.next_cursor.is_some() && seen_cursors.len() + 1 >= MAX_SKILL_LIST_PAGES)
+            {
+                warn!(extension = %self.key, skills = skills.len(), "MCP skills listing exceeds the supported size");
+                return Err(ServiceError::UnexpectedResponse);
+            }
             match page.next_cursor {
                 Some(next) if seen_cursors.insert(next.clone()) => cursor = Some(next),
                 Some(next) => {

@@ -62,12 +62,38 @@ pub fn held_skill_records(session_id: &str) -> Vec<SkillRecord> {
         .collect()
 }
 
+/// Origins of MCP skills loaded earlier in a session's conversation but not
+/// held by this process, e.g. after the session was reopened. Their
+/// instructions are still in context, so they keep the acting window open.
+static RESTORED_ORIGINS: LazyLock<StdMutex<HashMap<String, HashSet<String>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+
+pub fn restore_origins(session_id: &str, origins: impl IntoIterator<Item = String>) {
+    let mut origins = origins.into_iter().peekable();
+    if origins.peek().is_none() {
+        return;
+    }
+    RESTORED_ORIGINS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(session_id.to_string())
+        .or_default()
+        .extend(origins);
+}
+
 pub fn active_origins(session_id: &str) -> Vec<String> {
     let mut origins: Vec<String> = held_skills_guard()
         .iter()
         .filter(|((held_session, _, _), _)| held_session == session_id)
         .map(|((_, extension, _), _)| extension.clone())
         .collect();
+    if let Some(restored) = RESTORED_ORIGINS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(session_id)
+    {
+        origins.extend(restored.iter().cloned());
+    }
     origins.sort();
     origins.dedup();
     origins
@@ -117,6 +143,10 @@ pub fn take_pinned(session_id: &str, extension_name: &str, uri: &str) -> Option<
 
 pub fn clear_session(session_id: &str) {
     clear_held_skills(session_id);
+    RESTORED_ORIGINS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(session_id);
     LISTED_SKILLS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -581,10 +611,7 @@ pub fn merge_skill_entries(
             .entry((skill.extension_name.clone(), skill.name.clone()))
             .or_default() += 1;
     }
-    for skill in mcp
-        .into_iter()
-        .filter(|skill| matches!(skill.resources, SkillResources::Files(_)))
-    {
+    for skill in mcp {
         let name = if counts
             .get(&(skill.extension_name.clone(), skill.name.clone()))
             .copied()
@@ -614,7 +641,19 @@ pub fn source_entry(skill: &SkillRecord, published_name: &str) -> SourceEntry {
 }
 
 fn mcp_source_entry(skill: &SkillRecord, published_name: &str) -> SourceEntry {
-    let mut properties = HashMap::new();
+    // Like filesystem skills, frontmatter `metadata` (e.g. named `arguments`)
+    // becomes the entry's properties; the host's own keys are inserted last.
+    let mut properties: HashMap<String, Value> = skill
+        .frontmatter
+        .get("metadata")
+        .and_then(Value::as_object)
+        .map(|metadata| {
+            metadata
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
     properties.insert(
         "mcpExtension".to_string(),
         Value::String(skill.extension_name.clone()),
@@ -648,9 +687,14 @@ fn mcp_source_entry(skill: &SkillRecord, published_name: &str) -> SourceEntry {
 /// origin label is the host's, not the server's.
 fn labelled_description(skill: &SkillRecord, collision: bool) -> String {
     format!(
-        "[untrusted MCP skill from {}{}] {}",
+        "[untrusted MCP skill from {}{}{}] {}",
         prompt_text(&skill.extension_name),
         if collision { ", name collision" } else { "" },
+        if skill.resources == SkillResources::Dynamic {
+            ", dynamic: goose cannot load it"
+        } else {
+            ""
+        },
         prompt_text(&skill.description)
     )
 }
@@ -1047,6 +1091,43 @@ mod tests {
             listed_file(&skill, &skill.uri),
             Err(SkillLoadError::DynamicSkill { .. })
         ));
+        assert!(matches!(
+            ensure_loadable(&skill),
+            Err(SkillLoadError::DynamicSkill { .. })
+        ));
+
+        let entries = merge_skill_entries(Vec::new(), vec![skill]);
+        assert_eq!(entries[0].name, "stripe::billing");
+        assert!(entries[0]
+            .description
+            .contains("dynamic: goose cannot load it"));
+    }
+
+    #[test]
+    fn frontmatter_metadata_becomes_entry_properties() {
+        let payload = serde_json::json!({
+            "resultType": "complete",
+            "skills": [{
+                "uri": "skill://billing/SKILL.md",
+                "frontmatter": {
+                    "name": "billing",
+                    "description": "Billing",
+                    "metadata": { "arguments": ["component"], "skillUri": "spoofed" }
+                },
+                "resources": "dynamic"
+            }],
+            "ttlMs": 1
+        });
+        let skill = parse_skills_list(list(&payload), "stripe")
+            .unwrap()
+            .skills
+            .remove(0);
+        let entry = &merge_skill_entries(Vec::new(), vec![skill])[0];
+        assert_eq!(
+            entry.properties["arguments"],
+            serde_json::json!(["component"])
+        );
+        assert_eq!(entry.properties["skillUri"], "skill://billing/SKILL.md");
     }
 
     #[test]

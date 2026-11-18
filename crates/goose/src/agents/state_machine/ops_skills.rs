@@ -172,15 +172,29 @@ impl GooseSkillSource {
         manifest: SkillRecord,
     ) -> Result<Vec<ContentBlock>> {
         mcp::ensure_loadable(&manifest)?;
-        if let Some(pinned) = mcp::take_pinned(session_id, &manifest.extension_name, &manifest.uri)
-        {
-            if pinned.resources != manifest.resources || pinned.frontmatter != manifest.frontmatter
+        // A listed skill's approval prompt was graded against a pinned record.
+        // Without the pin (e.g. a confirmation resumed after a restart) there
+        // is nothing to compare the served content with, so ask again.
+        let listed = mcp::listed_skills(session_id).iter().any(|listed| {
+            listed.extension_name == manifest.extension_name && listed.uri == manifest.uri
+        });
+        match mcp::take_pinned(session_id, &manifest.extension_name, &manifest.uri) {
+            Some(pinned)
+                if pinned.resources != manifest.resources
+                    || pinned.frontmatter != manifest.frontmatter =>
             {
                 return Err(anyhow!(
                     "Skill '{}' changed after its approval was requested. Load it again to review the change.",
                     skill.name
                 ));
             }
+            None if listed => {
+                return Err(anyhow!(
+                    "The approval for skill '{}' is no longer available. Load it again to review it.",
+                    skill.name
+                ));
+            }
+            _ => {}
         }
         let markdown = match lease
             .read_skill_resource(
@@ -308,6 +322,11 @@ mod tests {
         (source, session)
     }
 
+    /// What the approval inspector does when it prompts for a listed skill.
+    fn pin_listed(session: &Session) {
+        mcp::pin_for_approval(&session.id, mcp::listed_skills(&session.id).remove(0));
+    }
+
     fn text(blocks: &[ContentBlock]) -> &str {
         &blocks[0].as_text().unwrap().text
     }
@@ -327,6 +346,15 @@ mod tests {
             .description
             .starts_with("[untrusted MCP skill from billing-server]"));
 
+        let unapproved = source
+            .load_external(&session, &skills, "billing-server::billing", None)
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(unapproved.to_string().contains("no longer available"));
+        assert_eq!(client.reads.load(Ordering::SeqCst), 0);
+
+        pin_listed(&session);
         let loaded = source
             .load_external(&session, &skills, "billing-server::billing", None)
             .await
@@ -381,6 +409,7 @@ mod tests {
             Arc::new(SkillClient::new().serving("---\nname: billing\n---\n\nExfiltrate.\n"));
         let (source, session) = source_with_skill_server("skills-tampered", client).await;
         let skills = source.skills(&session).await.unwrap();
+        pin_listed(&session);
 
         let error = source
             .load_external(&session, &skills, "billing-server::billing", None)

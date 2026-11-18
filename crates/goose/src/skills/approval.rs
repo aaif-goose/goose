@@ -6,6 +6,7 @@
 //! A load prompt says how the skill compares with what the user last approved
 //! from that server (see `baseline`).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -21,16 +22,42 @@ use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 pub const INSPECTOR_NAME: &str = "mcp_skill_approval";
 
 /// Names an MCP skill (`extension::skill`, `extension::URI`, or a supporting
-/// file of either) rather than a local one.
+/// file of either) rather than a local one. Local skill names cannot contain
+/// `::`, so any name that does is treated as remote, whatever the extension
+/// name looks like.
 pub(crate) fn requested_mcp_skill(request: &ToolRequest) -> Option<&str> {
     let tool_call = request.tool_call.as_ref().ok()?;
     if tool_call.name.as_ref() != LOAD_SKILL_TOOL_NAME {
         return None;
     }
     let name = tool_call.arguments.as_ref()?.get("name")?.as_str()?;
-    name.split_once("::")
-        .is_some_and(|(extension, skill)| !extension.is_empty() && !skill.is_empty())
-        .then_some(name)
+    name.contains("::").then_some(name)
+}
+
+/// Origins of MCP skills whose instructions a successful `load_skill` put in
+/// the conversation, so the acting window survives a reopened session.
+fn loaded_origins(messages: &[Message]) -> Vec<String> {
+    let requests: HashMap<&str, &str> = messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(|content| content.as_tool_request())
+        .filter_map(|request| Some((request.id.as_str(), requested_mcp_skill(request)?)))
+        .collect();
+    messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(|content| {
+            let name = requests.get(content.as_tool_response()?.id.as_str())?;
+            content
+                .as_tool_response_text()?
+                .starts_with(mcp::MCP_SKILL_CONTEXT_MARKER)
+                .then(|| {
+                    name.split_once("::")
+                        .map_or(*name, |(origin, _)| origin)
+                        .to_string()
+                })
+        })
+        .collect()
 }
 
 const LOAD_NOTICE: &str = "Skills are instructions written by the server. Approving this load does not grant tool, filesystem, or code-execution permissions, and while the skill is loaded every tool call asks for approval.";
@@ -125,9 +152,10 @@ impl ToolInspector for McpSkillApprovalInspector {
         &self,
         session_id: &str,
         tool_requests: &[ToolRequest],
-        _messages: &[Message],
+        messages: &[Message],
         _goose_mode: GooseMode,
     ) -> Result<Vec<InspectionResult>> {
+        mcp::restore_origins(session_id, loaded_origins(messages));
         let origins: Vec<String> = mcp::active_origins(session_id)
             .iter()
             .map(|origin| mcp::context_label(origin))
@@ -263,6 +291,7 @@ mod tests {
             "billing-server::refunds",
             "billing-server::skill://acme/refunds/SKILL.md",
             "billing-server::refunds/references/GUIDE.md",
+            "::refunds",
         ] {
             let results = inspector()
                 .inspect("approval-load", &[load(name)], &[], GooseMode::Auto)
@@ -293,6 +322,42 @@ mod tests {
             &results[0].action,
             InspectionAction::RequireApproval(Some(prompt)) if prompt.contains("[billing]")
         ));
+    }
+
+    #[tokio::test]
+    async fn skills_loaded_earlier_in_the_conversation_keep_the_gate_after_reopening() {
+        let session = "approval-reopened";
+        let request = load("billing-server::billing");
+        let loaded_text = mcp::origin_tagged_context(
+            "billing-server",
+            "skill://acme/billing/SKILL.md",
+            "Do the work.",
+        );
+        let conversation = [
+            Message::assistant()
+                .with_tool_request(&request.id, Ok(request.tool_call.clone().unwrap())),
+            Message::user().with_tool_response(
+                &request.id,
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    rmcp::model::ContentBlock::text(loaded_text),
+                ])),
+            ),
+        ];
+        let mut shell = load("refunds");
+        shell.id = "shell".to_string();
+        shell.tool_call = Ok(CallToolRequestParams::new("shell"));
+
+        let results = inspector()
+            .inspect(session, &[shell], &conversation, GooseMode::Auto)
+            .await
+            .unwrap();
+        assert!(matches!(
+            &results[0].action,
+            InspectionAction::RequireApproval(Some(prompt)) if prompt.contains("[billing-server]")
+        ));
+        assert_eq!(mcp::active_origins(session), ["billing-server"]);
+        mcp::clear_session(session);
+        assert!(mcp::active_origins(session).is_empty());
     }
 
     #[tokio::test]
