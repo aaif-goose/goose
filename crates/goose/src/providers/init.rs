@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(meta.display_name, "llmman");
         assert!(meta.config_keys.iter().all(|key| !key.secret));
         assert!(meta.config_keys.iter().any(|key| {
-            key.name == "LLMMAN_HOST" && key.default.as_deref() == Some("http://localhost:17434")
+            key.name == "LLMMAN_HOST" && key.default.as_deref() == Some("http://127.0.0.1:17434")
         }));
     }
 

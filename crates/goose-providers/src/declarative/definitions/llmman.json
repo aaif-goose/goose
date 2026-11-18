@@ -11,8 +11,8 @@
       "required": false,
       "secret": false,
       "primary": true,
-      "default": "http://localhost:17434",
-      "description": "Base URL of the llmman server (default: http://localhost:17434)"
+      "default": "http://127.0.0.1:17434",
+      "description": "Base URL of the llmman server (default: http://127.0.0.1:17434)"
     }
   ],
   "dynamic_models": true,
@@ -28,8 +28,8 @@
     "field_overrides": [{
       "key": "LLMMAN_HOST",
       "label": "Host URL",
-      "placeholder": "http://localhost:17434",
-      "default_value": "http://localhost:17434"
+      "placeholder": "http://127.0.0.1:17434",
+      "default_value": "http://127.0.0.1:17434"
     }]
   }
 }
