@@ -389,11 +389,16 @@ fn capability_thinking_effort_value(
 }
 
 // The catalog row only informs the selector: copying it onto the model config
-// would also switch the OpenAI wire format into its reasoning-model shape.
+// would also switch the OpenAI wire format into its reasoning-model shape. Only
+// providers that send every effort consult it, so the menu never offers an
+// effort the request would drop.
 fn is_reasoning_model_for_provider(model_config: &ModelConfig, provider_name: &str) -> bool {
     model_config
         .reasoning
         .or_else(|| {
+            if !OpenAiProvider::maps_all_responses_thinking_efforts(provider_name) {
+                return None;
+            }
             crate::config::declarative_providers::load_provider(provider_name)
                 .ok()?
                 .config
@@ -923,6 +928,61 @@ mod tests {
             &model_config,
             "perplexity",
             vec![SessionConfigSelectOption::new("perplexity", "perplexity")],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        assert_eq!(select.current_value.0.as_ref(), "off");
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(vec![
+                SessionConfigSelectOption::new("off", "off")
+            ])
+        );
+    }
+
+    #[test]
+    fn test_build_config_options_ignores_catalog_reasoning_the_provider_does_not_send() {
+        // Catalogued with reasoning only under fireworks-ai, and not inferable
+        // from the name.
+        const MODEL: &str = "accounts/fireworks/models/deepseek-v4p1-flash";
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+        let provider = crate::config::declarative_providers::create_custom_provider(
+            crate::config::declarative_providers::CreateCustomProviderParams {
+                engine: "openai".to_string(),
+                display_name: "Catalog Effort Self Test".to_string(),
+                api_url: "https://example.invalid".to_string(),
+                api_key: None,
+                models: vec![oi_kit_providers::base::ModelInfo::new(MODEL)],
+                supports_streaming: Some(false),
+                headers: None,
+                requires_auth: false,
+                catalog_provider_id: Some("fireworks-ai".to_string()),
+                base_path: None,
+                toolshim: false,
+                preserves_thinking: None,
+                auth: None,
+            },
+        )
+        .unwrap();
+
+        let options = build_config_options(
+            &build_mode_state(GooseMode::Auto).unwrap(),
+            &model_selection(MODEL, &[MODEL]),
+            &ModelConfig::new(MODEL).with_thinking_effort(ThinkingEffort::High),
+            &provider.name,
+            vec![SessionConfigSelectOption::new(
+                provider.name.clone(),
+                provider.name.clone(),
+            )],
             &ThinkingEffortSupport::Unspecified,
         );
         let option = options
