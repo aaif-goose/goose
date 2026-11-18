@@ -1,6 +1,6 @@
-//! Convert selected Registry entries without running a launcher or writing credentials.
-use crate::agents::extension::{Envs, TransportConfig};
-use crate::config::DEFAULT_EXTENSION_TIMEOUT;
+//! Convert MCP Registry `server.json` entries to external extension configs.
+//! Conversion does not run launchers, resolve credentials, or persist config.
+use super::{Envs, ExtensionConfig, DEFAULT_EXTENSION_TIMEOUT};
 use anyhow::{bail, ensure, Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -99,6 +99,7 @@ pub enum ServerSelection {
 }
 
 impl ServerDocument {
+    /// Parse the Registry document without selecting or validating launch configurations.
     pub fn parse(json: &str) -> Result<Self> {
         let document: Self =
             serde_json::from_str(json).context("invalid MCP Registry server.json")?;
@@ -112,6 +113,7 @@ impl ServerDocument {
         Ok(document)
     }
 
+    /// List package and remote selections in document order.
     pub fn choices(&self) -> Vec<(ServerSelection, String)> {
         self.packages
             .iter()
@@ -134,14 +136,15 @@ impl ServerDocument {
             .collect()
     }
 
-    pub fn extensions(&self, selections: &[ServerSelection]) -> Result<Vec<TransportConfig>> {
+    /// Convert selected entries without resolving credentials or starting servers.
+    pub fn extensions(&self, selections: &[ServerSelection]) -> Result<Vec<ExtensionConfig>> {
         selections
             .iter()
             .map(|&selection| self.extension(selection))
             .collect()
     }
 
-    fn extension(&self, selection: ServerSelection) -> Result<TransportConfig> {
+    fn extension(&self, selection: ServerSelection) -> Result<ExtensionConfig> {
         let (kind, index) = match selection {
             ServerSelection::Package(i) => ("package", i),
             ServerSelection::Remote(i) => ("remote", i),
@@ -167,7 +170,7 @@ impl ServerDocument {
 }
 
 impl Package {
-    fn config(&self, name: String, description: String) -> Result<TransportConfig> {
+    fn config(&self, name: String, description: String) -> Result<ExtensionConfig> {
         if self.transport.kind != "stdio" {
             return self.transport.config(name, description);
         }
@@ -223,7 +226,7 @@ impl Package {
         };
         args.push(package);
         args.extend(arguments(&self.package_arguments)?);
-        Ok(TransportConfig::Stdio {
+        Ok(ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -267,7 +270,7 @@ impl Package {
 }
 
 impl Transport {
-    fn config(&self, name: String, description: String) -> Result<TransportConfig> {
+    fn config(&self, name: String, description: String) -> Result<ExtensionConfig> {
         ensure!(
             self.kind == "streamable-http",
             "unsupported transport '{}'",
@@ -286,7 +289,7 @@ impl Transport {
             "remote URLs must use HTTP(S) without embedded credentials"
         );
         let (headers, env_keys) = named_inputs(&self.headers, true)?;
-        Ok(TransportConfig::StreamableHttp {
+        Ok(ExtensionConfig::StreamableHttp {
             name,
             description,
             uri: uri.to_owned(),
@@ -405,7 +408,7 @@ mod tests {
             vec![],
         );
         let extension = document.extension(ServerSelection::Package(0)).unwrap();
-        let TransportConfig::Stdio {
+        let ExtensionConfig::Stdio {
             cmd,
             args,
             envs,
@@ -438,7 +441,7 @@ mod tests {
         );
         let extension = document.extension(ServerSelection::Remote(0)).unwrap();
         assert_eq!(extension.name(), "io.example/weather");
-        let TransportConfig::StreamableHttp {
+        let ExtensionConfig::StreamableHttp {
             headers, env_keys, ..
         } = extension
         else {
@@ -485,7 +488,7 @@ mod tests {
                 })],
                 vec![],
             );
-            let TransportConfig::Stdio { cmd, args, .. } =
+            let ExtensionConfig::Stdio { cmd, args, .. } =
                 document.extension(ServerSelection::Package(0)).unwrap()
             else {
                 panic!("expected stdio");
@@ -584,7 +587,7 @@ mod tests {
                 "remotes": [{ "type": "streamable-http", "url": "https://example.org/mcp" }],
             }).to_string()).unwrap().extension(ServerSelection::Remote(0)).unwrap()
             });
-        assert_eq!(configs.each_ref().map(TransportConfig::name), names);
+        assert_eq!(configs.each_ref().map(ExtensionConfig::name), names);
         assert_ne!(configs[0].key(), configs[1].key());
     }
 }

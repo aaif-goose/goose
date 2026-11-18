@@ -2329,7 +2329,7 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 
 async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     use goose::config::extension_install::{install, preview};
-    use goose::config::registry_server::{ServerDocument, ServerSelection};
+    use goose_agent::extension::registry::{ServerDocument, ServerSelection};
     use std::io::IsTerminal;
     match command {
         PluginCommand::ImportServer {

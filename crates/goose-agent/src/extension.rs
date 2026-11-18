@@ -1,3 +1,5 @@
+pub mod registry;
+
 use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
@@ -158,7 +160,7 @@ impl Envs {
         self.map.clone()
     }
 
-    pub fn is_disallowed(key: &str) -> bool {
+    fn is_disallowed(key: &str) -> bool {
         Self::DISALLOWED_KEYS
             .iter()
             .any(|disallowed| disallowed.eq_ignore_ascii_case(key))
