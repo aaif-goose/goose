@@ -579,6 +579,7 @@ mod tests {
             "gcp_vertex_ai",
             "github_copilot",
             "kimi_code",
+            "mistral",
             "muse_code",
             "nano-gpt",
             "tetrate",

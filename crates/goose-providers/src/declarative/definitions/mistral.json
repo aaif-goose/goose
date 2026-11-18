@@ -5,6 +5,7 @@
   "description": "Frontier models from Mistral AI",
   "api_key_env": "MISTRAL_API_KEY",
   "base_url": "https://api.mistral.ai/v1/chat/completions",
+  "dynamic_models": true,
   "models": [
     {
       "name": "mistral-medium-latest",
