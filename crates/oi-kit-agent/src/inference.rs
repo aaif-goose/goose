@@ -22,7 +22,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
     InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
-use crate::tool_call_state::add_error_response;
+use crate::tool_call_state::{add_error_response, open_tool_calls};
 use oi_kit_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 pub struct PreparedInferenceRequest {
@@ -237,13 +237,7 @@ fn unadvertised_tool_responses(
     available_tools.dedup();
     let available_tools = available_tools.join(", ");
     let mut tool_responses = Message::user();
-    for request in reply
-        .iter()
-        .filter(|message| message.role == rmcp::model::Role::Assistant)
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .filter(|request| !request.was_executed_externally())
-    {
+    for (request, _) in open_tool_calls(reply.messages()) {
         let Ok(tool_call) = &request.tool_call else {
             continue;
         };

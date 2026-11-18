@@ -19,7 +19,7 @@ use oi_kit_context_management::{
 use oi_kit_provider_types::conversation::message::{
     Message, MessageContent, MessageErrorKind, MessageMetadata, SystemNotificationType,
 };
-use oi_kit_provider_types::conversation::{unanswered_tool_requests, Conversation, EffectiveRole};
+use oi_kit_provider_types::conversation::{Conversation, EffectiveRole};
 use oi_kit_provider_types::errors::ProviderError;
 use rmcp::model::Role;
 
@@ -30,7 +30,8 @@ use crate::operation::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error,
     yielded_with, ConversationEffect, Emitter, Operation, OperationResult,
 };
-use layout::{compacted_conversation, latest_prompt};
+use crate::tool_call_state::open_tool_calls;
+use layout::{latest_prompt, message_id, set_visibility, Plan};
 pub use layout::{
     CONVERSATION_CONTINUATION_TEXT, MANUAL_COMPACT_CONTINUATION_TEXT, TOOL_LOOP_CONTINUATION_TEXT,
 };
@@ -144,7 +145,7 @@ fn replied_since_last_summary(conversation: &Conversation) -> bool {
 /// Operations ahead of tool execution may answer part of a tool batch; archiving
 /// the rest of the requests would orphan their results.
 fn has_outstanding_tool_calls(messages: &[Message]) -> bool {
-    unanswered_tool_requests(messages).next().is_some()
+    open_tool_calls(messages).next().is_some()
 }
 
 fn has_history_beyond_prompt(messages: &[Message]) -> bool {
@@ -152,40 +153,6 @@ fn has_history_beyond_prompt(messages: &[Message]) -> bool {
     messages.iter().enumerate().any(|(index, message)| {
         Some(index) != prompt && message.is_agent_visible() && !message.is_turn_context()
     })
-}
-
-fn is_archived(message: &Message) -> bool {
-    !message.is_turn_context() && message.error_kind().is_none()
-}
-
-fn message_id(message: &Message) -> Result<String> {
-    message
-        .id
-        .clone()
-        .ok_or_else(|| anyhow!("persisted message has no id"))
-}
-
-fn set_visibility(
-    message: &Message,
-    user_visible: bool,
-    agent_visible: bool,
-) -> Result<ConversationEffect> {
-    Ok(ConversationEffect::SetMessageVisibility {
-        message_id: message_id(message)?,
-        user_visible,
-        agent_visible,
-    })
-}
-
-fn hidden_prompt(messages: &[Message], request_index: usize) -> Option<usize> {
-    messages[..request_index]
-        .iter()
-        .rposition(|message| !message.is_turn_context())
-        .filter(|&index| {
-            let message = &messages[index];
-            message.metadata.operation_note(NAME, PROMPT_NOTE).is_some()
-                && !message.is_agent_visible()
-        })
 }
 
 fn compaction_failure_message(error: &anyhow::Error) -> Message {
@@ -280,24 +247,6 @@ impl CompactionOperation {
         Ok(effects)
     }
 
-    fn abandon<E: CompactionEffect>(messages: &[Message], request_index: usize) -> Result<Vec<E>> {
-        let tail = &messages[request_index..];
-        let mut effects = tail
-            .iter()
-            .filter(|message| is_archived(message))
-            .map(|message| set_visibility(message, false, false).map(E::from))
-            .collect::<Result<Vec<_>>>()?;
-        if let Some(prompt) = hidden_prompt(messages, request_index) {
-            let prompt = &messages[prompt];
-            effects.push(E::from(set_visibility(
-                prompt,
-                prompt.is_user_visible(),
-                true,
-            )?));
-        }
-        Ok(effects)
-    }
-
     fn announce(&self, emit: &Emitter) {
         let threshold_k_tokens = (self.context_limit as f64 * self.threshold / 1000.0) as usize;
         emit.message(Message::assistant().with_system_notification(
@@ -313,83 +262,42 @@ impl CompactionOperation {
         ));
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn standalone<E: CompactionEffect>(
         &self,
-        messages: &[Message],
-        end: usize,
-        request_index: Option<usize>,
-        prompt: Option<usize>,
-        manual: bool,
+        plan: &Plan<'_>,
         before: Vec<E>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let summarizable = Conversation::new_unvalidated(
-            messages[..end]
-                .iter()
-                .filter(|message| !message.is_turn_context())
-                .cloned(),
-        )
-        .agent_visible_messages();
         let mut effects = before;
         match summarize(
             self.model.as_ref(),
             Some(self.estimator.as_ref()),
             &self.templates,
-            &summarizable,
+            &plan.summarizable(),
         )
         .await
         {
             Ok(summary) => {
                 effects.push(E::record_usage(summary.usage));
-                self.complete(
-                    messages,
-                    end,
-                    request_index,
-                    summary.message,
-                    prompt,
-                    manual,
-                    effects,
-                    emit,
-                )
+                self.complete(plan, summary.message, effects, emit)
             }
             Err(error) => {
-                if let Some(request_index) = request_index {
-                    effects.extend(Self::abandon(messages, request_index)?);
-                }
+                effects.extend(plan.abandon()?);
                 effects.push(E::from(emit.message(compaction_failure_message(&error))));
                 yielded_with(effects)
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn complete<E: CompactionEffect>(
         &self,
-        messages: &[Message],
-        end: usize,
-        request_index: Option<usize>,
+        plan: &Plan<'_>,
         summary: Message,
-        prompt: Option<usize>,
-        manual: bool,
         mut effects: Vec<E>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let mut compacted = compacted_conversation(messages, end, summary, prompt, manual);
-        if let Some(request_index) = request_index {
-            let tail = &messages[request_index..];
-            for (offset, _) in tail
-                .iter()
-                .enumerate()
-                .filter(|(_, message)| is_archived(message))
-            {
-                compacted.messages_mut()[request_index + offset]
-                    .metadata
-                    .user_visible = false;
-            }
-        }
-        effects.push(E::compact(compacted));
-        if manual {
+        effects.push(E::compact(plan.compacted(summary)));
+        if plan.manual {
             effects.push(E::from(emit.message(complete_message())));
             return yielded_with(effects);
         }
@@ -407,12 +315,7 @@ impl CompactionOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let messages = conversation.messages();
-        let request = &messages[request_index];
-        let manual = request
-            .metadata
-            .operation_note(NAME, MANUAL_NOTE)
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
+        let plan = Plan::in_band(messages, request_index);
         let replies: Vec<&Message> = messages[request_index + 1..]
             .iter()
             .filter(|message| message.role == Role::Assistant && message.error_kind().is_none())
@@ -420,7 +323,7 @@ impl CompactionOperation {
 
         if let Some(kind) = trailing_error(conversation) {
             if kind != MessageErrorKind::ContextLengthExceeded {
-                let mut effects = Self::abandon(messages, request_index)?;
+                let mut effects = plan.abandon()?;
                 if let Some(error) = conversation.last() {
                     let mut shown = error.clone();
                     shown.id = None;
@@ -432,12 +335,6 @@ impl CompactionOperation {
         } else if replies.is_empty() {
             return not_applicable();
         }
-        let prompt = if manual {
-            None
-        } else {
-            hidden_prompt(messages, request_index)
-                .or_else(|| latest_prompt(&messages[..request_index]))
-        };
 
         let text = replies
             .iter()
@@ -451,29 +348,10 @@ impl CompactionOperation {
                 message.is_tool_call() || message.metadata.output_token_limit_reached
             });
         if unusable {
-            return self
-                .standalone(
-                    messages,
-                    request_index,
-                    Some(request_index),
-                    prompt,
-                    manual,
-                    Vec::new(),
-                    emit,
-                )
-                .await;
+            return self.standalone(&plan, Vec::new(), emit).await;
         }
         let summary = summary_message(&text, &self.templates.summary);
-        self.complete(
-            messages,
-            request_index,
-            Some(request_index),
-            summary,
-            prompt,
-            manual,
-            Vec::new(),
-            emit,
-        )
+        self.complete(&plan, summary, Vec::new(), emit)
     }
 
     async fn compact<E: CompactionEffect>(
@@ -490,13 +368,8 @@ impl CompactionOperation {
                 applied([command_hidden, E::from(self.request_message(true))])
             }
             CompactionMode::Standalone => {
-                let messages = conversation.messages();
                 self.standalone(
-                    messages,
-                    messages.len() - 1,
-                    None,
-                    None,
-                    true,
+                    &Plan::command(conversation.messages()),
                     vec![command_hidden],
                     emit,
                 )
@@ -510,7 +383,7 @@ impl CompactionOperation {
         request_index: usize,
     ) -> Result<Vec<E>> {
         let turn_start = conversation.len() - messages_since_kickoff(conversation)?.len();
-        Self::abandon(&conversation.messages()[..turn_start], request_index)
+        layout::abandon(&conversation.messages()[..turn_start], request_index)
     }
 }
 
@@ -562,15 +435,7 @@ impl<S: MachineSession, E: CompactionEffect> Operation<S, E> for CompactionOpera
             }
             self.announce(emit);
             return self
-                .standalone(
-                    messages,
-                    messages.len(),
-                    None,
-                    latest_prompt(messages),
-                    false,
-                    Vec::new(),
-                    emit,
-                )
+                .standalone(&Plan::proactive(messages), Vec::new(), emit)
                 .await;
         }
 
@@ -593,16 +458,8 @@ impl<S: MachineSession, E: CompactionEffect> Operation<S, E> for CompactionOpera
         match self.mode {
             CompactionMode::InBand => applied(self.request_effects(messages, false)?),
             CompactionMode::Standalone => {
-                self.standalone(
-                    messages,
-                    messages.len(),
-                    None,
-                    latest_prompt(messages),
-                    false,
-                    Vec::new(),
-                    emit,
-                )
-                .await
+                self.standalone(&Plan::proactive(messages), Vec::new(), emit)
+                    .await
             }
         }
     }

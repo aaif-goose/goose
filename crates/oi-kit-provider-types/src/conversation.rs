@@ -1,6 +1,4 @@
-use crate::conversation::message::{
-    Message, MessageContent, MessageContentBlock, MessageMetadata, ToolRequest,
-};
+use crate::conversation::message::{Message, MessageContentBlock, MessageMetadata};
 use crate::mcp_utils::extract_text_from_resource;
 use rmcp::model::{ContentBlock, Role};
 use serde::{Deserialize, Serialize};
@@ -643,21 +641,6 @@ impl std::fmt::Display for EffectiveRole {
             Self::Tool => write!(f, "tool"),
         }
     }
-}
-
-pub fn unanswered_tool_requests(messages: &[Message]) -> impl Iterator<Item = &ToolRequest> {
-    let answered: HashSet<&str> = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect();
-    messages
-        .iter()
-        .filter(|message| message.role == Role::Assistant && message.is_agent_visible())
-        .flat_map(|message| message.content.iter())
-        .filter_map(MessageContent::as_tool_request)
-        .filter(move |request| {
-            !request.was_executed_externally() && !answered.contains(request.id.as_str())
-        })
 }
 
 pub fn effective_role(message: &Message) -> EffectiveRole {
