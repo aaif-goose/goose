@@ -84,28 +84,10 @@ fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfi
     if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model
     } else {
-        with_catalog_reasoning(provider_name, model)
+        model
             .with_canonical_limits(provider_name)
             .with_canonical_vision_support(provider_name)
     }
-}
-
-// Session configs reach ACP's thinking selector without provider normalization,
-// so a declarative provider's catalog row has to resolve reasoning here.
-fn with_catalog_reasoning(provider_name: &str, mut model: ModelConfig) -> ModelConfig {
-    if model.reasoning.is_none() {
-        model.reasoning = crate::config::declarative_providers::load_provider(provider_name)
-            .ok()
-            .and_then(|provider| provider.config.catalog_provider_id)
-            .and_then(|catalog_provider_id| {
-                goose_providers::canonical::maybe_get_canonical_model(
-                    &catalog_provider_id,
-                    &model.model_name,
-                )
-            })
-            .and_then(|canonical| canonical.reasoning);
-    }
-    model
 }
 
 fn materialize_model_config_inner(
