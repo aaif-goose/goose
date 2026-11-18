@@ -1,4 +1,9 @@
-import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+import type {
+  IpcMainEvent,
+  IpcMainInvokeEvent,
+  OpenDialogOptions,
+  OpenDialogReturnValue,
+} from 'electron';
 import {
   app,
   App,
@@ -35,7 +40,7 @@ import { configureProxy } from './proxy';
 import { startGooseServe } from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
 import { GooseServeLeaseRegistry, type GooseServeLease } from './gooseServeLeaseRegistry';
-import { normalizeAcpHttpBaseUrl } from './acp/url';
+import { httpBaseFromAcpWebSocketUrl, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde, sanitizeGoosePathRoot } from './utils/pathUtils';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
@@ -60,14 +65,27 @@ import './utils/recipeHash';
 import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { openExternalUrl } from './utils/openExternalUrl';
-import { buildCSP, leaseBackendOrigin, shouldApplyRendererCsp } from './utils/csp';
+import { buildCSP, installRendererCsp } from './utils/csp';
 import { resolveWorkingDir } from './utils/workingDir';
 import {
   DesktopFileAccess,
+  isAppRendererUrl,
   isAuthorizedFileAccessRequest,
   readSelectedRecipe,
 } from './desktopFileAccess';
 import { getWindowIconFilename } from './utils/windowIcon';
+import {
+  migrateRendererStorage,
+  readLegacyRendererStorage,
+  RENDERER_STORAGE_KEYS,
+  type RendererStorage,
+  type RendererStorageKey,
+} from './rendererStorage';
+import {
+  appendStoredMessage,
+  CHAT_HISTORY_KEY,
+  pruneStoredMessageHistory,
+} from './utils/localMessageStorage';
 
 const windowIconPath = path.join(__dirname, '../images', getWindowIconFilename(process.platform));
 
@@ -237,9 +255,11 @@ function getSettings(): Settings {
 }
 
 function updateSettings(modifier: (settings: Settings) => void): void {
-  const settings = getSettings();
+  const settings = { ...getSettings() };
   modifier(settings);
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  const temporarySettingsFile = `${SETTINGS_FILE}.tmp`;
+  fsSync.writeFileSync(temporarySettingsFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
+  fsSync.renameSync(temporarySettingsFile, SETTINGS_FILE);
 }
 
 function getConfiguredGooseLocale(): string | undefined {
@@ -309,7 +329,6 @@ if (process.platform === 'win32') {
 
 let backendPartitionCounter = 0;
 const windowCertTrusts = new Map<number, ScopedCertificateTrust>();
-const windowPartitions = new Map<number, string>();
 
 function createBackendCertificateTrust(
   hostname: string,
@@ -326,7 +345,14 @@ app.on('certificate-error', (event, webContents, url, _error, certificate, callb
   const win = BrowserWindow.fromWebContents(webContents);
   const trust = win ? windowCertTrusts.get(win.id) : undefined;
 
-  if (!trust || trust.hostname !== parsed.hostname.toLowerCase()) {
+  const lease = win && gooseServeLeases.get(win.id);
+  if (
+    !trust ||
+    trust.hostname !== parsed.hostname.toLowerCase() ||
+    !lease ||
+    (parsed.origin !== new URL(lease.acpUrl).origin &&
+      parsed.origin !== new URL(httpBaseFromAcpWebSocketUrl(lease.acpUrl)).origin)
+  ) {
     callback(false);
     return;
   }
@@ -733,6 +759,31 @@ function getAppUrl(): URL {
     : pathToFileURL(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
 }
 
+const LEGACY_RENDERER_PARTITION = 'persist:goose';
+let rendererStorageMigration: Promise<void> | undefined;
+
+function ensureRendererStorageMigrated(): Promise<void> {
+  rendererStorageMigration ??= (async () => {
+    if (getSettings().rendererStorageMigrated) {
+      return;
+    }
+    try {
+      const values = await readLegacyRendererStorage(
+        session.fromPartition(LEGACY_RENDERER_PARTITION),
+        getAppUrl()
+      );
+      updateSettings((settings) => migrateRendererStorage(settings, values));
+    } catch (error) {
+      log.error('Failed to migrate renderer storage', error);
+    }
+  })();
+  return rendererStorageMigration;
+}
+
+function getRendererThemeConfig({ theme, useSystemTheme }: Settings) {
+  return { GOOSE_THEME: theme, GOOSE_USE_SYSTEM_THEME: useSystemTheme };
+}
+
 // Parse command line arguments
 const parseArgs = () => {
   let dirPath = null;
@@ -936,6 +987,7 @@ const createChat = async (
   app: App,
   options: CreateChatOptions = {}
 ): Promise<BrowserWindow | undefined> => {
+  await ensureRendererStorageMigrated();
   const {
     initialMessage,
     initialMessageNoAutoSubmit,
@@ -1026,8 +1078,8 @@ const createChat = async (
       const externalBackendCheck = await connectRemoteBackend({
         baseUrl: externalBaseUrl,
         serverSecret,
-        pinnedHostname: externalBackend.certFingerprint ? externalBase.hostname : null,
-        partition: windowPartition,
+        hasCertificatePin: Boolean(externalBackend.certFingerprint),
+        session: windowSession,
       });
       if (!externalBackendCheck.ok) {
         log.error(`External backend check failed: ${externalBackendCheck.failure}`);
@@ -1062,12 +1114,8 @@ const createChat = async (
         throw new Error('External backend check did not resolve an ACP endpoint');
       }
 
-      const originLease = leaseBackendOrigin(resolvedAcpUrl);
       windowCertTrust = externalCertTrust;
-      externalCertTrust = null;
-      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
-        originLease.release();
-      });
+      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret);
     } catch (error) {
       log.error('External ACP backend is misconfigured', error);
       const canDisableExternalBackend = externalBackend.source === 'settings';
@@ -1168,6 +1216,11 @@ const createChat = async (
   let mainWindowState: ReturnType<typeof windowStateKeeper>;
   let mainWindow: BrowserWindow;
   try {
+    const backendCsp =
+      externalBackend && gooseServeLease
+        ? { enabled: true, url: httpBaseFromAcpWebSocketUrl(gooseServeLease.acpUrl) }
+        : undefined;
+    installRendererCsp(windowSession, getAppUrl(), () => buildCSP(backendCsp));
     mainWindowState = windowStateKeeper({
       defaultWidth: 940,
       defaultHeight: 800,
@@ -1200,6 +1253,7 @@ const createChat = async (
         additionalArguments: [
           JSON.stringify({
             ...appConfig,
+            ...getRendererThemeConfig(settings),
             GOOSE_LOCALE: getConfiguredGooseLocale(),
             GOOSE_WORKING_DIR: workingDir,
             GOOSE_EXTERNAL_BACKEND: externalBackend !== null,
@@ -1217,7 +1271,7 @@ const createChat = async (
               process.env.SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE,
           }),
         ],
-        partition: windowPartition,
+        session: windowSession,
       },
     });
   } catch (error) {
@@ -1230,14 +1284,12 @@ const createChat = async (
     const windowId = mainWindow.id;
     mainWindow.once('closed', () => {
       windowCertTrusts.delete(windowId);
-      windowPartitions.delete(windowId);
       void gooseServeLeases.releaseWindow(windowId);
     });
     gooseServeLeases.attachWindow(windowId, lease);
     gooseServeLease = null;
   }
 
-  windowPartitions.set(mainWindow.id, windowPartition);
   if (windowCertTrust) {
     windowCertTrusts.set(mainWindow.id, windowCertTrust);
   }
@@ -1483,10 +1535,11 @@ const createLauncher = () => {
       additionalArguments: [
         JSON.stringify({
           ...appConfig,
+          ...getRendererThemeConfig(getSettings()),
           GOOSE_LOCALE: getConfiguredGooseLocale(),
         }),
       ],
-      partition: 'persist:goose',
+      partition: LEGACY_RENDERER_PARTITION,
     },
     skipTaskbar: true,
     alwaysOnTop: true,
@@ -1858,8 +1911,65 @@ ipcMain.handle('list-git-worktree-dirs', async (_event, dir: string) => {
 });
 
 ipcMain.handle('get-setting', (_event, key: SettingKey) => {
-  const settings = getSettings();
-  return settings[key];
+  return validSettingKeys.has(key) ? getSettings()[key] : undefined;
+});
+
+const rendererStorageKeys = new Set<string>(RENDERER_STORAGE_KEYS);
+
+function isAppStorageRequest(event: IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  return (
+    frame !== null && frame === event.sender.mainFrame && isAppRendererUrl(frame.url, getAppUrl())
+  );
+}
+
+function updateRendererStorage(modifier: (storage: RendererStorage) => void): void {
+  try {
+    updateSettings((settings) => modifier((settings.rendererStorage ??= {})));
+  } catch (error) {
+    log.error('Failed to save renderer storage', error);
+  }
+}
+
+ipcMain.on('renderer-storage:get', (event, key: RendererStorageKey) => {
+  if (!isAppStorageRequest(event) || !rendererStorageKeys.has(key)) {
+    event.returnValue = null;
+    return;
+  }
+  const value = getSettings().rendererStorage?.[key] ?? null;
+  const result = key === CHAT_HISTORY_KEY ? pruneStoredMessageHistory(value) : value;
+  if (result !== value) {
+    updateRendererStorage((storage) => {
+      storage[key] = result;
+    });
+  }
+  event.returnValue = result;
+});
+
+ipcMain.on('renderer-storage:set', (event, key: RendererStorageKey, value: string | null) => {
+  if (
+    isAppStorageRequest(event) &&
+    rendererStorageKeys.has(key) &&
+    (value === null || (typeof value === 'string' && key !== CHAT_HISTORY_KEY))
+  ) {
+    updateRendererStorage((storage) => {
+      storage[key] = value;
+    });
+  }
+  event.returnValue = null;
+});
+
+ipcMain.on('renderer-storage:append-message', (event, content: string) => {
+  if (isAppStorageRequest(event) && typeof content === 'string') {
+    const current = getSettings().rendererStorage?.[CHAT_HISTORY_KEY] ?? null;
+    const next = appendStoredMessage(current, content);
+    if (next !== null && next !== current) {
+      updateRendererStorage((storage) => {
+        storage[CHAT_HISTORY_KEY] = next;
+      });
+    }
+  }
+  event.returnValue = null;
 });
 
 // Valid setting keys for runtime validation
@@ -1895,10 +2005,9 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
     return;
   }
 
-  const settings = getSettings();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (settings as any)[key] = value;
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  updateSettings((settings) => {
+    Object.assign(settings, { [key]: value });
+  });
 
   if (key === 'language') {
     appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
@@ -2366,8 +2475,12 @@ async function appMain() {
     }
   });
 
-  const rendererSession = session.fromPartition('persist:goose');
+  const rendererSession = session.fromPartition(LEGACY_RENDERER_PARTITION);
   await configureProxy(session.defaultSession, rendererSession);
+  installRendererCsp(rendererSession, getAppUrl(), () =>
+    buildCSP(getExternalBackendForCsp(getSettings()))
+  );
+  await ensureRendererStorageMigrated();
 
   // Ensure Windows shims are available before any MCP processes are spawned
   await ensureWinShims();
@@ -2384,22 +2497,6 @@ async function appMain() {
       // Default behavior for other permissions
       callback(true);
     }
-  });
-
-  // Add CSP headers to the renderer's own documents, recomputed on every
-  // response so external backend settings take effect without restarting the app.
-  rendererSession.webRequest.onHeadersReceived((details, callback) => {
-    if (!shouldApplyRendererCsp(details.resourceType)) {
-      callback({});
-      return;
-    }
-    const currentSettings = getSettings();
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': buildCSP(getExternalBackendForCsp(currentSettings)),
-      },
-    });
   });
 
   // Migrate old settings format if needed (one-time migration)
@@ -2925,7 +3022,6 @@ async function appMain() {
         undefined,
         app.getPath('home')
       );
-      const launchingPartition = windowPartitions.get(launchingWindowId)!;
       const launchingCertTrust = windowCertTrusts.get(launchingWindowId);
 
       const appWindow = new BrowserWindow({
@@ -2943,17 +3039,17 @@ async function appMain() {
           additionalArguments: [
             JSON.stringify({
               ...appConfig,
+              ...getRendererThemeConfig(getSettings()),
               GOOSE_LOCALE: getConfiguredGooseLocale(),
               GOOSE_WORKING_DIR: workingDir,
               GOOSE_VERSION: version,
             }),
           ],
-          partition: launchingPartition,
+          session: launchingWindow.webContents.session,
         },
       });
 
       const appWindowId = appWindow.id;
-      windowPartitions.set(appWindowId, launchingPartition);
       if (launchingCertTrust) {
         windowCertTrusts.set(appWindowId, launchingCertTrust);
       }
@@ -2964,7 +3060,6 @@ async function appMain() {
 
       appWindow.on('closed', () => {
         windowCertTrusts.delete(appWindowId);
-        windowPartitions.delete(appWindowId);
         void gooseServeLeases.releaseWindow(appWindowId);
         appWindows.delete(gooseApp.name);
       });

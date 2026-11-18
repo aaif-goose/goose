@@ -353,23 +353,23 @@ export function buildMcpHostStyles(themeId: ThemeId = 'light'): McpUiHostStyles 
 }
 
 /**
- * Resolve the current theme id from localStorage / system preference.
+ * Resolve the initial theme id from the desktop preference or system theme.
  * Best-effort pre-paint resolution; the authoritative preference lives in the
  * Electron settings store and is applied by ThemeContext once loaded.
  */
 export function getResolvedTheme(): ThemeId {
-  const useSystem = localStorage.getItem('use_system_theme') !== 'false';
+  const useSystem = window.appConfig?.get('GOOSE_USE_SYSTEM_THEME') !== false;
   if (useSystem) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-  const stored = localStorage.getItem('theme');
+  const stored = window.appConfig?.get('GOOSE_THEME');
   if (stored === 'aura') return 'aura';
   return stored === 'dark' ? 'dark' : 'light';
 }
 
 /**
  * Apply a theme's tokens to the document root as CSS custom properties.
- * When called without an argument, resolves the theme from localStorage.
+ * When called without an argument, uses the initial theme preference.
  */
 export function applyThemeTokens(theme?: ThemeId): void {
   const resolved = theme ?? getResolvedTheme();

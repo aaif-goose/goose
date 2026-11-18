@@ -4,40 +4,7 @@ import type { GooseApp } from './types/apps';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
 import type { OpenExternalUrlResult } from './utils/urlSecurity';
-
-// Mapping from settings keys to their old localStorage keys for lazy migration
-const localStorageKeyMap: Partial<Record<SettingKey, string>> = {
-  theme: 'theme',
-  useSystemTheme: 'use_system_theme',
-  responseStyle: 'response_style',
-  showPricing: 'show_pricing',
-  seenAnnouncementIds: 'seenAnnouncementIds',
-};
-
-// Parse localStorage value based on the setting key
-function parseLocalStorageValue<K extends SettingKey>(
-  key: K,
-  rawValue: string
-): Settings[K] | null {
-  try {
-    switch (key) {
-      case 'theme':
-        return (rawValue === 'dark' || rawValue === 'light' ? rawValue : null) as Settings[K];
-      case 'useSystemTheme':
-        return (rawValue === 'true') as unknown as Settings[K];
-      case 'responseStyle':
-        return rawValue as Settings[K];
-      case 'showPricing':
-        return (rawValue === 'true') as unknown as Settings[K];
-      case 'seenAnnouncementIds':
-        return JSON.parse(rawValue) as Settings[K];
-      default:
-        return null;
-    }
-  } catch {
-    return null;
-  }
-}
+import type { RendererStorageKey } from './rendererStorage';
 
 interface NotificationData {
   title: string;
@@ -132,6 +99,9 @@ type ElectronAPI = {
   getDockIconState: () => Promise<boolean>;
   getSetting: <K extends SettingKey>(key: K) => Promise<Settings[K]>;
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
+  getRendererStorage: (key: RendererStorageKey) => string | null;
+  setRendererStorage: (key: RendererStorageKey, value: string | null) => void;
+  appendMessageHistory: (content: string) => void;
   getSecretKey: () => Promise<string | null>;
   getAcpUrl: () => Promise<string | null>;
   setWakelock: (enable: boolean) => Promise<boolean>;
@@ -233,31 +203,16 @@ const electronAPI: ElectronAPI = {
   getDockIconState: () => ipcRenderer.invoke('get-dock-icon-state'),
   getSetting: async <K extends SettingKey>(key: K): Promise<Settings[K]> => {
     try {
-      // Check for localStorage value first (lazy migration)
-      const localStorageKey = localStorageKeyMap[key];
-      if (localStorageKey) {
-        const rawValue = localStorage.getItem(localStorageKey);
-        if (rawValue !== null) {
-          const parsed = parseLocalStorageValue(key, rawValue);
-          if (parsed !== null) {
-            return parsed;
-          }
-        }
-      }
       return await ipcRenderer.invoke('get-setting', key);
     } catch (error) {
       console.error(`Failed to get setting '${key}', using default`, error);
       return defaultSettings[key];
     }
   },
-  setSetting: async <K extends SettingKey>(key: K, value: Settings[K]): Promise<void> => {
-    // Clear any localStorage version when writing
-    const localStorageKey = localStorageKeyMap[key];
-    if (localStorageKey) {
-      localStorage.removeItem(localStorageKey);
-    }
-    return ipcRenderer.invoke('set-setting', key, value);
-  },
+  setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+  getRendererStorage: (key) => ipcRenderer.sendSync('renderer-storage:get', key),
+  setRendererStorage: (key, value) => ipcRenderer.sendSync('renderer-storage:set', key, value),
+  appendMessageHistory: (content) => ipcRenderer.sendSync('renderer-storage:append-message', content),
   getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
   getAcpUrl: () => ipcRenderer.invoke('get-acp-url'),
   setWakelock: (enable: boolean) => ipcRenderer.invoke('set-wakelock', enable),

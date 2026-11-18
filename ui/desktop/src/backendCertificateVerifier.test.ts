@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import type { Session } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -78,13 +76,6 @@ function createFixture(initialPins: Record<string, string | null>) {
 }
 
 describe('backend certificate verifier wiring', () => {
-  it('installs a scoped verifier on each window session partition', () => {
-    const source = fs.readFileSync(path.resolve('src/main.ts'), 'utf8');
-
-    expect(source).toMatch(/installScopedCertificateVerifier/);
-    expect(source).toMatch(/persist:goose-/);
-  });
-
   it.each(['defaultSession', 'rendererSession'] as const)(
     'enforces explicit pin matches and mismatches on %s',
     (sessionName) => {

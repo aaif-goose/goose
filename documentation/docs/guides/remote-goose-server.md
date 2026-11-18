@@ -74,6 +74,10 @@ If you intend to reach the server from another machine, also test from there usi
 
 When `goose serve` runs with TLS, it generates or loads a TLS certificate. goose Desktop can pin that certificate by SHA-256 fingerprint. If you leave the fingerprint field empty, goose Desktop uses trust-on-first-use and pins the first certificate it sees for that backend.
 
+A configured fingerprint applies to the backend's HTTPS origin, including its port. Redirects within that origin can change the path. Without a configured fingerprint, the `/status` check can follow redirects without credentials. The secret goes only to the final `/status` origin. HTTPS-to-HTTP redirects are rejected in both cases.
+
+Changes to the configured fingerprint apply to new connections. Close and reopen a window to reconnect with an updated fingerprint.
+
 When TLS is enabled, `goose serve` logs the fingerprint on startup. It looks like:
 
 ```text
