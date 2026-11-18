@@ -101,9 +101,14 @@ def make_llm_handler(delay_s, reply_chars):
     return Handler
 
 
+class _LlmServer(ThreadingHTTPServer):
+    # The default backlog of 5 delays bursts of concurrent sessions, which would skew turn latency.
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def start_fake_llm(delay_s, reply_chars):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_llm_handler(delay_s, reply_chars))
-    server.daemon_threads = True
+    server = _LlmServer(("127.0.0.1", 0), make_llm_handler(delay_s, reply_chars))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -298,18 +303,12 @@ def count_db_handles(pids, db_path):
 def sampler_loop(db_path, pids_fn, args, stop, samples):
     wal = Path(str(db_path) + "-wal")
     conn = None
+    probe_table_ready = False
     while not stop.wait(args.sample_interval):
         if not db_path.exists():
             continue
         if conn is None:
             conn = sqlite3.connect(str(db_path), timeout=args.probe_timeout, isolation_level=None)
-            if args.write_probe:
-                try:
-                    conn.execute("CREATE TABLE IF NOT EXISTS harness_probe (id INTEGER PRIMARY KEY, t REAL)")
-                except sqlite3.OperationalError:
-                    conn.close()
-                    conn = None
-                    continue
         s = {"t": time.monotonic(), "wal_bytes": wal.stat().st_size if wal.exists() else 0,
              "db_handles": count_db_handles(pids_fn(), db_path)}
         if args.checkpoint_probe:
@@ -319,8 +318,11 @@ def sampler_loop(db_path, pids_fn, args, stop, samples):
             except sqlite3.OperationalError as e:
                 s["ckpt_error"] = str(e)
         if args.write_probe:
-            t0 = time.monotonic()
             try:
+                if not probe_table_ready:
+                    conn.execute("CREATE TABLE IF NOT EXISTS harness_probe (id INTEGER PRIMARY KEY, t REAL)")
+                    probe_table_ready = True
+                t0 = time.monotonic()
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute("INSERT INTO harness_probe (t) VALUES (?)", (time.time(),))
                 conn.execute("COMMIT")
