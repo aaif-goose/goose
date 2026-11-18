@@ -12,7 +12,7 @@ use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
     Operation, OperationResult, RunStatus, StepResult,
 };
-use crate::tool_call_state::tool_calls;
+use crate::tool_call_state::pending_tool_requests;
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
@@ -79,16 +79,14 @@ fn empty_result<E>(status: RunStatus) -> StepResult<E> {
 
 fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
     let mut tool_responses = Message::user();
-    for (request, state) in tool_calls(messages) {
-        if state.is_open() {
-            tool_responses.add_tool_response_with_metadata(
-                request.id.clone(),
-                Ok(rmcp::model::CallToolResult::error(vec![
-                    rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
-                ])),
-                request.metadata.as_ref(),
-            );
-        }
+    for request in pending_tool_requests(messages) {
+        tool_responses.add_tool_response_with_metadata(
+            request.id.clone(),
+            Ok(rmcp::model::CallToolResult::error(vec![
+                rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
+            ])),
+            request.metadata.as_ref(),
+        );
     }
     (!tool_responses.content.is_empty()).then_some(tool_responses)
 }

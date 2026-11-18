@@ -11,7 +11,7 @@ use super::{
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::tool_call_state::{tool_calls, ToolCallState};
+use crate::tool_call_state::pending_tool_requests;
 use crate::tool_visibility::is_tool_visible_to_model;
 
 /// Supplies the extension lease a session runs with, and shapes how its tools
@@ -79,9 +79,8 @@ pub trait ExtensionSource<S: Sync, C: ExtensionSpec>: Send + Sync {
 /// Advertises the tools of a session's MCP extensions and runs the calls the
 /// model makes to them.
 ///
-/// Place it after [`ToolApprovalOperation`](crate::tool_approval::ToolApprovalOperation):
-/// it only runs calls that approval marked executable. Calls to tools it does
-/// not own are left for later operations.
+/// If the machine uses an approval policy, place it before this operation.
+/// Calls already answered or belonging to another operation are skipped.
 pub struct ExtensionOperation<S: Sync, C: ExtensionSpec> {
     source: std::sync::Arc<dyn ExtensionSource<S, C>>,
     batch: ToolCallBatch,
@@ -94,18 +93,6 @@ impl<S: Sync, C: ExtensionSpec> ExtensionOperation<S, C> {
             batch: ToolCallBatch::new(),
         }
     }
-}
-
-fn executable_requests(messages: &[Message]) -> Vec<ToolRequest> {
-    tool_calls(messages)
-        .into_iter()
-        .filter(|(request, state)| {
-            *state == ToolCallState::Executable
-                && request.tool_call.is_ok()
-                && !request.was_executed_externally()
-        })
-        .map(|(request, _)| request.clone())
-        .collect()
 }
 
 fn owned_call(request: &ToolRequest, tools: &[Tool]) -> Option<CallToolRequestParams> {
@@ -180,9 +167,9 @@ where
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let messages = messages_since_kickoff(conversation)?;
-        let requests: Vec<_> = executable_requests(messages)
-            .into_iter()
-            .filter(|request| self.source.accepts(messages, request))
+        let requests: Vec<_> = pending_tool_requests(messages)
+            .filter(|request| request.tool_call.is_ok() && self.source.accepts(messages, request))
+            .cloned()
             .collect();
         if requests.is_empty() {
             return not_applicable();

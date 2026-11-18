@@ -46,8 +46,8 @@ is a function of the persisted conversation, not of in-memory loop state.
 
 ## Tool approval
 
-`ToolApprovalOperation` decides whether each tool call may run and can ask the
-user first. Put it before every step that runs tools. Implement
+Tool execution does not require approval. To add a policy, put
+`ToolApprovalOperation` before the tool handlers and implement
 `ToolApproval<S>`. Its `check` gets every new call from the model's reply at
 once, so it can check them together, and returns one decision per call, in the
 same order. Each decision is one of:
@@ -63,34 +63,30 @@ same order. Each decision is one of:
 When the user chooses, `on_confirmation` gets the choice once, so approval can
 remember "always allow" or "always deny". If the user declines, the call gets
 the declined message as its error result; change that text with
-`with_declined_message`. If the user allows, the call may run. To let every
-call run without asking, register a `ToolApproval` whose `check` always returns
-`Allow`. Without `ToolApprovalOperation`, no call runs.
+`with_declined_message`. If the user allows, the call may run. Allowed calls
+are recorded in a private message so the policy does not check them again.
+Tool handlers do not read that record. An app without an approval policy can
+omit `ToolApprovalOperation` entirely.
 
 Good to know:
 
-- Put `UnhandledToolCallsOperation` after every step that runs tools. Allowed
-  calls run while others wait for the user.
+- The approval operation pauses the turn until all outstanding confirmations
+  are answered, so tool handlers and inference do not run while it is waiting.
 - Show the confirmation request to the user only after it is saved, so the
   user can't choose before it exists. The operation saves it but doesn't send it.
 - When the user chooses, save `confirmation_response_message(call_id,
   permission)`. It is hidden, so it isn't mistaken for a new user message.
 - Calls with arguments that can't be read skip approval; the tool step responds
   to them with the error.
-- If you write your own step that runs tools, run only calls that have no
-  response yet and where `request_executable(request)` is `Some(true)`, and
-  respond to calls with arguments that can't be read with the error.
-  `ToolOperation` already does this.
+- A tool handler runs otherwise eligible calls that do not already have a
+  response. A denial is an error tool response, so it needs no special handling
+  in the executor.
 - `ToolApprovalOperation` takes one approval. To run several, write one that
   calls the others.
 
-`UnhandledToolCallsOperation` is needed with `ToolApprovalOperation`. Put it
-after every step that runs tools, right before inference. It gives calls no
-step handled an error result, and it pauses the run while calls wait for the
-user, so the model isn't called with calls still open. A call whose arguments
-can't be read gets the parse error; any other call gets "Tool 'X' is not
-available.". A step that runs tools after it gets "not available" for its
-calls.
+Place `UnhandledToolCallsOperation` after all tool handlers and before inference
+if your pipeline needs to answer unclaimed calls. It returns a parse error for
+malformed calls and "Tool 'X' is not available." for other unanswered calls.
 
 ## Reading the conversation
 
