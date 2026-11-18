@@ -613,7 +613,7 @@ impl DummyApiState {
             ApiResponse::NoChoices => sse_response(no_choices_events(&id, model)),
             ApiResponse::OutputLimit => sse_response(output_limit_events(&meta(0))),
             ApiResponse::ReasoningOutputLimit(reasoning) => sse_response(
-                reasoning_output_limit_events(&meta(reasoning.chars().count() as i32), &reasoning),
+                reasoning_output_limit_events(&meta(reasoning.chars().count() as i64), &reasoning),
             ),
             ApiResponse::ContextLimitError(message) => ResponseTemplate::new(400).set_body_json(
                 context_limit_error(format!("context_length_exceeded: {message}")),
