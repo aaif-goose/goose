@@ -97,7 +97,7 @@ The fingerprint changes whenever `goose serve` regenerates its certificate (for 
 
 ### 4. Configure goose Desktop
 
-On the client machine, open goose Desktop and navigate to **Settings → External Backend**. Under the **External Backend (ACP)** section:
+On the client machine, open goose Desktop and navigate to **Settings → Agent → External Backend (ACP) → Use external backend**. Configure the following settings:
 
 | Setting | Value |
 |---------|-------|
