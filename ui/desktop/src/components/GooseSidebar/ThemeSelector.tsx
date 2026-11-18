@@ -1,5 +1,5 @@
 import React from 'react';
-import { Moon, Sliders, Sparkles, Sun } from 'lucide-react';
+import { Moon, Palette, Sliders, Sparkles, Sun } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useTheme } from '../../contexts/ThemeContext';
 import { defineMessages, useIntl } from '../../i18n';
@@ -35,7 +35,7 @@ interface ThemeSelectorProps {
 
 const ThemeSelector: React.FC<ThemeSelectorProps> = ({ className, hideTitle, horizontal }) => {
   const intl = useIntl();
-  const { userThemePreference, setUserThemePreference } = useTheme();
+  const { userThemePreference, setUserThemePreference, pluginThemes } = useTheme();
 
   return (
     <div className={`${!horizontal ? 'px-1 py-2 space-y-2' : ''} ${className}`}>
@@ -89,6 +89,24 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({ className, hideTitle, hor
           <Sparkles className="h-3 w-3" />
           <span>{intl.formatMessage(i18n.aura)}</span>
         </Button>
+
+        {pluginThemes.map((theme) => (
+          <Button
+            key={theme.id}
+            data-testid={`plugin-theme-button-${theme.id}`}
+            onClick={() => setUserThemePreference(theme.id)}
+            className={`flex items-center justify-center gap-1 p-2 rounded-md border transition-colors text-xs ${
+              userThemePreference === theme.id
+                ? 'bg-background-inverse text-text-inverse border-text-inverse hover:!bg-background-inverse hover:!text-text-inverse'
+                : 'border-border-primary hover:!bg-background-secondary text-text-secondary hover:text-text-primary'
+            }`}
+            variant="ghost"
+            size="sm"
+          >
+            <Palette className="h-3 w-3" />
+            <span className="truncate">{theme.label}</span>
+          </Button>
+        ))}
 
         <Button
           data-testid="system-mode-button"

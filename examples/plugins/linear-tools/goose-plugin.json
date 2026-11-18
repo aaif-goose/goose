@@ -1,0 +1,21 @@
+{
+  "id": "linear-tools",
+  "name": "Linear Tools",
+  "version": "0.1.0",
+  "description": "Create and manage Linear issues, projects, and cycles",
+  "engines": { "goose": ">=1.0.0" },
+  "binary": "linear-tools",
+  "mcp": { "tools": true, "resources": false, "prompts": false },
+  "provides": ["issues.v1", "linear.v1"],
+  "config": {
+    "api_key": {
+      "type": "string",
+      "description": "Linear Personal API key (lin_api_...)"
+    },
+    "team_id": {
+      "type": "string",
+      "description": "Default Linear team ID to use when none is specified"
+    }
+  },
+  "permissions": ["net:fetch"]
+}

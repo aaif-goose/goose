@@ -111,6 +111,7 @@ fn install_from_manifest(
         &staged_destination,
         source,
         FORMAT,
+        manifest.version.as_deref().unwrap_or(""),
         options.auto_update,
         last_update_check,
     )?;

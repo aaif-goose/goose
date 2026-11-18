@@ -2,6 +2,12 @@ mod common;
 mod handoff;
 #[cfg(feature = "acp-http")]
 mod mcp_app_proxy;
+#[cfg(feature = "acp-http")]
+pub mod plugin_config;
+#[cfg(feature = "acp-http")]
+pub mod plugin_http_proxy;
+#[cfg(feature = "acp-http")]
+pub mod plugin_ui;
 mod provider;
 mod response_builder;
 pub mod server;

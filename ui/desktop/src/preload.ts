@@ -212,7 +212,6 @@ const electronAPI: ElectronAPI = {
   showSaveDialog: (options: SaveDialogOptions) => ipcRenderer.invoke('show-save-dialog', options),
   reloadApp: () => ipcRenderer.send('reload-app'),
   checkForOllama: () => ipcRenderer.invoke('check-ollama'),
-
   selectFileOrDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke('select-file-or-directory', defaultPath),
   selectImportSessionFile: () => ipcRenderer.invoke('select-import-session-file'),

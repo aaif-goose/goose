@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>hello-sidecar</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        color: #1f2937;
+      }
+      dl {
+        margin: 0;
+      }
+      dt {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6b7280;
+        margin-top: 12px;
+      }
+      dt:first-child {
+        margin-top: 0;
+      }
+      dd {
+        margin: 4px 0 0;
+        font-family: ui-monospace, monospace;
+        word-break: break-all;
+      }
+      button {
+        margin-top: 16px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+        background: #fff;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Sidecar panel for the active chat session.</p>
+    <dl>
+      <dt>Session ID</dt>
+      <dd id="session-id">—</dd>
+      <dt>Route</dt>
+      <dd id="route">—</dd>
+    </dl>
+    <button type="button" id="ping">Ping host</button>
+    <script>
+      function render(context) {
+        document.getElementById('session-id').textContent = context.sessionId || '(none)';
+        document.getElementById('route').textContent = context.route || '/';
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'grc/activate' || data.viewKind !== 'sidecar') {
+          return;
+        }
+
+        if (data.viewId !== 'session-info') {
+          return;
+        }
+
+        render(data.context);
+
+        document.getElementById('ping').onclick = () => {
+          window.parent.postMessage(
+            {
+              type: 'grc/ui/showMessage',
+              text: `Sidecar sees session ${data.context.sessionId || 'none'}`,
+            },
+            '*'
+          );
+        };
+      });
+    </script>
+  </body>
+</html>

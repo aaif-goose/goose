@@ -1,7 +1,7 @@
 use crate::agents::extension::{Envs, ExtensionConfig};
 use crate::config::{DEFAULT_EXTENSION_DESCRIPTION, DEFAULT_EXTENSION_TIMEOUT};
 use crate::plugins::discovery::discover_enabled_plugins;
-use crate::plugins::formats::open_plugins;
+use crate::plugins::formats::{goose_native, open_plugins};
 use anyhow::{bail, Context, Result};
 use fs_err as fs;
 use serde::Deserialize;
@@ -32,6 +32,25 @@ struct McpServerConfig {
 pub fn enabled_plugin_mcp_servers(project_root: Option<&Path>) -> Vec<ExtensionConfig> {
     let mut configs = Vec::new();
     for plugin in discover_enabled_plugins(project_root) {
+        match goose_native::native_plugin_extension(&plugin.name, &plugin.root) {
+            Ok(Some(config)) => configs.push(config),
+            Ok(None) => {}
+            Err(err) => warn!(
+                plugin = %plugin.name,
+                root = %plugin.root.display(),
+                error = %err,
+                "Failed to load native plugin extension; skipping",
+            ),
+        }
+        match goose_native::external_plugin_extensions(&plugin.name, &plugin.root) {
+            Ok(ext_configs) => configs.extend(ext_configs),
+            Err(err) => warn!(
+                plugin = %plugin.name,
+                root = %plugin.root.display(),
+                error = %err,
+                "Failed to load external plugin MCP extensions; skipping",
+            ),
+        }
         match plugin_mcp_servers(&plugin.name, &plugin.root) {
             Ok(plugin_configs) => configs.extend(plugin_configs),
             Err(err) => warn!(

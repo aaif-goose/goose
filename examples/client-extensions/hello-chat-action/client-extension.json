@@ -1,0 +1,21 @@
+{
+  "id": "hello-chat-action",
+  "version": "0.1.0",
+  "engines": {
+    "grc": ">=1.40.0"
+  },
+  "main": "index.html",
+  "contributes": {
+    "chatActions": [
+      {
+        "id": "hello",
+        "label": "Hello"
+      },
+      {
+        "id": "fill-input",
+        "label": "Fill",
+        "when": "session.active"
+      }
+    ]
+  }
+}

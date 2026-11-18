@@ -6,7 +6,8 @@ use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::plugins::discovery::PluginScope;
 use crate::subprocess::{git_command, SubprocessExt};
-use anyhow::{anyhow, bail, Result};
+use crate::utils::copy_dir_all;
+use anyhow::{anyhow, bail, Context as _, Result};
 use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ const AUTO_UPDATE_INTERVAL_HOURS: i64 = 24;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginFormat {
     Gemini,
+    GooseNative,
     OpenPlugins,
 }
 
@@ -27,6 +29,7 @@ impl std::fmt::Display for PluginFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PluginFormat::Gemini => write!(f, "gemini"),
+            PluginFormat::GooseNative => write!(f, "goose-native"),
             PluginFormat::OpenPlugins => write!(f, "open-plugins"),
         }
     }
@@ -78,9 +81,146 @@ struct InstallMetadata {
     #[allow(dead_code)]
     format: String,
     #[serde(default)]
+    version: String,
+    #[serde(default)]
     auto_update: bool,
     #[serde(default)]
     last_update_check: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstalledPlugin {
+    pub name: String,
+    pub version: String,
+    pub format: String,
+    pub source: String,
+    pub directory: PathBuf,
+    pub skills: Vec<String>,
+    pub mcp_tools: bool,
+    pub provides: Vec<String>,
+    pub config_keys: Vec<String>,
+    pub permissions: Vec<String>,
+}
+
+pub fn list_installed_plugins() -> Vec<InstalledPlugin> {
+    let plugins_dir = plugin_install_dir();
+    let Ok(entries) = fs::read_dir(&plugins_dir) else {
+        return Vec::new();
+    };
+
+    let mut plugins: Vec<InstalledPlugin> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                return None;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let metadata = read_install_metadata(&dir).ok()?;
+
+            let (skills, mcp_tools, provides, config_keys, permissions) =
+                if let Ok(Some(native)) = formats::goose_native::read_manifest(&dir) {
+                    let keys = native.config.keys().cloned().collect();
+                    (
+                        Vec::new(),
+                        native.mcp.tools,
+                        native.provides,
+                        keys,
+                        native.permissions,
+                    )
+                } else {
+                    let skill_dirs = formats::open_plugins::installed_skill_dirs(&dir);
+                    let skill_names = skill_dirs
+                        .iter()
+                        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                        .collect();
+                    (skill_names, false, Vec::new(), Vec::new(), Vec::new())
+                };
+
+            Some(InstalledPlugin {
+                name,
+                version: if metadata.version.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    metadata.version
+                },
+                format: metadata.format,
+                source: metadata.source,
+                directory: dir,
+                skills,
+                mcp_tools,
+                provides,
+                config_keys,
+                permissions,
+            })
+        })
+        .collect();
+
+    plugins.sort_by(|a, b| a.name.cmp(&b.name));
+    plugins
+}
+
+pub fn set_plugin_enabled(name: &str, enabled: bool) -> Result<()> {
+    use crate::plugins::discovery::PLUGINS_CONFIG_KEY;
+    use std::collections::HashMap;
+
+    let dir = plugin_install_dir().join(name);
+    if !dir.is_dir() {
+        bail!("Plugin '{name}' is not installed");
+    }
+
+    let config = Config::global();
+    let key = dir.to_string_lossy().to_string();
+    let mut entries: HashMap<String, discovery::PluginConfigEntry> =
+        config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
+    entries.insert(key, discovery::PluginConfigEntry { enabled });
+    config.set_param(PLUGINS_CONFIG_KEY, entries)?;
+    Ok(())
+}
+
+pub fn is_plugin_enabled(plugin_dir: &Path) -> bool {
+    let config = Config::global();
+    let key = plugin_dir.to_string_lossy().to_string();
+    let entries: HashMap<String, discovery::PluginConfigEntry> = config
+        .get_param(discovery::PLUGINS_CONFIG_KEY)
+        .unwrap_or_default();
+    entries.get(&key).map(|e| e.enabled).unwrap_or(false)
+}
+
+pub fn uninstall_plugin(name: &str) -> Result<()> {
+    use crate::plugins::discovery::PLUGINS_CONFIG_KEY;
+
+    let dir = plugin_install_dir().join(name);
+    if !dir.is_dir() {
+        bail!("Plugin '{name}' is not installed");
+    }
+
+    fs::remove_dir_all(&dir)?;
+
+    let config = Config::global();
+    let key = dir.to_string_lossy().to_string();
+    let mut entries: HashMap<String, discovery::PluginConfigEntry> =
+        config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
+    entries.remove(&key);
+    if entries.is_empty() {
+        let _ = config.set_param(PLUGINS_CONFIG_KEY, entries);
+    } else {
+        config.set_param(PLUGINS_CONFIG_KEY, entries)?;
+    }
+
+    Ok(())
+}
+
+pub fn enabled_plugin_provides(project_root: Option<&Path>) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for plugin in discovery::discover_enabled_plugins(project_root) {
+        if let Ok(Some(manifest)) = formats::goose_native::read_manifest(&plugin.root) {
+            for cap in manifest.provides {
+                map.insert(cap, manifest.id.clone());
+            }
+        }
+    }
+    map
 }
 
 pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
@@ -152,6 +292,49 @@ pub(crate) fn enabled_plugin_skill_dirs_with_config(
 
 pub fn install_plugin(source: &str) -> Result<PluginInstall> {
     install_plugin_with_options(source, PluginInstallOptions::default())
+}
+
+pub fn install_goose_plugin_from_local(source: &Path) -> Result<PluginInstall> {
+    let source = source
+        .canonicalize()
+        .with_context(|| format!("plugin source not found: {}", source.display()))?;
+    if !source.is_dir() {
+        bail!("plugin source must be a directory");
+    }
+
+    let manifest = formats::goose_native::read_manifest(&source)?
+        .ok_or_else(|| anyhow!("no goose-plugin.json found at {}", source.display()))?;
+
+    let install_root = plugin_install_dir();
+    fs::create_dir_all(&install_root)?;
+
+    let destination = install_root.join(&manifest.id);
+    if destination.exists() {
+        bail!("plugin '{}' is already installed", manifest.id);
+    }
+
+    let staging = install_root.join(format!(".installing-{}", manifest.id));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    let installed = copy_dir_all(&source, &staging)
+        .and_then(|()| fs::rename(&staging, &destination).map_err(Into::into));
+    if let Err(error) = installed {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+
+    let plugin_name = manifest.id.clone();
+    set_plugin_enabled(&plugin_name, true)?;
+
+    Ok(PluginInstall {
+        name: manifest.id,
+        version: manifest.version,
+        format: PluginFormat::GooseNative,
+        source: source.display().to_string(),
+        directory: destination,
+        skills: Vec::new(),
+    })
 }
 
 pub fn install_plugin_with_options(
@@ -299,6 +482,18 @@ fn install_from_checkout_at_root(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
+    match formats::goose_native::try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    ) {
+        Ok(install) => return Ok(install),
+        Err(err) if err.is::<FormatNotSupported>() => {}
+        Err(err) => return Err(err),
+    }
+
     match formats::open_plugins::try_install_from_manifest_at_root(
         source,
         checkout_dir,
@@ -367,10 +562,11 @@ fn mark_last_update_check(directory: &Path, checked_at: DateTime<Utc>) -> Result
     Ok(())
 }
 
-fn write_install_metadata(
+pub(crate) fn write_install_metadata(
     destination: &Path,
     source: &str,
     format: &str,
+    version: &str,
     auto_update: bool,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<()> {
@@ -378,6 +574,7 @@ fn write_install_metadata(
         source: source.to_string(),
         source_type: "git".to_string(),
         format: format.to_string(),
+        version: version.to_string(),
         auto_update,
         last_update_check,
     };
@@ -399,25 +596,6 @@ fn replace_plugin_dir(source: &Path, destination: &Path) -> Result<()> {
     if let Err(err) = fs::rename(source, destination) {
         fs::rename(&backup_plugin_dir, destination)?;
         return Err(err.into());
-    }
-
-    Ok(())
-}
-
-fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
-    fs::create_dir_all(destination)?;
-
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            copy_dir_all(&source_path, &destination_path)?;
-        } else if file_type.is_file() {
-            fs::copy(&source_path, &destination_path)?;
-        }
     }
 
     Ok(())

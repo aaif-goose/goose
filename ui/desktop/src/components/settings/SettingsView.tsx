@@ -17,6 +17,7 @@ import {
   Keyboard,
   HardDrive,
   KeyRound,
+  Puzzle,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
@@ -29,6 +30,7 @@ import { useFeatures } from '../../contexts/FeaturesContext';
 import { defineMessages, useIntl } from '../../i18n';
 import BackButton from '../ui/BackButton';
 import { useNavigationContext } from '../Layout/NavigationContext';
+import { PluginsPanel } from '../plugins/PluginsPanel';
 
 const i18n = defineMessages({
   title: {
@@ -67,6 +69,10 @@ const i18n = defineMessages({
     id: 'settingsView.tabApp',
     defaultMessage: 'App',
   },
+  tabPlugins: {
+    id: 'settingsView.tabPlugins',
+    defaultMessage: 'Plugins',
+  },
 });
 
 const settingsTabClass =
@@ -102,6 +108,7 @@ export default function SettingsView({
     keyboard: intl.formatMessage(i18n.tabKeyboard),
     auth: intl.formatMessage(i18n.tabAuth),
     app: intl.formatMessage(i18n.tabApp),
+    plugins: intl.formatMessage(i18n.tabPlugins),
   }[activeTab];
 
   const handleTabChange = (tab: string) => {
@@ -252,6 +259,14 @@ export default function SettingsView({
                 <Monitor className="h-5 w-5 text-text-secondary" />
                 {intl.formatMessage(i18n.tabApp)}
               </TabsTrigger>
+              <TabsTrigger
+                value="plugins"
+                className={settingsTabClass}
+                data-testid="settings-plugins-tab"
+              >
+                <Puzzle className="h-5 w-5 text-text-secondary" />
+                {intl.formatMessage(i18n.tabPlugins)}
+              </TabsTrigger>
             </TabsList>
           </aside>
         </div>
@@ -327,6 +342,13 @@ export default function SettingsView({
                   {CONFIGURATION_ENABLED && <ConfigSettings />}
                   <AppSettingsSection scrollToSection={viewOptions.section} />
                 </div>
+              </TabsContent>
+
+              <TabsContent
+                value="plugins"
+                className="mt-0 focus-visible:outline-none focus-visible:ring-0"
+              >
+                <PluginsPanel />
               </TabsContent>
             </div>
           </ScrollArea>

@@ -100,7 +100,7 @@ export function buildCSP(externalBackend?: ExternalBackendConfig): string {
   return (
     "default-src 'self';" +
     "style-src 'self' 'unsafe-inline';" +
-    "script-src 'self' 'unsafe-inline';" +
+    "script-src 'self' 'unsafe-inline' blob: http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:*;" +
     "img-src 'self' data: https:;" +
     `connect-src ${connectSrc};` +
     "object-src 'none';" +

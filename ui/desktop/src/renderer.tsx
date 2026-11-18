@@ -10,6 +10,10 @@ import { currentLocale, currentMessageLocale, loadMessages } from './i18n';
 // Apply theme tokens to :root before first paint.
 applyThemeTokens();
 
+// Expose React to plugins so they can share the host's React instance without bundling it.
+// Plugins: const { React, ReactDOM } = window.GooseUI;
+window.GooseUI = { React, ReactDOM };
+
 const App = lazy(() => import('./App'));
 
 let warnedFallbackLocale = false;

@@ -63,6 +63,7 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
         &staged_destination,
         source,
         "gemini",
+        &manifest.version,
         options.auto_update,
         last_update_check,
     )?;

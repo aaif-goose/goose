@@ -1,0 +1,16 @@
+{
+  "id": "hello-page",
+  "version": "0.1.0",
+  "engines": {
+    "grc": ">=1.40.0"
+  },
+  "main": "index.html",
+  "contributes": {
+    "rootLinks": [
+      {
+        "id": "home",
+        "label": "Hello Page"
+      }
+    ]
+  }
+}
