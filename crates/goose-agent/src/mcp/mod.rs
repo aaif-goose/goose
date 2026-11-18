@@ -24,6 +24,7 @@ use goose_provider_types::conversation::message::Message;
 use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
+mod batch;
 mod call;
 pub mod client;
 pub mod container;
@@ -34,6 +35,7 @@ mod stdio;
 mod streamable_http;
 pub mod tool_schema_normalize;
 
+pub use batch::{ResultNotification, ToolCallBatch};
 pub use call::{ToolCallNotificationEmitter, ToolCallResult, ToolResult};
 pub use host::{
     ExtensionAuth, ExtensionHost, ExtensionSpec, StaticOAuthClientConfig, TraceContextInjector,
