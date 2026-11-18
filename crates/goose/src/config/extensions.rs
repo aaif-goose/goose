@@ -1,7 +1,6 @@
 use super::base::Config;
 use crate::agents::extension::PLATFORM_EXTENSIONS;
 use crate::agents::ExtensionConfig;
-use anyhow::Result;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
@@ -96,12 +95,12 @@ enum ExtensionMutation {
     Noop,
 }
 
-fn with_raw_extensions_mapping<F>(config: &Config, mutate: F) -> Result<()>
+fn with_raw_extensions_mapping<F>(config: &Config, mutate: F)
 where
     F: FnOnce(&mut IndexMap<String, ExtensionEntry>) -> ExtensionMutation,
 {
     let mut serialize_error = None;
-    config.update_param::<Mapping, Mapping, _>(EXTENSIONS_CONFIG_KEY, |mut raw| {
+    let result = config.update_param::<Mapping, Mapping, _>(EXTENSIONS_CONFIG_KEY, |mut raw| {
         let mut extensions = parse_extensions_map(&raw);
 
         match mutate(&mut extensions) {
@@ -120,12 +119,13 @@ where
         }
 
         raw
-    })?;
+    });
 
-    if let Some(error) = serialize_error {
-        return Err(error.into());
+    if let Some(e) = serialize_error {
+        warn!("Failed to serialize extensions config entry: {}", e);
+    } else if let Err(e) = result {
+        warn!("Failed to save extensions config: {}", e);
     }
-    Ok(())
 }
 
 pub fn get_extension_by_name(name: &str) -> Option<ExtensionConfig> {
@@ -153,19 +153,51 @@ pub fn set_extension(entry: ExtensionEntry) {
     set_extension_with_config(Config::global(), entry);
 }
 
-pub fn try_set_extension(entry: ExtensionEntry) -> Result<()> {
-    try_set_extension_with_config(Config::global(), entry)
-}
-
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
-    if let Err(error) = try_set_extension_with_config(config, entry) {
-        warn!("Failed to save extensions config: {error}");
-    }
+    let key = entry.config.key();
+    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
 }
 
-fn try_set_extension_with_config(config: &Config, entry: ExtensionEntry) -> Result<()> {
-    let key = entry.config.key();
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)))
+pub(crate) fn add_extensions(config: &Config, entries: &[ExtensionEntry]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        std::env::var_os("EXTENSIONS").is_none(),
+        "cannot import while the EXTENSIONS environment override is set"
+    );
+    config.update_write_config(|values| {
+        let mut occupied: std::collections::HashSet<_> = get_available_extensions()
+            .into_iter()
+            .map(|extension| extension.key())
+            .chain(PLATFORM_EXTENSIONS.keys().map(|name| name_to_key(name)))
+            .collect();
+        for source in config.get_param_source_values::<Mapping>(EXTENSIONS_CONFIG_KEY)? {
+            for (key, value) in source {
+                occupied.extend(key.as_str().map(name_to_key));
+                occupied.extend(
+                    value
+                        .get("name")
+                        .and_then(serde_yaml::Value::as_str)
+                        .map(name_to_key),
+                );
+            }
+        }
+        let extension_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.into());
+        let extensions = values
+            .entry(extension_key)
+            .or_insert_with(|| serde_yaml::Value::Mapping(Mapping::new()));
+        let extensions = extensions
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow::anyhow!("invalid extensions mapping"))?;
+        for entry in entries {
+            let key = entry.config.key();
+            anyhow::ensure!(
+                occupied.insert(key.clone()),
+                "extension '{}' already exists",
+                entry.config.name()
+            );
+            extensions.insert(key.into(), serde_yaml::to_value(entry)?);
+        }
+        Ok(())
+    })
 }
 
 pub fn remove_extension(key: &str) {
@@ -173,11 +205,7 @@ pub fn remove_extension(key: &str) {
 }
 
 fn remove_extension_with_config(config: &Config, key: &str) {
-    if let Err(error) =
-        with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()))
-    {
-        warn!("Failed to save extensions config: {error}");
-    }
+    with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()));
 }
 
 /// Returns true when an existing extension was updated, false when the key was missing.
@@ -187,7 +215,7 @@ pub fn set_extension_enabled(key: &str, enabled: bool) -> bool {
 
 fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) -> bool {
     let mut updated = false;
-    if let Err(error) = with_raw_extensions_mapping(config, |extensions| {
+    with_raw_extensions_mapping(config, |extensions| {
         let Some(entry) = extensions.get_mut(key) else {
             return ExtensionMutation::Noop;
         };
@@ -195,10 +223,7 @@ fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) 
         entry.enabled = enabled;
         updated = true;
         ExtensionMutation::Upsert(key.to_string(), Box::new(entry.clone()))
-    }) {
-        warn!("Failed to save extensions config: {error}");
-        return false;
-    }
+    });
 
     updated
 }
@@ -346,6 +371,35 @@ mod tests {
         let config =
             Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
         (config, config_file, secrets_file)
+    }
+
+    #[test]
+    fn import_collision_rejects_the_whole_batch() {
+        let original = "extensions:\n  io_example_weather: {type: stdio, enabled: false, cmd: weather, args: []}\n";
+        let (config, file, _) = test_config(original);
+        let entries = [
+            builtin_entry("io.other/weather", true),
+            builtin_entry("io.example/weather", true),
+        ];
+        let error = add_extensions(&config, &entries).unwrap_err();
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), original);
+    }
+
+    #[test]
+    fn import_propagates_write_failure_without_replacing_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.yaml");
+        let original = "extensions: {}\n";
+        std::fs::write(&file, original).unwrap();
+        let config = Config::new_with_file_secrets(&file, dir.path().join("secrets.yaml")).unwrap();
+        std::fs::create_dir(file.with_extension("tmp")).unwrap();
+        let entries = [
+            builtin_entry("io.example/weather", true),
+            builtin_entry("io.other/weather", true),
+        ];
+        assert!(add_extensions(&config, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
     }
 
     fn read_extensions(config: &Config) -> Mapping {

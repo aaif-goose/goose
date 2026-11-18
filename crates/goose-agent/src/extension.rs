@@ -158,7 +158,7 @@ impl Envs {
         self.map.clone()
     }
 
-    fn is_disallowed(key: &str) -> bool {
+    pub fn is_disallowed(key: &str) -> bool {
         Self::DISALLOWED_KEYS
             .iter()
             .any(|disallowed| disallowed.eq_ignore_ascii_case(key))
@@ -419,11 +419,9 @@ impl ExtensionConfig {
     }
 }
 
-static RE_ENV_BRACES: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\$\{\s*([^{}\s]+)\s*\}").expect("valid regex"));
-
-static RE_ENV_SIMPLE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
+static RE_ENV: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"\$\{\s*([^{}\s]+)\s*\}|\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex")
+});
 
 async fn merge_environments(
     envs: &Envs,
@@ -454,29 +452,15 @@ async fn merge_environments(
 }
 
 fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
-    let mut result = value.to_string();
-
-    for cap in RE_ENV_BRACES.captures_iter(value) {
-        if let Some(var_name) = cap.get(1) {
-            if let Some(env_value) = env_map.get(var_name.as_str()) {
-                result = result.replace(&cap[0], env_value);
-            }
-        }
-    }
-
-    // Scan the original input for $VAR patterns (not the post-substitution result)
-    // to avoid recursive expansion when a substituted value contains $OTHER_VAR.
-    for cap in RE_ENV_SIMPLE.captures_iter(value) {
-        if let Some(var_name) = cap.get(1) {
-            if !value.contains(&format!("${{{}}}", var_name.as_str())) {
-                if let Some(env_value) = env_map.get(var_name.as_str()) {
-                    result = result.replace(&cap[0], env_value);
-                }
-            }
-        }
-    }
-
-    result
+    RE_ENV
+        .replace_all(value, |cap: &regex::Captures<'_>| {
+            let name = cap.get(1).or_else(|| cap.get(2)).unwrap();
+            env_map
+                .get(name.as_str())
+                .cloned()
+                .unwrap_or_else(|| cap[0].to_owned())
+        })
+        .into_owned()
 }
 
 impl std::fmt::Display for ExtensionConfig {
@@ -560,6 +544,7 @@ mod tests {
     #[test_case("Bearer $AUTH_TOKEN", "Bearer secret123"; "bare")]
     #[test_case("Key: $API_KEY, Token: ${AUTH_TOKEN}", "Key: key456, Token: secret123"; "multiple")]
     #[test_case("Bearer ${UNKNOWN_VAR}", "Bearer ${UNKNOWN_VAR}"; "unknown_left_alone")]
+    #[test_case("${TOKEN}:$KEY:${KEY}", "abc$KEY:xyz:xyz"; "single_pass")]
     #[test_case("${TOKEN}", "abc$KEY"; "substituted_value_not_expanded_again_braces")]
     #[test_case("$TOKEN", "abc$KEY"; "substituted_value_not_expanded_again_bare")]
     fn test_substitute_env_vars(input: &str, expected: &str) {
