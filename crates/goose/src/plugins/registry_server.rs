@@ -179,7 +179,6 @@ impl Package {
             "npm" => ("npx", "@", "https://registry.npmjs.org"),
             "pypi" => ("uvx", "==", "https://pypi.org"),
             "oci" => ("docker", ":", "https://docker.io"),
-            "nuget" => ("dnx", "@", "https://api.nuget.org/v3/index.json"),
             other => bail!("unsupported package registry type '{other}'"),
         };
         ensure!(
@@ -238,11 +237,7 @@ impl Package {
             }
             None => self.identifier.clone(),
         });
-        let package_args = arguments(&self.package_arguments)?;
-        if self.registry_type == "nuget" && !package_args.is_empty() {
-            args.push("--".into());
-        }
-        args.extend(package_args);
+        args.extend(arguments(&self.package_arguments)?);
         Ok(TransportConfig::Stdio {
             name,
             description,
@@ -514,6 +509,22 @@ mod tests {
             headers,
             HashMap::from([("X.API-Key".into(), "${X.API-Key}".into())])
         );
+    }
+
+    #[test]
+    fn rejects_unsupported_launchers() {
+        for registry in ["nuget", "cargo", "mcpb"] {
+            let document = server(
+                vec![json!({
+                    "registryType": registry, "identifier": "weather", "transport": { "type": "stdio" },
+                })],
+                vec![],
+            );
+            let error = document.extension(ServerSelection::Package(0)).unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("unsupported package registry type"));
+        }
     }
 
     #[test]
