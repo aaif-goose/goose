@@ -464,14 +464,19 @@ fn create_codex_request(
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
-    let input_items = build_input_items(messages, &model_config.model_name)?;
+    let mut input_items = build_input_items(messages, &model_config.model_name)?;
+    if !system.is_empty() {
+        input_items.insert(
+            0,
+            json!({ "type": "message", "role": "developer", "content": system }),
+        );
+    }
     let reasoning_effort = reasoning_effort_for_config(model_config);
 
     let mut payload = json!({
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "instructions": system,
         "include": ["reasoning.encrypted_content"],
     });
 
@@ -1918,10 +1923,35 @@ mod tests {
     }
 
     #[test]
-    fn test_instructions_passed_through() {
-        let model = ModelConfig::new("gpt-5.4");
-        let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
-        let instructions = payload["instructions"].as_str().unwrap();
-        assert_eq!(instructions, "system prompt");
+    fn test_system_prompt_precedes_conversation_history() {
+        let model = ModelConfig::new("gpt-6.2-sol");
+        let system = "Follow the project guidelines.\nPreserve whitespace.\n";
+        let messages = [
+            Message::user().with_text("First question"),
+            Message::assistant().with_text("First answer"),
+            Message::user().with_text("Next question"),
+        ];
+        let first = create_codex_request(&model, system, &messages[..1], &[]).unwrap();
+        let next = create_codex_request(&model, system, &messages, &[]).unwrap();
+        let first_input = first["input"].as_array().unwrap();
+        assert_eq!(first_input.len(), 2);
+        assert_eq!(
+            first_input[0],
+            json!({ "type": "message", "role": "developer", "content": system })
+        );
+        assert_eq!(first_input[1]["role"], "user");
+        assert!(next["input"].as_array().unwrap().starts_with(first_input));
+        assert!(first.get("instructions").is_none());
+        assert!(next.get("instructions").is_none());
+    }
+
+    #[test]
+    fn test_empty_system_prompt_omits_developer_message() {
+        let model = ModelConfig::new("gpt-6.2-sol");
+        let messages = [Message::user().with_text("First question")];
+        let payload = create_codex_request(&model, "", &messages, &[]).unwrap();
+        assert_eq!(payload["input"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["input"][0]["role"], "user");
+        assert!(payload.get("instructions").is_none());
     }
 }
