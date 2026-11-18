@@ -373,6 +373,64 @@ export function getToolRequests(message: Message): (ToolRequest & { type: 'toolR
   );
 }
 
+function messageHasThinking(message: Message): boolean {
+  return message.content.some(
+    (content) =>
+      (content.type === 'thinking' &&
+        'thinking' in content &&
+        Boolean(content.thinking?.trim())) ||
+      content.type === 'redactedThinking'
+  );
+}
+
+function isProviderCallBoundary(message: Message): boolean {
+  return message.content.some(
+    (content) =>
+      content.type === 'systemNotification' && content.notificationType === 'inlineMessage'
+  );
+}
+
+function messageHasVisibleOutput(message: Message): boolean {
+  if (message.metadata.fallbackContent === true) {
+    return false;
+  }
+  const { textContent, imagePaths } = getTextAndImageContent(message);
+  return (
+    Boolean(textContent.trim()) || imagePaths.length > 0 || getToolRequests(message).length > 0
+  );
+}
+
+export function reasoningConsumedOutputBudget(messages: Message[], messageIndex: number): boolean {
+  const message = messages[messageIndex];
+  if (!message || message.role !== 'assistant' || !message.metadata.outputTokenLimitReached) {
+    return false;
+  }
+
+  let hasThinking = messageHasThinking(message);
+  let hasVisibleOutput = messageHasVisibleOutput(message);
+
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const previous = messages[index];
+    if (previous.role !== 'assistant') {
+      break;
+    }
+    if (getToolRequests(previous).length > 0 || isProviderCallBoundary(previous)) {
+      break;
+    }
+    if (previous.metadata.outputTokenLimitReached) {
+      break;
+    }
+
+    hasVisibleOutput = hasVisibleOutput || messageHasVisibleOutput(previous);
+    hasThinking = hasThinking || messageHasThinking(previous);
+    if (messageHasVisibleOutput(previous)) {
+      break;
+    }
+  }
+
+  return hasThinking && !hasVisibleOutput;
+}
+
 export function getToolResponses(message: Message): (ToolResponse & { type: 'toolResponse' })[] {
   return message.content.filter(
     (content): content is ToolResponse & { type: 'toolResponse' } => content.type === 'toolResponse'
