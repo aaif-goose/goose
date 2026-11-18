@@ -18,9 +18,10 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::state_machine::{
     CompactionOperation, ContextRelevanceOperation, DoctorOperation, FinalOutputOperation,
     GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource,
-    GooseToolApproval, InferenceRunner, Operation, PlatformExtensionOperation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
+    GooseToolApproval, InferenceRunner, McpPromptOperation, Operation, PlatformExtensionOperation,
+    ProjectOperation, RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, Step, StopHookOperation, SubagentOperation,
+    SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
     ToolExecutionOperation, ToolPairCompactionOperation, UnavailableDecisions,
     UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
@@ -140,6 +141,11 @@ pub(crate) fn build_state_machine(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
         )),
+        Arc::new(SubdirectoryHintOperation),
+        Arc::new(McpPromptOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+        )),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
@@ -183,6 +189,7 @@ pub(crate) fn build_state_machine(
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
+        Arc::new(ThinkingRecoveryOperation),
         Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),

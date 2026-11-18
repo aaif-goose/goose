@@ -1,18 +1,16 @@
 ## Task Context
 - An llm context limit was reached when a user was in a working session with an agent (you)
-- Write structured working notes from the conversation below, leaving out only the most verbose parts
-- Include the user's requests, the work done so far, all technical content, and as much of the original context as possible
+- Write a structured summary of the conversation below, leaving out only the most verbose parts
+- Include the user's requests, the work done so far, the technical details, and as much of the original context as possible
 - This will be used to let the user continue the working session
 - The summary will be read by an agent (you) on a next exchange to allow for continuation of the session
 
 **Conversation History:**
 {{ messages }}
 
-Wrap reasoning in `<analysis>` tags:
-- Review conversation chronologically: user goals, methods used, key decisions, files, errors, fixes
-- Keep this brief - the analysis is discarded, so it is a checklist of what to include, not the place for detail
+Cover the whole conversation in order: user goals, methods used, key decisions, files, errors, fixes.
 
-After the closing `</analysis>` tag, output exactly one ```json code block and nothing else, matching this schema:
+Output exactly one ```json code block and nothing else, matching this schema:
 
 ```json
 {
@@ -35,11 +33,11 @@ After the closing `</analysis>` tag, output exactly one ```json code block and n
 ```
 
 Rules for the JSON:
-- The `<analysis>` block is a discarded scratchpad: only the JSON survives, so it must be self-contained and repeat every detail from the analysis that matters for continuing
+- The JSON is the only thing kept, so it must be self-contained and include every detail that matters for continuing
 - Order every list from most to least important
 - Every list entry must be a plain string, not a nested object - except `files`, whose entries are objects shaped as shown above
 - Quote error messages, panic text, and failing test output verbatim in `errors_and_fixes` - exact strings including numbers, identifiers, and paths, not paraphrases
-- This summary will only be read by you, so it is ok to make it much longer than a normal summary you would show to a human: use as much length as the JSON fields need, and keep full output blocks, complete code snippets, and the user's exact wording
+- This summary is used to continue the session, so it is ok to make it much longer than a normal summary you would show to a human: use as much length as the JSON fields need, and keep full output blocks, complete code snippets, and the user's exact wording
 - Do not exclude any information that might be important to continuing a session working with you
 - Omit a field rather than inventing content for it
 - No new ideas unless user confirmed
