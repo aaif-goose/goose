@@ -1364,7 +1364,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 470
+    "model_count": 465
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1496,7 +1496,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 213
+    "model_count": 215
   },
   {
     "id": "llmgateway-providers",
@@ -1507,7 +1507,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 497
+    "model_count": 499
   },
   {
     "id": "llmtech",
@@ -1870,7 +1870,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 626
+    "model_count": 630
   },
   {
     "id": "nearai",
@@ -2410,7 +2410,7 @@
     "env": [
       "SAMBANOVA_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "sandbase",
