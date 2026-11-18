@@ -139,7 +139,7 @@ pub fn convert(content: &str) -> Result<String> {
             let stub = ResponsesApiResponse {
                 id: session_id.clone(),
                 object: "response".to_string(),
-                created_at: created,
+                created_at: created as f64,
                 status: "completed".to_string(),
                 model: String::new(),
                 output: vec![item],
