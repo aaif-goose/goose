@@ -99,3 +99,4 @@ gooseselftest/
 /crates/goose-sdk/examples/uniffi/kotlin/build/
 
 live-in-desktop-design
+stress-results/
