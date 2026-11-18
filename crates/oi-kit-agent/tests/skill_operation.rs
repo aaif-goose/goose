@@ -181,3 +181,86 @@ async fn lists_skills_in_the_prompt_and_runs_them_as_commands() -> Result<()> {
         .contains("Review Card against a11y."));
     Ok(())
 }
+
+struct RemoteSkills;
+
+#[async_trait]
+impl SkillSource<()> for RemoteSkills {
+    async fn skills(&self, _session: &()) -> Result<Vec<SourceEntry>> {
+        Ok(vec![
+            SourceEntry {
+                source_type: SourceType::Skill,
+                name: "local".to_string(),
+                description: "A local skill".to_string(),
+                content: "Local body.".to_string(),
+                ..SourceEntry::default()
+            },
+            SourceEntry {
+                source_type: SourceType::McpSkill,
+                name: "server::remote".to_string(),
+                description: "A skill served over MCP".to_string(),
+                path: "skill://server/remote/SKILL.md".to_string(),
+                ..SourceEntry::default()
+            },
+        ])
+    }
+
+    async fn read_supporting_file(
+        &self,
+        _skill: &SourceEntry,
+        relative_path: &Path,
+    ) -> Result<String> {
+        Err(anyhow!("unexpected read of {}", relative_path.display()))
+    }
+
+    async fn load_external(
+        &self,
+        _session: &(),
+        skills: &[SourceEntry],
+        name: &str,
+        _args: Option<&str>,
+    ) -> Option<Result<Vec<rmcp::model::ContentBlock>>> {
+        let skill = skills
+            .iter()
+            .find(|skill| skill.name == name && skill.source_type == SourceType::McpSkill)?;
+        Some(Ok(vec![rmcp::model::ContentBlock::text(format!(
+            "fetched {}",
+            skill.path
+        ))]))
+    }
+}
+
+#[tokio::test]
+async fn external_sources_serve_their_own_skills_and_stay_out_of_commands() -> Result<()> {
+    let operation = SkillOperation::<'static, ()>::new(Arc::new(RemoteSkills));
+    let conversation = Conversation::new_unvalidated(vec![
+        Message::user().with_text("use both"),
+        load_skill_call("remote", json!({ "name": "server::remote" }), true),
+        load_skill_call("local", json!({ "name": "local" }), true),
+    ]);
+    let OperationResult::Applied(step) =
+        Operation::<(), ConversationEffect>::run(&operation, &(), &conversation, &emitter())
+            .await?
+    else {
+        panic!("load_skill calls should be answered");
+    };
+    let results = tool_results(appended(&step.effects)[0]);
+    assert_eq!(
+        results[0],
+        (
+            "remote".into(),
+            false,
+            "fetched skill://server/remote/SKILL.md".into()
+        )
+    );
+    assert!(results[1].2.contains("Local body."));
+
+    let names: Vec<String> = Operation::<(), ConversationEffect>::commands(&operation, &())
+        .await?
+        .iter()
+        .map(|command| command.name.to_string())
+        .collect();
+    assert!(names.contains(&"local".to_string()));
+    assert!(!names.iter().any(|name| name.contains("::")));
+    Ok(())
+}

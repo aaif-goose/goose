@@ -35,6 +35,20 @@ pub trait SkillSource<S>: MaybeSend + MaybeSync {
         skill: &SourceEntry,
         relative_path: &Path,
     ) -> Result<String>;
+
+    /// Loads `name` when this source serves the content itself instead of
+    /// carrying it in `SourceEntry::content`, such as a skill served over MCP.
+    /// `skills` is the listing the request is resolved against. `None` leaves
+    /// the request to the operation's own lookup.
+    async fn load_external(
+        &self,
+        _session: &S,
+        _skills: &[SourceEntry],
+        _name: &str,
+        _args: Option<&str>,
+    ) -> Option<Result<Vec<ContentBlock>>> {
+        None
+    }
 }
 
 pub struct SkillOperation<'a, S> {
@@ -67,37 +81,52 @@ impl<'a, S> SkillOperation<'a, S> {
         }
         let mut output = format!("**Installed skills ({}):**\n\n", skills.len());
         for skill in skills {
-            let builtin = if skill.source_type == SourceType::BuiltinSkill {
-                " *(builtin)*"
-            } else {
-                ""
+            let label = match skill.source_type {
+                SourceType::BuiltinSkill => " *(builtin)*",
+                SourceType::McpSkill => " *(MCP)*",
+                _ => "",
             };
             output.push_str(&format!(
                 "- **{}**{}: {}\n",
-                skill.name, builtin, skill.description
+                skill.name, label, skill.description
             ));
         }
         output
     }
 
-    async fn load_skill(&self, session: &S, arguments: Option<JsonObject>) -> Result<String> {
+    async fn load_skill(
+        &self,
+        session: &S,
+        arguments: Option<JsonObject>,
+    ) -> Result<Vec<ContentBlock>> {
         let params: LoadSkillParams =
             serde_json::from_value(serde_json::Value::Object(arguments.unwrap_or_default()))
                 .map_err(|error| anyhow!("Invalid arguments: {error}"))?;
         let name = params.name.as_str();
         let skills = self.source.skills(session).await?;
 
+        if let Some(loaded) = self
+            .source
+            .load_external(session, &skills, name, params.args.as_deref())
+            .await
+        {
+            return loaded;
+        }
+
         if let Some(skill) = skills.iter().find(|skill| skill.name == name) {
             let content = skill_content_with_args(skill, params.args.as_deref())
                 .map_err(|error| anyhow!("Failed to parse skill arguments: {error}"))?;
-            return Ok(loaded_skill_context(skill, &content));
+            return Ok(vec![ContentBlock::text(loaded_skill_context(
+                skill, &content,
+            ))]);
         }
 
         if let Some((skill_name, relative_path)) = name.split_once('/') {
             if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
                 return self
                     .load_supporting_file(skill, name, &relative_path.replace('\\', "/"))
-                    .await;
+                    .await
+                    .map(|content| vec![ContentBlock::text(content)]);
             }
         }
 
@@ -161,7 +190,8 @@ impl<'a, S> SkillOperation<'a, S> {
 #[derive(Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 struct LoadSkillParams {
-    /// Name of the skill to load. Use "skill-name/path" to load a supporting file.
+    /// Name of the skill to load. Use "skill-name/path" to load a supporting
+    /// file. Skills served by an extension are named "extension::skill".
     name: String,
     /// Optional arguments to provide when loading the skill.
     #[serde(default)]
@@ -288,7 +318,11 @@ where
                 })
             },
         )];
-        for skill in skills {
+        // Their content arrives through `load_skill`, where approval applies.
+        for skill in skills
+            .into_iter()
+            .filter(|skill| skill.source_type != SourceType::McpSkill)
+        {
             let name = skill.name.to_lowercase();
             let description = skill.description.clone();
             let input_hint = skill
@@ -349,7 +383,7 @@ where
                 .ok()
                 .and_then(|call| call.arguments.clone());
             let result = match self.load_skill(session, arguments).await {
-                Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
+                Ok(content) => CallToolResult::success(content),
                 Err(error) => CallToolResult::error(vec![ContentBlock::text(error.to_string())]),
             };
             response.add_tool_response_with_metadata(

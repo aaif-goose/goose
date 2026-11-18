@@ -133,7 +133,11 @@ pub(crate) fn build_state_machine(
     let deferral = Arc::new(ToolDeferral::new(defer_tools, always_load_tools));
 
     let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
-        SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
+        SkillOperation::new(Arc::new(GooseSkillSource::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+        )))
+        .with_no_skills_help(NO_SKILLS_HELP),
     );
     // Compaction precedes everything that reacts to an assistant reply, so it
     // harvests the in-band summary before tool execution, steering, or turn-end

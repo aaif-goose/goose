@@ -8,13 +8,13 @@
 
 use futures::Stream;
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -26,7 +26,8 @@ use crate::extension::{name_to_key, ExtensionError, ExtensionResult};
 use crate::mcp::client::{ConnectContext, GooseMcpClientCapabilities, McpClientTrait};
 pub use container::Container;
 use oi_kit_provider_types::conversation::message::Message;
-use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Tool};
+use rmcp::model::{CallToolResult, MetaObject, ServerConfig, Skill, Tool};
+use rmcp::ServiceError;
 use serde_json::Value;
 
 mod batch;
@@ -115,7 +116,46 @@ struct Extension<C> {
     /// management hides itself from subagents), so the scope is part of the
     /// cache key.
     tools: Mutex<Option<CachedTools>>,
+    skills: Mutex<Option<CachedSkills>>,
 }
+
+/// The skills extension defines no list-changed notification, so a listing is
+/// fresh for the shortest `ttlMs` among its pages.
+struct CachedSkills {
+    scope_id: String,
+    expires_at: Instant,
+    skills: Arc<Vec<Skill>>,
+}
+
+/// One extension's `skills/list` entries, as the server sent them.
+#[derive(Debug, Clone)]
+pub struct ExtensionSkills {
+    pub extension_name: String,
+    pub skills: Arc<Vec<Skill>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillServiceError {
+    NotFound { name: String },
+    Unavailable { name: String, reason: String },
+    MissingResource { uri: String },
+}
+
+impl std::fmt::Display for SkillServiceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound { name } => write!(f, "Skill '{name}' not found."),
+            Self::Unavailable { name, reason } => {
+                write!(f, "Skill '{name}' is unavailable: {reason}.")
+            }
+            Self::MissingResource { uri } => {
+                write!(f, "The server did not return '{uri}'.")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SkillServiceError {}
 
 struct CachedTools {
     scope_id: String,
@@ -257,6 +297,58 @@ impl<C: ExtensionSpec> Extension<C> {
             .as_ref()
             .and_then(|info| info.capabilities.resources.as_ref())
             .is_some()
+    }
+
+    async fn public_skills(&self, scope_id: &str) -> Result<Arc<Vec<Skill>>, ServiceError> {
+        {
+            let cache = self.skills.lock().await;
+            if let Some(cached) = &*cache {
+                if cached.scope_id == scope_id && Instant::now() < cached.expires_at {
+                    return Ok(Arc::clone(&cached.skills));
+                }
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let mut skills = Vec::new();
+        let mut cursor = None;
+        let mut seen_cursors = HashSet::new();
+        let mut expires_at: Option<Instant> = None;
+        loop {
+            let page = self
+                .client
+                .list_skills(scope_id, cursor.clone(), cancel.clone())
+                .await?;
+            if page
+                .result_type
+                .as_ref()
+                .is_some_and(|result_type| !result_type.is_complete())
+            {
+                warn!(extension = %self.key, "MCP skills/list resultType is not complete");
+                return Err(ServiceError::UnexpectedResponse);
+            }
+            let now = Instant::now();
+            let page_expiry = now
+                .checked_add(Duration::from_millis(page.ttl_ms.unwrap_or(0)))
+                .unwrap_or(now);
+            expires_at = Some(expires_at.map_or(page_expiry, |current| current.min(page_expiry)));
+            skills.extend(page.skills);
+            match page.next_cursor {
+                Some(next) if seen_cursors.insert(next.clone()) => cursor = Some(next),
+                Some(next) => {
+                    warn!(extension = %self.key, cursor = %next, "MCP skills pagination repeated a cursor");
+                    return Err(ServiceError::UnexpectedResponse);
+                }
+                None => break,
+            }
+        }
+        let skills = Arc::new(skills);
+        *self.skills.lock().await = Some(CachedSkills {
+            scope_id: scope_id.to_string(),
+            expires_at: expires_at.unwrap_or_else(Instant::now),
+            skills: Arc::clone(&skills),
+        });
+        Ok(skills)
     }
 
     /// The extension's tools as the model sees them: filtered by
@@ -757,6 +849,7 @@ impl<C: ExtensionSpec> ExtensionManager<C> {
             server_info,
             tools_version,
             tools: Mutex::new(None),
+            skills: Mutex::new(None),
         })
     }
 
@@ -868,6 +961,7 @@ impl<C: ExtensionSpec> ExtensionManager<C> {
             server_info: info,
             tools_version: Arc::new(AtomicU64::new(0)),
             tools: Mutex::new(None),
+            skills: Mutex::new(None),
         }))));
         self.scopes
             .lock()

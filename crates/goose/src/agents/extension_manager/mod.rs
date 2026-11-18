@@ -334,6 +334,7 @@ impl ExtensionManager {
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
         self.runtime.release(session_id).await;
+        crate::skills::mcp::clear_held_skills(session_id);
     }
 
     pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
@@ -363,4 +364,4 @@ fn selection(session: &Session) -> Vec<ExtensionConfig> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

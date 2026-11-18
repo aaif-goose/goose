@@ -1,8 +1,10 @@
 //! Everything specific to skills: filesystem discovery (`SKILL.md` walking +
-//! built-ins) and reading supporting files. User-facing CRUD lives in
-//! `crate::sources`, which generalizes across source types.
+//! built-ins), reading supporting files, and skills served over MCP (`mcp`).
+//! User-facing CRUD lives in `crate::sources`, which generalizes across
+//! source types.
 
 mod builtin;
+pub mod mcp;
 mod supporting_files;
 
 pub(crate) use supporting_files::{

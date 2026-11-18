@@ -55,10 +55,185 @@ impl ExtensionManager {
             .await;
     }
 
-    async fn add_mock_extension(&self, name: String, client: McpClientBox) {
+    pub(crate) async fn add_mock_extension(&self, name: String, client: McpClientBox) {
         self.install_test_client("session", builtin_config(&name, vec![]), client, None)
             .await;
     }
+}
+
+pub(crate) struct SkillClient {
+    info: InitializeResult,
+    pub(crate) markdown: String,
+    served: Option<String>,
+    pub(crate) list_calls: AtomicUsize,
+    pub(crate) reads: AtomicUsize,
+}
+
+impl SkillClient {
+    pub(crate) const URI: &'static str = "skill://acme/billing/SKILL.md";
+
+    pub(crate) fn new() -> Self {
+        Self::with_markdown(
+            "---\nname: billing\ndescription: Billing workflow\n---\n\nDo the work.\n",
+        )
+    }
+
+    pub(crate) fn with_markdown(markdown: &str) -> Self {
+        let mut extensions = rmcp::model::ExtensionCapabilities::new();
+        extensions.insert(
+            rmcp::model::SKILLS_EXTENSION_ID.to_string(),
+            JsonObject::new(),
+        );
+        let mut capabilities = rmcp::model::ServerCapabilities::default();
+        capabilities.extensions = Some(extensions);
+        capabilities.resources = Some(Default::default());
+        Self {
+            info: InitializeResult::new(capabilities),
+            markdown: markdown.to_string(),
+            served: None,
+            list_calls: AtomicUsize::new(0),
+            reads: AtomicUsize::new(0),
+        }
+    }
+
+    /// Serves `markdown` over `resources/read` while the manifest still
+    /// describes the original file.
+    pub(crate) fn serving(mut self, markdown: &str) -> Self {
+        self.served = Some(markdown.to_string());
+        self
+    }
+
+    fn manifest(&self) -> rmcp::model::Skill {
+        rmcp::model::Skill::new(
+            Self::URI,
+            rmcp::model::SkillFrontmatter::new("billing", "Billing workflow"),
+            rmcp::model::SkillResources::Files(vec![rmcp::model::SkillResource::from_bytes(
+                Self::URI,
+                self.markdown.as_bytes(),
+            )]),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl McpClientTrait for SkillClient {
+    fn get_info(&self) -> Option<&InitializeResult> {
+        Some(&self.info)
+    }
+
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        Ok(ListToolsResult::default())
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        Ok(CallToolResult::success(vec![]))
+    }
+
+    async fn list_skills(
+        &self,
+        _session_id: &str,
+        _cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::ListSkillsResult, Error> {
+        self.list_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(rmcp::model::ListSkillsResult {
+            result_type: Some(rmcp::model::ResultType::COMPLETE),
+            ttl_ms: Some(300_000),
+            skills: vec![self.manifest()],
+            ..Default::default()
+        })
+    }
+
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::GetSkillResult, Error> {
+        Ok(rmcp::model::GetSkillResult::new(self.manifest()).with_ttl_ms(300_000))
+    }
+
+    async fn read_resource(
+        &self,
+        _session_id: &str,
+        uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ReadResourceResult, Error> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        let text = self.served.as_ref().unwrap_or(&self.markdown).clone();
+        Ok(ReadResourceResult::new(vec![
+            rmcp::model::ResourceContents::text(text, uri),
+        ]))
+    }
+}
+
+#[tokio::test]
+async fn lease_lists_gets_and_reads_mcp_skills() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
+    let client = Arc::new(SkillClient::new());
+    services
+        .extension_manager
+        .add_mock_extension("billing-server".to_string(), client.clone())
+        .await;
+
+    let lease = services.scope_tools("session").await.mcp.clone();
+    let listed = crate::skills::mcp::listed_skill_records(lease.skills().await);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(lease.skills().await.len(), 1);
+    assert_eq!(
+        client.list_calls.load(Ordering::SeqCst),
+        1,
+        "a second listing within ttlMs is served from the cache"
+    );
+    assert_eq!(listed[0].extension_name, "billing-server");
+    let got = crate::skills::mcp::parse_skills_get(
+        lease
+            .get_skill("billing-server", &listed[0].uri, CancellationToken::new())
+            .await
+            .unwrap(),
+        "billing-server",
+    )
+    .unwrap();
+    let rmcp::model::ResourceContents::TextResourceContents { text, .. } = lease
+        .read_skill_resource("billing-server", &listed[0].uri, CancellationToken::new())
+        .await
+        .unwrap()
+    else {
+        panic!("expected text");
+    };
+    crate::skills::mcp::verify_skill_markdown(&got, &text).unwrap();
+    assert_eq!(client.reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn lease_skips_skill_calls_to_extensions_without_the_extension() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
+    services
+        .extension_manager
+        .add_mock_extension("plain".to_string(), Arc::new(MockClient {}))
+        .await;
+
+    let lease = services.scope_tools("session").await.mcp.clone();
+    assert!(lease.skills().await.is_empty());
+    assert!(matches!(
+        lease
+            .get_skill("plain", SkillClient::URI, CancellationToken::new())
+            .await,
+        Err(crate::agents::extension_runtime::SkillServiceError::Unavailable { .. })
+    ));
 }
 
 struct MockClient {}
@@ -694,7 +869,7 @@ impl McpClientTrait for BlockingToolsClient {
     }
 }
 
-fn builtin_config(name: &str, available_tools: Vec<String>) -> ExtensionConfig {
+pub(crate) fn builtin_config(name: &str, available_tools: Vec<String>) -> ExtensionConfig {
     ExtensionConfig::Builtin {
         name: name.to_string(),
         display_name: Some(name.to_string()),

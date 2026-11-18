@@ -10,9 +10,9 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ServerNotification,
-    Tool,
+    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, GetPromptResult, GetSkillResult,
+    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
+    ServerNotification, Tool,
 };
 use rmcp::service::ServiceError;
 use serde_json::Value;
@@ -24,8 +24,9 @@ use tracing::warn;
 use super::{
     get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
     recover_mangled_tool_name, remove_untrusted_mcp_app_meta, ActionRequiredStream, Extension,
-    ExtensionHost, ExtensionLoadResult, ExtensionSlot, ExtensionSpec, GooseMcpAppToolAttachment,
-    ToolCallNotificationEmitter, ToolCallResult, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    ExtensionHost, ExtensionLoadResult, ExtensionSkills, ExtensionSlot, ExtensionSpec,
+    GooseMcpAppToolAttachment, Runtime, SkillServiceError, ToolCallNotificationEmitter,
+    ToolCallResult, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::extension::{name_to_key, ExtensionError, ExtensionInfo};
@@ -246,6 +247,118 @@ impl<C: ExtensionSpec> ExtensionLease<C> {
         let key = name_to_key(extension_name);
         let slot = self.slots.iter().find(|slot| slot.key == key)?;
         slot.start().await.cloned()
+    }
+
+    async fn start_skill_extension(
+        &self,
+        extension_name: &str,
+    ) -> Result<Arc<Extension<C>>, SkillServiceError> {
+        let key = name_to_key(extension_name);
+        let slot = self
+            .slots
+            .iter()
+            .find(|slot| slot.key == key)
+            .ok_or_else(|| SkillServiceError::NotFound {
+                name: extension_name.to_string(),
+            })?;
+        let extension = match slot.runtime().await {
+            Runtime::Running(extension) => Arc::clone(extension),
+            Runtime::Failed(reason) => {
+                return Err(SkillServiceError::Unavailable {
+                    name: extension_name.to_string(),
+                    reason: reason.clone(),
+                })
+            }
+        };
+        if !extension.client.supports_skills() {
+            return Err(SkillServiceError::Unavailable {
+                name: extension_name.to_string(),
+                reason: "extension does not advertise MCP skills".to_string(),
+            });
+        }
+        Ok(extension)
+    }
+
+    /// Raw `skills/list` entries from running extensions in this lease that
+    /// advertised `io.modelcontextprotocol/skills`. A server that fails to list
+    /// is skipped. Entries are unvalidated; the host decides which to accept.
+    pub async fn skills(&self) -> Vec<ExtensionSkills> {
+        let mut listed = Vec::new();
+        for extension in self.start_extensions().await {
+            if !extension.client.supports_skills() {
+                continue;
+            }
+            match extension.public_skills(&self.scope_id).await {
+                Ok(skills) => listed.push(ExtensionSkills {
+                    extension_name: extension.config.name(),
+                    skills,
+                }),
+                Err(error) => warn!(
+                    extension = extension.config.name(),
+                    %error,
+                    "failed to list MCP skills"
+                ),
+            }
+        }
+        listed
+    }
+
+    pub async fn get_skill(
+        &self,
+        extension_name: &str,
+        uri: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<GetSkillResult, SkillServiceError> {
+        let extension = self.start_skill_extension(extension_name).await?;
+        extension
+            .client
+            .get_skill(&self.scope_id, uri, cancellation_token)
+            .await
+            .map_err(|error| match error {
+                ServiceError::McpError(error) if error.code == ErrorCode::INVALID_PARAMS => {
+                    SkillServiceError::NotFound {
+                        name: uri.to_string(),
+                    }
+                }
+                other => SkillServiceError::Unavailable {
+                    name: uri.to_string(),
+                    reason: other.to_string(),
+                },
+            })
+    }
+
+    /// Reads one file of a skill from the extension that serves it, and only
+    /// from that extension.
+    pub async fn read_skill_resource(
+        &self,
+        extension_name: &str,
+        uri: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ResourceContents, SkillServiceError> {
+        let extension = self.start_skill_extension(extension_name).await?;
+        let result = extension
+            .client
+            .read_resource(&self.scope_id, uri, cancellation_token)
+            .await
+            .map_err(|error| SkillServiceError::Unavailable {
+                name: uri.to_string(),
+                reason: error.to_string(),
+            })?;
+        result
+            .contents
+            .into_iter()
+            .find(|content| match content {
+                ResourceContents::TextResourceContents {
+                    uri: content_uri, ..
+                }
+                | ResourceContents::BlobResourceContents {
+                    uri: content_uri, ..
+                } => content_uri == uri,
+                _ => false,
+            })
+            .ok_or_else(|| SkillServiceError::MissingResource {
+                uri: uri.to_string(),
+            })
     }
 
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
