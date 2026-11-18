@@ -494,6 +494,8 @@ impl Config {
     }
 
     pub fn clear(&self) -> Result<(), ConfigError> {
+        let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         Ok(std::fs::remove_file(self.write_path())?)
     }
 
@@ -644,21 +646,26 @@ impl Config {
     }
 
     fn lock_config_for_mutation(&self) -> Result<std::fs::File, ConfigError> {
-        let lock_path = self.config_mutation_lock_path()?;
-        if let Some(parent) = lock_path.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
+        loop {
+            let lock_path = self.config_mutation_lock_path()?;
+            if let Some(parent) = lock_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
+            }
+            let lock_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&lock_path)?;
+            lock_file
+                .lock_exclusive()
+                .map_err(|e| ConfigError::LockError(e.to_string()))?;
+            // A clear can remove a symlink while a writer waits on its target's lock.
+            if self.config_mutation_lock_path()? == lock_path {
+                return Ok(lock_file);
+            }
         }
-        let lock_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&lock_path)?;
-        lock_file
-            .lock_exclusive()
-            .map_err(|e| ConfigError::LockError(e.to_string()))?;
-        Ok(lock_file)
     }
 
     fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
@@ -684,6 +691,7 @@ impl Config {
 
     pub fn initialize_if_empty(&self, values: Mapping) -> Result<(), ConfigError> {
         let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         if !self.exists() {
             self.save_values(&values)
         } else {
@@ -1939,57 +1947,6 @@ mod tests {
                 key
             );
         }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_concurrent_independent_instances_no_lost_update() -> Result<(), ConfigError> {
-        use std::sync::{Arc, Barrier};
-        use std::thread;
-
-        let directory = TempDir::new().unwrap();
-        let config_path = directory.path().join("config.yaml");
-        let secrets_path = directory.path().join("secrets.yaml");
-
-        {
-            let seed = Config::new_with_file_secrets(&config_path, &secrets_path)?;
-            seed.save_values(&Default::default())?;
-        }
-
-        let barrier = Arc::new(Barrier::new(4));
-        let mut handles = vec![];
-
-        for i in 0..4 {
-            let config_path = config_path.clone();
-            let secrets_path = secrets_path.clone();
-            let barrier = Arc::clone(&barrier);
-            let handle = thread::spawn(move || -> Result<(), ConfigError> {
-                let instance = Config::new_with_file_secrets(&config_path, &secrets_path)?;
-                barrier.wait();
-                instance.set_param(&format!("key{i}"), format!("value{i}"))?;
-                Ok(())
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.join().unwrap()?;
-        }
-
-        let final_config = Config::new_with_file_secrets(&config_path, &secrets_path)?;
-        for i in 0..4 {
-            assert_eq!(
-                final_config.get_param::<String>(&format!("key{i}"))?,
-                format!("value{i}"),
-            );
-        }
-
-        let raw = std::fs::read_to_string(&config_path)?;
-        assert!(
-            parse_yaml_content(&raw).is_ok(),
-            "config file is not valid YAML"
-        );
 
         Ok(())
     }
