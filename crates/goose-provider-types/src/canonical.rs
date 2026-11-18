@@ -343,6 +343,7 @@ mod tests {
 
     #[test_case::test_case("ollama")]
     #[test_case::test_case("local")]
+    #[test_case::test_case("llmman")]
     fn local_models_have_no_catalog_cost(provider: &str) {
         let cloud = maybe_get_canonical_model("mistralai", "ministral-3b")
             .expect("ministral-3b should resolve for its first-party provider");
@@ -355,19 +356,6 @@ mod tests {
         assert_eq!(canonical.cost.input, None);
         assert_eq!(canonical.cost.output, None);
         assert_eq!(canonical.limit.context, cloud.limit.context);
-    }
-
-    #[test]
-    fn llmman_models_have_zero_cost() {
-        // llmman serves models locally, so the hosted rate of "mistral-nemo" must not apply.
-        let canonical = maybe_get_canonical_model("llmman", "mistral-nemo")
-            .expect("mistral-nemo should resolve via llmman");
-        assert_eq!(canonical.cost.input, None);
-        assert_eq!(canonical.cost.output, None);
-        assert!(
-            canonical.limit.context > 0,
-            "context limit should be preserved"
-        );
     }
 
     #[test]
