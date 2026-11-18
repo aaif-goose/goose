@@ -322,7 +322,25 @@ impl OpenAiProvider {
             tools,
         )?;
         payload["stream"] = serde_json::Value::Bool(self.supports_streaming);
+        self.insert_responses_reasoning_effort(&mut payload, model_config);
         self.stream_responses_payload(model_config, payload).await
+    }
+
+    fn insert_responses_reasoning_effort(
+        &self,
+        payload: &mut serde_json::Value,
+        model_config: &ModelConfig,
+    ) {
+        if !Self::maps_all_responses_thinking_efforts(&self.name)
+            || model_config.request_params.as_ref().is_some_and(|params| {
+                params.contains_key("reasoning") || params.contains_key("reasoning_effort")
+            })
+        {
+            return;
+        }
+        if let Some(effort) = model_config.thinking_effort() {
+            payload["reasoning"]["effort"] = json!(Self::agent_api_reasoning_effort(effort));
+        }
     }
 
     fn insert_prompt_cache_key(&self, payload: &mut serde_json::Value) {
@@ -528,6 +546,28 @@ impl OpenAiProvider {
             ThinkingEffort::Medium => "medium",
             ThinkingEffort::High => "high",
             ThinkingEffort::Max => "xhigh",
+        }
+    }
+
+    /// Providers whose Responses endpoint accepts `reasoning.effort` for every
+    /// model it serves, including non-OpenAI models that
+    /// [`ModelConfig::openai_reasoning_for_model`] does not recognise.
+    const PROVIDERS_NEEDING_RESPONSES_REASONING_EFFORT_MAPPING: &[&str] = &["perplexity"];
+
+    pub fn maps_all_responses_thinking_efforts(provider_name: &str) -> bool {
+        Self::PROVIDERS_NEEDING_RESPONSES_REASONING_EFFORT_MAPPING.contains(&provider_name)
+    }
+
+    /// Maps the unified thinking effort onto the Perplexity Agent API
+    /// `reasoning.effort` levels. The API rejects `off`, so `Off` is sent as
+    /// `minimal`, its lightest level.
+    fn agent_api_reasoning_effort(effort: ThinkingEffort) -> &'static str {
+        match effort {
+            ThinkingEffort::Off => "minimal",
+            ThinkingEffort::Low => "low",
+            ThinkingEffort::Medium => "medium",
+            ThinkingEffort::High => "high",
+            ThinkingEffort::Max => "max",
         }
     }
 
@@ -2047,6 +2087,172 @@ mod tests {
     #[test]
     fn cerebras_preserves_thinking_by_default() {
         assert!(cerebras_config().preserves_thinking);
+    }
+
+    fn perplexity_config() -> DeclarativeProviderConfig {
+        crate::declarative::fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "perplexity")
+            .expect("perplexity should be bundled")
+    }
+
+    fn perplexity_provider() -> OpenAiProvider {
+        struct StaticKeyResolver;
+        impl KeyResolver for StaticKeyResolver {
+            type Error = std::convert::Infallible;
+
+            fn resolve_key(&self, _key: &str) -> std::result::Result<String, Self::Error> {
+                Ok("test-key".to_string())
+            }
+        }
+
+        from_declarative_config(perplexity_config(), None, StaticKeyResolver)
+            .expect("perplexity config should build a provider")
+            .build()
+    }
+
+    #[test]
+    fn perplexity_requests_agent_api_responses_endpoint() {
+        let provider = perplexity_provider();
+
+        assert_eq!(
+            format!("{}/{}", provider.api_client.host(), provider.base_path),
+            "https://api.perplexity.ai/v1/responses"
+        );
+        assert!(provider.should_use_responses_api_for_provider("anthropic/claude-opus-5-5"));
+
+        let payload = create_responses_request_for_model(
+            &ModelConfig::new("anthropic/claude-opus-5-5"),
+            "anthropic/claude-opus-5-5",
+            "anthropic/claude-opus-5-5",
+            "system",
+            &[Message::user().with_text("hello")],
+            &[],
+        )
+        .expect("responses payload should build");
+        assert!(payload["input"].is_array());
+        assert!(payload.get("messages").is_none());
+    }
+
+    #[test]
+    fn perplexity_lists_agent_api_model_ids() {
+        let config = perplexity_config();
+
+        assert_eq!(config.dynamic_models, None);
+        let names: Vec<&str> = config.models.iter().map(|m| m.name.as_str()).collect();
+        // The registry uses the first entry as the provider default model.
+        assert_eq!(names[0], "anthropic/claude-opus-5-5");
+        assert!(names.iter().all(|name| name.contains('/')));
+    }
+
+    async fn perplexity_payload(model_config: &ModelConfig) -> serde_json::Value {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let mut provider = perplexity_provider();
+        provider.api_client =
+            ApiClient::new_with_tls(server.uri(), AuthMethod::NoAuth, None).unwrap();
+        let _ = provider
+            .stream(
+                model_config,
+                "system",
+                &[Message::user().with_text("hello")],
+                &[],
+            )
+            .await;
+
+        let requests = server.received_requests().await.unwrap();
+        requests[0]
+            .body_json()
+            .expect("request body should be JSON")
+    }
+
+    #[tokio::test]
+    async fn perplexity_maps_thinking_effort_for_agent_api_models() {
+        for model in ["anthropic/claude-opus-5-5", "perplexity/kimi-k3"] {
+            for (effort, expected) in [
+                (ThinkingEffort::Off, "minimal"),
+                (ThinkingEffort::Low, "low"),
+                (ThinkingEffort::Medium, "medium"),
+                (ThinkingEffort::High, "high"),
+                (ThinkingEffort::Max, "max"),
+            ] {
+                let payload =
+                    perplexity_payload(&ModelConfig::new(model).with_thinking_effort(effort)).await;
+                assert_eq!(
+                    payload["reasoning"]["effort"],
+                    json!(expected),
+                    "{model} {effort:?} should map to {expected}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn perplexity_maps_thinking_effort_for_openai_models() {
+        for (effort, expected) in [
+            (ThinkingEffort::Off, "minimal"),
+            (ThinkingEffort::Max, "max"),
+        ] {
+            let payload = perplexity_payload(
+                &ModelConfig::new("openai/gpt-5.5").with_thinking_effort(effort),
+            )
+            .await;
+            assert_eq!(
+                payload["reasoning"]["effort"],
+                json!(expected),
+                "{effort:?} should map to {expected}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn perplexity_omits_reasoning_without_thinking_effort() {
+        let payload = perplexity_payload(&ModelConfig::new("anthropic/claude-opus-5-5")).await;
+        assert!(payload.get("reasoning").is_none());
+    }
+
+    #[tokio::test]
+    async fn perplexity_preserves_explicit_reasoning_request_param() {
+        for (key, value) in [
+            ("reasoning", json!({"effort": "low"})),
+            ("reasoning_effort", json!("low")),
+        ] {
+            let model_config = ModelConfig::new("anthropic/claude-opus-5-5")
+                .with_thinking_effort(ThinkingEffort::High)
+                .with_merged_request_params(HashMap::from([(key.to_string(), value)]));
+            let payload = perplexity_payload(&model_config).await;
+            assert_eq!(
+                payload["reasoning"]["effort"],
+                json!("low"),
+                "explicit {key} should be preserved"
+            );
+        }
+    }
+
+    #[test]
+    fn responses_reasoning_effort_mapping_is_scoped_to_perplexity() {
+        let model_config = ModelConfig::new("anthropic/claude-opus-5-5")
+            .with_thinking_effort(ThinkingEffort::High);
+        let mut payload = create_responses_request_for_model(
+            &model_config,
+            "anthropic/claude-opus-5-5",
+            "anthropic/claude-opus-5-5",
+            "system",
+            &[Message::user().with_text("hello")],
+            &[],
+        )
+        .expect("responses payload should build");
+        make_provider("openai").insert_responses_reasoning_effort(&mut payload, &model_config);
+        assert!(payload.get("reasoning").is_none());
     }
 
     #[test]
