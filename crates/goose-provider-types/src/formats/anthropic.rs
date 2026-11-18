@@ -663,6 +663,11 @@ pub fn response_to_message(response: &Value) -> Result<Message> {
 fn usage_from_anthropic_fields(usage: &Value) -> Usage {
     let field = |key: &str| usage.get(key).and_then(|v| v.as_i64());
 
+    let cache_write_1h = usage
+        .get("cache_creation")
+        .and_then(|split| split.get("ephemeral_1h_input_tokens"))
+        .and_then(|v| v.as_i64());
+
     Usage::from_cache_exclusive_input(
         Some(field("input_tokens").unwrap_or(0)),
         Some(field("output_tokens").unwrap_or(0)),
@@ -670,6 +675,7 @@ fn usage_from_anthropic_fields(usage: &Value) -> Usage {
         field("cache_read_input_tokens"),
         field("cache_creation_input_tokens"),
     )
+    .with_cache_write_1h_tokens(cache_write_1h)
 }
 
 /// Merge a `message_delta` usage into the usage captured at `message_start`.
@@ -683,8 +689,13 @@ fn merge_delta_usage(existing: &Usage, delta: &Usage, delta_data: &Value) -> Usa
     } else {
         existing.output_tokens
     };
+    // A delta can update cache_creation_input_tokens without resending the TTL
+    // split, so the split from message_start still applies.
+    let cache_write_1h = delta
+        .cache_write_1h_input_tokens
+        .or(existing.cache_write_1h_input_tokens);
 
-    if !reports("input_tokens") {
+    let merged = if !reports("input_tokens") {
         Usage::new(existing.input_tokens, output, None).with_cache_tokens(
             existing.cache_read_input_tokens,
             existing.cache_write_input_tokens,
@@ -702,7 +713,8 @@ fn merge_delta_usage(existing: &Usage, delta: &Usage, delta_data: &Value) -> Usa
             existing.cache_read_input_tokens,
             existing.cache_write_input_tokens,
         )
-    }
+    };
+    merged.with_cache_write_1h_tokens(cache_write_1h)
 }
 
 pub fn error_for_type(error_type: Option<&str>, details: String) -> ProviderError {
@@ -3012,6 +3024,38 @@ mod tests {
         assert_eq!(merged.output_tokens, Some(510));
         assert_eq!(merged.cache_read_input_tokens, Some(5000));
         assert_eq!(merged.cache_write_input_tokens, Some(10000));
+    }
+
+    #[test]
+    fn test_get_usage_reads_one_hour_cache_writes() {
+        let usage = get_usage(&json!({
+            "input_tokens": 7,
+            "output_tokens": 3,
+            "cache_creation_input_tokens": 10000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 4000, "ephemeral_1h_input_tokens": 6000}
+        }))
+        .unwrap();
+        assert_eq!(usage.cache_write_input_tokens, Some(10000));
+        assert_eq!(usage.cache_write_1h_input_tokens, Some(6000));
+
+        let usage =
+            get_usage(&json!({"input_tokens": 7, "cache_creation_input_tokens": 10})).unwrap();
+        assert_eq!(usage.cache_write_1h_input_tokens, None);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_keeps_one_hour_cache_writes_through_delta_merge() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":7,"cache_creation_input_tokens":10000,"cache_read_input_tokens":5000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":10000},"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":7,"cache_creation_input_tokens":10000,"cache_read_input_tokens":5000,"output_tokens":25}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        let usage = streamed_usage(events).await;
+        assert_eq!(usage.usage.cache_write_input_tokens, Some(10000));
+        assert_eq!(usage.usage.cache_write_1h_input_tokens, Some(10000));
     }
 
     #[tokio::test]

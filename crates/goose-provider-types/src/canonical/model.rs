@@ -76,6 +76,10 @@ pub struct PricingTier {
     pub cache_write: Option<f64>,
 }
 
+/// Catalog cache-write prices are for Anthropic's default 5-minute TTL (1.25x
+/// input). A 1-hour TTL write is billed at 2x input, which is 1.6x that price.
+const ONE_HOUR_CACHE_WRITE_MULTIPLIER: f64 = 2.0 / 1.25;
+
 impl Pricing {
     /// True when the entry carries no usable rate signal: `estimate_cost` needs both
     /// an input and an output price, so an unset or literal-zero value in either field
@@ -110,13 +114,16 @@ impl Pricing {
         let output_tokens = usage.output_tokens.unwrap_or(0).max(0) as f64;
         let cache_read_tokens = usage.cache_read_input_tokens.unwrap_or(0).max(0) as f64;
         let cache_write_tokens = usage.cache_write_input_tokens.unwrap_or(0).max(0) as f64;
+        let cache_write_1h_tokens =
+            (usage.cache_write_1h_input_tokens.unwrap_or(0).max(0) as f64).min(cache_write_tokens);
         let uncached_input_tokens =
             (input_tokens - cache_read_tokens - cache_write_tokens).max(0.0);
 
         Some(
             (uncached_input_tokens * input_price
                 + cache_read_tokens * cache_read_price
-                + cache_write_tokens * cache_write_price
+                + (cache_write_tokens - cache_write_1h_tokens) * cache_write_price
+                + cache_write_1h_tokens * cache_write_price * ONE_HOUR_CACHE_WRITE_MULTIPLIER
                 + output_tokens * output_price)
                 / 1_000_000.0,
         )
@@ -235,6 +242,34 @@ mod tests {
         let expected =
             (1_000.0 * 5.0 + 8_000.0 * 0.5 + 1_000.0 * 6.25 + 1_000.0 * 25.0) / 1_000_000.0;
         assert!((cost - expected).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn estimate_cost_prices_one_hour_cache_writes_at_the_one_hour_rate() {
+        let pricing = pricing(Some(5.0), Some(25.0), Some(0.5), Some(6.25));
+        let cost_with_1h_writes = |one_hour: i64| {
+            let usage = Usage::new(Some(1_000_000), Some(0), None)
+                .with_cache_tokens(None, Some(1_000_000))
+                .with_cache_write_1h_tokens(Some(one_hour));
+            pricing.estimate_cost(&usage).unwrap()
+        };
+
+        assert!((cost_with_1h_writes(1_000_000) - 10.0).abs() < 1e-9);
+        assert!((cost_with_1h_writes(400_000) - (0.6 * 6.25 + 0.4 * 10.0)).abs() < 1e-9);
+        assert!((cost_with_1h_writes(0) - 6.25).abs() < 1e-9);
+        // The 1-hour share can never exceed the cache writes it is part of.
+        assert!((cost_with_1h_writes(5_000_000) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn estimate_cost_keeps_free_cache_writes_free_at_one_hour() {
+        let usage = Usage::new(Some(1_000), Some(0), None)
+            .with_cache_tokens(None, Some(1_000))
+            .with_cache_write_1h_tokens(Some(1_000));
+        let cost = pricing(Some(2.0), Some(10.0), None, Some(0.0))
+            .estimate_cost(&usage)
+            .unwrap();
+        assert_eq!(cost, 0.0);
     }
 
     #[test]

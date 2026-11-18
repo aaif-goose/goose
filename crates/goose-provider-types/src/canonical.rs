@@ -320,6 +320,7 @@ mod tests {
             total_tokens: None,
             cache_read_input_tokens: Some(100_000),
             cache_write_input_tokens: Some(100_000),
+            cache_write_1h_input_tokens: None,
         };
         assert_eq!(free.cost.estimate_cost(&usage), Some(0.0));
     }
