@@ -709,6 +709,21 @@ enum GatewayCommand {
 
 #[derive(Subcommand)]
 enum PluginCommand {
+    /// Import an MCP Registry server.json as enabled goose extensions
+    #[command(about = "Import an MCP Registry server.json")]
+    ImportServer {
+        #[arg(help = "Path to server.json, or - for stdin")]
+        input: String,
+        #[arg(long, conflicts_with_all = ["remote", "all"], help = "Zero-based package index")]
+        package: Option<usize>,
+        #[arg(long, conflicts_with_all = ["package", "all"], help = "Zero-based remote index")]
+        remote: Option<usize>,
+        #[arg(long, conflicts_with_all = ["package", "remote"], help = "Import every package and remote")]
+        all: bool,
+        #[arg(long, help = "Confirm enabling the selected extensions")]
+        yes: bool,
+    },
+
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
     Install {
@@ -2312,8 +2327,76 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
     }
 }
 
-fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
+async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
+    use goose::config::extension_install::{install, preview};
+    use goose_agent::extension::registry::{ServerDocument, ServerSelection};
+    use std::io::IsTerminal;
     match command {
+        PluginCommand::ImportServer {
+            input,
+            package,
+            remote,
+            all,
+            yes,
+        } => {
+            let interactive =
+                std::io::stdin().is_terminal() && std::io::stderr().is_terminal() && input != "-";
+            let json = if input == "-" {
+                let mut json = String::new();
+                std::io::stdin().read_to_string(&mut json)?;
+                json
+            } else {
+                std::fs::read_to_string(&input)?
+            };
+            let server = ServerDocument::parse(&json)?;
+            let choices = server.choices();
+            anyhow::ensure!(
+                !choices.is_empty(),
+                "server.json contains no packages or remotes"
+            );
+            let selections = if all {
+                choices.iter().map(|(selection, _)| *selection).collect()
+            } else if let Some(index) = package {
+                vec![ServerSelection::Package(index)]
+            } else if let Some(index) = remote {
+                vec![ServerSelection::Remote(index)]
+            } else {
+                anyhow::ensure!(
+                    interactive,
+                    "no import selected; pass --package N, --remote N, or --all in non-interactive mode"
+                );
+                let mut prompt = cliclack::multiselect(
+                    "Select MCP server configurations to import (Space to toggle, Enter to confirm)",
+                );
+                for (selection, label) in choices {
+                    prompt = prompt.item(selection, label, "");
+                }
+                let selected = prompt.interact()?;
+                anyhow::ensure!(!selected.is_empty(), "no package or remote selected");
+                selected
+            };
+            anyhow::ensure!(
+                yes || interactive,
+                "pass --yes to confirm a non-interactive import"
+            );
+            let extensions = server.extensions(&selections)?;
+            if !yes {
+                for extension in &extensions {
+                    eprintln!("  {:?}: {:?}", extension.name(), preview(extension));
+                }
+                if !cliclack::confirm("Import and enable these MCP extensions?")
+                    .initial_value(false)
+                    .interact()?
+                {
+                    return Ok(());
+                }
+            }
+            install(Config::global(), &extensions).await?;
+            for extension in extensions {
+                println!("Imported and enabled MCP server {:?}", extension.name());
+            }
+            Ok(())
+        }
         PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
         PluginCommand::Update { name } => handle_plugin_update(&name),
     }
@@ -2847,7 +2930,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
         Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
-        Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
+        Some(Command::Plugin { command }) => handle_plugin_subcommand(command).await,
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,

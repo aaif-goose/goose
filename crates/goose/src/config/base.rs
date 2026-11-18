@@ -866,6 +866,21 @@ impl Config {
         self.save_values(&values)
     }
 
+    pub(crate) fn update_write_config(
+        &self,
+        update: impl FnOnce(&mut Mapping) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let _guard = self.guard.lock().unwrap();
+        let mut values = match std::fs::read_to_string(self.write_path()) {
+            Ok(content) => parse_yaml_content(&content)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Mapping::new(),
+            Err(error) => return Err(error.into()),
+        };
+        update(&mut values)?;
+        self.save_values(&values)?;
+        Ok(())
+    }
+
     /// Set a configuration value in the config file (non-secret).
     ///
     /// This will immediately write the value to the config file. The value
