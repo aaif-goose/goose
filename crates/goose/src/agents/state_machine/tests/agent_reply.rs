@@ -1655,7 +1655,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
 
 fn attachment() -> crate::agents::Attachment {
     crate::agents::Attachment {
-        client: crate::agents::extension_manager::ClientContext::new(
+        client: crate::agents::extension_manager::client_context(
             &GoosePlatform::GooseDesktop,
             None,
         ),

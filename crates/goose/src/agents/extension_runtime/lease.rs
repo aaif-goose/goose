@@ -23,36 +23,41 @@ use tracing::warn;
 
 use super::{
     get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
-    recover_mangled_tool_name, remove_subagent_session_meta, remove_untrusted_mcp_app_meta,
-    ActionRequiredStream, Extension, ExtensionLoadResult, ExtensionMutation, ExtensionSlot,
-    GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    recover_mangled_tool_name, remove_untrusted_mcp_app_meta, ActionRequiredStream, Extension,
+    ExtensionHost, ExtensionLoadResult, ExtensionSlot, ExtensionSpec, GooseMcpAppToolAttachment,
+    ToolCallNotificationEmitter, ToolCallResult, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::container::Container;
-use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
+use crate::agents::extension::{name_to_key, ExtensionError, ExtensionInfo};
 use crate::agents::mcp_client::McpCallContext;
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::reply_parts::is_tool_visible_to_app;
-use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
-use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
+use goose_agent::tool_visibility::is_tool_visible_to_app;
 
 #[derive(Debug)]
-pub struct ExtensionSet {
+pub struct ExtensionSet<C> {
     scope_id: String,
-    pub(crate) working_dir: Option<PathBuf>,
-    pub(crate) container: Option<Container>,
-    extensions: Vec<ExtensionConfig>,
+    working_dir: Option<PathBuf>,
+    container: Option<Container>,
+    extensions: Vec<C>,
 }
 
-impl ExtensionSet {
+impl<C: ExtensionSpec> ExtensionSet<C> {
     pub fn new(
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
-        extensions: Vec<ExtensionConfig>,
+        extensions: Vec<C>,
     ) -> Result<Self, ExtensionError> {
-        crate::session::EnabledExtensionsState::check_unique_keys(&extensions)
-            .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
+        let mut keys = std::collections::HashSet::new();
+        for config in &extensions {
+            if !keys.insert(config.key()) {
+                return Err(ExtensionError::ConfigError(format!(
+                    "extension '{}' appears twice in the selection",
+                    config.name()
+                )));
+            }
+        }
         Ok(Self {
             scope_id: scope_id.into(),
             working_dir,
@@ -70,7 +75,15 @@ impl ExtensionSet {
         &self.scope_id
     }
 
-    pub fn extensions(&self) -> &[ExtensionConfig] {
+    pub fn working_dir(&self) -> Option<&Path> {
+        self.working_dir.as_deref()
+    }
+
+    pub fn container(&self) -> Option<&Container> {
+        self.container.as_ref()
+    }
+
+    pub fn extensions(&self) -> &[C] {
         &self.extensions
     }
 }
@@ -85,19 +98,19 @@ impl LeaseId {
     }
 }
 
-struct CatalogEntry {
+struct CatalogEntry<C> {
     tool: Tool,
-    extension: Arc<Extension>,
+    extension: Arc<Extension<C>>,
     server_name: String,
 }
 
-struct ToolCatalog {
-    entries: Vec<CatalogEntry>,
+struct ToolCatalog<C> {
+    entries: Vec<CatalogEntry<C>>,
     by_name: HashMap<String, usize>,
 }
 
-impl ToolCatalog {
-    async fn build(scope_id: &str, extensions: &[Arc<Extension>]) -> Self {
+impl<C: ExtensionSpec> ToolCatalog<C> {
+    async fn build(scope_id: &str, extensions: &[Arc<Extension<C>>]) -> Self {
         let lists = futures::future::join_all(
             extensions
                 .iter()
@@ -136,7 +149,7 @@ impl ToolCatalog {
         Self { entries, by_name }
     }
 
-    fn get(&self, name: &str) -> Option<&CatalogEntry> {
+    fn get(&self, name: &str) -> Option<&CatalogEntry<C>> {
         self.by_name.get(name).map(|&i| &self.entries[i])
     }
 }
@@ -159,28 +172,44 @@ fn provider_safe_tool_name(name: &str) -> String {
     format!("{sanitized}_{:.8}", hash.as_str())
 }
 
-#[derive(Clone)]
-pub struct McpLease {
+pub struct ExtensionLease<C: ExtensionSpec> {
     id: LeaseId,
     scope_id: String,
     working_dir: Option<PathBuf>,
-    slots: Vec<Arc<ExtensionSlot>>,
-    tool_catalog: Arc<OnceCell<ToolCatalog>>,
+    slots: Vec<Arc<ExtensionSlot<C>>>,
+    tool_catalog: Arc<OnceCell<ToolCatalog<C>>>,
+    host: Arc<dyn ExtensionHost<C>>,
     action_required: Arc<ActionRequiredManager>,
     hydrate_mcp_apps: bool,
 }
 
-struct ResolvedTool<'a> {
-    extension: &'a Arc<Extension>,
+impl<C: ExtensionSpec> Clone for ExtensionLease<C> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            scope_id: self.scope_id.clone(),
+            working_dir: self.working_dir.clone(),
+            slots: self.slots.clone(),
+            tool_catalog: Arc::clone(&self.tool_catalog),
+            host: Arc::clone(&self.host),
+            action_required: Arc::clone(&self.action_required),
+            hydrate_mcp_apps: self.hydrate_mcp_apps,
+        }
+    }
+}
+
+struct ResolvedTool<'a, C> {
+    extension: &'a Arc<Extension<C>>,
     server_name: &'a str,
     tool: &'a Tool,
 }
 
-impl McpLease {
+impl<C: ExtensionSpec> ExtensionLease<C> {
     pub(super) fn new(
         scope_id: impl Into<String>,
         working_dir: Option<PathBuf>,
-        slots: Vec<Arc<ExtensionSlot>>,
+        slots: Vec<Arc<ExtensionSlot<C>>>,
+        host: Arc<dyn ExtensionHost<C>>,
         action_required: Arc<ActionRequiredManager>,
         hydrate_mcp_apps: bool,
     ) -> Self {
@@ -190,12 +219,13 @@ impl McpLease {
             working_dir,
             slots,
             tool_catalog: Arc::new(OnceCell::new()),
+            host,
             action_required,
             hydrate_mcp_apps,
         }
     }
 
-    async fn tool_catalog(&self) -> &ToolCatalog {
+    async fn tool_catalog(&self) -> &ToolCatalog<C> {
         self.tool_catalog
             .get_or_init(|| async {
                 ToolCatalog::build(&self.scope_id, &self.start_extensions().await).await
@@ -203,7 +233,7 @@ impl McpLease {
             .await
     }
 
-    async fn start_extensions(&self) -> Vec<Arc<Extension>> {
+    async fn start_extensions(&self) -> Vec<Arc<Extension<C>>> {
         futures::future::join_all(self.slots.iter().map(|slot| slot.start()))
             .await
             .into_iter()
@@ -212,7 +242,7 @@ impl McpLease {
             .collect()
     }
 
-    async fn start_extension(&self, extension_name: &str) -> Option<Arc<Extension>> {
+    async fn start_extension(&self, extension_name: &str) -> Option<Arc<Extension<C>>> {
         let key = name_to_key(extension_name);
         let slot = self.slots.iter().find(|slot| slot.key == key)?;
         slot.start().await.cloned()
@@ -248,7 +278,7 @@ impl McpLease {
         self.slots.iter().any(|slot| slot.key == key)
     }
 
-    pub fn configs(&self) -> Vec<ExtensionConfig> {
+    pub fn configs(&self) -> Vec<C> {
         self.slots.iter().map(|slot| slot.config.clone()).collect()
     }
 
@@ -447,10 +477,10 @@ impl McpLease {
         &self,
         tool_name: &str,
         calling_app: Option<&str>,
-    ) -> Result<ResolvedTool<'_>, ErrorData> {
+    ) -> Result<ResolvedTool<'_, C>, ErrorData> {
         let catalog = self.tool_catalog().await;
         let extension_key = calling_app.map(name_to_key);
-        let belongs_to_extension = |entry: &&CatalogEntry| {
+        let belongs_to_extension = |entry: &&CatalogEntry<C>| {
             extension_key
                 .as_ref()
                 .is_none_or(|key| entry.extension.key == *key)
@@ -536,7 +566,7 @@ impl McpLease {
 
     async fn call_resolved(
         &self,
-        resolved: ResolvedTool<'_>,
+        resolved: ResolvedTool<'_, C>,
         arguments: Option<rmcp::model::JsonObject>,
         request: CallRequest,
         cancellation_token: CancellationToken,
@@ -566,6 +596,7 @@ impl McpLease {
         let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let server_name = resolved.server_name.to_string();
         let session_id = self.scope_id.clone();
+        let host = Arc::clone(&self.host);
         let result = async move {
             let mut result = client
                 .call_tool(
@@ -580,8 +611,7 @@ impl McpLease {
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
             remove_untrusted_mcp_app_meta(&mut result);
-            ExtensionMutation::take(&mut result);
-            remove_subagent_session_meta(&mut result);
+            host.sanitize_result(&mut result);
             if let Some(mcp_app_call) = mcp_app_call {
                 mcp_app_call
                     .attach_resource(&*client, &session_id, &mut result, cancellation_token)
@@ -645,9 +675,9 @@ impl McpLease {
 
 #[derive(Default)]
 pub struct CallRequest {
-    pub(crate) tool_call_id: Option<String>,
-    pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
-    pub(crate) container: Option<Container>,
+    pub tool_call_id: Option<String>,
+    pub notification_emitter: Option<ToolCallNotificationEmitter>,
+    pub container: Option<Container>,
 }
 
 impl CallRequest {
@@ -658,19 +688,9 @@ impl CallRequest {
         }
     }
 
-    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
+    pub fn with_container(mut self, container: Option<Container>) -> Self {
         self.container = container;
         self
-    }
-}
-
-impl From<&ToolCallContext> for CallRequest {
-    fn from(ctx: &ToolCallContext) -> Self {
-        Self {
-            tool_call_id: ctx.tool_call_request_id.clone(),
-            notification_emitter: ctx.notification_emitter().cloned(),
-            container: ctx.container().cloned(),
-        }
     }
 }
 
@@ -682,7 +702,7 @@ struct McpAppCall {
 }
 
 impl McpAppCall {
-    fn from_resolved(resolved: &ResolvedTool<'_>, host_supports_apps: bool) -> Option<Self> {
+    fn from_resolved<C>(resolved: &ResolvedTool<'_, C>, host_supports_apps: bool) -> Option<Self> {
         if !host_supports_apps {
             return None;
         }

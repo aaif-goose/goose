@@ -107,6 +107,7 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
     ));
     let client = ClientContext {
         name: "extension-contract".to_string(),
+        version: "1.0.0".to_string(),
         capabilities: GooseMcpClientCapabilities {
             mcpui,
             host_info: None,
@@ -850,10 +851,7 @@ async fn test_replayed_session(
     const TEST_WORKING_DIR: &str = "/tmp/goose_test";
     fs::create_dir_all(TEST_WORKING_DIR).ok();
 
-    let _env = env_lock::lock_env([
-        ("GOOSE_MCP_CLIENT_VERSION", Some("0.0.0")),
-        ("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR)),
-    ]);
+    let _env = env_lock::lock_env([("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR))]);
 
     // Setup test file for developer extension tests
     let test_file_path = "/tmp/goose_test/goose.txt";
@@ -945,6 +943,7 @@ async fn test_replayed_session(
     ));
     let client = ClientContext {
         name: GoosePlatform::GooseDesktop.to_string(),
+        version: "0.0.0".to_string(),
         capabilities: GooseMcpClientCapabilities {
             mcpui: true,
             host_info: None,

@@ -3,30 +3,14 @@ use rmcp::model::CallToolResult;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 use std::path::PathBuf;
 
 use crate::agents::container::Container;
+pub use crate::agents::extension_runtime::{ToolCallNotificationEmitter, ToolCallResult};
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use rmcp::model::ServerNotification;
-
-#[derive(Clone)]
-pub(crate) struct ToolCallNotificationEmitter {
-    sender: mpsc::Sender<ServerNotification>,
-}
-
-impl ToolCallNotificationEmitter {
-    pub(crate) fn new(sender: mpsc::Sender<ServerNotification>) -> Self {
-        Self { sender }
-    }
-
-    pub(crate) fn emit_best_effort(&self, notification: ServerNotification) {
-        // Do not let a slow notification consumer delay tool execution.
-        let _ = self.sender.try_send(notification);
-    }
-}
 
 #[cfg(feature = "code-mode")]
 #[async_trait::async_trait]
@@ -114,20 +98,12 @@ impl ToolCallContext {
     }
 }
 
-// ToolCallResult combines the result of a tool call with an optional notification stream that
-// can be used to receive notifications from the tool.
-pub struct ToolCallResult {
-    pub result: Box<dyn Future<Output = ToolResult<rmcp::model::CallToolResult>> + Send + Unpin>,
-    pub notification_stream: Option<Box<dyn Stream<Item = ServerNotification> + Send + Unpin>>,
-    pub action_required_stream: Option<Box<dyn Stream<Item = Message> + Send + Unpin>>,
-}
-
-impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
-    fn from(result: ToolResult<rmcp::model::CallToolResult>) -> Self {
+impl From<&ToolCallContext> for crate::agents::extension_manager::CallRequest {
+    fn from(ctx: &ToolCallContext) -> Self {
         Self {
-            result: Box::new(futures::future::ready(result)),
-            notification_stream: None,
-            action_required_stream: None,
+            tool_call_id: ctx.tool_call_request_id.clone(),
+            notification_emitter: ctx.notification_emitter().cloned(),
+            container: ctx.container().cloned(),
         }
     }
 }
