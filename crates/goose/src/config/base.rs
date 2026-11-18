@@ -645,10 +645,7 @@ impl Config {
 
     fn lock_config_for_mutation(&self) -> Result<std::fs::File, ConfigError> {
         let lock_path = self.config_mutation_lock_path()?;
-        if let Some(parent) = lock_path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-        {
+        if let Some(parent) = lock_path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)
                 .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
         }
@@ -673,8 +670,7 @@ impl Config {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        std::fs::create_dir_all(parent)
-            .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
+        std::fs::create_dir_all(parent).map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
 
         let mut temp = tempfile::NamedTempFile::new_in(parent)?;
         temp.write_all(yaml_value.as_bytes())?;
@@ -1971,7 +1967,7 @@ mod tests {
             let handle = thread::spawn(move || -> Result<(), ConfigError> {
                 let instance = Config::new_with_file_secrets(&config_path, &secrets_path)?;
                 barrier.wait();
-                instance.set_param(&format!("key{i}"), &format!("value{i}"))?;
+                instance.set_param(&format!("key{i}"), format!("value{i}"))?;
                 Ok(())
             });
             handles.push(handle);
@@ -1990,7 +1986,10 @@ mod tests {
         }
 
         let raw = std::fs::read_to_string(&config_path)?;
-        assert!(parse_yaml_content(&raw).is_ok(), "config file is not valid YAML");
+        assert!(
+            parse_yaml_content(&raw).is_ok(),
+            "config file is not valid YAML"
+        );
 
         Ok(())
     }
