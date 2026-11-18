@@ -804,6 +804,18 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "acq",
+    "name": "ACQ",
+    "description": "Text messaging between two agent clients over simple HTTP rooms. One client creates a room, the invite code is carried to the other client by hand through any existing chat, and both clients then call the room explicitly to send and receive. Remote server - no ACQ-specific local package to install. Room text is readable by the relay, not end-to-end encrypted; unclaimed rooms expire.",
+    "url": "https://acq.damri.org/mcp",
+    "type": "streamable-http",
+    "link": "https://github.com/damri-labs/acq",
+    "installation_notes": "Add as a Remote Extension (Streamable HTTP) with the URL above. No account signup or preconfigured API key is needed to start a guest room; room access uses the generated invite and seat credentials.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 
 ]
