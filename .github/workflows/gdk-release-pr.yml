@@ -12,8 +12,8 @@ on:
       - "crates/goose-download-manager/**"
       - "crates/goose-local-inference/**"
       - "crates/goose-providers/**"
-      - "crates/goose-agent/**"
       - "crates/goose-context-management/**"
+      - "crates/goose-agent/**"
       - "crates/goose-sdk/**"
       # END GDK CRATE PATHS
       - "release-plz.toml"

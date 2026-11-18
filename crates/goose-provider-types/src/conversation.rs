@@ -1,4 +1,6 @@
-use crate::conversation::message::{Message, MessageContentBlock, MessageMetadata};
+use crate::conversation::message::{
+    Message, MessageContent, MessageContentBlock, MessageMetadata, ToolRequest,
+};
 use crate::mcp_utils::extract_text_from_resource;
 use rmcp::model::{ContentBlock, Role};
 use serde::{Deserialize, Serialize};
@@ -54,10 +56,11 @@ impl Conversation {
         {
             if let Some(existing) = self.0.iter_mut().rev().find(|existing| {
                 existing.role == message.role
-                    && existing.is_user_visible()
-                    && (!output_token_limit_reached
-                        || (message.id.is_some()
-                            && existing.id.as_deref() == message.id.as_deref()))
+                    && if output_token_limit_reached {
+                        message.id.is_some() && existing.id.as_deref() == message.id.as_deref()
+                    } else {
+                        existing.is_user_visible()
+                    }
             }) {
                 if let Some(inference) = message.metadata.inference.clone() {
                     existing.metadata.inference = Some(inference);
@@ -640,6 +643,21 @@ impl std::fmt::Display for EffectiveRole {
             Self::Tool => write!(f, "tool"),
         }
     }
+}
+
+pub fn unanswered_tool_requests(messages: &[Message]) -> impl Iterator<Item = &ToolRequest> {
+    let answered: HashSet<&str> = messages
+        .iter()
+        .flat_map(Message::get_tool_response_ids)
+        .collect();
+    messages
+        .iter()
+        .filter(|message| message.role == Role::Assistant && message.is_agent_visible())
+        .flat_map(|message| message.content.iter())
+        .filter_map(MessageContent::as_tool_request)
+        .filter(move |request| {
+            !request.was_executed_externally() && !answered.contains(request.id.as_str())
+        })
 }
 
 pub fn effective_role(message: &Message) -> EffectiveRole {

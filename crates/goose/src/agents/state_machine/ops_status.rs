@@ -26,6 +26,24 @@ impl StatusOperation {
         }
     }
 
+    fn clear(conversation: &Conversation, emit: &Emitter) -> Result<OperationResult<GooseEffect>> {
+        let command = messages_since_kickoff(conversation)?
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow!("clear command conversation has no kickoff message"))?
+            .with_visibility(true, false);
+        let response = Message::assistant()
+            .with_text("Conversation cleared")
+            .with_visibility(true, false);
+        let command = emit.message(command);
+        let response = emit.message(response);
+        yielded_with([
+            Conversation::default().into(),
+            command.into(),
+            response.into(),
+        ])
+    }
+
     async fn status(
         &self,
         session: &Session,
@@ -97,10 +115,18 @@ impl Operation<Session, GooseEffect> for StatusOperation {
     }
 
     async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
-        Ok(vec![Command::new(
+        let mut commands = vec![Command::new(
             "status",
             "Show session status: session ID, model, provider, mode, and token usage",
             move |call| Box::pin(self.status(call.session, call.conversation, call.emit)),
-        )])
+        )];
+        if !self.provider.manages_own_context() {
+            commands.push(Command::new(
+                "clear",
+                "Clear the conversation history",
+                |call| Box::pin(async move { Self::clear(call.conversation, call.emit) }),
+            ));
+        }
+        Ok(commands)
     }
 }

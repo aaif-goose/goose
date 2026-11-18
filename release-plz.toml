@@ -37,12 +37,12 @@ version_group = "gdk"
 semver_check = false
 
 [[package]]
-name = "goose-agent"
+name = "goose-context-management"
 release = true
 version_group = "gdk"
 
 [[package]]
-name = "goose-context-management"
+name = "goose-agent"
 release = true
 version_group = "gdk"
 

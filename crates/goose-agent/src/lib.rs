@@ -23,6 +23,8 @@ pub mod unhandled_tool_calls;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod action_required_manager;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod compaction;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod subprocess;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tool_visibility;

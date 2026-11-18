@@ -4169,6 +4169,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "futures",
+ "goose-context-management",
  "goose-provider-types",
  "goose-sdk-types",
  "indexmap 2.14.2",

@@ -8,10 +8,8 @@ use goose_agent::operation::{ConversationEffect, MachineEffect};
 
 pub enum GooseEffect {
     Conversation(ConversationEffect),
-    CompactConversation {
-        conversation: Conversation,
-        usage: Option<ProviderUsage>,
-    },
+    /// Replaces the conversation in place, keeping messages written concurrently.
+    CompactConversation(Conversation),
     SetRecipe(Box<Option<Recipe>>),
     SetExtensionState {
         extension_name: &'static str,
@@ -35,7 +33,7 @@ impl MachineEffect for GooseEffect {
     fn ensure_message_ids(&mut self) {
         match self {
             GooseEffect::Conversation(effect) => effect.ensure_message_ids(),
-            GooseEffect::CompactConversation { conversation, .. } => {
+            GooseEffect::CompactConversation(conversation) => {
                 for message in conversation.messages_mut() {
                     if message.id.is_none() {
                         message.id = Some(format!("msg_{}", uuid::Uuid::new_v4()));

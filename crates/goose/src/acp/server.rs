@@ -2174,6 +2174,21 @@ impl AcpConnection {
                     }
                 }
                 Ok(crate::agents::AgentEvent::HistoryReplaced(_)) => {
+                    if let Err(error) = self
+                        .send_session_usage_updates(
+                            cx,
+                            acp_session_id,
+                            session_id,
+                            &mut context_limit,
+                        )
+                        .await
+                    {
+                        warn!(
+                            session_id,
+                            ?error,
+                            "Failed to send post-compaction usage update"
+                        );
+                    }
                     if self.supports_goose_custom_notifications() {
                         cx.send_notification(GooseSessionNotification {
                             session_id: session_id.to_string(),

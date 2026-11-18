@@ -6,6 +6,7 @@ static PROMPTS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/prompts");
 
 pub const COMPACTION_TEMPLATE: &str = "compaction.md";
 pub const COMPACTION_SUMMARY_TEMPLATE: &str = "compaction_summary.md";
+pub const COMPACTION_REQUEST_TEMPLATE: &str = "compaction_request.md";
 
 pub fn builtin_template(name: &str) -> Option<String> {
     PROMPTS
@@ -19,6 +20,7 @@ pub fn builtin_template(name: &str) -> Option<String> {
 pub struct Templates {
     pub compaction: String,
     pub summary: String,
+    pub request: String,
 }
 
 impl Default for Templates {
@@ -27,6 +29,8 @@ impl Default for Templates {
             compaction: builtin_template(COMPACTION_TEMPLATE).expect("builtin compaction template"),
             summary: builtin_template(COMPACTION_SUMMARY_TEMPLATE)
                 .expect("builtin compaction summary template"),
+            request: builtin_template(COMPACTION_REQUEST_TEMPLATE)
+                .expect("builtin compaction request template"),
         }
     }
 }

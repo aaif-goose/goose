@@ -1446,7 +1446,7 @@
         {
           "name": "CompactionTemplates",
           "kind": "record",
-          "docs": "Overrides for the summarization and summary-rendering prompts.",
+          "docs": "Overrides for the summarization, summary-rendering, and in-band request prompts.",
           "fields": [
             {
               "name": "compaction",
@@ -1456,6 +1456,12 @@
             },
             {
               "name": "summary",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "request",
               "type": "String",
               "default": null,
               "docs": ""

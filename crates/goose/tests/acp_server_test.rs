@@ -1508,6 +1508,7 @@ fn test_shell() {
 
 const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
+const WRITE_SUMMARY: &str = "write a structured summary of the conversation so far";
 const CONTEXT_ERROR_TEXT: &str =
     "Context length exceeded: too long\n\nThe conversation is too long for the model's context window.";
 
@@ -1613,10 +1614,10 @@ fn test_manual_compaction_refusal_fails_without_replacing_context() {
         let openai = OpenAiFixture::new(
             vec![
                 (format!("what is 1+1{TURN_CONTEXT_OPEN}"), basic),
-                (SUMMARIZE_HISTORY.to_string(), refusal),
-                (SUMMARIZE_HISTORY.to_string(), refusal),
-                (SUMMARIZE_HISTORY.to_string(), refusal),
-                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (WRITE_SUMMARY.to_string(), refusal),
+                (WRITE_SUMMARY.to_string(), refusal),
+                (WRITE_SUMMARY.to_string(), refusal),
+                (WRITE_SUMMARY.to_string(), refusal),
                 (format!("still there?{TURN_CONTEXT_OPEN}"), basic),
             ],
             expected_session_id.clone(),

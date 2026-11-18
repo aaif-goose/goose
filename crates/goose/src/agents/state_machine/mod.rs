@@ -8,7 +8,6 @@
 mod effects;
 mod inference_preparation;
 mod ops_auto_effort;
-mod ops_compaction;
 mod ops_context_relevance;
 mod ops_doctor;
 mod ops_final_output;
@@ -26,7 +25,6 @@ mod ops_subdirectory_hints;
 mod ops_thinking_recovery;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
-mod proactive_compaction;
 mod session;
 pub(crate) use session::run as run_goose;
 mod tool_approval;
@@ -56,10 +54,10 @@ pub(crate) use tool_confirmation::{
     persist_tool_confirmation_decision,
 };
 
+pub(super) use goose_agent::compaction::{CompactionMode, CompactionOperation};
 pub(super) use goose_agent::skills::SkillOperation;
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
 pub(super) use ops_auto_effort::AutoEffortOperation;
-pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDecisions};
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_final_output::FinalOutputOperation;
