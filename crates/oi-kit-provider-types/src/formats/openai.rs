@@ -3460,7 +3460,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_does_not_raise_max_tokens_for_unknown_reasoning_model(
+    fn test_create_request_preserves_configured_token_limit_for_unknown_reasoning_model(
     ) -> anyhow::Result<()> {
         let mut model_config =
             test_model_config("nemotron-35-lightning").with_max_tokens(Some(4096));
@@ -3475,8 +3475,8 @@ mod tests {
             false,
         )?;
         let obj = request.as_object().unwrap();
-        assert_eq!(obj.get("max_tokens"), Some(&json!(4096)));
-        assert!(obj.get("max_completion_tokens").is_none());
+        assert_eq!(obj.get("max_completion_tokens"), Some(&json!(4096)));
+        assert!(obj.get("max_tokens").is_none());
         Ok(())
     }
 
