@@ -1,8 +1,8 @@
 {
   "name": "onysoft",
   "engine": "openai",
-  "display_name": "Onysoft",
-  "description": "OpenAI-compatible gateway to chat models from Anthropic, OpenAI, Google, DeepSeek, Qwen, GLM, Kimi, Grok and more",
+  "display_name": "Onysoft AI Gateway",
+  "description": "Turkish AI gateway: 780+ models from Anthropic, OpenAI, Google, xAI, DeepSeek, Qwen, GLM, Kimi and more through one OpenAI-compatible API, plus Türkiye-hosted open models (:tr) and TRY billing.",
   "api_key_env": "ONYSOFT_API_KEY",
   "base_url": "https://api.onysoft.com/v1",
   "dynamic_models": true,
