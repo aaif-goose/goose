@@ -440,6 +440,25 @@ export OTEL_TRACES_SAMPLER="parentbased_traceidratio"
 export OTEL_TRACES_SAMPLER_ARG="0.1"
 ```
 
+#### Sending traces to a hosted OTLP backend
+
+Most hosted observability platforms accept traces over OTLP/HTTP. Set the base endpoint and an auth header:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-backend.example.com/api/otel"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
+```
+
+goose appends `/v1/traces` to the base endpoint when sending traces, so the full URL becomes `https://your-backend.example.com/api/otel/v1/traces`. Check your backend's OTLP ingestion docs to confirm the expected base path.
+
+Exported traces can include user prompts (`user_message` and `trace_input`), assistant replies (`trace_output`), and tool arguments (`input`) in legacy fields even when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is unset or set to `false`. Use a trusted backend whenever you export traces.
+
+GenAI message and tool content capture is off by default. Set the variable to `true` to enable capture for `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and the legacy tool `output` field.
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
 [otel-env]: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
 
 ### Langfuse Integration
