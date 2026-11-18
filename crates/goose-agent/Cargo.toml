@@ -60,6 +60,7 @@ tokio-stream.workspace = true
 url.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+rmcp = { workspace = true, features = ["macros", "transport-io"] }
 serial_test.workspace = true
 tempfile.workspace = true
 test-case.workspace = true
@@ -67,3 +68,8 @@ wiremock.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.189"
+
+[[test]]
+name = "mcp_extension"
+# The test binary also serves as the stdio MCP server it starts.
+harness = false

@@ -11,9 +11,9 @@ use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Role, Tool, ToolAnnotations,
 };
 
-use crate::agents::extension::ExtensionInfo;
-use crate::agents::extension_manager::CallRequest;
-use crate::agents::extension_runtime::ToolCallBatch;
+use crate::agents::extension::{ExtensionConfig, ExtensionInfo};
+use crate::agents::extension_manager::McpLease;
+use crate::agents::extension_runtime::{ExtensionSource, ToolCallBatch};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
@@ -158,78 +158,212 @@ pub(super) fn advertised_working_dir(
         .map_or_else(|| session.working_dir.clone(), Path::to_path_buf)
 }
 
-fn advertised_session(tools: &ToolSnapshot, session: &Session) -> Session {
-    let mut session = session.clone();
-    if let Some(working_dir) = tools.working_dir() {
-        session.working_dir = working_dir.to_path_buf();
-    }
-    session
-}
-
-pub struct ToolExecutionOperation {
+/// Goose's view of the session's MCP extensions: the lease shared through the
+/// [`ToolSnapshot`], minus tools a platform extension already provides and
+/// deferred tools the model has not enabled yet.
+pub struct GooseExtensions {
     services: Arc<StateMachineServices>,
     tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
-    execution: ToolExecution,
-    defer_tools: bool,
-    always_load_tools: HashSet<String>,
+    deferral: Arc<ToolDeferral>,
 }
 
-impl ToolExecutionOperation {
+impl GooseExtensions {
     pub fn new(
         services: Arc<StateMachineServices>,
         tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
-        defer_tools: bool,
-        always_load_tools: Vec<String>,
+        deferral: Arc<ToolDeferral>,
     ) -> Self {
         Self {
             services,
             tools,
-            execution: ToolExecution::new(),
-            defer_tools,
-            always_load_tools: always_load_tools.into_iter().collect(),
+            deferral,
         }
     }
 
-    async fn execution_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
-        let platform_names: HashSet<_> = tools
+    async fn snapshot(&self, session: &Session) -> Result<Arc<ToolSnapshot>> {
+        ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await
+    }
+}
+
+#[async_trait]
+impl ExtensionSource<Session, ExtensionConfig> for GooseExtensions {
+    async fn advertise(&self, session: &Session) -> Result<McpLease> {
+        Ok(self.snapshot(session).await?.mcp.clone())
+    }
+
+    async fn advertised(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+    ) -> Result<Option<McpLease>> {
+        let tools = self
+            .tools
+            .lock()
+            .expect("tool snapshot unavailable")
+            .clone();
+        if let Some(tools) = tools {
+            return Ok(Some(tools.mcp.clone()));
+        }
+        let messages = messages_since_kickoff(conversation)?;
+        let pending = pending_tool_requests(messages);
+        if !requests_can_resolve_tools(messages, executed(&pending)) {
+            return Ok(None);
+        }
+        self.advertise(session).await.map(Some)
+    }
+
+    async fn tools(&self, session: &Session, lease: &McpLease) -> Result<Vec<Tool>> {
+        let snapshot = self.snapshot(session).await?;
+        let platform_names: HashSet<_> = snapshot
             .platform_tools()
             .await
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect();
-        tools
-            .mcp
+        let mut tools: Vec<_> = lease
             .tools()
             .await
             .into_iter()
             .filter(|tool| !platform_names.contains(tool.name.as_ref()))
-            .collect()
+            .collect();
+        if self.deferral.applies(&snapshot) {
+            let enabled = session
+                .conversation
+                .as_ref()
+                .map(enabled_tools)
+                .unwrap_or_default();
+            tools
+                .retain(|tool| !self.deferral.defers(tool) || enabled.contains(tool.name.as_ref()));
+        }
+        Ok(tools)
     }
 
-    fn defers_tools(&self, tools: &ToolSnapshot) -> bool {
+    fn decorate(
+        &self,
+        session: &Session,
+        request: &ToolRequest,
+        result: ToolCallResult,
+    ) -> ToolCallResult {
+        traced(session, request, result)
+    }
+
+    async fn prompt_parts(
+        &self,
+        session: &Session,
+        lease: &McpLease,
+    ) -> Result<Vec<(String, String)>> {
+        let snapshot = self.snapshot(session).await?;
+        #[cfg(feature = "code-mode")]
+        if snapshot.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
+            return Ok(Vec::new());
+        }
+        let mut extensions = lease.instructions().await;
+        if extensions.is_empty() {
+            return Ok(Vec::new());
+        }
+        // HashMap order shuffles across restarts and would bust the prompt cache.
+        extensions.sort_by(|a, b| a.name.cmp(&b.name));
+        let defers = self.deferral.applies(&snapshot);
+        let mut parts = extension_prompt_parts(&extensions, defers);
+        if defers {
+            let mut names: Vec<_> = self
+                .deferral
+                .deferred(lease)
+                .await
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect();
+            names.sort();
+            parts.push(("mcp_tools".to_string(), format!(
+                "MCP tools available to enable: {}. Call enable_tools with exact tool_names before using them. \
+                 Their schemas become available on your next response. Enabling does not execute a tool.",
+                names.join(", ")
+            )));
+        }
+        Ok(parts)
+    }
+}
+
+fn executed(pending: &[(ToolRequest, ToolDisposition)]) -> impl Iterator<Item = &ToolRequest> {
+    pending
+        .iter()
+        .filter(|(_, disposition)| *disposition == ToolDisposition::Execute)
+        .map(|(request, _)| request)
+}
+
+pub(super) fn traced(
+    session: &Session,
+    request: &ToolRequest,
+    result: ToolCallResult,
+) -> ToolCallResult {
+    let tool_call = request
+        .tool_call
+        .as_ref()
+        .expect("selected calls are parsed");
+    let span = tool_span(&tool_call.name, &request.id, &session.id);
+    crate::agents::gen_ai_telemetry::record_tool_arguments(&span, tool_call);
+    with_telemetry(result, span)
+}
+
+/// Whether MCP tools are listed in the prompt instead of advertised, until
+/// the model enables them with `enable_tools`.
+pub struct ToolDeferral {
+    enabled: bool,
+    always_load_tools: HashSet<String>,
+}
+
+impl ToolDeferral {
+    pub fn new(enabled: bool, always_load_tools: Vec<String>) -> Self {
+        Self {
+            enabled,
+            always_load_tools: always_load_tools.into_iter().collect(),
+        }
+    }
+
+    fn applies(&self, tools: &ToolSnapshot) -> bool {
         #[cfg(feature = "code-mode")]
         if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return false;
         }
         let _ = tools;
-        self.defer_tools
+        self.enabled
     }
 
-    async fn mcp_tools(&self, tools: &ToolSnapshot) -> Vec<Tool> {
-        tools
-            .mcp
+    fn defers(&self, tool: &Tool) -> bool {
+        is_tool_visible_to_model(tool) && !self.always_load_tools.contains(tool.name.as_ref())
+    }
+
+    async fn deferred(&self, lease: &McpLease) -> Vec<Tool> {
+        lease
             .tools()
             .await
             .into_iter()
-            .filter(is_tool_visible_to_model)
+            .filter(|tool| self.defers(tool))
             .collect()
     }
+}
 
-    async fn enable_tools(
-        &self,
-        tools: &ToolSnapshot,
-        call: &CallToolRequestParams,
-    ) -> CallToolResult {
+/// Advertises and answers `enable_tools` while [`ToolDeferral`] applies.
+pub struct ToolDeferralOperation {
+    services: Arc<StateMachineServices>,
+    tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+    deferral: Arc<ToolDeferral>,
+}
+
+impl ToolDeferralOperation {
+    pub fn new(
+        services: Arc<StateMachineServices>,
+        tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+        deferral: Arc<ToolDeferral>,
+    ) -> Self {
+        Self {
+            services,
+            tools,
+            deferral,
+        }
+    }
+
+    async fn enable_tools(&self, lease: &McpLease, call: &CallToolRequestParams) -> CallToolResult {
         let params = serde_json::from_value::<EnableToolsParams>(serde_json::Value::Object(
             call.arguments.clone().unwrap_or_default(),
         ));
@@ -239,7 +373,12 @@ impl ToolExecutionOperation {
                 return CallToolResult::error(vec![ContentBlock::text(error.to_string())])
             }
         };
-        let tools = self.mcp_tools(tools).await;
+        let tools: Vec<_> = lease
+            .tools()
+            .await
+            .into_iter()
+            .filter(is_tool_visible_to_model)
+            .collect();
         if let Some(name) = params
             .tool_names
             .iter()
@@ -250,6 +389,126 @@ impl ToolExecutionOperation {
             ))]);
         }
         CallToolResult::structured(serde_json::json!({"enabled": params.tool_names}))
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for ToolDeferralOperation {
+    fn name(&self) -> &'static str {
+        "tool_deferral"
+    }
+
+    async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
+        let snapshot = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
+        Ok(if self.deferral.applies(&snapshot) {
+            vec![enable_tools_tool()?]
+        } else {
+            Vec::new()
+        })
+    }
+
+    async fn run(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        let messages = messages_since_kickoff(conversation)?;
+        let requests: Vec<_> = pending_tool_requests(messages)
+            .into_iter()
+            .filter(|(request, disposition)| {
+                *disposition == ToolDisposition::Execute
+                    && request
+                        .tool_call
+                        .as_ref()
+                        .is_ok_and(|call| call.name == ENABLE_TOOLS)
+            })
+            .collect();
+        if requests.is_empty() {
+            return not_applicable();
+        }
+        let tools = self
+            .tools
+            .lock()
+            .expect("tool snapshot unavailable")
+            .clone();
+        let Some(tools) = tools.filter(|tools| self.deferral.applies(tools)) else {
+            return not_applicable();
+        };
+        let mut response = Message::user();
+        for (request, _) in requests {
+            let call = request
+                .tool_call
+                .as_ref()
+                .expect("selected calls are parsed");
+            let result = self.enable_tools(&tools.mcp, call).await;
+            response.add_tool_response_with_metadata(
+                request.id,
+                Ok(result),
+                request.metadata.as_ref(),
+            );
+        }
+        let response = emit.message(response);
+        applied([response.into()])
+    }
+}
+
+/// Answers calls whose advertised tools are gone, rather than running them
+/// against tools the user never approved them for.
+pub struct ExpiredToolsOperation {
+    tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+}
+
+impl ExpiredToolsOperation {
+    pub fn new(tools: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>) -> Self {
+        Self { tools }
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for ExpiredToolsOperation {
+    fn name(&self) -> &'static str {
+        "expired_tools"
+    }
+
+    async fn run(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        let messages = messages_since_kickoff(conversation)?;
+        let pending = pending_tool_requests(messages);
+        if pending.is_empty()
+            || self
+                .tools
+                .lock()
+                .expect("tool snapshot unavailable")
+                .is_some()
+            || requests_can_resolve_tools(messages, executed(&pending))
+        {
+            return not_applicable();
+        }
+        let mut response = Message::user();
+        for (request, disposition) in pending {
+            let result = match disposition {
+                ToolDisposition::Execute => {
+                    CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
+                }
+                ToolDisposition::ParseError(parse_error) => {
+                    CallToolResult::error(vec![ContentBlock::text(format!(
+                        "The tool call could not be parsed: {parse_error}. Correct the arguments and try again."
+                    ))])
+                }
+            };
+            response.add_tool_response_with_metadata(
+                request.id,
+                Ok(result),
+                request.metadata.as_ref(),
+            );
+        }
+        let response = emit.message(response);
+        applied([response.into()])
     }
 }
 
@@ -345,187 +604,6 @@ pub(super) fn extension_prompt_parts(
     parts
 }
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for ToolExecutionOperation {
-    fn name(&self) -> &'static str {
-        "tool_execution"
-    }
-
-    async fn finalize_cancellation(
-        &self,
-        _session: &Session,
-        _conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Vec<GooseEffect> {
-        self.execution.finalize_cancellation(emit)
-    }
-
-    async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let snapshot = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
-        let mut tools = self.execution_tools(&snapshot).await;
-        if self.defers_tools(&snapshot) {
-            let deferred: HashSet<_> = self
-                .mcp_tools(&snapshot)
-                .await
-                .into_iter()
-                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
-                .map(|tool| tool.name.to_string())
-                .collect();
-            let enabled = session
-                .conversation
-                .as_ref()
-                .map(enabled_tools)
-                .unwrap_or_default();
-            tools.retain(|tool| {
-                !deferred.contains(tool.name.as_ref()) || enabled.contains(tool.name.as_ref())
-            });
-            tools.push(enable_tools_tool()?);
-        }
-        Ok(tools)
-    }
-
-    async fn prompt_parts(
-        &self,
-        session: &Session,
-        _conversation: &Conversation,
-    ) -> Result<Vec<(String, String)>> {
-        let mut prompt_parts = Vec::new();
-
-        let tools = ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?;
-        #[cfg(feature = "code-mode")]
-        if tools.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
-            return Ok(prompt_parts);
-        }
-
-        let mut extensions = tools.mcp.instructions().await;
-        if extensions.is_empty() {
-            return Ok(prompt_parts);
-        }
-        // HashMap order shuffles across restarts and would bust the prompt cache.
-        extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        prompt_parts.extend(extension_prompt_parts(
-            &extensions,
-            self.defers_tools(&tools),
-        ));
-        if self.defers_tools(&tools) {
-            let mut names: Vec<_> = self
-                .mcp_tools(&tools)
-                .await
-                .into_iter()
-                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
-                .map(|tool| tool.name.to_string())
-                .collect();
-            names.sort();
-            prompt_parts.push(("mcp_tools".to_string(), format!(
-                "MCP tools available to enable: {}. Call enable_tools with exact tool_names before using them. \
-                 Their schemas become available on your next response. Enabling does not execute a tool.",
-                names.join(", ")
-            )));
-        }
-        Ok(prompt_parts)
-    }
-
-    async fn run(
-        &self,
-        session: &Session,
-        conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        let messages = messages_since_kickoff(conversation)?;
-        let mut pending = pending_tool_requests(messages);
-        if pending.is_empty() {
-            return not_applicable();
-        }
-
-        let tools = self
-            .tools
-            .lock()
-            .expect("tool snapshot unavailable")
-            .clone();
-        let tools = match tools {
-            Some(tools) => Some(tools),
-            None if requests_can_resolve_tools(
-                messages,
-                pending
-                    .iter()
-                    .filter(|(_, disposition)| *disposition == ToolDisposition::Execute)
-                    .map(|(request, _)| request),
-            ) =>
-            {
-                Some(ToolSnapshot::for_session(&self.tools, &self.services, &session.id).await?)
-            }
-            None => None,
-        };
-        let Some(tools) = tools else {
-            let mut response = Message::user();
-            for (request, disposition) in pending {
-                let result = match disposition {
-                    ToolDisposition::Execute => {
-                        CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
-                    }
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}. Correct the arguments and try again."
-                        ))])
-                    }
-                };
-                response.add_tool_response_with_metadata(
-                    request.id,
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
-        };
-
-        let mut known_tools: HashSet<_> = self
-            .execution_tools(&tools)
-            .await
-            .into_iter()
-            .map(|tool| tool.name.to_string())
-            .collect();
-        if self.defers_tools(&tools) {
-            known_tools.insert(ENABLE_TOOLS.to_string());
-        }
-        pending.retain(|(request, _)| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| known_tools.contains(tool_call.name.as_ref()))
-        });
-        if pending.is_empty() {
-            return not_applicable();
-        }
-
-        let call_session = advertised_session(&tools, session);
-        let mut calls = Vec::new();
-        for (request, _) in pending {
-            let call = request
-                .tool_call
-                .as_ref()
-                .expect("selected calls are parsed");
-            let result = if self.defers_tools(&tools) && call.name == ENABLE_TOOLS {
-                ToolCallResult::from(Ok(self.enable_tools(&tools, call).await))
-            } else {
-                let result = tools
-                    .mcp
-                    .call(
-                        call.clone(),
-                        CallRequest::new(request.id.clone())
-                            .with_container(session.container.clone()),
-                        emit.cancel_token().clone(),
-                    )
-                    .await
-                    .unwrap_or_else(|error| ToolCallResult::from(Err(error)));
-                self.services.applying_mutation(result, &session.id)
-            };
-            calls.push((request, result));
-        }
-        self.execution.run(calls, &call_session, emit).await
-    }
-}
-
 pub(super) struct ToolExecution {
     batch: ToolCallBatch,
 }
@@ -558,13 +636,7 @@ impl ToolExecution {
         let calls = calls
             .into_iter()
             .map(|(request, result)| {
-                let tool_call = request
-                    .tool_call
-                    .as_ref()
-                    .expect("selected calls are parsed");
-                let span = tool_span(&tool_call.name, &request.id, &session.id);
-                crate::agents::gen_ai_telemetry::record_tool_arguments(&span, tool_call);
-                let result = with_telemetry(result, span);
+                let result = traced(session, &request, result);
                 (request, result)
             })
             .collect();

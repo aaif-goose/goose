@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_agent::mcp::ExtensionOperation;
 use goose_agent::{
     bang_command::BangCommandOperation,
     empty_response::EmptyResponseOperation,
@@ -17,13 +18,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
     CompactionMode, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    FinalOutputOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    GooseSkillSource, GooseToolApproval, InferenceRunner, McpPromptOperation, Operation,
-    PlatformExtensionOperation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
-    SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnavailableDecisions,
-    UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    ExpiredToolsOperation, FinalOutputOperation, GooseEffect, GooseExtensions,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource, GooseToolApproval,
+    InferenceRunner, McpPromptOperation, Operation, PlatformExtensionOperation, ProjectOperation,
+    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
+    StatusOperation, Step, StopHookOperation, SubagentOperation, SubdirectoryHintOperation,
+    ThinkingRecoveryOperation, ToolApprovalOperation, ToolDeferral, ToolDeferralOperation,
+    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -128,6 +129,7 @@ pub(crate) fn build_state_machine(
         context_relevance,
     } = config;
     let manages_own_context = provider.manages_own_context();
+    let deferral = Arc::new(ToolDeferral::new(defer_tools, always_load_tools));
 
     let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
         SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
@@ -182,11 +184,16 @@ pub(crate) fn build_state_machine(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
         )),
-        Arc::new(ToolExecutionOperation::new(
+        Arc::new(ExpiredToolsOperation::new(Arc::clone(&tool_snapshot))),
+        Arc::new(ExtensionOperation::new(Arc::new(GooseExtensions::new(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
-            defer_tools,
-            always_load_tools,
+            Arc::clone(&deferral),
+        )))),
+        Arc::new(ToolDeferralOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+            deferral,
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(

@@ -1262,11 +1262,13 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 6] = [
+const TOOL_OPERATIONS: [&str; 8] = [
     "final_output",
     "tool_approval",
     "skills",
-    "tool_execution",
+    "expired_tools",
+    "extensions",
+    "tool_deferral",
     "platform_extensions",
     "unhandled_tool_calls",
 ];
