@@ -8,7 +8,7 @@ use rmcp::model::{
     ServerNotification,
 };
 use rmcp::service::{ClientInitializeError, ServiceError};
-use rmcp::transport::auth::{AuthClient, CredentialStore};
+use rmcp::transport::auth::AuthClient;
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpError,
 };
@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::{ExtensionAuth, StaticOAuthClientConfig};
+use super::{ExtensionAuth, PresentedToken, RejectedRequest, StaticOAuthClientConfig};
 use crate::extension::{ExtensionError, ExtensionResult};
 use crate::mcp::client::McpCallContext as ToolCallContext;
 use crate::mcp::client::{ConnectContext, McpClient, McpClientTrait};
@@ -69,12 +69,6 @@ fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
         || message.contains("Authorization required")
 }
 
-fn should_attempt_oauth_fallback(res: &Result<McpClient, Box<ClientInitializeError>>) -> bool {
-    res.as_ref()
-        .err()
-        .is_some_and(|error| is_oauth_auth_failure(error))
-}
-
 /// Extract the `WWW-Authenticate` challenge from a failed initialization, so
 /// OAuth discovery can be seeded from the server's 401/403 response instead of
 /// probing well-known locations.
@@ -102,14 +96,6 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     None
 }
 
-fn auth_challenge_from_result(
-    res: &Result<McpClient, Box<ClientInitializeError>>,
-) -> Option<String> {
-    res.as_ref()
-        .err()
-        .and_then(|error| auth_challenge_from_error(error))
-}
-
 /// Extract the `WWW-Authenticate` challenge from a post-initialization request
 /// failure (401 auth required or 403 insufficient scope), so a step-up
 /// authorization can be started reactively.
@@ -131,34 +117,6 @@ fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
     }
 
     None
-}
-
-async fn clear_credentials_on_post_refresh_auth_failure(
-    credential_store: &dyn CredentialStore,
-    name: &str,
-    error: &ExtensionError,
-) -> bool {
-    let ExtensionError::InitializeError(err) = error else {
-        return false;
-    };
-
-    if !is_oauth_auth_failure(err)
-        || auth_challenge_from_error(err).is_some_and(|challenge| {
-            challenge
-                .to_ascii_lowercase()
-                .contains("insufficient_scope")
-        })
-    {
-        return false;
-    }
-
-    if let Err(e) = credential_store.clear().await {
-        warn!(
-            "[OAuth:{}] error clearing rejected credentials: {}",
-            name, e
-        );
-    }
-    true
 }
 
 pub(super) fn resolve_static_oauth_client(
@@ -295,12 +253,19 @@ pub(super) struct ConnectParams {
     pub(super) ctx: ConnectContext,
 }
 
+/// A connected client and, when it is authorized, the token its requests last
+/// carried.
+struct Connection {
+    client: McpClient,
+    presented_token: Option<PresentedToken>,
+}
+
 /// Wraps a streamable HTTP `McpClient` and handles step-up authorization:
 /// when a request fails with a 401/403 carrying a `WWW-Authenticate`
 /// challenge after initialization succeeded, re-authorize using the challenge
 /// (requesting the union of scopes), reconnect, and retry the request once.
 struct OAuthStepUpClient {
-    inner: tokio::sync::RwLock<McpClient>,
+    inner: tokio::sync::RwLock<Connection>,
     server_info: Option<ServerConfig>,
     params: tokio::sync::RwLock<ConnectParams>,
     step_up_lock: tokio::sync::Mutex<()>,
@@ -308,12 +273,19 @@ struct OAuthStepUpClient {
 }
 
 impl OAuthStepUpClient {
-    async fn new(inner: McpClient, params: ConnectParams) -> Self {
-        let server_info = inner.get_info().cloned();
+    async fn new(
+        client: McpClient,
+        presented_token: Option<PresentedToken>,
+        params: ConnectParams,
+    ) -> Self {
+        let server_info = client.get_info().cloned();
         let notification_subscribers = Arc::new(Mutex::new(Vec::new()));
-        Self::forward_notifications(&inner, notification_subscribers.clone()).await;
+        Self::forward_notifications(&client, notification_subscribers.clone()).await;
         Self {
-            inner: tokio::sync::RwLock::new(inner),
+            inner: tokio::sync::RwLock::new(Connection {
+                client,
+                presented_token,
+            }),
             server_info,
             params: tokio::sync::RwLock::new(params),
             step_up_lock: tokio::sync::Mutex::new(()),
@@ -334,7 +306,10 @@ impl OAuthStepUpClient {
         });
     }
 
-    async fn step_up_reconnect(&self, challenge: String) -> Result<(), crate::mcp::client::Error> {
+    async fn step_up_reconnect(
+        &self,
+        rejected: RejectedRequest,
+    ) -> Result<(), crate::mcp::client::Error> {
         let params = self.params.read().await;
         let Some(auth) = params.auth.as_ref() else {
             return Err(crate::mcp::client::Error::McpError(ErrorData::new(
@@ -343,12 +318,12 @@ impl OAuthStepUpClient {
                 None,
             )));
         };
-        let auth_manager = auth
+        let authorization = auth
             .authorize(
                 &params.uri,
                 &params.name,
                 params.static_oauth_client.as_ref(),
-                Some(challenge),
+                Some(rejected),
             )
             .await
             .map_err(|e| {
@@ -359,7 +334,7 @@ impl OAuthStepUpClient {
                 ))
             })?;
         let client = connect_with_auth(
-            auth_manager,
+            authorization.manager,
             &params.uri,
             &params.headers,
             params.ctx.clone(),
@@ -373,7 +348,10 @@ impl OAuthStepUpClient {
             ))
         })?;
         Self::forward_notifications(&client, self.notification_subscribers.clone()).await;
-        *self.inner.write().await = client;
+        *self.inner.write().await = Connection {
+            client,
+            presented_token: Some(authorization.presented_token),
+        };
         Ok(())
     }
 
@@ -388,33 +366,37 @@ impl OAuthStepUpClient {
         >,
     {
         let first = {
-            let client = self.inner.read().await;
-            op(&client).await
+            let connection = self.inner.read().await;
+            op(&connection.client).await
         };
         match first {
-            Err(err) => {
-                if let Some(challenge) = auth_challenge_from_service_error(&err) {
-                    let _step_up_guard = self.step_up_lock.lock().await;
-                    let retry = {
-                        let client = self.inner.read().await;
-                        op(&client).await
-                    };
-                    match retry {
-                        Ok(value) => Ok(value),
-                        Err(retry_err)
-                            if auth_challenge_from_service_error(&retry_err).is_some() =>
-                        {
-                            self.step_up_reconnect(challenge).await?;
-                            let client = self.inner.read().await;
-                            op(&client).await
-                        }
-                        Err(retry_err) => Err(retry_err),
-                    }
-                } else {
-                    Err(err)
-                }
+            Err(err) if auth_challenge_from_service_error(&err).is_some() => {
+                let _step_up_guard = self.step_up_lock.lock().await;
+                let (retry, presented_token) = {
+                    let connection = self.inner.read().await;
+                    let retry = op(&connection.client).await;
+                    let presented_token = connection
+                        .presented_token
+                        .as_ref()
+                        .and_then(PresentedToken::get);
+                    (retry, presented_token)
+                };
+                let retry_err = match retry {
+                    Ok(value) => return Ok(value),
+                    Err(retry_err) => retry_err,
+                };
+                let Some(challenge) = auth_challenge_from_service_error(&retry_err) else {
+                    return Err(retry_err);
+                };
+                self.step_up_reconnect(RejectedRequest {
+                    challenge: Some(challenge),
+                    presented_token,
+                })
+                .await?;
+                let connection = self.inner.read().await;
+                op(&connection.client).await
             }
-            ok => ok,
+            result => result,
         }
     }
 }
@@ -575,81 +557,100 @@ pub(super) async fn connect(
         ctx,
     } = &params;
     let http_client = http_client(headers, ctx)?;
-    let credential_store = auth.as_ref().map(|auth| auth.credential_store(name));
+    let connect_unauthenticated = || {
+        connect_with_legacy_retry(
+            || {
+                StreamableHttpClientTransport::with_client(
+                    http_client.clone(),
+                    StreamableHttpClientTransportConfig::with_uri(uri.as_str()),
+                )
+            },
+            ctx.clone(),
+        )
+    };
 
-    // If we have stored OAuth credentials, try refreshing and connecting directly.
-    // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
-    if let (Some(auth), Some(credential_store)) = (auth, credential_store.as_ref()) {
-        if credential_store.load().await.is_ok_and(|c| c.is_some()) {
-            match auth
-                .authorize(uri, name, static_oauth_client.as_ref(), None)
-                .await
-            {
-                Ok(auth_manager) => {
-                    match connect_with_auth(auth_manager, uri, headers, ctx.clone()).await {
-                        Ok(client) => {
-                            return Ok(Box::new(OAuthStepUpClient::new(client, params).await));
-                        }
-                        Err(error) => {
-                            if !clear_credentials_on_post_refresh_auth_failure(
-                                credential_store.as_ref(),
-                                name,
-                                &error,
-                            )
-                            .await
-                            {
-                                return Err(error);
-                            }
-                            warn!(
-                            "[OAuth:{}] Refreshed token was rejected, falling back to browser auth",
-                            name
-                        );
-                        }
+    let Some(auth) = auth else {
+        let client = connect_unauthenticated().await?;
+        return Ok(Box::new(OAuthStepUpClient::new(client, None, params).await));
+    };
+
+    // With stored OAuth credentials, connect with them directly. This avoids
+    // an unnecessary 401 → browser re-auth cycle on every new session.
+    let mut refused_stored_grant = None;
+    if auth
+        .credential_store(name)
+        .load()
+        .await
+        .is_ok_and(|c| c.is_some())
+    {
+        match auth
+            .authorize(uri, name, static_oauth_client.as_ref(), None)
+            .await
+        {
+            Ok(authorization) => {
+                let presented_token = authorization.presented_token;
+                match connect_with_auth(authorization.manager, uri, headers, ctx.clone()).await {
+                    Ok(client) => {
+                        return Ok(Box::new(
+                            OAuthStepUpClient::new(client, Some(presented_token), params).await,
+                        ));
                     }
+                    Err(ExtensionError::InitializeError(err)) if is_oauth_auth_failure(&err) => {
+                        warn!("[OAuth:{}] Stored token was refused, re-authorizing", name);
+                        let rejected = RejectedRequest {
+                            challenge: auth_challenge_from_error(&err),
+                            presented_token: presented_token.get(),
+                        };
+                        refused_stored_grant =
+                            Some((rejected, ExtensionError::InitializeError(err)));
+                    }
+                    Err(error) => return Err(error),
                 }
-                Err(e) => {
-                    warn!(
-                    "[OAuth:{}] Proactive refresh failed: {}, falling back to unauthenticated attempt",
+            }
+            Err(e) => {
+                warn!(
+                    "[OAuth:{}] Stored credentials could not be used: {}, falling back to unauthenticated attempt",
                     name, e
                 );
-                }
             }
         }
     }
 
-    let client_res = connect_with_legacy_retry(
-        || {
-            StreamableHttpClientTransport::with_client(
-                http_client.clone(),
-                StreamableHttpClientTransportConfig::with_uri(uri.as_str()),
-            )
+    let (rejected, fallback_error) = match refused_stored_grant {
+        Some(refused) => refused,
+        None => match connect_unauthenticated().await {
+            Err(err) if is_oauth_auth_failure(&err) => (
+                RejectedRequest {
+                    challenge: auth_challenge_from_error(&err),
+                    presented_token: None,
+                },
+                ExtensionError::InitializeError(err),
+            ),
+            client_res => {
+                return Ok(Box::new(
+                    OAuthStepUpClient::new(client_res?, None, params).await,
+                ));
+            }
         },
-        ctx.clone(),
-    )
-    .await;
-
-    let Some(auth) = auth
-        .as_ref()
-        .filter(|_| should_attempt_oauth_fallback(&client_res))
-    else {
-        return Ok(Box::new(OAuthStepUpClient::new(client_res?, params).await));
     };
 
-    let challenge = auth_challenge_from_result(&client_res);
     match auth
-        .authorize(uri, name, static_oauth_client.as_ref(), challenge)
+        .authorize(uri, name, static_oauth_client.as_ref(), Some(rejected))
         .await
     {
-        Ok(auth_manager) => {
-            let client = connect_with_auth(auth_manager, uri, headers, ctx.clone()).await?;
-            Ok(Box::new(OAuthStepUpClient::new(client, params).await))
+        Ok(authorization) => {
+            let client =
+                connect_with_auth(authorization.manager, uri, headers, ctx.clone()).await?;
+            Ok(Box::new(
+                OAuthStepUpClient::new(client, Some(authorization.presented_token), params).await,
+            ))
         }
         Err(e) => {
             warn!(
                 "[OAuth:{}] Browser authorization flow failed: {:#}",
                 name, e
             );
-            Ok(Box::new(client_res?))
+            Err(fallback_error)
         }
     }
 }
@@ -680,7 +681,10 @@ async fn connect_over_unix_socket(
     )
     .await;
 
-    if should_attempt_oauth_fallback(&client_res) {
+    if client_res
+        .as_ref()
+        .is_err_and(|error| is_oauth_auth_failure(error))
+    {
         warn!(
             "Extension '{}' returned 401 over Unix domain socket transport; \
              OAuth is not supported for UDS connections",
@@ -695,7 +699,7 @@ mod tests {
     use super::*;
     use crate::action_required_manager::ActionRequiredManager;
     use crate::mcp::client::GooseMcpClientCapabilities;
-    use rmcp::transport::auth::InMemoryCredentialStore;
+    use rmcp::transport::auth::{CredentialStore, InMemoryCredentialStore};
     use std::time::Duration;
     use tempfile::tempdir;
 
@@ -759,7 +763,7 @@ mod tests {
                 ),
             ),
         );
-        assert!(should_attempt_oauth_fallback(&Err(Box::new(err))));
+        assert!(is_oauth_auth_failure(&err));
     }
 
     #[test]
@@ -769,40 +773,7 @@ mod tests {
                 std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
             ),
         );
-        assert!(should_attempt_oauth_fallback(&Err(Box::new(err))));
-    }
-
-    #[tokio::test]
-    async fn test_post_refresh_auth_failure_clears_credentials() {
-        use rmcp::transport::auth::{OAuthTokenResponse, StoredCredentials};
-
-        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
-            "access_token": "rejected-token",
-            "token_type": "bearer",
-        }))
-        .expect("valid fake token JSON");
-        let store = InMemoryCredentialStore::new();
-        store
-            .save(StoredCredentials::new(
-                "test-client".to_string(),
-                Some(token_response),
-                vec![],
-                None,
-            ))
-            .await
-            .unwrap();
-
-        let err = streamable_err(
-            rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
-                rmcp::transport::streamable_http_client::AuthRequiredError::new(
-                    "Bearer error=\"invalid_token\"".to_string(),
-                ),
-            ),
-        );
-        let error = ExtensionError::from(err);
-
-        assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
-        assert!(store.load().await.unwrap().is_none());
+        assert!(is_oauth_auth_failure(&err));
     }
 
     #[tokio::test]

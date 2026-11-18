@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use rmcp::model::{CallToolResult, JsonObject};
 use rmcp::transport::auth::CredentialStore;
@@ -108,13 +108,49 @@ pub trait ExtensionHost<C: ExtensionSpec>: Send + Sync {
 pub trait ExtensionAuth: Send + Sync {
     fn credential_store(&self, name: &str) -> Box<dyn CredentialStore>;
 
+    /// Without `rejected`, authorizes from stored credentials only and never
+    /// asks the user. With it, recovers from that refusal, interactively if
+    /// the stored credentials cannot.
     async fn authorize(
         &self,
         uri: &str,
         name: &str,
         static_client: Option<&StaticOAuthClientConfig>,
-        challenge: Option<String>,
-    ) -> anyhow::Result<AuthorizationManager>;
+        rejected: Option<RejectedRequest>,
+    ) -> anyhow::Result<ExtensionAuthorization>;
+}
+
+/// A request the MCP server refused.
+pub struct RejectedRequest {
+    /// The `WWW-Authenticate` challenge from the refusal, if any.
+    pub challenge: Option<String>,
+    /// The access token the refused request carried; `None` when it went out
+    /// unauthenticated.
+    pub presented_token: Option<String>,
+}
+
+pub struct ExtensionAuthorization {
+    pub manager: AuthorizationManager,
+    pub presented_token: PresentedToken,
+}
+
+/// The access token one connection's requests last carried. It is kept per
+/// connection so a refusal is matched against the token that connection sent,
+/// not against credentials another session may have stored since.
+#[derive(Clone, Default)]
+pub struct PresentedToken(Arc<Mutex<Option<String>>>);
+
+impl PresentedToken {
+    pub fn get(&self) -> Option<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn set(&self, token: Option<String>) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = token;
+    }
 }
 
 /// OAuth client credentials registered with the authorization server out of
