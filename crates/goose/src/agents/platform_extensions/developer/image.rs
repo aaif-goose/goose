@@ -124,7 +124,7 @@ async fn load_image(
     ensure_image_size(bytes.len() as u64)?;
 
     let format = image::guess_format(&bytes).map_err(|_| {
-        "unsupported image format; supported formats are png, jpeg, gif, and webp".to_string()
+        "unsupported image format; read_image only supports png, jpeg, gif, and webp. To read text files, use the shell tool (for example, cat or type).".to_string()
     })?;
     let mime_type = mime_type(format)?;
     let image = image::load_from_memory_with_format(&bytes, format)
@@ -297,7 +297,7 @@ fn mime_type(format: image::ImageFormat) -> Result<&'static str, String> {
         image::ImageFormat::Gif => Ok("image/gif"),
         image::ImageFormat::WebP => Ok("image/webp"),
         _ => Err(
-            "unsupported image format; supported formats are png, jpeg, gif, and webp".to_string(),
+            "unsupported image format; read_image only supports png, jpeg, gif, and webp. To read text files, use the shell tool (for example, cat or type).".to_string(),
         ),
     }
 }
@@ -381,7 +381,7 @@ mod local_file_tests {
 
         assert_eq!(
             error,
-            "unsupported image format; supported formats are png, jpeg, gif, and webp"
+            "unsupported image format; read_image only supports png, jpeg, gif, and webp. To read text files, use the shell tool (for example, cat or type)."
         );
     }
 }
