@@ -335,8 +335,8 @@ impl MessageContentBlock {
         match self {
             MessageContentBlock::Text(text) => !text.text.trim().is_empty(),
             MessageContentBlock::Image(_)
-            | MessageContentBlock::ToolRequest(_)
-            | MessageContentBlock::FrontendToolRequest(_) => true,
+            | MessageContentBlock::Document(_)
+            | MessageContentBlock::ToolRequest(_) => true,
             MessageContentBlock::Thinking(_)
             | MessageContentBlock::RedactedThinking(_)
             | MessageContentBlock::ToolResponse(_)
