@@ -20,36 +20,29 @@ use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
-/// Starts compaction with headroom below OpenAI's long-context price tier
-/// (above 272k input tokens). This is not a maximum request size.
-pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
+/// Without a configured threshold, compaction starts by this many tokens, leaving
+/// headroom below OpenAI's long-context price tier (above 272k input tokens).
+const DEFAULT_AUTO_COMPACT_TOKENS: usize = 225_000;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
-/// The configured threshold, lowered so compaction starts by the token limit.
-pub fn auto_compact_threshold(context_limit: usize) -> f64 {
-    let config = Config::global();
-    capped_compaction_threshold(
-        config
+fn auto_compact_threshold(context_limit: usize) -> f64 {
+    compaction_threshold(
+        Config::global()
             .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
-        config
-            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+            .ok(),
         context_limit,
     )
 }
 
-/// `threshold` of the context, but never more than `token_limit` tokens.
-pub fn capped_compaction_threshold(
-    threshold: f64,
-    token_limit: usize,
-    context_limit: usize,
-) -> f64 {
-    if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
-        return threshold;
-    }
-    threshold.min(token_limit as f64 / context_limit as f64)
+/// A configured threshold wins; otherwise min(80% of the context, 225k tokens).
+pub fn compaction_threshold(configured: Option<f64>, context_limit: usize) -> f64 {
+    configured.unwrap_or_else(|| {
+        if context_limit == 0 {
+            return DEFAULT_COMPACTION_THRESHOLD;
+        }
+        DEFAULT_COMPACTION_THRESHOLD.min(DEFAULT_AUTO_COMPACT_TOKENS as f64 / context_limit as f64)
+    })
 }
 
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
@@ -538,6 +531,13 @@ mod tests {
     use async_trait::async_trait;
     use goose_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
+
+    #[test]
+    fn configured_threshold_wins_over_the_default_token_target() {
+        assert_eq!(compaction_threshold(None, 1_000_000), 0.225);
+        assert_eq!(compaction_threshold(None, 200_000), 0.8);
+        assert_eq!(compaction_threshold(Some(0.9), 1_000_000), 0.9);
+    }
 
     #[test]
     fn summaries_written_before_the_flag_are_still_recognized() {
