@@ -289,6 +289,7 @@ impl<C: ExtensionSpec> ExtensionLease<C> {
                 continue;
             }
             match extension.public_skills(&self.scope_id).await {
+                Ok(skills) if skills.is_empty() => {}
                 Ok(skills) => listed.push(ExtensionSkills {
                     extension_name: extension.config.name(),
                     skills,

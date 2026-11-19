@@ -131,6 +131,7 @@ struct CachedSkills {
 /// invalid ones also use up the budget.
 pub const MAX_SKILL_LIST_PAGES: usize = 64;
 pub const MAX_LISTED_SKILLS_PER_EXTENSION: usize = 1024;
+pub const SKILL_LIST_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// One extension's `skills/list` entries, as the server sent them.
 #[derive(Debug, Clone)]
@@ -304,6 +305,8 @@ impl<C: ExtensionSpec> Extension<C> {
             .is_some()
     }
 
+    /// A failed listing is remembered as empty for `SKILL_LIST_RETRY_AFTER`,
+    /// so a server that times out does not hold up every turn.
     async fn public_skills(&self, scope_id: &str) -> Result<Arc<Vec<Skill>>, ServiceError> {
         {
             let cache = self.skills.lock().await;
@@ -314,6 +317,26 @@ impl<C: ExtensionSpec> Extension<C> {
             }
         }
 
+        let (skills, expires_at, result) = match self.fetch_skills(scope_id).await {
+            Ok((skills, expires_at)) => {
+                let skills = Arc::new(skills);
+                (Arc::clone(&skills), expires_at, Ok(skills))
+            }
+            Err(error) => (
+                Arc::new(Vec::new()),
+                Instant::now() + SKILL_LIST_RETRY_AFTER,
+                Err(error),
+            ),
+        };
+        *self.skills.lock().await = Some(CachedSkills {
+            scope_id: scope_id.to_string(),
+            expires_at,
+            skills,
+        });
+        result
+    }
+
+    async fn fetch_skills(&self, scope_id: &str) -> Result<(Vec<Skill>, Instant), ServiceError> {
         let cancel = CancellationToken::new();
         let mut skills = Vec::new();
         let mut cursor = None;
@@ -353,13 +376,7 @@ impl<C: ExtensionSpec> Extension<C> {
                 None => break,
             }
         }
-        let skills = Arc::new(skills);
-        *self.skills.lock().await = Some(CachedSkills {
-            scope_id: scope_id.to_string(),
-            expires_at: expires_at.unwrap_or_else(Instant::now),
-            skills: Arc::clone(&skills),
-        });
-        Ok(skills)
+        Ok((skills, expires_at.unwrap_or_else(Instant::now)))
     }
 
     /// The extension's tools as the model sees them: filtered by

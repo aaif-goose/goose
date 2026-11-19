@@ -246,6 +246,12 @@ async fn skills_listing_stops_at_the_page_budget() {
         client.list_calls.load(Ordering::SeqCst),
         crate::agents::extension_runtime::MAX_SKILL_LIST_PAGES
     );
+    assert!(lease.skills().await.is_empty());
+    assert_eq!(
+        client.list_calls.load(Ordering::SeqCst),
+        crate::agents::extension_runtime::MAX_SKILL_LIST_PAGES,
+        "a failed listing is not retried within the retry interval"
+    );
 }
 
 #[tokio::test]

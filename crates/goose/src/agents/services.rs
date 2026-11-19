@@ -1152,6 +1152,10 @@ impl StateMachineServices {
         if pending_confirmations.is_empty() && !resume_from_persisted_response {
             return Ok(None);
         }
+        crate::skills::approval::restore_loaded_origins(
+            &session_config.id,
+            conversation.messages(),
+        );
 
         let turn_guard = self
             .runtime

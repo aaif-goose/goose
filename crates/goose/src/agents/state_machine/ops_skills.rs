@@ -13,7 +13,7 @@ use crate::agents::extension_manager::McpLease;
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::StateMachineServices;
 use crate::session::Session;
-use crate::skills::mcp::{self, SkillLoadError, SkillRecord};
+use crate::skills::mcp::{self, PinnedApproval, SkillLoadError, SkillRecord};
 
 pub(crate) const NO_SKILLS_HELP: &str = "No skills installed.\n\n\
     Skills are loaded from SKILL.md files in:\n  \
@@ -178,24 +178,22 @@ impl GooseSkillSource {
         let listed = mcp::listed_skills(session_id).iter().any(|listed| {
             listed.extension_name == manifest.extension_name && listed.uri == manifest.uri
         });
-        match mcp::take_pinned(session_id, &manifest.extension_name, &manifest.uri) {
-            Some(pinned)
-                if pinned.resources != manifest.resources
-                    || pinned.frontmatter != manifest.frontmatter =>
-            {
+        let shown_listing = match mcp::take_pinned(session_id, &manifest) {
+            PinnedApproval::Matched(pin) => Some(pin.listed),
+            PinnedApproval::Changed => {
                 return Err(anyhow!(
                     "Skill '{}' changed after its approval was requested. Load it again to review the change.",
                     skill.name
                 ));
             }
-            None if listed => {
+            PinnedApproval::Missing if listed => {
                 return Err(anyhow!(
                     "The approval for skill '{}' is no longer available. Load it again to review it.",
                     skill.name
                 ));
             }
-            _ => {}
-        }
+            PinnedApproval::Missing => None,
+        };
         let markdown = match lease
             .read_skill_resource(
                 &manifest.extension_name,
@@ -237,7 +235,7 @@ impl GooseSkillSource {
         let tagged = mcp::origin_tagged_context(&manifest.extension_name, &manifest.uri, &rendered);
         self.services
             .skill_baselines
-            .approve(&manifest, Some(&mcp::listed_skills(session_id)));
+            .approve(&manifest, shown_listing.as_deref());
         mcp::hold_skill(session_id, manifest);
         Ok(vec![ContentBlock::text(tagged)])
     }
@@ -324,7 +322,8 @@ mod tests {
 
     /// What the approval inspector does when it prompts for a listed skill.
     fn pin_listed(session: &Session) {
-        mcp::pin_for_approval(&session.id, mcp::listed_skills(&session.id).remove(0));
+        let listed = mcp::listed_skills(&session.id);
+        mcp::pin_for_approval(&session.id, listed[0].clone(), listed);
     }
 
     fn text(blocks: &[ContentBlock]) -> &str {
@@ -378,7 +377,7 @@ mod tests {
         seen_in_prompt
             .frontmatter
             .insert("allowed-tools".to_string(), "Read".into());
-        mcp::pin_for_approval(&session.id, seen_in_prompt);
+        mcp::pin_for_approval(&session.id, seen_in_prompt, vec![listed.clone()]);
         let error = source
             .load_external(&session, &skills, "billing-server::billing", None)
             .await
@@ -390,7 +389,7 @@ mod tests {
             crate::skills::baseline::Grade::New
         );
 
-        mcp::pin_for_approval(&session.id, listed.clone());
+        mcp::pin_for_approval(&session.id, listed.clone(), vec![listed.clone()]);
         source
             .load_external(&session, &skills, "billing-server::billing", None)
             .await
@@ -401,6 +400,57 @@ mod tests {
             crate::skills::baseline::Grade::Unchanged
         );
         mcp::clear_held_skills(&session.id);
+    }
+
+    #[tokio::test]
+    async fn each_approved_load_of_the_same_skill_uses_its_own_pin() {
+        let client = Arc::new(SkillClient::new());
+        let (source, session) = source_with_skill_server("skills-twice", Arc::clone(&client)).await;
+        let skills = source.skills(&session).await.unwrap();
+        pin_listed(&session);
+        pin_listed(&session);
+
+        for args in [Some("first"), Some("second")] {
+            source
+                .load_external(&session, &skills, "billing-server::billing", args)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        let third = source
+            .load_external(&session, &skills, "billing-server::billing", None)
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(third.to_string().contains("no longer available"));
+        mcp::clear_session(&session.id);
+    }
+
+    #[tokio::test]
+    async fn the_approval_records_the_listing_the_prompt_showed() {
+        let client = Arc::new(SkillClient::new());
+        let (source, session) =
+            source_with_skill_server("skills-shown-surface", Arc::clone(&client)).await;
+        let skills = source.skills(&session).await.unwrap();
+        let listed = mcp::listed_skills(&session.id).remove(0);
+        pin_listed(&session);
+
+        let mut sibling = listed.clone();
+        sibling.uri = "skill://acme/refunds/SKILL.md".to_string();
+        sibling.name = "refunds".to_string();
+        mcp::remember_listing(&session.id, &[listed.clone(), sibling.clone()]);
+        source
+            .load_external(&session, &skills, "billing-server::billing", None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let surface = source
+            .services
+            .skill_baselines
+            .surface_change("billing-server", &[listed, sibling]);
+        assert_eq!(surface.added, ["refunds"]);
+        mcp::clear_session(&session.id);
     }
 
     #[tokio::test]

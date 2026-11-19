@@ -103,9 +103,22 @@ pub fn active_origins(session_id: &str) -> Vec<String> {
 static LISTED_SKILLS: LazyLock<StdMutex<HashMap<String, Vec<SkillRecord>>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
-/// The record an approval prompt was graded on, so the load that follows can
-/// refuse content that changed after the user saw the prompt.
-static PINNED_FOR_APPROVAL: LazyLock<StdMutex<HashMap<HeldSkillKey, SkillRecord>>> =
+/// What an approval prompt showed: the record it was graded on and the
+/// listing its surface diff came from. One per prompt, so several approved
+/// loads of the same skill in one response each find their own.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApprovalPin {
+    pub skill: SkillRecord,
+    pub listed: Vec<SkillRecord>,
+}
+
+pub enum PinnedApproval {
+    Matched(Box<ApprovalPin>),
+    Changed,
+    Missing,
+}
+
+static PINNED_FOR_APPROVAL: LazyLock<StdMutex<HashMap<HeldSkillKey, Vec<ApprovalPin>>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 pub fn remember_listing(session_id: &str, skills: &[SkillRecord]) {
@@ -124,21 +137,51 @@ pub fn listed_skills(session_id: &str) -> Vec<SkillRecord> {
         .unwrap_or_default()
 }
 
-pub fn pin_for_approval(session_id: &str, skill: SkillRecord) {
+pub fn pin_for_approval(session_id: &str, skill: SkillRecord, listed: Vec<SkillRecord>) {
     PINNED_FOR_APPROVAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(
-            held_skill_key(session_id, &skill.extension_name, &skill.uri),
-            skill,
-        );
+        .entry(held_skill_key(
+            session_id,
+            &skill.extension_name,
+            &skill.uri,
+        ))
+        .or_default()
+        .push(ApprovalPin { skill, listed });
 }
 
-pub fn take_pinned(session_id: &str, extension_name: &str, uri: &str) -> Option<SkillRecord> {
+/// Consumes the pin whose record matches what the server served. When pins
+/// exist but none match, the oldest is consumed so a refused load does not
+/// leave its approval behind.
+pub fn take_pinned(session_id: &str, served: &SkillRecord) -> PinnedApproval {
+    let mut pinned = PINNED_FOR_APPROVAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let key = held_skill_key(session_id, &served.extension_name, &served.uri);
+    let Some(pins) = pinned.get_mut(&key) else {
+        return PinnedApproval::Missing;
+    };
+    let matching = pins.iter().position(|pin| {
+        pin.skill.resources == served.resources && pin.skill.frontmatter == served.frontmatter
+    });
+    let result = match matching {
+        Some(index) => PinnedApproval::Matched(Box::new(pins.remove(index))),
+        None => {
+            pins.remove(0);
+            PinnedApproval::Changed
+        }
+    };
+    if pins.is_empty() {
+        pinned.remove(&key);
+    }
+    result
+}
+
+pub fn discard_pins(session_id: &str, extension_name: &str, uri: &str) {
     PINNED_FOR_APPROVAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&held_skill_key(session_id, extension_name, uri))
+        .remove(&held_skill_key(session_id, extension_name, uri));
 }
 
 pub fn clear_session(session_id: &str) {
@@ -700,16 +743,29 @@ fn labelled_description(skill: &SkillRecord, collision: bool) -> String {
 }
 
 /// Supporting files relative to the skill's directory, in manifest order.
+/// Supporting files as `load_skill` paths: only those that resolve back to
+/// the listed URI, so every advertised path is one goose can read.
 pub fn relative_supporting_files(skill: &SkillRecord) -> Vec<String> {
-    let (SkillResources::Files(files), Some(root)) =
-        (&skill.resources, skill.uri.strip_suffix("SKILL.md"))
-    else {
+    let SkillResources::Files(files) = &skill.resources else {
+        return Vec::new();
+    };
+    let root = match skill.uri.strip_prefix("skill://") {
+        Some(_) => skill.uri.strip_suffix("SKILL.md").map(str::to_string),
+        None => reqwest::Url::parse(&skill.uri)
+            .and_then(|uri| uri.join("./"))
+            .ok()
+            .map(String::from),
+    };
+    let Some(root) = root else {
         return Vec::new();
     };
     files
         .iter()
         .filter(|file| file.uri != skill.uri)
-        .filter_map(|file| file.uri.strip_prefix(root).map(str::to_string))
+        .filter_map(|file| {
+            let relative = file.uri.strip_prefix(root.as_str())?;
+            (resolve_relative_uri(skill, relative).ok()? == file.uri).then(|| relative.to_string())
+        })
         .collect()
 }
 
@@ -1276,6 +1332,44 @@ mod tests {
             ]),
         };
         assert_eq!(relative_supporting_files(&skill), ["references/GUIDE.md"]);
+    }
+
+    #[test]
+    fn supporting_files_of_generic_uris_resolve_back_to_their_listing() {
+        let files = |uri: &str, children: &[&str]| SkillRecord {
+            uri: uri.to_string(),
+            name: "billing".to_string(),
+            description: "Billing".to_string(),
+            frontmatter: Map::new(),
+            extension_name: "server".to_string(),
+            resources: SkillResources::Files(
+                std::iter::once(uri)
+                    .chain(children.iter().copied())
+                    .map(|child| SkillResource::from_bytes(child, b"x"))
+                    .collect(),
+            ),
+        };
+
+        let skill = files(
+            "https://host/billing/SKILL.md?rev=1",
+            &[
+                "https://host/billing/notes.md",
+                "https://host/billing/raw?rev=1",
+            ],
+        );
+        let paths = relative_supporting_files(&skill);
+        assert_eq!(paths, ["notes.md"]);
+        assert_eq!(
+            resolve_relative_uri(&skill, &paths[0]).unwrap(),
+            "https://host/billing/notes.md"
+        );
+        assert_eq!(
+            relative_supporting_files(&files(
+                "https://host/billing",
+                &["https://host/guide/GUIDE.md"]
+            )),
+            ["guide/GUIDE.md"]
+        );
     }
 
     #[test]

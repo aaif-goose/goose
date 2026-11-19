@@ -36,6 +36,12 @@ pub(crate) fn requested_mcp_skill(request: &ToolRequest) -> Option<&str> {
 
 /// Origins of MCP skills whose instructions a successful `load_skill` put in
 /// the conversation, so the acting window survives a reopened session.
+/// Rebuilds which servers' skill instructions are in context from the
+/// conversation, for a process that did not see those loads happen.
+pub fn restore_loaded_origins(session_id: &str, messages: &[Message]) {
+    mcp::restore_origins(session_id, loaded_origins(messages));
+}
+
 fn loaded_origins(messages: &[Message]) -> Vec<String> {
     let requests: HashMap<&str, &str> = messages
         .iter()
@@ -75,7 +81,7 @@ impl McpSkillApprovalInspector {
         let name_label = mcp::context_label(name);
         let Some((skill, relative_path)) = mcp::listed_skill_for_request(session_id, name) else {
             if let Some((extension, uri)) = mcp::direct_skill_reference(name) {
-                mcp::take_pinned(session_id, extension, uri);
+                mcp::discard_pins(session_id, extension, uri);
             }
             return format!(
                 "Load MCP skill `{name_label}`?\n\n{LOAD_NOTICE}\n\nThis skill is not in the server's current listing, so goose cannot compare it with what you approved before."
@@ -116,9 +122,10 @@ impl McpSkillApprovalInspector {
                 }
             }
         }
+        let listed = mcp::listed_skills(session_id);
         let surface = self
             .baselines
-            .surface_change(&skill.extension_name, &mcp::listed_skills(session_id));
+            .surface_change(&skill.extension_name, &listed);
         if !surface.is_empty() {
             prompt.push_str(&format!(
                 "\n\nSince your last approval `{origin}` also {}.",
@@ -133,7 +140,7 @@ impl McpSkillApprovalInspector {
                     .join(" and ")
             ));
         }
-        mcp::pin_for_approval(session_id, skill);
+        mcp::pin_for_approval(session_id, skill, listed);
         prompt
     }
 }
@@ -155,7 +162,7 @@ impl ToolInspector for McpSkillApprovalInspector {
         messages: &[Message],
         _goose_mode: GooseMode,
     ) -> Result<Vec<InspectionResult>> {
-        mcp::restore_origins(session_id, loaded_origins(messages));
+        restore_loaded_origins(session_id, messages);
         let origins: Vec<String> = mcp::active_origins(session_id)
             .iter()
             .map(|origin| mcp::context_label(origin))
@@ -240,10 +247,11 @@ mod tests {
             .await
             .unwrap();
         assert!(prompt_of(&first[0]).contains("You have not approved this skill before."));
-        assert_eq!(
-            mcp::take_pinned(session, "acme", &original.uri).as_ref(),
-            Some(&original)
-        );
+        assert!(matches!(
+            mcp::take_pinned(session, &original),
+            mcp::PinnedApproval::Matched(pin)
+                if pin.skill == original && pin.listed == [original.clone()]
+        ));
 
         baselines.approve(&original, Some(std::slice::from_ref(&original)));
         let mut sleeper = listed("sleeper");

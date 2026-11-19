@@ -207,4 +207,48 @@ mod tests {
             Some(PermissionLevel::AlwaysAllow)
         );
     }
+
+    #[tokio::test]
+    async fn a_resumed_confirmation_does_not_save_a_standing_allow_for_a_loaded_skill() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let services = StateMachineServices::for_tool_tests(data_dir.path().to_path_buf());
+        let approval = GooseToolApproval::new(&services.tool_inspection_manager);
+        let session = Session {
+            id: "approval-resumed".to_string(),
+            ..Session::default()
+        };
+        let load = request(
+            oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME,
+            object!({ "name": "server::billing" }),
+        );
+        let conversation = [
+            crate::conversation::message::Message::assistant()
+                .with_tool_request(&load.id, Ok(load.tool_call.clone().unwrap())),
+            crate::conversation::message::Message::user().with_tool_response(
+                &load.id,
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    rmcp::model::ContentBlock::text(crate::skills::mcp::origin_tagged_context(
+                        "server",
+                        "skill://billing/SKILL.md",
+                        "Do the work.",
+                    )),
+                ])),
+            ),
+        ];
+
+        crate::skills::approval::restore_loaded_origins(&session.id, &conversation);
+        approval
+            .on_confirmation(
+                &session,
+                &request("shell", object!({ "command": "ls" })),
+                &Permission::AlwaysAllow,
+            )
+            .await
+            .unwrap();
+        assert!(services
+            .permission_manager
+            .get_user_permission("shell")
+            .is_none());
+        crate::skills::mcp::clear_session(&session.id);
+    }
 }
