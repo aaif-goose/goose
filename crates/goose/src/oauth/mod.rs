@@ -366,8 +366,33 @@ fn stored_grant_use(
     }
 }
 
+/// Whether a refresh failed because the authorization server is unreachable or
+/// failing, rather than refusing this client or request.
+///
+/// rmcp reports every failure except `invalid_grant` as `TokenRefreshFailed`
+/// with oauth2's message, which drops the HTTP status. A deleted client
+/// (`invalid_client`) is among them and only a new authorization recovers it,
+/// so only messages known to mean a server failure count; anything else keeps
+/// re-authorizing.
+fn is_transient_refresh_failure(error: &AuthError) -> bool {
+    const SERVER_FAILURES: [&str; 5] = [
+        "Request failed",
+        "Failed to parse server response",
+        "Other error: server returned empty error response",
+        "Server returned error response: temporarily_unavailable",
+        "Server returned error response: server_error",
+    ];
+    let AuthError::TokenRefreshFailed(message) = error else {
+        return false;
+    };
+    SERVER_FAILURES
+        .iter()
+        .any(|failure| message.starts_with(failure))
+}
+
 /// Builds a manager over the stored grant, refreshing it when needed. Returns
-/// `None` when the grant cannot be used and a new authorization is required.
+/// `None` when the grant cannot be used and a new authorization is required,
+/// and an error when the authorization server is failing.
 async fn reuse_stored_grant(
     mcp_server_url: &str,
     name: &str,
@@ -395,6 +420,9 @@ async fn reuse_stored_grant(
 
     let mut token_response = match auth_manager.refresh_token().await {
         Ok(token_response) => token_response,
+        // Keep the credentials and fail this attempt: a browser login could not
+        // finish either, since its code exchange uses the same token endpoint.
+        Err(e) if is_transient_refresh_failure(&e) => return Err(e.into()),
         Err(e) => {
             warn!("[OAuth:{}] Token refresh failed: {}", name, e);
             return Ok(None);
@@ -422,7 +450,8 @@ async fn reuse_stored_grant(
 /// Authorizes an MCP connection. Without `rejected`, only the stored grant is
 /// used (refreshed if needed) and no browser is opened. With it, a grant
 /// another session stored while this one waited is reused when it answers the
-/// refusal; otherwise the browser authorization flow runs.
+/// refusal; otherwise the browser authorization flow runs. A refresh that fails
+/// because the authorization server is failing never opens the browser.
 pub async fn oauth_flow(
     mcp_server_url: &str,
     name: &str,
@@ -1045,6 +1074,87 @@ mod tests {
             ),
             StoredGrantUse::Reauthorize
         );
+    }
+
+    async fn refresh_error_from(authorization_server: &str) -> AuthError {
+        use rmcp::transport::auth::{AuthorizationMetadata, InMemoryCredentialStore};
+
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(stored_grant("access", &[], now()))
+            .await
+            .unwrap();
+        let mut manager = AuthorizationManager::new(authorization_server)
+            .await
+            .unwrap();
+        manager.with_client(reqwest::Client::new()).unwrap();
+        let mut metadata = AuthorizationMetadata::default();
+        metadata.authorization_endpoint = format!("{authorization_server}/authorize");
+        metadata.token_endpoint = format!("{authorization_server}/token");
+        manager.set_metadata(metadata);
+        manager.configure_client_id("client-id").unwrap();
+        manager.set_credential_store(store);
+        manager.refresh_token().await.unwrap_err()
+    }
+
+    // Runs the real rmcp + oauth2 stack, so a change in how either words these
+    // failures fails here instead of silently changing which ones re-authorize.
+    #[tokio::test]
+    async fn only_a_failing_authorization_server_makes_a_refresh_failure_transient() {
+        use serde_json::json;
+        use wiremock::{matchers::path, Mock, MockServer, ResponseTemplate};
+
+        let cases = [
+            (
+                "unavailable",
+                ResponseTemplate::new(503)
+                    .set_body_json(json!({ "error": "temporarily_unavailable" })),
+                true,
+            ),
+            (
+                "server error",
+                ResponseTemplate::new(500)
+                    .set_body_json(json!({ "error": "server_error", "error_description": "down" })),
+                true,
+            ),
+            (
+                "proxy error page",
+                ResponseTemplate::new(502).set_body_string("<html>Bad Gateway</html>"),
+                true,
+            ),
+            ("empty error body", ResponseTemplate::new(503), true),
+            (
+                "deleted client",
+                ResponseTemplate::new(401).set_body_json(json!({ "error": "invalid_client" })),
+                false,
+            ),
+            (
+                "unsupported scope",
+                ResponseTemplate::new(400).set_body_json(json!({ "error": "invalid_scope" })),
+                false,
+            ),
+            (
+                "revoked grant",
+                ResponseTemplate::new(400).set_body_json(json!({ "error": "invalid_grant" })),
+                false,
+            ),
+        ];
+        for (case, response, transient) in cases {
+            let server = MockServer::start().await;
+            Mock::given(path("/token"))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+            let error = refresh_error_from(&server.uri()).await;
+            assert_eq!(
+                is_transient_refresh_failure(&error),
+                transient,
+                "{case}: {error}"
+            );
+        }
+
+        let unreachable = refresh_error_from("http://127.0.0.1:1").await;
+        assert!(is_transient_refresh_failure(&unreachable), "{unreachable}");
     }
 
     #[tokio::test]

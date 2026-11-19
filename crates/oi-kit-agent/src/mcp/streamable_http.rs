@@ -646,10 +646,7 @@ pub(super) async fn connect(
             ))
         }
         Err(e) => {
-            warn!(
-                "[OAuth:{}] Browser authorization flow failed: {:#}",
-                name, e
-            );
+            warn!("[OAuth:{}] Authorization failed: {:#}", name, e);
             Err(fallback_error)
         }
     }
