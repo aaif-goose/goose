@@ -1,13 +1,13 @@
 ---
-title: Build an app with goose
-sidebar_label: Build an app with goose
+title: Build an app over ACP
+sidebar_label: Build an app over ACP
 description: Launch goose from your application, send prompts, and stream responses over ACP.
 displayed_sidebar: gdkSidebar
 ---
 
-# Build an app with goose
+# Build an app over ACP
 
-If your application needs an agent, you do not have to assemble one from GDK
+If your application needs an agent, you do not have to assemble one from oi-kit
 components. You can launch the pre-built goose binary and talk to it over the
 [Agent Client Protocol (ACP)](https://agentclientprotocol.com/).
 
@@ -168,11 +168,11 @@ for authentication and origin flags, and the
 
 ## Examples and reference
 
-- [Top Goose](/docs/gdk/demos/top-goose) maps GitHub issues and pull requests to
+- [Top Goose](/docs/oi-kit/demos/top-goose) maps GitHub issues and pull requests to
   persistent conversations with a `goose acp` subprocess.
-- [Berd](/docs/gdk/demos/berd) builds a custom desktop interface around a bundled
+- [Berd](/docs/oi-kit/demos/berd) builds a custom desktop interface around a bundled
   `goose serve` backend over WebSocket.
 - The [ACP protocol reference](https://agentclientprotocol.com/protocol/v1/overview)
   defines initialization, sessions, prompts, updates, permissions, and cancellation.
-- The [goose ACP reference](/docs/gdk/acp/reference) documents goose-specific
+- The [ACP extensions reference](/docs/oi-kit/acp/reference) documents goose-specific
   methods and types.

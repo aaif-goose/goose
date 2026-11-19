@@ -41,6 +41,13 @@ module.exports = function markdownExportPlugin(context, options) {
         fs.writeFileSync(outputPath, cleaned);
       }
       
+      // GitHub Pages cannot redirect Markdown requests without returning HTML.
+      for (const file of await globby('oi-kit/**/*.md', { cwd: outputDir })) {
+        const legacyPath = path.join(outputDir, file.replace(/^oi-kit\//, 'gdk/'));
+        fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+        fs.copyFileSync(path.join(outputDir, file), legacyPath);
+      }
+
       console.log(`[markdown-export] Successfully exported ${files.length} markdown files to ${outputDir}`);
     },
   };

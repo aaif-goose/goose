@@ -8,7 +8,7 @@ import ProvidersDiagram from "@site/static/img/gdk/providers.svg";
 
 # Providers
 
-A provider connects your application to a model backend. It translates GDK
+A provider connects your application to a model backend. It translates oi-kit
 messages and tool definitions into the backend's request format, and translates
 the response back into shared message and usage types. The rest of your agent
 does not need to speak each service's wire protocol.
@@ -16,13 +16,13 @@ does not need to speak each service's wire protocol.
 The provider and model are separate choices. A provider knows how to reach a
 service; `ModelConfig` selects a model and request settings. You can use a
 provider directly for a completion, or pass it to an `InferenceRunner` in a
-[state machine](/docs/gdk/concepts/state-machine).
+[state machine](/docs/oi-kit/concepts/state-machine).
 
 <ProvidersDiagram />
 
 ## The provider contract
 
-The `Provider` trait lives in `goose-provider-types`. Its central method is
+The `Provider` trait lives in `oi-kit-provider-types`. Its central method is
 `stream`: given a model configuration, system prompt, conversation messages,
 and tool schemas, it returns a `MessageStream`. Text can arrive in small chunks;
 tool calls are emitted once their arguments have been assembled. The stream can
@@ -35,16 +35,16 @@ does not mean every model supports the same content or tools: choose a model
 that supports the capabilities your application needs.
 
 For example, inside an async Rust function returning `anyhow::Result`, a direct
-completion can look like this. Enable a TLS feature on `goose-providers` for
+completion can look like this. Enable a TLS feature on `oi-kit-providers` for
 the HTTPS connection:
 
 ```rust
-use goose_provider_types::{
+use oi_kit_provider_types::{
     base::Provider,
     conversation::message::Message,
     model::ModelConfig,
 };
-use goose_providers::{
+use oi_kit_providers::{
     api_client::{ApiClient, AuthMethod},
     openai::OpenAiProvider,
 };
@@ -65,11 +65,11 @@ let (reply, usage) = provider
 
 This is a model call, not an agent run. Supplying tool schemas lets a model
 request tools; it does not execute them. Tool execution belongs to your
-application or an [operation](/docs/gdk/concepts/operations).
+application or an [operation](/docs/oi-kit/concepts/operations).
 
-## Implementations that ship with GDK
+## Implementations that ship with oi-kit {#implementations-that-ship-with-gdk}
 
-`goose-providers` includes implementations for OpenAI, Anthropic, Google Gemini,
+`oi-kit-providers` includes implementations for OpenAI, Anthropic, Google Gemini,
 Azure AI Foundry, Databricks, Snowflake, OpenRouter, Ollama, and OpenAI-compatible
 endpoints. It re-exports the shared provider types, so applications using these
 implementations can import their common types from the same crate.
@@ -80,9 +80,9 @@ interfaces for live sessions and voice, and for typed decision requests. Those
 serve different interaction patterns; they are not all interchangeable calls
 to the text-completion `Provider` trait.
 
-The [provider reference](https://docs.rs/goose-providers/latest/goose_providers/)
+The [provider reference](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/)
 lists the available modules and feature flags. Credentials and HTTP authentication
-are covered in [Authentication](/docs/gdk/concepts/authentication).
+are covered in [Authentication](/docs/oi-kit/concepts/authentication).
 
 ## Declarative providers
 
@@ -127,7 +127,7 @@ There are two ways to use models running on the same machine:
 | Approach                   | What your application connects to                                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local model server         | An Ollama or OpenAI-compatible HTTP endpoint, such as one exposed by LM Studio. The server owns model loading and inference.                                        |
-| In-process local inference | `LocalInferenceProvider` from `goose-local-inference`, available through the `local-inference` feature on `goose-providers`. Your process loads and runs the model. |
+| In-process local inference | `LocalInferenceProvider` from `oi-kit-local-inference`, available through the `local-inference` feature on `oi-kit-providers`. Your process loads and runs the model. |
 
 In-process inference uses llama.cpp for GGUF models, with optional MLX support
 on Apple silicon. Models can be selected by a local file path; optional Hugging
@@ -138,7 +138,7 @@ requirements.
 With local inference enabled, the provider still implements the same contract:
 
 ```rust
-use goose_providers::local_inference::LocalInferenceProvider;
+use oi_kit_providers::local_inference::LocalInferenceProvider;
 
 let provider = LocalInferenceProvider::from_env().await?;
 let model = ModelConfig::new("/absolute/path/to/model.gguf");
@@ -148,9 +148,9 @@ You can call `stream` or `complete`, or use it for agent inference as above.
 Local placement does not guarantee a model fits in memory or supports reliable
 tool calling. The local-inference crate handles chat templates, parsing, model
 residency, and eviction; your application still chooses the model and when to
-use it. [lifewiki](/docs/gdk/demos/lifewiki) is an example with an offline path.
+use it. [lifewiki](/docs/oi-kit/demos/lifewiki) is an example with an offline path.
 
-See the [local-inference reference](/docs/gdk/reference#goose-local-inference)
+See the [local-inference reference](/docs/oi-kit/reference#oi-kit-local-inference)
 for the engine, features, and model-management APIs.
 
 ## Implementing your own provider
@@ -158,10 +158,10 @@ for the engine, features, and model-management APIs.
 Write a provider when a backend's protocol or behavior cannot be represented
 by an existing implementation or declarative definition. Implement `get_name`
 and `stream`; `complete` and several discovery methods have defaults. Depend on
-`goose-provider-types` if you only need that contract, and use the request and
-formatting helpers from `goose-providers` where they fit.
+`oi-kit-provider-types` if you only need that contract, and use the request and
+formatting helpers from `oi-kit-providers` where they fit.
 
-Normalize the backend's output into GDK messages, assemble tool calls before
+Normalize the backend's output into oi-kit messages, assemble tool calls before
 emitting them, preserve usage information, and map failures into `ProviderError`.
 Report capabilities and context limits honestly rather than assuming that a
 successful text response implies support for tools, images, or reasoning.
@@ -169,6 +169,6 @@ Provider-specific authentication can remain separate through `ApiClient` and
 `AuthProvider`.
 
 The full trait is in
-[`goose-provider-types::base`](https://docs.rs/goose-provider-types/latest/goose_provider_types/base/).
+[`oi-kit-provider-types::base`](https://docs.rs/oi-kit-provider-types/latest/oi_kit_provider_types/base/).
 For an existing implementation to read, start with the
-[provider source](https://github.com/aaif-goose/goose/tree/main/crates/goose-providers/src).
+[provider source](https://github.com/aaif-goose/goose/tree/main/crates/oi-kit-providers/src).

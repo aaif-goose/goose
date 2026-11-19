@@ -8,14 +8,14 @@ import styles from "./styles.module.css";
 export default function NavbarLogo(): ReactNode {
   const isGdk = useGdkNavigation();
   return isGdk ? (
-    <Link className="navbar__brand margin-right--md" to="/docs/gdk">
+    <Link className="navbar__brand margin-right--md" to="/docs/oi-kit">
       <GooseLogo
         aria-hidden="true"
         width={28}
         height={28}
         className={`${styles.mark} margin-right--sm`}
       />
-      <b className="navbar__title">GDK</b>
+      <b className="navbar__title">oi-kit</b>
     </Link>
   ) : (
     <OriginalNavbarLogo />

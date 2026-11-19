@@ -10,8 +10,8 @@ Perception periodically captures the desktop and turns what it observes into a
 linked personal wiki about projects, people, and daily activity. A local web
 interface lets you browse, search, and edit the result.
 
-Built with **goose over ACP**, using the TypeScript `@aaif/goose-sdk` client.
-The application does not embed the Rust GDK runtime.
+Built with **goose over ACP**, using the TypeScript `@aaif/goose-acp-client` client.
+The application does not embed the Rust oi-kit runtime.
 
 [Source](https://github.com/DOsinga/goose_perception)
 
