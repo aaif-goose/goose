@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "自主"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "與選定的供應商互動，不使用工具或擴充功能。"
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "僅對話"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "所有工具、擴充功能與檔案修改都需要人工核准"
   },
@@ -3967,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "選擇 goose 的顯示語言"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "荷蘭語"
   },
   "settings.language.english": {
     "defaultMessage": "English"

@@ -1,7 +1,11 @@
 use anyhow::Result;
 
 use super::calculator_extension::{value, ADD};
+#[cfg(feature = "tree-sitter")]
+use super::pipeline::MessageKind::Error;
 use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
+#[cfg(feature = "tree-sitter")]
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
@@ -35,12 +39,11 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     use super::calculator_extension::REQUEST_VALUE;
     use super::dummy_api::ProviderFeatures;
     use super::pipeline::test_pipeline_with;
-    use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
     use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
-    use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
     use crate::config::GooseMode;
     use crate::recipe::{Recipe, Response};
-    use goose_providers::model::ModelConfig;
+    use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+    use oi_kit_providers::model::ModelConfig;
 
     let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         cache_read_tokens: Some(11),
@@ -67,11 +70,11 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         .description("Persists across pipeline reconstruction")
         .instructions("Return a structured answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "answer": { "type": "string" } },
                 "required": ["answer"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -80,7 +83,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let pipeline = pipeline
         .with_model_config(model_config)
         .await
-        .with_goose_mode(GooseMode::Chat)
+        .with_goose_mode(GooseMode::Approve)
         .await;
 
     let pipeline = pipeline.reconstruct().await?.with_max_turns(2);
@@ -94,7 +97,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         Some("gpt-4o")
     );
     assert_eq!(pipeline.context_limit(), 128_000);
-    assert_eq!(restored.goose_mode, GooseMode::Chat);
+    assert_eq!(restored.goose_mode, GooseMode::Approve);
     assert_eq!(
         restored.recipe.as_ref().map(|recipe| recipe.title.as_str()),
         Some("Persisted recipe")
@@ -121,23 +124,6 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let restored_auto = pipeline.run(["collect restored structured state"]).await?;
     restored_auto.assert_message(-1, Agent, r#"{"answer":"state restored"}"#);
 
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    pipeline
-        .session_manager
-        .update(&pipeline.session_id)
-        .recipe(None)
-        .apply()
-        .await?;
-    let pipeline = pipeline.reconstruct().await?;
-    api.on("try the restored calculator").call(ADD, value(1));
-    let next_tool_call_id = format!("dummy-tool-call-{}", api.call_count() + 1);
-    api.on(next_tool_call_id)
-        .reply("chat mode kept the tool idle");
-    let chat = pipeline.run(["try the restored calculator"]).await?;
-    chat.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
-    chat.assert_message(-1, Agent, "chat mode kept the tool idle");
-    assert_eq!(pipeline.calculator_total(), 0);
-
     let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     let pipeline = pipeline.reconstruct().await?.with_max_turns(2);
     api.on("keep adding").call(ADD, value(1));
@@ -145,7 +131,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let bounded = pipeline.run(["keep adding"]).await?;
     assert_eq!(api.call_count() - calls_before, 2);
     assert_eq!(pipeline.calculator_total(), 2);
-    bounded.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    bounded.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     let restored = pipeline.session().await?;
     assert_eq!(restored.usage.cache_read_input_tokens, Some(11));

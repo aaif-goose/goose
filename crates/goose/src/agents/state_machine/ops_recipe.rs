@@ -1,20 +1,21 @@
 //! Applies recipe commands and recipe instructions.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
-use crate::agents::extension_manager::ExtensionManager;
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, yielded_with, Command, ConversationEffect, Emitter,
+    GooseEffect, Operation, OperationResult,
 };
+use crate::agents::StateMachineServices;
 use crate::config::extensions::is_extension_available;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
+use crate::slash_commands::recipe_slash_command::{build_recipe, recipe_entry, runnable_recipes};
 
 pub(super) fn command_error(
     conversation: &Conversation,
@@ -47,39 +48,30 @@ pub(super) fn command_error(
 }
 
 pub struct RecipeOperation {
-    extension_manager: Arc<ExtensionManager>,
+    services: Arc<StateMachineServices>,
 }
 
 impl RecipeOperation {
-    pub fn new(extension_manager: Arc<ExtensionManager>) -> Self {
-        Self { extension_manager }
-    }
-}
-
-#[async_trait]
-impl Operation<Session, GooseEffect> for RecipeOperation {
-    fn name(&self) -> &'static str {
-        "recipe"
+    pub fn new(services: Arc<StateMachineServices>) -> Self {
+        Self { services }
     }
 
-    async fn run_command(
+    async fn run_recipe(
         &self,
-        command: &SlashCommand<'_>,
+        name: String,
+        recipe_path: PathBuf,
+        arguments: &str,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let (recipe, prompt) = match crate::slash_commands::recipe_slash_command::resolve_command(
-            command.command,
-            command.params_str,
-        ) {
-            Ok(Some(recipe)) => recipe,
-            Ok(None) => return not_applicable(),
+        let (recipe, prompt) = match build_recipe(&name, &recipe_path, arguments) {
+            Ok(recipe) => recipe,
             Err(error) => return command_error(conversation, error, emit),
         };
 
-        if let Some(response) = recipe.response.clone() {
-            if let Err(error) = FinalOutputTool::try_new(response) {
+        if let Some(response) = &recipe.response {
+            if let Err(error) = response.validate() {
                 return command_error(conversation, format!("Recipe is not valid: {error}"), emit);
             }
         }
@@ -91,8 +83,8 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
             .filter(|extension| is_extension_available(extension))
         {
             if let Err(error) = self
-                .extension_manager
-                .enable(&session.id, extension.clone())
+                .services
+                .enable_extension(&session.id, extension.clone())
                 .await
             {
                 return command_error(
@@ -129,6 +121,37 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 .with_visibility(false, true)
                 .into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for RecipeOperation {
+    fn name(&self) -> &'static str {
+        "recipe"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        Ok(runnable_recipes()
+            .into_iter()
+            .map(|(name, recipe_path)| {
+                let (description, input_hint) = match recipe_entry(&recipe_path) {
+                    Some(metadata) => (metadata.description, metadata.input_hint),
+                    None => (String::new(), None),
+                };
+                let mut command = Command::new(name.clone(), description, move |call| {
+                    Box::pin(self.run_recipe(
+                        name.clone(),
+                        recipe_path.clone(),
+                        call.arguments,
+                        call.session,
+                        call.conversation,
+                        call.emit,
+                    ))
+                });
+                command.input_hint = input_hint;
+                command
+            })
+            .collect())
     }
 
     async fn prompt_parts(

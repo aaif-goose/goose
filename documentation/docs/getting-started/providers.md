@@ -33,7 +33,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [ChatGPT Codex](https://chatgpt.com/codex) | Access GPT-5 Codex models optimized for code generation and understanding. **Requires a ChatGPT Plus/Pro subscription.** | No manual key. Uses browser-based OAuth authentication for both CLI and Desktop. |
 | [Databricks](https://www.databricks.com/)                                   | Unified data analytics and AI platform for building and deploying models.                                                                                                                                                 | `DATABRICKS_HOST`, `DATABRICKS_TOKEN` |
 | [Docker Model Runner](https://docs.docker.com/ai/model-runner/)                             | Local models running in Docker Desktop or Docker CE with OpenAI-compatible API endpoints. **Because this provider runs locally, you must first [download a model](#local-llms).**                     | `OPENAI_HOST`, `OPENAI_BASE_PATH`   |
-| [EmpirioLabs AI](https://empiriolabs.ai/)                                      | Frontier open and proprietary chat models (Qwen, DeepSeek, GLM, Kimi, MiniMax) through one OpenAI-compatible API with streaming. Catalog available at `https://api.empiriolabs.ai/v1/models`.        | `EMPIRIOLABS_API_KEY`                                                                                                                                                              |
+| [EmpirioLabs AI](https://empiriolabs.ai/)                                      | Specialized AI model hosting for open, proprietary, and custom stacks, with streaming chat models. Catalog available at `https://api.empiriolabs.ai/v1/models`.        | `EMPIRIOLABS_API_KEY`                                                                                                                                                              |
 | [Friendli AI](https://friendli.ai/)                                            | Friendli Model APIs provide instant access to a curated set of models, powered by a proprietary inference stack called [Friendli Engine](https://friendli.ai/why-friendliai) for high-performance, cost-efficient inference.               | `FRIENDLI_API_KEY`                                                                                                                                                                  |
 | [FuturMix](https://futurmix.ai/)                                            | Unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API.                                                                          | `FUTURMIX_API_KEY`                                                                                                                                                                  |
 | [Gemini](https://ai.google.dev/gemini-api/docs)                             | Advanced LLMs by Google with multimodal capabilities (text, images). Gemini 3 models support configurable [thinking levels](#gemini-3-thinking-levels).                                                                                                | `GOOGLE_API_KEY`, `GEMINI3_THINKING_LEVEL` (optional)                                                                                                                              |
@@ -46,6 +46,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [IO Intelligence](https://io.net/) | Inference for open-weight models (DeepSeek, Qwen, Llama, GLM, Kimi, gpt-oss and more) through io.net's OpenAI-compatible API. | `IONET_API_KEY` |
 | [Lemonade](https://lemonade-server.ai/)                                     | Run local models with the Lemonade server's OpenAI-compatible API. **Because this provider runs locally, you must first [download a model](#local-llms).** | None required. Connects to local server at `localhost:13305` by default. |
 | [LiteLLM](https://docs.litellm.ai/docs/) | LiteLLM proxy supporting multiple models with automatic prompt caching and unified API access. | `LITELLM_HOST`, `LITELLM_BASE_PATH` (optional), `LITELLM_API_KEY` (optional), `LITELLM_CUSTOM_HEADERS` (optional), `LITELLM_TIMEOUT` (optional) |
+| [llmman](https://github.com/llmmanorg/llmman)                              | Local model runner that pulls models as [OCI](https://opencontainers.org/) artifacts ([CNCF ModelPack](https://github.com/modelpack/model-spec)) from any container registry and serves them over the Ollama API. **Because this provider runs locally, you must first [pull a model](#local-llms).** | None required. Connects to local server at `127.0.0.1:17434` by default.                                                                                                            |
 | [LM Studio](https://lmstudio.ai/)                                          | Run local models with LM Studio's OpenAI-compatible server. **Because this provider runs locally, you must first [download a model](#local-llms).**                                                           | None required. Connects to local server at `localhost:1234` by default.                                                                                                             |
 | [Meta](https://dev.meta.ai/)                                                | Meta's Model API, home of the Muse Spark models.                                                                                                                                | `META_MODEL_API_KEY`                                                                                                                                                                |
 | [Mistral AI](https://mistral.ai/)                                           | Provides access to Mistral models including general-purpose models, specialized coding models (Codestral), and multimodal models (Pixtral).                                                                   | `MISTRAL_API_KEY`                                                                                                 |
@@ -53,6 +54,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Novita AI](https://novita.ai/)                                             | 90+ open-source models with OpenAI-compatible API and competitive pricing. Supports Kimi K2.5, DeepSeek, GLM, MiniMax, Qwen, and more.                                                                       | `NOVITA_API_KEY`                                                                                                  |
 | [Ollama](https://ollama.com/)                                               | Local model runner supporting Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
 | [Ollama Cloud](https://ollama.com/)                                         | Access hosted models on ollama.com via OpenAI-compatible API. Requires an Ollama account and API key.  | `OLLAMA_CLOUD_API_KEY`                                                                                                                                                                       |
+| [Onysoft AI Gateway](https://api.onysoft.com/) | Turkish AI gateway: 780+ models from Anthropic, OpenAI, Google, xAI, DeepSeek, Qwen, GLM, Kimi and more through one OpenAI-compatible API, plus Türkiye-hosted open models (:tr) and TRY billing. | `ONYSOFT_API_KEY` |
 | [OpenAI](https://platform.openai.com/api-keys)                              | Provides gpt-4o, o1, and other advanced language models. Also supports OpenAI-compatible endpoints (e.g., self-hosted LLaMA, vLLM, KServe). **o1-mini and o1-preview are not supported because goose uses tool calling.** | `OPENAI_API_KEY`, `OPENAI_HOST` (optional), `OPENAI_ORGANIZATION` (optional), `OPENAI_PROJECT` (optional), `OPENAI_CUSTOM_HEADERS` (optional)                                       |
 | [OpenRouter](https://openrouter.ai/)                                        | API gateway for unified access to various models with features like rate-limiting management.                                                                                                                             | `OPENROUTER_API_KEY`, `OPENROUTER_HOST` (optional), `OPENROUTER_PARAMETERS` (optional)                                                                                              |
 | [Perplexity](https://www.perplexity.ai/)                                    | Chat models with built-in real-time web search grounding. OpenAI-compatible chat completions API at `https://api.perplexity.ai`.                                                                                          | `PERPLEXITY_API_KEY`                                                                                                                                                                |
@@ -824,20 +826,11 @@ To set up Groq with goose, follow these steps:
 </Tabs>
 
 ### EmpirioLabs AI
-[EmpirioLabs AI](https://empiriolabs.ai/) provides access to frontier open and proprietary chat models through a single OpenAI-compatible API with streaming. To use EmpirioLabs with goose, you need an API key from [EmpirioLabs](https://platform.empiriolabs.ai/dashboard/api-keys).
+[EmpirioLabs AI](https://empiriolabs.ai/) offers specialized AI model hosting for open, proprietary, and custom stacks, with streaming chat models. To use EmpirioLabs AI with goose, you need an API key from [EmpirioLabs AI](https://platform.empiriolabs.ai/dashboard/api-keys).
 
-EmpirioLabs offers models that support tool calling, including:
-- **qwen3-7-plus** - Qwen3.7 Plus with a 1M context window
-- **qwen3-7-max** - Qwen3.7 Max with a 1M context window
-- **deepseek-v4-pro** - DeepSeek V4 Pro with a 1M context window
-- **deepseek-v4-flash** - DeepSeek V4 Flash with a 1M context window
-- **glm-5-1** - GLM-5.1 with a 202K context window
-- **kimi-k2-7-code** - Kimi K2.7 Code with a 256K context window
-- **minimax-m3** - MiniMax M3 with a 524K context window
+EmpirioLabs AI serves chat models that support tool calling. The [model catalog](https://empiriolabs.ai/models) lists the current models and their context windows, and the live list is also available at `https://api.empiriolabs.ai/v1/models`. For the EmpirioLabs AI models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs AI documentation](https://docs.empiriolabs.ai).
 
-The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
-
-To set up EmpirioLabs with goose, follow these steps:
+To set up EmpirioLabs AI with goose, follow these steps:
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
@@ -849,7 +842,7 @@ To set up EmpirioLabs with goose, follow these steps:
     4. Click `Configure Providers`
     5. Choose `EmpirioLabs AI` as provider from the list.
     6. Click `Configure`, enter your API key, and click `Submit`.
-    7. Select the EmpirioLabs model of your choice.
+    7. Select the EmpirioLabs AI model of your choice.
 
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -860,7 +853,7 @@ To set up EmpirioLabs with goose, follow these steps:
     2. Select `Configure Providers` from the menu.
     3. Follow the prompts to choose `EmpirioLabs AI` as the provider.
     4. Enter your API key when prompted.
-    5. Select the EmpirioLabs model of your choice.
+    5. Select the EmpirioLabs AI model of your choice.
   </TabItem>
 </Tabs>
 
@@ -1463,6 +1456,61 @@ Here are some local providers we support:
 
     :::tip Model Name
     Make sure the model name you enter in goose matches the model identifier shown in Lemonade's server panel.
+    :::
+  </TabItem>
+  <TabItem value="llmman" label="llmman">
+    [llmman](https://github.com/llmmanorg/llmman) runs models pulled as OCI artifacts from any container registry and exposes an Ollama-compatible API. Model identifiers are registry references, so the models available are whatever you have pulled.
+
+    1. [Install llmman](https://github.com/llmmanorg/llmman#install).
+    2. Pull a model that supports tool calling, for example:
+        ```sh
+        llmman pull qwen3.8
+        ```
+        Short names resolve to Docker Hub's `ai/` namespace; full references such as `ghcr.io/org/model:tag` or `hf.co/owner/repo` also work.
+    3. Start the server. It listens on `http://127.0.0.1:17434` by default:
+        ```sh
+        llmman serve
+        ```
+    4. Configure goose to use llmman:
+
+    <Tabs groupId="interface">
+      <TabItem value="ui" label="goose Desktop" default>
+        1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+        2. Click the `Settings` button on the sidebar.
+        3. Click the `Models` tab.
+        4. Click `Configure providers`.
+        5. Choose `llmman` from the provider list and click `Configure`.
+        6. Click `Submit` (no API key is needed).
+        7. Select a model you have pulled.
+      </TabItem>
+      <TabItem value="cli" label="goose CLI">
+        1. Run:
+        ```sh
+        goose configure
+        ```
+        2. Select `Configure Providers` from the menu.
+        3. Choose `llmman` as the provider.
+        4. Enter the model reference you pulled.
+
+        ```
+        ┌   goose-configure
+        │
+        ◇  What would you like to configure?
+        │  Configure Providers
+        │
+        ◇  Which model provider should we use?
+        │  llmman
+        │
+        ◇  Enter a model from that provider:
+        │  qwen3.8
+        │
+        └  Configuration saved successfully
+        ```
+      </TabItem>
+    </Tabs>
+
+    :::tip Host
+    If `llmman serve` listens on a different address, set `LLMMAN_HOST` in goose to match (scheme, host, and port only).
     :::
   </TabItem>
   <TabItem value="atomic-chat" label="Atomic Chat">

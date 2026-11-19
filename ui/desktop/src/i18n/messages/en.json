@@ -2231,12 +2231,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Autonomous"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Engage with the selected provider without using tools or extensions."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Chat only"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "All tools, extensions and file modifications will require human approval"
   },
@@ -4162,6 +4156,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Choose the display language for goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Dutch"
   },
   "settings.language.english": {
     "defaultMessage": "English"

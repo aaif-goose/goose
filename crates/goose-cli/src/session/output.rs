@@ -2,7 +2,6 @@ use crate::session::builder::ExtensionFailure;
 use anstream::{adapter::strip_str, eprintln, println};
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, StyledObject, Term};
-use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use goose::agents::platform_extensions::todo::TODO_WRITE_TOOL_NAME_COMPLETE;
 use goose::config::Config;
 use goose::conversation::message::{
@@ -13,8 +12,9 @@ use goose::providers::canonical_cost::estimate_model_cost;
 #[cfg(target_os = "windows")]
 use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
-use goose_providers::conversation::token_usage::Usage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+use oi_kit_providers::conversation::token_usage::Usage;
 use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -301,10 +301,12 @@ pub fn set_thinking_message(s: &String) {
     }
 }
 
+const LEGACY_FINAL_OUTPUT_TOOL_NAME: &str = "recipe__final_output";
+
 fn is_final_output_request(req: &ToolRequest) -> bool {
-    req.tool_call
-        .as_ref()
-        .is_ok_and(|call| call.name == FINAL_OUTPUT_TOOL_NAME)
+    req.tool_call.as_ref().is_ok_and(|call| {
+        call.name == FINAL_OUTPUT_TOOL_NAME || call.name == LEGACY_FINAL_OUTPUT_TOOL_NAME
+    })
 }
 
 pub fn render_message(message: &Message, debug: bool) {
@@ -582,9 +584,14 @@ fn render_thinking_streaming(
             println!("\n{}", style("Thinking:").dim().italic());
             *header_shown = true;
         }
-        print!("{}", style(text).dim());
-        let _ = std::io::stdout().flush();
+        let mut stdout = std::io::stdout();
+        let _ = write_thinking_chunk(&mut stdout, text);
+        let _ = stdout.flush();
     }
+}
+
+fn write_thinking_chunk<W: Write>(out: &mut W, text: &str) -> std::io::Result<()> {
+    write!(out, "{}", style(sanitize_terminal_output(text)).dim())
 }
 
 fn render_tool_request(req: &ToolRequest, theme: Theme, debug: bool) {
@@ -651,11 +658,15 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
     }
 }
 
-pub(super) fn sanitize_terminal_line(line: &str) -> String {
-    strip_str(line)
+fn sanitize_terminal_output(text: &str) -> String {
+    strip_str(text)
         .flat_map(str::chars)
-        .filter(|character| *character == '\t' || !character.is_control())
+        .filter(|character| matches!(*character, '\n' | '\t') || !character.is_control())
         .collect()
+}
+
+pub(super) fn sanitize_terminal_line(line: &str) -> String {
+    sanitize_terminal_output(line)
 }
 
 fn sanitize_tool_confirmation_line(line: &str) -> String {
@@ -1145,7 +1156,8 @@ pub fn env_no_color() -> bool {
 
 fn print_markdown(content: &str, theme: Theme) {
     if std::io::stdout().is_terminal() {
-        if let Some((before, table, after)) = extract_markdown_table(content) {
+        let content = sanitize_terminal_output(content);
+        if let Some((before, table, after)) = extract_markdown_table(&content) {
             if !before.is_empty() {
                 print_markdown_raw(&before, theme);
             }
@@ -1154,7 +1166,7 @@ fn print_markdown(content: &str, theme: Theme) {
                 print_markdown(after, theme);
             }
         } else {
-            print_markdown_raw(content, theme);
+            print_markdown_raw(&content, theme);
         }
     } else {
         print!("{}", content);
@@ -1749,6 +1761,19 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
+    fn recognizes_current_and_legacy_final_output_calls() {
+        let is_final_output = |name: &str| {
+            let message = Message::assistant()
+                .with_tool_request("call", Ok(CallToolRequestParams::new(name.to_string())));
+            is_final_output_request(message.content[0].as_tool_request().unwrap())
+        };
+
+        assert!(is_final_output(FINAL_OUTPUT_TOOL_NAME));
+        assert!(is_final_output("recipe__final_output"));
+        assert!(!is_final_output("developer__shell"));
+    }
+
+    #[test]
     fn recent_lines_accumulate_across_updates() {
         let mut recent_lines = VecDeque::new();
         let mut rendered = String::new();
@@ -1774,6 +1799,42 @@ mod tests {
             sanitize_terminal_line("before\x08after\x07\r\tvisible"),
             "beforeafter\tvisible"
         );
+    }
+
+    #[test]
+    fn markdown_sanitizer_strips_alt_screen_and_osc52() {
+        assert_eq!(
+            sanitize_terminal_output("safe \x1b[?1049h after"),
+            "safe  after"
+        );
+        assert_eq!(
+            sanitize_terminal_output("before\x1b]52;c;VEVTVA==\x07after"),
+            "beforeafter"
+        );
+        assert_eq!(
+            sanitize_terminal_output("before\x1b]52;c;VEVTVA==\x1b\\after"),
+            "beforeafter"
+        );
+        assert_eq!(
+            sanitize_terminal_output("# Title\n\n- item\n"),
+            "# Title\n\n- item\n"
+        );
+    }
+
+    #[test]
+    fn streaming_thinking_chunk_strips_osc52_and_private_modes() {
+        let mut out = Vec::new();
+        write_thinking_chunk(
+            &mut out,
+            "think \x1b]52;c;VEVTVA==\x07 more \x1b[?1049h\x1b[?25l done\n",
+        )
+        .unwrap();
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("]52;"), "{rendered:?}");
+        assert!(!rendered.contains("[?1049h"), "{rendered:?}");
+        assert!(!rendered.contains("[?25l"), "{rendered:?}");
+        assert!(rendered.contains("think "));
+        assert!(rendered.contains(" done\n"));
     }
 
     #[test]

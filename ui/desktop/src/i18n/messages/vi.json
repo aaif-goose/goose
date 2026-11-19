@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Tự động"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Tương tác với nhà cung cấp đã chọn mà không sử dụng công cụ hoặc tiện ích mở rộng."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Chỉ trò chuyện"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Tất cả công cụ, tiện ích mở rộng và chỉnh sửa tệp sẽ yêu cầu sự phê duyệt của con người"
   },
@@ -3967,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Chọn ngôn ngữ hiển thị cho goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Tiếng Hà Lan"
   },
   "settings.language.english": {
     "defaultMessage": "English"

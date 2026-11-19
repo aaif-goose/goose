@@ -98,6 +98,12 @@ import { PanelLeft } from 'lucide-react';
           3. Run `sudo dpkg -i (filename).deb`
           4. Launch goose from the app menu
 
+          **For RHEL ,Fedora/Fedora-based distributions:**
+          1. Download the RPM file
+          2. Navigate to the directory where it is saved in a terminal
+          3. Run `sudo dnf install (filename).rpm`
+          4. Launch goose from the app menu
+
           :::tip Updating goose
           It's best to periodically [update goose](/docs/guides/updating-goose).
           :::

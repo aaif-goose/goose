@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::thinking::ThinkingEffort;
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::Write;
@@ -20,9 +20,9 @@ use crate::config::search_path::SearchPaths;
 use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::conversation::message::{Message, MessageContent};
 use crate::subprocess::configure_subprocess;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Role;
 use rmcp::model::Tool;
 
@@ -99,10 +99,6 @@ impl CodexProvider {
             GooseMode::Approve => {
                 // Default codex behavior - interactive approvals
                 // No special flags needed
-            }
-            GooseMode::Chat => {
-                // Read-only sandbox mode
-                cmd.arg("--sandbox").arg("read-only");
             }
         }
         Ok(())
@@ -283,22 +279,15 @@ impl CodexProvider {
     /// Codex `input_tokens` already includes `cached_input_tokens`.
     fn extract_usage(usage_info: &serde_json::Value, usage: &mut Usage) {
         if usage.input_tokens.is_none() {
-            usage.input_tokens = usage_info
-                .get("input_tokens")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32);
+            usage.input_tokens = usage_info.get("input_tokens").and_then(|v| v.as_i64());
         }
         if usage.output_tokens.is_none() {
-            usage.output_tokens = usage_info
-                .get("output_tokens")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32);
+            usage.output_tokens = usage_info.get("output_tokens").and_then(|v| v.as_i64());
         }
         if usage.cache_read_input_tokens.is_none() {
             usage.cache_read_input_tokens = usage_info
                 .get("cached_input_tokens")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32);
+                .and_then(|v| v.as_i64());
         }
     }
 
@@ -559,16 +548,20 @@ fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Result<Vec<Stri
     let mut overrides = Vec::new();
     for extension in extensions {
         match extension {
-            ExtensionConfig::StreamableHttp {
-                name,
-                socket: Some(_),
-                ..
-            } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                    name,
+                    socket: Some(_),
+                    ..
+                },
+            ) => {
                 return Err(anyhow!(
                     "Codex provider does not support socket-backed Streamable HTTP extension '{name}'; use a provider that preserves socket-backed MCP transport, or remove the socket setting only if remote HTTP is intended"
                 ));
             }
-            ExtensionConfig::StreamableHttp { uri, headers, .. } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp { uri, headers, .. },
+            ) => {
                 let key = extension.key();
                 overrides.push(format!("mcp_servers.{}.url={}", key, toml_quote(uri)));
                 if !headers.is_empty() {
@@ -585,9 +578,12 @@ fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Result<Vec<Stri
                     ));
                 }
             }
-            ExtensionConfig::Stdio {
-                cmd, args, envs, ..
-            } => {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+                cmd,
+                args,
+                envs,
+                ..
+            }) => {
                 let key = extension.key();
                 overrides.push(format!("mcp_servers.{}.command={}", key, toml_quote(cmd)));
                 if !args.is_empty() {
@@ -617,7 +613,7 @@ fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Result<Vec<Stri
     Ok(overrides)
 }
 
-impl goose_providers::base::ProviderDescriptor for CodexProvider {
+impl oi_kit_providers::base::ProviderDescriptor for CodexProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CODEX_PROVIDER_NAME,
@@ -742,8 +738,8 @@ impl Provider for CodexProvider {
 mod tests {
     use super::*;
     use crate::agents::extension::Envs;
-    use goose_providers::base::ProviderDescriptor as _;
     use goose_test_support::TEST_IMAGE_B64;
+    use oi_kit_providers::base::ProviderDescriptor as _;
     use std::collections::HashMap;
     #[cfg(unix)]
     use std::fs;
@@ -781,7 +777,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
     }
 
     #[test_case(
-        ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "lookup".into(),
             cmd: "node".into(),
             args: vec!["server.js".into()],
@@ -792,7 +788,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             cwd: None,
             bundled: None,
             available_tools: vec![],
-        },
+        }),
         &[
             r#"mcp_servers.lookup.command="node""#,
             r#"mcp_servers.lookup.args=["server.js"]"#,
@@ -801,7 +797,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
         ; "stdio_converts_to_mcp_overrides"
     )]
     #[test_case(
-        ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "lookup".into(),
             description: String::new(),
             uri: "http://localhost/mcp".into(),
@@ -815,7 +811,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        },
+        }),
         &[
             r#"mcp_servers.lookup.url="http://localhost/mcp""#,
             r#"mcp_servers.lookup.http_headers={"Authorization" = "Bearer token"}"#,
@@ -823,7 +819,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
         ; "streamable_http_converts_to_mcp_overrides"
     )]
     #[test_case(
-        ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "mcp_kiwi_com".into(),
             description: String::new(),
             uri: "https://mcp.kiwi.com".into(),
@@ -837,14 +833,14 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-        },
+        }),
         &[
             r#"mcp_servers.mcp_kiwi_com.url="https://mcp.kiwi.com""#,
         ]
         ; "resolved_name_used_as_key_http"
     )]
     #[test_case(
-        ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "my-server".into(),
             cmd: "/usr/bin/my-server".into(),
             args: vec![],
@@ -855,7 +851,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             cwd: None,
             bundled: None,
             available_tools: vec![],
-        },
+        }),
         &[
             r#"mcp_servers.my-server.command="/usr/bin/my-server""#,
         ]
@@ -869,24 +865,25 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
 
     #[test]
     fn test_codex_rejects_socket_backed_streamable_http() {
-        let config = ExtensionConfig::StreamableHttp {
-            name: "private-service".into(),
-            description: String::new(),
-            uri: "http://attacker.example/mcp".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([(
-                "Authorization".into(),
-                "Bearer must-not-be-forwarded".into(),
-            )]),
-            timeout: None,
-            socket: Some("/run/private-service.sock".into()),
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: None,
-            available_tools: vec![],
-        };
+        let config =
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "private-service".into(),
+                description: String::new(),
+                uri: "http://attacker.example/mcp".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([(
+                    "Authorization".into(),
+                    "Bearer must-not-be-forwarded".into(),
+                )]),
+                timeout: None,
+                socket: Some("/run/private-service.sock".into()),
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: None,
+                available_tools: vec![],
+            });
 
         let error = codex_mcp_config_overrides(&[config]).unwrap_err();
 
@@ -1363,7 +1360,6 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
     #[test_case(GooseMode::Auto, &["--yolo"] ; "auto_yolo")]
     #[test_case(GooseMode::SmartApprove, &["--full-auto"] ; "smart_approve_full_auto")]
     #[test_case(GooseMode::Approve, &[] as &[&str] ; "approve_no_flags")]
-    #[test_case(GooseMode::Chat, &["--sandbox", "read-only"] ; "chat_read_only")]
     fn test_apply_permission_flags(mode: GooseMode, expected: &[&str]) {
         let mut cmd = tokio::process::Command::new("codex");
         CodexProvider::apply_permission_flags(&mut cmd, mode).unwrap();

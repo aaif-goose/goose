@@ -154,6 +154,7 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_NO_CODE_TRUNCATION` | Disable code block truncation entirely — all code blocks are shown in full | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically compacts your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0) | 0.8 |
 | `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` | Absolute auto-compaction trigger; the earlier of this and the percentage threshold applies while auto-compaction is enabled. Controls when compaction starts, not a guaranteed maximum request size. | Positive integer | 225000 |
+| `GOOSE_STANDALONE_COMPACTION` | Summarize with a separate request instead of asking the model in the conversation itself. Separate requests cannot reuse the conversation's prompt cache. | "true" to enable | false |
 | `GOOSE_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage | Integer (e.g., 5, 10, 20) | Computed from the model context limit and auto-compaction threshold |
 | `GOOSE_MOIM_MESSAGE_TEXT` | Injects persistent text into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
 | `GOOSE_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
@@ -253,7 +254,7 @@ These variables control how goose handles [tool execution](/docs/guides/managing
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOOSE_MODE` | Controls how goose handles tool execution | "auto", "approve", "chat", "smart_approve" | "auto" |
+| `GOOSE_MODE` | Controls how goose handles tool execution | "auto", "approve", "smart_approve" | "auto" |
 | `GOOSE_TOOLSHIM` | Enables the [tool shim](/docs/guides/tool-shim) for models that output text-based tool calls | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_TOOLSHIM_BACKEND` | Interpreter backend for the tool shim | "ollama" (default), "local", "llama.cpp" | "ollama" |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Ollama model used as the [tool shim](/docs/guides/tool-shim) interpreter | Model name (e.g. llama3.2, mistral-nemo) | "mistral-nemo" |
@@ -438,6 +439,25 @@ export OTEL_TRACES_EXPORTER="console"
 # Sample 10% of traces (reduce volume in production)
 export OTEL_TRACES_SAMPLER="parentbased_traceidratio"
 export OTEL_TRACES_SAMPLER_ARG="0.1"
+```
+
+#### Sending traces to a hosted OTLP backend
+
+Most hosted observability platforms accept traces over OTLP/HTTP. Set the base endpoint and an auth header:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-backend.example.com/api/otel"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
+```
+
+goose appends `/v1/traces` to the base endpoint when sending traces, so the full URL becomes `https://your-backend.example.com/api/otel/v1/traces`. Check your backend's OTLP ingestion docs to confirm the expected base path.
+
+Exported traces can include user prompts (`user_message` and `trace_input`), assistant replies (`trace_output`), and tool arguments (`input`) in legacy fields even when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is unset or set to `false`. Use a trusted backend whenever you export traces.
+
+GenAI message and tool content capture is off by default. Set the variable to `true` to enable capture for `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and the legacy tool `output` field.
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 ```
 
 [otel-env]: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/

@@ -331,8 +331,21 @@ async function writeSwapScript(options: {
       `}`,
       `Write-Log 'app has exited; swapping install'`,
       `Remove-Item -LiteralPath ${powershellQuote(backupPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
-      `Move-Item -LiteralPath ${powershellQuote(targetPath)} -Destination ${powershellQuote(backupPath)} -Force`,
-      `if (Test-Path -LiteralPath ${powershellQuote(targetPath)}) { throw 'Could not move previous install aside' }`,
+      `$moveAttempt = 0`,
+      `while ($true) {`,
+      `  try {`,
+      `    Move-Item -LiteralPath ${powershellQuote(targetPath)} -Destination ${powershellQuote(backupPath)} -Force -ErrorAction Stop`,
+      `    break`,
+      `  } catch {`,
+      `    $moveAttempt = $moveAttempt + 1`,
+      `    if ($moveAttempt -ge 20) {`,
+      `      Write-Log "could not move previous install aside: $_"`,
+      `      Start-Process -FilePath ${powershellQuote(relaunchPath)}`,
+      `      exit 1`,
+      `    }`,
+      `    Start-Sleep -Milliseconds 500`,
+      `  }`,
+      `}`,
       `try {`,
       `  New-Item -ItemType Directory -Path ${powershellQuote(targetPath)} -Force -ErrorAction Stop | Out-Null`,
       `  $payloadEntries = (Get-ChildItem -LiteralPath ${powershellQuote(payloadPath)} -Force).FullName`,
@@ -342,6 +355,7 @@ async function writeSwapScript(options: {
       `  if (-not (Test-Path -LiteralPath ${installedExe})) { throw 'Updated install is missing its executable' }`,
       `  Remove-Item -LiteralPath ${powershellQuote(backupPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
       `} catch {`,
+      `  Write-Log "could not install update; restoring previous install: $_"`,
       `  Remove-Item -LiteralPath ${powershellQuote(targetPath)} -Recurse -Force -ErrorAction SilentlyContinue`,
       `  Move-Item -LiteralPath ${powershellQuote(backupPath)} -Destination ${powershellQuote(targetPath)} -Force`,
       `}`,
@@ -352,9 +366,19 @@ async function writeSwapScript(options: {
     ].join('\r\n');
 
     await fs.writeFile(scriptPath, script);
+
+    const launcherPath = path.join(stagingDir, 'launch-swap.ps1');
+    const swapArgs = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${scriptPath}"`;
+    const launcher = [
+      `$ErrorActionPreference = 'Stop'`,
+      `Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -WorkingDirectory ${powershellQuote(path.dirname(stagingDir))} -ArgumentList ${powershellQuote(swapArgs)}`,
+      '',
+    ].join('\r\n');
+    await fs.writeFile(launcherPath, launcher);
+
     return {
       command: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', launcherPath],
     };
   }
 
@@ -407,17 +431,13 @@ async function writeSwapScript(options: {
   return { command: '/bin/sh', args: [scriptPath] };
 }
 
-// Node's detached flag becomes DETACHED_PROCESS on Windows, which leaves the child with no
-// console, and powershell.exe exits before its first statement without one. windowsHide still
-// allocates a console without showing a window, and Windows keeps a child alive after its
-// parent exits, so the swap outlives the quit without detaching. POSIX still detaches so the
-// script survives the app's process group going away.
-export function launchSwapScript(swap: SwapCommand): void {
-  const child = spawn(swap.command, swap.args, {
-    detached: process.platform !== 'win32',
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+export async function launchSwapScript(swap: SwapCommand): Promise<void> {
+  if (process.platform === 'win32') {
+    await runCommand(swap.command, swap.args);
+    return;
+  }
+
+  const child = spawn(swap.command, swap.args, { detached: true, stdio: 'ignore' });
   child.unref();
 }
 
@@ -773,7 +793,7 @@ export class GitHubUpdater {
         pid: process.pid,
       });
 
-      launchSwapScript(swap);
+      await launchSwapScript(swap);
 
       log.info('=== GitHubUpdater: SWAP SCRIPT LAUNCHED, app will quit ===');
       return { success: true };

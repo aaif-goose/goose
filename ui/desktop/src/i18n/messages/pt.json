@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Autônomo"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Interaja com o provedor selecionado sem usar ferramentas ou extensões."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Apenas conversa"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Todas as ferramentas, extensões e modificações de arquivos exigirão aprovação humana"
   },
@@ -3967,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Escolha o idioma de exibição do goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Neerlandês"
   },
   "settings.language.english": {
     "defaultMessage": "English"

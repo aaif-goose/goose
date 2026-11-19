@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::permission::Permission;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,7 +21,7 @@ pub(super) struct SessionToolConfirmationState {
     pub(super) confirmation_submission_lock: Mutex<()>,
     // Tracks requests from the current confirmation pause; None means still unanswered.
     confirmations: StdMutex<HashMap<String, Option<ConfirmationAnswer>>>,
-    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     // Wakes wait_for_all_confirmation_answers; confirmations remains the source of truth.
     confirmation_answered: Notify,
 }
@@ -32,7 +32,7 @@ impl SessionToolConfirmationState {
             turn_lock: Arc::new(Mutex::new(())),
             confirmation_submission_lock: Mutex::new(()),
             confirmations: StdMutex::new(HashMap::new()),
-            extension_lease: Arc::new(StdMutex::new(None)),
+            tool_snapshot: Arc::new(StdMutex::new(None)),
             confirmation_answered: Notify::new(),
         }
     }
@@ -127,13 +127,13 @@ impl SessionToolConfirmationState {
             .clear();
     }
 
-    pub(super) fn extension_lease(&self) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
-        Arc::clone(&self.extension_lease)
+    pub(super) fn tool_snapshot(&self) -> Arc<StdMutex<Option<Arc<ToolSnapshot>>>> {
+        Arc::clone(&self.tool_snapshot)
     }
 
     pub(super) fn start_new_turn(&self) {
         self.clear_confirmations();
-        self.clear_extension_lease();
+        self.clear_tool_snapshot();
     }
 
     fn has_confirmations(&self) -> bool {
@@ -144,11 +144,11 @@ impl SessionToolConfirmationState {
             .is_empty()
     }
 
-    pub(super) fn clear_extension_lease(&self) {
+    pub(super) fn clear_tool_snapshot(&self) {
         *self
-            .extension_lease
+            .tool_snapshot
             .lock()
-            .expect("extension lease unavailable") = None;
+            .expect("tool snapshot unavailable") = None;
     }
 }
 
@@ -166,7 +166,7 @@ impl ActiveTurnGuard {
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
         if !self.state.has_confirmations() {
-            self.state.clear_extension_lease();
+            self.state.clear_tool_snapshot();
         }
     }
 }

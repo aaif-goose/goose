@@ -1,6 +1,6 @@
 use goose::config::declarative_providers::custom_providers_dir;
 use goose::providers::canonical_cost::estimate_model_cost;
-use goose_providers::conversation::token_usage::Usage;
+use oi_kit_providers::conversation::token_usage::Usage;
 use serde_json::json;
 
 #[test]

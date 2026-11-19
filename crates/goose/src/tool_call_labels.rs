@@ -6,7 +6,7 @@ use crate::conversation::message::{
 use crate::providers::base::Provider;
 use crate::session::SessionManager;
 use crate::utils::safe_truncate;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use serde_json::json;
 use std::slice::from_ref;
 use std::time::Duration;
@@ -232,7 +232,7 @@ mod tests {
     use crate::providers::base::{MessageStream, ProviderUsage, Usage};
     use crate::session::{SessionManager, SessionType};
     use async_trait::async_trait;
-    use goose_providers::errors::ProviderError;
+    use oi_kit_providers::errors::ProviderError;
     use rmcp::model::{CallToolRequestParams, ErrorData, Tool};
     use serde_json::json;
     use std::collections::VecDeque;
@@ -422,14 +422,14 @@ mod tests {
             let provider = MockProvider::new(vec![Ok(Message::assistant().with_text("title"))]);
             let request = tool_request(json!({}));
             let model_config = ModelConfig::new("test-model")
-                .with_thinking_effort(goose_providers::thinking::ThinkingEffort::High);
+                .with_thinking_effort(oi_kit_providers::thinking::ThinkingEffort::High);
 
             generate_tool_title_with_provider(&provider, &model_config, "session-1", &request)
                 .await;
 
             assert_eq!(
                 provider.first_model_config().thinking_effort(),
-                Some(goose_providers::thinking::ThinkingEffort::Off),
+                Some(oi_kit_providers::thinking::ThinkingEffort::Off),
             );
         }
 

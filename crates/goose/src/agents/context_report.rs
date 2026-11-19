@@ -5,12 +5,11 @@ use anyhow::Result;
 use rmcp::model::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
-pub use goose_sdk_types::custom_requests::{
+pub use goose_acp_types::custom_requests::{
     ContextCategory, ContextPart, ContextReportModel, ContextReportResponse, ContextSegment,
 };
 
 use crate::agents::extension_manager::get_tool_owner;
-use crate::agents::state_machine::enrich_unclaimed_tool_errors;
 use crate::agents::{PromptManager, SessionConfig, StateMachineServices};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{
@@ -110,10 +109,7 @@ impl StateMachineServices {
         )
         .await?;
 
-        let (session, lease) = self
-            .extension_manager
-            .current_session_snapshot(&session)
-            .await?;
+        let (session, lease) = self.current_session_snapshot(&session).await?;
         let code_execution_active = {
             #[cfg(feature = "code-mode")]
             {
@@ -124,7 +120,7 @@ impl StateMachineServices {
                 false
             }
         };
-        let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
+        let tool_snapshot = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
 
         let mut next_messages = session
             .conversation
@@ -146,9 +142,9 @@ impl StateMachineServices {
                 },
                 CancellationToken::new(),
                 self.runtime.steer_queue(session_id),
-                extension_lease,
+                tool_snapshot,
             )
-            .await;
+            .await?;
         let input = machine
             .collect_inference_input(&session, &next_conversation)
             .await?;
@@ -180,7 +176,6 @@ impl StateMachineServices {
         // The prompt that will follow is unknown, but the turn-context event
         // appended after it is not.
         messages.extend(turn_context);
-        messages = enrich_unclaimed_tool_errors(&messages, &tools);
         let messages = Conversation::new_unvalidated(messages);
         let request_messages = merge_consecutive_messages_for_request(messages.messages().clone());
         let (request_tools, request_messages, counted_messages) = if toolshim {
@@ -738,38 +733,6 @@ Finish the regression test
             .sum();
         let segment_total: u64 = segments.iter().map(|segment| segment.token_count).sum();
         assert_eq!(segment_total, expected_total);
-    }
-
-    #[tokio::test]
-    async fn unclaimed_tool_errors_count_the_tool_list_the_request_appends() {
-        let token_counter = TokenCounter::new().await.unwrap();
-        let mut response = Message::user();
-        response.add_tool_response_with_metadata(
-            "call_1",
-            Ok(rmcp::model::CallToolResult::error(vec![
-                rmcp::model::ContentBlock::text("Tool missing__tool is not available."),
-            ])),
-            Some(&serde_json::Map::from_iter([(
-                crate::agents::state_machine::UNCLAIMED_TOOL_ERROR.to_string(),
-                true.into(),
-            )])),
-        );
-        let messages = vec![response];
-        let tools = vec![
-            test_tool("alpha__read", Some("alpha")),
-            test_tool("beta__write", Some("beta")),
-        ];
-
-        let persisted = message_segments(&messages, &messages, &token_counter);
-        let enriched = enrich_unclaimed_tool_errors(&messages, &tools);
-        let requested = message_segments(&enriched, &enriched, &token_counter);
-
-        assert!(requested[0].token_count > persisted[0].token_count);
-        assert!(requested[0].parts[0]
-            .content_preview
-            .as_deref()
-            .unwrap()
-            .contains("Available tools: [alpha__read, beta__write]."));
     }
 
     #[test]

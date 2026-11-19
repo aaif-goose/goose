@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Otonom"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Berinteraksi dengan penyedia yang dipilih tanpa menggunakan alat atau ekstensi."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Obrolan saja"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Semua alat, ekstensi, dan modifikasi file akan memerlukan persetujuan manusia"
   },
@@ -3967,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Pilih bahasa tampilan untuk goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Bahasa Belanda"
   },
   "settings.language.english": {
     "defaultMessage": "English"

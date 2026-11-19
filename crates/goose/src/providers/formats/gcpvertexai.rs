@@ -1,9 +1,9 @@
 use super::{anthropic, google};
 use crate::conversation::message::Message;
 use anyhow::{Context, Result};
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::formats::anthropic::AnthropicFormatOptions;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::formats::anthropic::AnthropicFormatOptions;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use serde_json::Value;
 

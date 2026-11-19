@@ -2141,12 +2141,6 @@
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Özerk"
   },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Araç veya uzantı kullanmadan seçilen sağlayıcıyla etkileşime geçin."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Yalnızca sohbet"
-  },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Tüm araçlar, uzantılar ve dosya değişiklikleri insan onayı gerektirecektir"
   },
@@ -3967,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "goose için görüntüleme dilini seçin"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Felemenkçe"
   },
   "settings.language.english": {
     "defaultMessage": "İngilizce"

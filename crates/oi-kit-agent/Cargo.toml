@@ -1,0 +1,77 @@
+[package]
+name = "oi-kit-agent"
+version = "0.1.0-alpha.15"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "oi-kit's Agent Loop"
+
+[features]
+default = ["rustls-tls"]
+# TLS for streamable HTTP extensions; native targets only.
+rustls-tls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+# Test accessors into the MCP runtime for crates that test against it.
+test-support = []
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
+tokio-util = { workspace = true, features = ["compat"] }
+async-trait = { workspace = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.15", path = "../oi-kit-provider-types", default-features = false }
+rmcp = { workspace = true, features = ["server"] }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+serde.workspace = true
+regex = { workspace = true, features = ["unicode-perl"] }
+goose-acp-types = { version = "0.1.0-alpha.15", path = "../goose-acp-types", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
+indoc.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rmcp = { workspace = true, features = ["local"] }
+
+[dev-dependencies]
+schemars.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+js-sys = "0.3.105"
+wasm-bindgen-futures = "0.4.78"
+wasm-bindgen-test = "0.3.78"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+blake3 = { version = "1", default-features = false, features = ["std"] }
+indexmap = { version = "2.9", default-features = false, features = ["std"] }
+oi-kit-context-management = { version = "0.1.0-alpha.15", path = "../oi-kit-context-management", default-features = false }
+once_cell.workspace = true
+reqwest = { workspace = true, features = ["system-proxy", "json"] }
+rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "transport-streamable-http-client-unix-socket"] }
+serde_yaml.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "rt-multi-thread"] }
+tokio-stream.workspace = true
+url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+rmcp = { workspace = true, features = ["macros", "transport-io"] }
+serial_test.workspace = true
+tempfile.workspace = true
+test-case.workspace = true
+wiremock.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.189"
+
+[[test]]
+name = "mcp_extension"
+# The test binary also serves as the stdio MCP server it starts.
+harness = false
