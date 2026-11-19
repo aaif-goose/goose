@@ -136,6 +136,46 @@ async function listTree(dir: string, prefix = ''): Promise<string> {
   return out;
 }
 
+function archiveEntryNames(archive: Buffer): string[] {
+  const end = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (end < 0) {
+    return ['(no end of central directory)'];
+  }
+
+  const count = archive.readUInt16LE(end + 10);
+  let offset = archive.readUInt32LE(end + 16);
+  const names: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    names.push(archive.toString('utf8', offset + 46, offset + 46 + nameLength));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
+async function prepareWithDiagnostics(
+  options: Parameters<typeof prepareUpdateInstall>[0]
+): ReturnType<typeof prepareUpdateInstall> {
+  try {
+    return await prepareUpdateInstall(options);
+  } catch (error) {
+    const archive = await fs.readFile(options.archivePath);
+    const extracted = path.join(path.dirname(options.archivePath), 'extracted');
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `--- archive entries (${archive.length} bytes) ---`,
+        ...archiveEntryNames(archive),
+        '--- extracted dir ---',
+        await listTree(extracted),
+      ].join('\n'),
+      { cause: error }
+    );
+  }
+}
+
 // The swap script deletes its staging directory when it finishes, so its log is kept beside
 // that directory and is the only record of why a background script gave up.
 async function diagnostics(stagingDir: string, installRoot: string): Promise<string> {
@@ -184,7 +224,7 @@ describe('prepareUpdateInstall', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const swap = await prepareUpdateInstall({
+    const swap = await prepareWithDiagnostics({
       archivePath,
       targetPath: installedRoot,
       relaunchPath,
@@ -240,7 +280,7 @@ describe('prepareUpdateInstall', () => {
     const exitedApp = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true });
     await new Promise((resolve) => exitedApp.once('exit', resolve));
 
-    const swap = await prepareUpdateInstall({
+    const swap = await prepareWithDiagnostics({
       archivePath,
       targetPath: installedRoot,
       relaunchPath,
