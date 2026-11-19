@@ -114,13 +114,13 @@ function FeaturesSection() {
           />
           <FeatureCard
             icon="🛠️"
-            title="oi-kit"
+            title="Open Intelligence Kit (oi-kit)"
             description={
               <p>
-                Build agents that run across native apps, servers, and the
-                browser, and resume from saved state. Use the runtime components
-                behind goose, with control over models, tools, and agent
-                behavior. <Link to="/docs/oi-kit/">Explore oi-kit</Link>.
+                Build agents on oi-kit that run across native apps, servers, and
+                the browser, and resume from saved state. Use the runtime
+                components behind goose, with control over models, tools, and
+                agent behavior. <Link to="/docs/oi-kit/">Explore oi-kit</Link>.
               </p>
             }
           />
