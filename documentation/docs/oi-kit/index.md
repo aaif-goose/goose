@@ -56,7 +56,7 @@ Explore the shared provider bindings through the
 [Kotlin API](/docs/oi-kit/sdk/api-reference?language=kotlin), with runnable examples in
 [Python](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-bindings/examples/uniffi/provider.py)
 and [Kotlin](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-bindings/examples/uniffi/kotlin/src/main/kotlin/Main.kt).
-For apps using goose as a backend, consult the [ACP reference](/docs/oi-kit/acp/reference).
+For apps using goose as a backend, consult the [ACP extensions reference](/docs/oi-kit/acp/reference).
 Use the reference when you need exact types, methods, and configuration details
 while building.
 

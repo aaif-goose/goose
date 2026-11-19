@@ -29,8 +29,8 @@ Use oi-kit's Rust crates to assemble an agent or call models directly. Python an
 - [Operations](/docs/oi-kit/concepts/operations.md): Compose behavior, inspect existing implementations, and write your own operation.
 - [Providers](/docs/oi-kit/concepts/providers.md): Choose or implement a model backend, including declarative providers, local inference and voice.
 - [Authentication](/docs/oi-kit/concepts/authentication.md): Supply provider credentials or integrate your own authentication.
-- [Build an app with goose](/docs/oi-kit/acp/index.md): Launch goose over ACP, connect, send prompts, and handle streamed updates and permissions.
-- [goose ACP extensions](/docs/oi-kit/acp/reference.md): Look up goose-specific protocol methods, notifications, and types; use the linked ACP specification for standard methods.
+- [Build an app over ACP](/docs/oi-kit/acp/index.md): Launch goose over ACP, connect, send prompts, and handle streamed updates and permissions.
+- [ACP extensions reference](/docs/oi-kit/acp/reference.md): Look up goose-specific protocol methods, notifications, and types; use the linked ACP specification for standard methods.
 - [Reference](/docs/oi-kit/reference/index.md): Choose crates and follow links to generated Rust, Python, and Kotlin API documentation. Check the API version against your dependencies before writing code.
 
 ### Generated Rust APIs

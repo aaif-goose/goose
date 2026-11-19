@@ -126,7 +126,7 @@ messages without depending on the goose application. The types include
 serialization and JSON-schema definitions, keeping the wire format in one place
 for the server, clients, and generated documentation. It does not start an agent
 or establish a connection: use an ACP client library for transport and standard
-protocol methods, and the [goose ACP reference](/docs/oi-kit/acp/reference) for the
+protocol methods, and the [ACP extensions reference](/docs/oi-kit/acp/reference) for the
 additional methods.
 
 ### [oi-kit-bindings](https://docs.rs/oi-kit-bindings/latest/oi_kit_bindings/)
@@ -166,4 +166,4 @@ APIs may change between releases.
 For apps that connect to the pre-built goose agent, see the
 [ACP walkthrough](/docs/oi-kit/acp), the
 [standard protocol reference](https://agentclientprotocol.com/protocol/v1/overview),
-and the generated reference for [goose extensions](/docs/oi-kit/acp/reference).
+and the generated reference for [ACP extensions reference](/docs/oi-kit/acp/reference).

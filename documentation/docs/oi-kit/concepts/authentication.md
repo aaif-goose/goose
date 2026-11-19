@@ -106,7 +106,7 @@ Authenticating a model request is also different from authenticating a client
 connection to goose. If your application uses the pre-built binary over ACP,
 the backend's provider credentials belong on the backend; a `goose serve`
 connection has its own authentication. See
-[Build an app with goose](/docs/oi-kit/acp#use-a-server-instead) for that path.
+[Build an app over ACP](/docs/oi-kit/acp#use-a-server-instead) for that path.
 
 The full HTTP authentication and TLS APIs are in
 [`oi-kit-providers::api_client`](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/api_client/).
