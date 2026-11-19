@@ -458,26 +458,51 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
         .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
 }
 
+fn uses_developer_prompt(model_name: &str) -> bool {
+    let Some(version) = model_name.strip_prefix("gpt-") else {
+        return false;
+    };
+    let version = version.split('-').next().unwrap_or_default();
+    let (major, minor) = version.split_once('.').unwrap_or((version, "0"));
+    matches!(
+        (major.parse::<u32>(), minor.parse::<u32>()),
+        (Ok(major), Ok(minor)) if (major, minor) >= (6, 2)
+    )
+}
+
 fn create_codex_request(
     model_config: &ModelConfig,
     system: &str,
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
-    let input_items = build_input_items(messages, &model_config.model_name)?;
+    let mut input_items = build_input_items(messages, &model_config.model_name)?;
+    let developer_prompt = uses_developer_prompt(&model_config.model_name);
+    if developer_prompt && !system.is_empty() {
+        input_items.insert(
+            0,
+            json!({
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": system }],
+            }),
+        );
+    }
     let reasoning_effort = reasoning_effort_for_config(model_config);
 
     let mut payload = json!({
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "instructions": system,
         "include": ["reasoning.encrypted_content"],
     });
 
     let payload_obj = payload
         .as_object_mut()
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
+
+    if !developer_prompt {
+        payload_obj.insert("instructions".to_string(), json!(system));
+    }
 
     if !tools.is_empty() {
         let tools_spec: Vec<Value> = tools
@@ -1917,11 +1942,113 @@ mod tests {
         assert!(names.contains(&"gpt-5.6"));
     }
 
-    #[test]
-    fn test_instructions_passed_through() {
-        let model = ModelConfig::new("gpt-5.4");
-        let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
-        let instructions = payload["instructions"].as_str().unwrap();
-        assert_eq!(instructions, "system prompt");
+    #[test_case("gpt-5.4", false)]
+    #[test_case("gpt-5.6-sol", false)]
+    #[test_case("gpt-6-astra", false)]
+    #[test_case("gpt-6.1-sol", false)]
+    #[test_case("gpt-6.2", true)]
+    #[test_case("gpt-6.2-sol", true)]
+    #[test_case("gpt-6.2-astra", true)]
+    #[test_case("gpt-6.2-sol-2026-11-18", true)]
+    #[test_case("gpt-6.3-astra", true)]
+    #[test_case("gpt-6.10-sol", true)]
+    #[test_case("gpt-7-sol", true)]
+    #[test_case("gpt-7.0-astra", true)]
+    #[test_case("unknown-model", false)]
+    fn test_persistent_prompt_placement(model_name: &str, developer_prompt: bool) {
+        let model = ModelConfig::new(model_name);
+        let messages = [Message::user().with_text("question")];
+        let payload = create_codex_request(&model, "system prompt", &messages, &[]).unwrap();
+        let user = json!({
+            "role": "user",
+            "content": [{ "type": "input_text", "text": "question" }],
+        });
+
+        if developer_prompt {
+            assert!(payload.get("instructions").is_none());
+            assert_eq!(
+                payload["input"],
+                json!([
+                    {
+                        "role": "developer",
+                        "content": [{ "type": "input_text", "text": "system prompt" }],
+                    },
+                    user,
+                ])
+            );
+        } else {
+            assert_eq!(payload["instructions"], "system prompt");
+            assert_eq!(payload["input"], json!([user]));
+        }
+    }
+
+    #[test_case("gpt-5.4", false)]
+    #[test_case("gpt-6.2-sol", true)]
+    #[test_case("gpt-6.2-astra", true)]
+    fn test_empty_prompt_adds_no_developer_message(model_name: &str, developer_prompt: bool) {
+        let model = ModelConfig::new(model_name);
+        let messages = [Message::user().with_text("question")];
+        let payload = create_codex_request(&model, "", &messages, &[]).unwrap();
+
+        if developer_prompt {
+            assert!(payload.get("instructions").is_none());
+        } else {
+            assert_eq!(payload["instructions"], "");
+        }
+        assert_eq!(input_kinds(&payload), vec!["message:user"]);
+    }
+
+    #[test_case("gpt-6.2-sol")]
+    #[test_case("gpt-6.2-astra")]
+    fn test_persistent_prompt_prefix_across_tool_and_user_turns(model_name: &str) {
+        let model = ModelConfig::new(model_name);
+        let tools = [Tool::new(
+            "lookup",
+            "Look up a value",
+            object!({
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"],
+            }),
+        )];
+        let mut messages = vec![Message::user().with_text("question")];
+        let first = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+        messages.extend([
+            Message::assistant().with_tool_request(
+                "call-1",
+                Ok(CallToolRequestParams::new("lookup").with_arguments(object!({"key": "value"}))),
+            ),
+            Message::user().with_tool_response(
+                "call-1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("result")])),
+            ),
+        ]);
+        let tool_turn = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+        messages.extend([
+            Message::assistant().with_text("answer"),
+            Message::user().with_text("follow-up"),
+        ]);
+        let follow_up = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+
+        let first_input = first["input"].as_array().unwrap();
+        let tool_input = tool_turn["input"].as_array().unwrap();
+        let follow_up_input = follow_up["input"].as_array().unwrap();
+        assert!(tool_input.starts_with(first_input));
+        assert!(follow_up_input.starts_with(tool_input));
+        assert_eq!(follow_up["tools"], first["tools"]);
+        assert!(follow_up.get("instructions").is_none());
+        assert_eq!(
+            input_kinds(&follow_up),
+            vec![
+                "message:developer",
+                "message:user",
+                "function_call",
+                "function_call_output",
+                "message:assistant",
+                "message:user",
+            ]
+        );
+        assert_eq!(follow_up_input[2]["call_id"], "call-1");
+        assert_eq!(follow_up_input[3]["call_id"], "call-1");
     }
 }
