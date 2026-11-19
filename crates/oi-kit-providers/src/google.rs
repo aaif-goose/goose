@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use rmcp::model::Tool;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::io;
 use tokio::pin;
 use tokio_stream::StreamExt;
@@ -113,29 +114,43 @@ impl Provider for GoogleProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        let response = self
-            .api_client
-            .request("v1beta/models")
-            .response_get()
-            .await?;
-        let response = handle_status(response).await?;
+        let mut models = Vec::new();
+        let mut seen_page_tokens = HashSet::new();
+        let mut path = "v1beta/models".to_string();
 
-        let json: serde_json::Value = response.json().await?;
-        let arr = json
-            .get("models")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| {
-                ProviderError::RequestFailed(
-                    "Missing 'models' array in Google models response".to_string(),
-                )
-            })?;
-        let mut models: Vec<String> = arr
-            .iter()
-            .filter_map(|m| m.get("name").and_then(|v| v.as_str()))
-            .map(|name| name.split('/').next_back().unwrap_or(name).to_string())
-            .collect();
-        models.sort();
-        Ok(models)
+        loop {
+            let response = self.api_client.request(&path).response_get().await?;
+            let json: Value = handle_status(response).await?.json().await?;
+            let page_models = json
+                .get("models")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    ProviderError::RequestFailed(
+                        "Missing 'models' array in Google models response".to_string(),
+                    )
+                })?;
+            models.extend(
+                page_models
+                    .iter()
+                    .filter_map(|model| model.get("name").and_then(Value::as_str))
+                    .map(|name| name.rsplit('/').next().unwrap_or(name).to_string()),
+            );
+
+            let Some(token) = json
+                .get("nextPageToken")
+                .and_then(Value::as_str)
+                .filter(|token| !token.is_empty())
+            else {
+                models.sort();
+                return Ok(models);
+            };
+            if !seen_page_tokens.insert(token.to_string()) {
+                return Err(ProviderError::RequestFailed(
+                    "Google models response returned a repeated page token".to_string(),
+                ));
+            }
+            path = format!("v1beta/models?pageToken={}", urlencoding::encode(token));
+        }
     }
 
     async fn stream(
