@@ -791,12 +791,11 @@ These free options are a great way to get started with goose and explore its cap
 Groq provides free access to open source (open weight) models with high-speed inference. To use Groq with goose, you need an API key from [Groq Console](https://console.groq.com/keys).
 
 Groq offers several open source models that support tool calling, including:
-- **moonshotai/kimi-k2-instruct-0905** - Mixture-of-Experts model with 1 trillion parameters, optimized for agentic intelligence and tool use
-- **qwen/qwen3-32b** - 32.8 billion parameter model with advanced reasoning and multilingual capabilities
-- **llama-3.3-70b-versatile** - Meta's Llama 3.3 model for versatile applications
-- **llama-3.1-8b-instant** - Meta's Llama 3.1 model for fast inference
+- **openai/gpt-oss-120b** - OpenAI's flagship open-weight Mixture-of-Experts model with 120 billion total parameters, designed for agentic use
+- **openai/gpt-oss-20b** - OpenAI's compact open-weight Mixture-of-Experts model with 20 billion total parameters, optimized for cost-efficient agentic workflows
+- **qwen/qwen3.8-27b** (preview) - 27 billion parameter multimodal (text and image) model with thinking and instruct modes and long-horizon tool use
 
-For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/groq.json).
+For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/groq.json).
 
 To set up Groq with goose, follow these steps:
 
