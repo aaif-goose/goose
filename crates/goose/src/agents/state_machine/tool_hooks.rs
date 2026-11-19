@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use goose_agent::tool_approval::is_tool_approval_denial;
 use goose_agent::tool_call_state::pending_tool_requests;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
@@ -81,7 +80,6 @@ pub(crate) async fn fire_post_tool_hooks(
         .map(|request| (request.id.as_str(), request))
         .collect::<HashMap<_, _>>();
     let hooks = appended_messages(effects)
-        .filter(|message| !is_tool_approval_denial(message))
         .flat_map(|message| {
             message
                 .content

@@ -18,7 +18,6 @@ use crate::tool_call_state::{add_error_response, pending_tool_requests, request_
 
 const APPROVAL_OPERATION: &str = "tool_approval";
 const SEEN: &str = "seen";
-const DENIED: &str = "denied";
 
 pub const DEFAULT_DECLINED_MESSAGE: &str = "The user declined to run this tool.";
 
@@ -67,22 +66,6 @@ fn seen_message(ids: &[&str]) -> Message {
     message
 }
 
-fn emit_denials(emit: &Emitter, mut response: Message) -> Message {
-    response
-        .metadata
-        .set_operation_note(APPROVAL_OPERATION, DENIED, true.into());
-    emit.message(response)
-}
-
-/// Whether this tool response message was produced by the approval policy rather than dispatch.
-pub fn is_tool_approval_denial(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(APPROVAL_OPERATION, DENIED)
-        .and_then(serde_json::Value::as_bool)
-        == Some(true)
-}
-
 /// Optional policy step. Place it before tool handlers; it yields the turn while
 /// any of its confirmation requests are unanswered.
 pub struct ToolApprovalOperation<'a, S> {
@@ -118,7 +101,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
         }
         let mut tool_responses = Message::user();
         add_error_response(&mut tool_responses, request, &self.declined_message);
-        applied([E::from(emit_denials(emit, tool_responses))])
+        applied([E::from(emit.message(tool_responses))])
     }
 
     async fn check_new_calls<E: From<Message>>(
@@ -158,7 +141,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
             effects.push(seen_message(&seen));
         }
         if !tool_responses.content.is_empty() {
-            effects.push(emit_denials(emit, tool_responses));
+            effects.push(emit.message(tool_responses));
         }
         applied(effects.into_iter().map(E::from))
     }
@@ -258,7 +241,7 @@ where
             }
         }
         if !legacy_denials.content.is_empty() {
-            return applied([E::from(emit_denials(emit, legacy_denials))]);
+            return applied([E::from(emit.message(legacy_denials))]);
         }
         if !unchecked.is_empty() {
             return self
