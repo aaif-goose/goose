@@ -6,7 +6,6 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, yielded_with, Command, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult,
@@ -71,8 +70,8 @@ impl RecipeOperation {
             Err(error) => return command_error(conversation, error, emit),
         };
 
-        if let Some(response) = recipe.response.clone() {
-            if let Err(error) = FinalOutputTool::try_new(response) {
+        if let Some(response) = &recipe.response {
+            if let Err(error) = response.validate() {
                 return command_error(conversation, format!("Recipe is not valid: {error}"), emit);
             }
         }

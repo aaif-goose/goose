@@ -5,13 +5,12 @@ use super::{
     derive_extension_name_from_command, session_provider, split_extension_name_prefix, CliSession,
 };
 use console::style;
-use goose::agents::final_output_tool::FinalOutputTool;
 use goose::agents::{Container, ExtensionError, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::model_config::model_config_from_user_config;
-use goose::recipe::Recipe;
+use goose::recipe::{Recipe, Response};
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, SessionManager};
 use rustyline::EditMode;
@@ -695,8 +694,8 @@ pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::
     let recipe = session_config.recipe.as_ref();
 
     if let Some(Err(error)) = recipe
-        .and_then(|r| r.response.clone())
-        .map(FinalOutputTool::try_new)
+        .and_then(|r| r.response.as_ref())
+        .map(Response::validate)
     {
         output::render_error(&format!("Invalid recipe response: {error}"));
         process::exit(1);

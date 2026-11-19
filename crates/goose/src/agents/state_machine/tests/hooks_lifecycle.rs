@@ -4,10 +4,11 @@ use serde_json::Value;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
-use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
+use oi_kit_agent::final_output::FINAL_OUTPUT_NOT_ALONE_MESSAGE;
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 
 pub(in crate::agents::state_machine) struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
@@ -615,7 +616,7 @@ async fn pre_tool_use_result_reports_unevaluated_when_the_only_hook_exits_withou
 }
 
 /// Builds a recipe whose structured response forces the model through
-/// `recipe__final_output`, which `FinalOutputOperation` executes itself rather than
+/// `final_output`, which `FinalOutputOperation` executes itself rather than
 /// handing to `ExtensionOperation`.
 fn final_output_recipe() -> crate::recipe::Recipe {
     crate::recipe::Recipe::builder()
@@ -623,11 +624,11 @@ fn final_output_recipe() -> crate::recipe::Recipe {
         .description("Exercises the final-output hook lifecycle")
         .instructions("Return a structured answer")
         .response(crate::recipe::Response {
-            json_schema: Some(serde_json::json!({
+            json_schema: serde_json::json!({
                 "type": "object",
                 "properties": { "answer": { "type": "string" } },
                 "required": ["answer"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe")

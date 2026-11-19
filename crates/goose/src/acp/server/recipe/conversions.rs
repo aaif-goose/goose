@@ -547,12 +547,12 @@ mod tests {
                 options: Some(vec!["dev".to_string(), "prod".to_string()]),
             }]),
             response: Some(RecipeResponseDto {
-                json_schema: Some(json!({
+                json_schema: json!({
                     "type": "object",
                     "properties": {
                         "ok": { "type": "boolean" }
                     }
-                })),
+                }),
             }),
             sub_recipes: Some(vec![SubRecipeDto {
                 name: "child".to_string(),

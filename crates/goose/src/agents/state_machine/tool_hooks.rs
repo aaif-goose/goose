@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex as StdMutex};
 use oi_kit_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::ops_toolcalling::{advertised_working_dir, tool_span};
 use crate::agents::state_machine::{messages_since_kickoff, ConversationEffect, GooseEffect};
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::hooks::{HookChainOutcome, HookContext, HookDenial, HookEvent, HookManager};
 use crate::session::Session;
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 
 pub(crate) async fn fire_pre_tool_hooks(
     hook_manager: &HookManager,

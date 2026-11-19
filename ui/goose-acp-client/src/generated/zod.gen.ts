@@ -1342,7 +1342,7 @@ export const zRecipeParameterDto = z.object({
 });
 
 export const zRecipeResponseDto = z.object({
-    json_schema: z.unknown().optional()
+    json_schema: z.unknown()
 });
 
 export const zSubRecipeDto = z.object({

@@ -34,6 +34,8 @@ tracing-futures = { workspace = true }
 serde.workspace = true
 regex = { workspace = true, features = ["unicode-perl"] }
 goose-acp-types = { version = "0.1.0-alpha.15", path = "../goose-acp-types", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
+indoc.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rmcp = { workspace = true, features = ["local"] }

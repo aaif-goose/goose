@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use futures::future;
 use futures::stream::{self, BoxStream, StreamExt};
+use oi_kit_agent::final_output::FinalOutputTool;
 use oi_kit_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
 use rmcp::model::Role;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::Emitter;
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
@@ -178,13 +178,13 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
     use crate::agents::state_machine::{
         ConversationEffect, GooseEffect, Operation, OperationResult, RunStatus,
     };
     use crate::config::GooseMode;
     use crate::conversation::Conversation;
     use crate::session::SessionManager;
+    use oi_kit_agent::final_output::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
     use oi_kit_agent::machine::EffectHandler;
 
     const OPERATION_NAME: &str = "foreground_subagent";

@@ -4306,7 +4306,10 @@
       "type": "object",
       "properties": {
         "json_schema": {}
-      }
+      },
+      "required": [
+        "json_schema"
+      ]
     },
     "SubRecipeDto": {
       "type": "object",

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use oi_kit_agent::final_output::FinalOutputTool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
@@ -112,8 +113,13 @@ pub struct Settings {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Response {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub json_schema: Option<serde_json::Value>,
+    pub json_schema: serde_json::Value,
+}
+
+impl Response {
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        FinalOutputTool::try_new(self.json_schema.clone()).map(|_| ())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -516,8 +522,7 @@ mod tests {
 
         assert!(recipe.response.is_some());
         let response = recipe.response.unwrap();
-        assert!(response.json_schema.is_some());
-        let json_schema = response.json_schema.unwrap();
+        let json_schema = response.json_schema;
         assert_eq!(json_schema["type"], "object");
         assert!(json_schema["properties"].is_object());
         assert_eq!(json_schema["properties"]["name"]["type"], "string");
@@ -601,8 +606,7 @@ sub_recipes:
 
         assert!(recipe.response.is_some());
         let response = recipe.response.unwrap();
-        assert!(response.json_schema.is_some());
-        let json_schema = response.json_schema.unwrap();
+        let json_schema = response.json_schema;
         assert_eq!(json_schema["type"], "object");
         assert!(json_schema["properties"].is_object());
         assert_eq!(json_schema["properties"]["name"]["type"], "string");

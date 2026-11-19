@@ -82,8 +82,7 @@ pub struct RecipeSettingsDto {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RecipeResponseDto {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub json_schema: Option<serde_json::Value>,
+    pub json_schema: serde_json::Value,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]

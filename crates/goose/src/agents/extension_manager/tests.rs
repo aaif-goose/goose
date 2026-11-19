@@ -1597,9 +1597,8 @@ fn test_recover_mangled_tool_name_unprefixed_extension() {
 
 #[test]
 fn test_recover_mangled_tool_name_non_extension_manager_tools() {
-    // recipe__final_output and platform__manage_schedule are appended by
-    // Agent::list_tools outside the extension manager (see #9486); they
-    // use the same "__" convention, so no owner metadata is needed.
+    // Tools added outside the extension manager can still use the "__"
+    // convention without owner metadata (see #9486).
     let tools = [
         ("recipe__final_output", None),
         ("platform__manage_schedule", None),

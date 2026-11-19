@@ -12,6 +12,7 @@ use std::{
 use anyhow::Result;
 use async_trait::async_trait;
 use oi_kit_agent::{
+    final_output::FinalOutputTool,
     inference::{InferenceEffect, InferenceRunner},
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{Emitter, MachineEffect},
@@ -32,6 +33,7 @@ use oi_kit_provider_types::{
 use rmcp::{
     handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
     model::{CallToolRequestParams, ErrorData, Tool},
+    object,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -319,4 +321,24 @@ async fn retries_back_off_on_the_host_timer() {
     assert_eq!(attempts.get(), 2);
     // The delay is jittered down to 80% of the 50ms interval at most.
     assert!(js_sys::Date::now() - started >= 40.0);
+}
+
+#[wasm_bindgen_test]
+fn validates_final_output_against_its_schema() {
+    let tool = FinalOutputTool::try_new(json!({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"]
+    }))
+    .unwrap();
+
+    assert_eq!(
+        tool.validate(Some(object!({"answer": "42"}))).unwrap(),
+        r#"{"answer":"42"}"#
+    );
+    assert!(tool
+        .validate(Some(object!({"wrong": "field"})))
+        .unwrap_err()
+        .message
+        .contains("Validation failed"));
 }

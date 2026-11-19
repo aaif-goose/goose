@@ -190,7 +190,7 @@ pub(crate) fn prepare_inference_tools(
         tools.retain(|tool| {
             let owner = crate::agents::extension_manager::get_tool_owner(tool);
             (owner.is_none()
-                && (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
+                && (tool.name == oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME
                     || tool.name == oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME))
                 || owner.is_some_and(|owner| {
                     crate::agents::platform_extensions::is_unprefixed_extension(&owner)
@@ -1421,7 +1421,7 @@ mod tests {
     #[cfg(feature = "code-mode")]
     #[test]
     fn code_mode_keeps_first_class_resource_and_final_output_tools() {
-        use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+        use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
         let mut final_output = make_tool_with_meta(None);
         final_output.name = FINAL_OUTPUT_TOOL_NAME.into();
         let mut extension_final_output =
