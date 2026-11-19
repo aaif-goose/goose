@@ -27,5 +27,5 @@ library resource, which would mean the bundled native library was not loaded
 correctly.
 
 The example sets `--enable-native-access=ALL-UNNAMED` because JNA loads the
-bundled Goose native library. Newer JDKs warn when native access is not enabled
+bundled oi-kit native library. Newer JDKs warn when native access is not enabled
 explicitly, and future JDKs may require it.
