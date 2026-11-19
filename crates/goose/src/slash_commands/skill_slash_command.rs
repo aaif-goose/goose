@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use goose_sdk_types::custom_requests::SourceEntry;
+use goose_acp_types::custom_requests::SourceEntry;
 
 use super::recipe_slash_command::runnable_recipes;
 use super::slash_command::is_builtin_command;
@@ -50,7 +50,7 @@ pub(super) fn commands_from_sources(sources: Vec<SourceEntry>) -> Vec<SlashComma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_sdk_types::custom_requests::SourceType;
+    use goose_acp_types::custom_requests::SourceType;
     use std::collections::HashMap;
     use tempfile::TempDir;
 

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use futures::future;
 use futures::stream::{self, BoxStream, StreamExt};
-use goose_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
+use oi_kit_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
 use rmcp::model::Role;
 use tokio_util::sync::CancellationToken;
 
@@ -171,8 +171,8 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::Result;
-    use goose_agent::events::AgentEvent;
-    use goose_agent::subagent::SubagentOperation;
+    use oi_kit_agent::events::AgentEvent;
+    use oi_kit_agent::subagent::SubagentOperation;
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, MetaObject};
     use tempfile::TempDir;
     use tokio::sync::mpsc;
@@ -185,7 +185,7 @@ mod tests {
     use crate::config::GooseMode;
     use crate::conversation::Conversation;
     use crate::session::SessionManager;
-    use goose_agent::machine::EffectHandler;
+    use oi_kit_agent::machine::EffectHandler;
 
     const OPERATION_NAME: &str = "foreground_subagent";
     const DELIVERED: &str = "delivered";

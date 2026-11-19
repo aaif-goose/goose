@@ -1,6 +1,6 @@
-//! Goose-only extension kinds, composed with the GDK's external transports.
-pub use goose_agent::extension::ExtensionConfig as TransportConfig;
-pub use goose_agent::extension::{
+//! Goose-only extension kinds, composed with oi-kit's external transports.
+pub use oi_kit_agent::extension::ExtensionConfig as TransportConfig;
+pub use oi_kit_agent::extension::{
     name_to_key, Envs, ExtensionConfigResolver, ExtensionError, ExtensionInfo, ExtensionResult,
     ProcessExit, DEFAULT_EXTENSION_TIMEOUT,
 };
@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub const DEFAULT_EXTENSION: &str = "developer";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 
-// Keep transport variants directly matchable, like the GDK transport enum;
+// Keep transport variants directly matchable, like the oi-kit transport enum;
 // boxing here would require a second match just to inspect transport fields.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -44,7 +44,7 @@ pub enum ExtensionConfig {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
     },
-    /// Serialize the GDK config directly, preserving the existing tagged JSON.
+    /// Serialize the oi-kit config directly, preserving the existing tagged JSON.
     #[serde(untagged)]
     External(TransportConfig),
 }

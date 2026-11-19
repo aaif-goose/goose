@@ -1,1 +1,1 @@
-pub use goose_agent::mcp::*;
+pub use oi_kit_agent::mcp::*;

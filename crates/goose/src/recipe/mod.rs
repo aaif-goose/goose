@@ -769,7 +769,7 @@ isGlobal: true"#;
         let extensions = recipe.extensions.unwrap();
         assert_eq!(extensions.len(), 1);
 
-        if let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        if let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             ..

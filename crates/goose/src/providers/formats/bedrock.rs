@@ -22,9 +22,9 @@ use crate::providers::formats::anthropic::{
     ANTHROPIC_PROVIDER_NAME, MIN_ANSWER_TOKENS,
 };
 use crate::utils::{sanitize_unicode_tags, strip_unicode_tags};
-use goose_providers::conversation::token_usage::Usage;
-use goose_providers::documents::{unsupported_document_text, UNSUPPORTED_PROVIDER_REASON};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::Usage;
+use oi_kit_providers::documents::{unsupported_document_text, UNSUPPORTED_PROVIDER_REASON};
+use oi_kit_providers::model::ModelConfig;
 use once_cell::sync::Lazy;
 use regex::Regex;
 

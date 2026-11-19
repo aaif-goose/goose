@@ -13,8 +13,8 @@ use goose::conversation::Conversation;
 use goose::providers::base::ProviderUsage;
 use goose::session::session_manager::token_state_from_session_and_totals;
 use goose::session::{Session, SessionManager, SessionType};
-use goose_providers::conversation::token_usage::Usage;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::Usage;
+use oi_kit_providers::model::ModelConfig;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

@@ -1,4 +1,4 @@
-pub use goose_download_manager::*;
+pub use oi_kit_download_manager::*;
 
 #[cfg(test)]
 mod tests {

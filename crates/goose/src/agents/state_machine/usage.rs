@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
 
 use crate::agents::state_machine::{ConversationEffect, GooseEffect};
 use crate::conversation::message::MessageUsage;
@@ -28,7 +28,7 @@ pub(super) fn is_compaction(session: &Session, effects: &[GooseEffect]) -> bool 
         || session
             .conversation
             .as_ref()
-            .is_some_and(goose_agent::compaction::awaits_compaction_reply)
+            .is_some_and(oi_kit_agent::compaction::awaits_compaction_reply)
 }
 
 pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect], compaction: bool) {

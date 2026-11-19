@@ -511,7 +511,7 @@ fn apply_claude_desktop_candidate(
 
         let entry = crate::config::extensions::ExtensionEntry {
             enabled: enable_imported_extensions,
-            config: ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            config: ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name,
                 description: "Imported from Claude Desktop".to_string(),
                 cmd: command,

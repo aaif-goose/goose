@@ -1,4 +1,4 @@
-pub use goose_providers::canonical::catalog::{
+pub use oi_kit_providers::canonical::catalog::{
     ModelCapabilities, ModelTemplate, ProviderCatalogEntry, ProviderFormat,
     ProviderSetupCapabilities, ProviderSetupCatalogEntry, ProviderSetupCategory,
     ProviderSetupField, ProviderSetupFieldOverride, ProviderSetupGroup, ProviderSetupMetadata,
@@ -13,11 +13,11 @@ pub async fn get_providers_by_format(format: ProviderFormat) -> Vec<ProviderCata
         .map(|(metadata, _)| metadata.name)
         .collect::<HashSet<_>>();
 
-    goose_providers::canonical::catalog::get_providers_by_format(format, &native_provider_ids)
+    oi_kit_providers::canonical::catalog::get_providers_by_format(format, &native_provider_ids)
 }
 
 pub async fn get_setup_catalog_entries() -> Vec<ProviderSetupCatalogEntry> {
-    goose_providers::canonical::catalog::get_setup_catalog_entries(
+    oi_kit_providers::canonical::catalog::get_setup_catalog_entries(
         super::providers()
             .await
             .into_iter()
@@ -26,7 +26,7 @@ pub async fn get_setup_catalog_entries() -> Vec<ProviderSetupCatalogEntry> {
 }
 
 pub fn get_provider_template(provider_id: &str) -> Option<ProviderTemplate> {
-    goose_providers::canonical::catalog::get_provider_template(provider_id)
+    oi_kit_providers::canonical::catalog::get_provider_template(provider_id)
 }
 
 #[cfg(test)]

@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::skills::SkillSource;
-use goose_sdk_types::custom_requests::SourceEntry;
+use goose_acp_types::custom_requests::SourceEntry;
+use oi_kit_agent::skills::SkillSource;
 
 use crate::session::Session;
 
@@ -43,7 +43,7 @@ impl SkillSource<Session> for GooseSkillSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_sdk_types::custom_requests::SourceType;
+    use goose_acp_types::custom_requests::SourceType;
     use std::collections::HashMap;
 
     fn skill_at(skill_dir: &Path, file: &Path) -> SourceEntry {

@@ -16,7 +16,7 @@ use agent_client_protocol_schema::v1::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -42,9 +42,9 @@ use crate::providers::base::{MessageStream, PermissionRouting, Provider};
 use crate::subprocess::configure_subprocess;
 use crate::token_counter::create_token_counter;
 use crate::utils::sanitize_unicode_tags;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::{
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::{
     ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
 };
 
@@ -727,7 +727,7 @@ impl Provider for AcpProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+        oi_kit_providers::context_limit::ContextLimitResolver::new(self.get_name())
             .resolve(model, override_limit, || async {
                 let size = self.context_size.load(Ordering::Relaxed);
                 Ok((size > 0).then_some(size as usize))
@@ -1845,7 +1845,7 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
     for config in configs {
         match config {
             ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                     name,
                     socket: Some(_),
                     ..
@@ -1857,7 +1857,7 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
                 );
             }
             ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                     name,
                     uri,
                     headers,
@@ -1873,7 +1873,7 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
                     McpServerHttp::new(name, uri).headers(http_headers),
                 ));
             }
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name,
                 cmd,
                 args,
@@ -2855,7 +2855,7 @@ mod tests {
         let (provider, model) = test_provider();
         assert_eq!(
             provider.get_context_limit(&model.model_name, None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
 
         provider.context_size.store(200_000, Ordering::Relaxed);
@@ -4175,7 +4175,7 @@ mod tests {
     }
 
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -4197,7 +4197,7 @@ mod tests {
         ; "stdio_converts_to_mcpserver_stdio"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
@@ -4244,7 +4244,7 @@ mod tests {
     #[test]
     fn socket_backed_http_is_omitted_without_dropping_ordinary_http() {
         let socket_backed =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "socket-backed".into(),
                 description: String::new(),
                 uri: "http://127.0.0.1:4711/mcp".into(),
@@ -4260,7 +4260,7 @@ mod tests {
                 available_tools: vec![],
             });
         let ordinary_http =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "ordinary-http".into(),
                 description: String::new(),
                 uri: "https://mcp.example.com/".into(),
@@ -4291,7 +4291,7 @@ mod tests {
     #[test]
     fn test_filter_supported_servers_skips_http_without_capability() {
         let config =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "github".into(),
                 description: String::new(),
                 uri: "https://api.githubcopilot.com/mcp/".into(),

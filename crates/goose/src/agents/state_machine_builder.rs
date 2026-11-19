@@ -2,18 +2,18 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::mcp::ExtensionOperation;
-use goose_agent::{
+use oi_kit_agent::mcp::ExtensionOperation;
+use oi_kit_agent::{
     bang_command::BangCommandOperation,
     empty_response::EmptyResponseOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
 };
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::decision::DecisionProvider;
-use goose_providers::model::ModelConfig;
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::decision::DecisionProvider;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{

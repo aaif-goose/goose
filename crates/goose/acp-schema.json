@@ -7084,7 +7084,7 @@
           "default": false
         }
       },
-      "description": "Wire mirror of the conversation `MessageUsage` (this crate cannot depend on\ngoose-provider-types); field names and serde casing MUST stay in parity."
+      "description": "Wire mirror of the conversation `MessageUsage` (this crate cannot depend on\noi-kit-provider-types); field names and serde casing MUST stay in parity."
     },
     "CostSourceData": {
       "oneOf": [

@@ -11,8 +11,8 @@ use axum::{extract::Query, response::Html, routing::get, Router};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -773,7 +773,7 @@ impl Provider for XaiOAuthProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for XaiOAuthProvider {
+impl oi_kit_providers::base::ProviderDescriptor for XaiOAuthProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::with_models(
             XAI_OAUTH_PROVIDER_NAME,

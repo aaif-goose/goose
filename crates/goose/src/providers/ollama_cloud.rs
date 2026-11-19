@@ -5,12 +5,12 @@ use crate::conversation::message::Message;
 use crate::session_context::session_id_request_builder_with_header_override;
 use anyhow::Result;
 use futures::future::BoxFuture;
-use goose_providers::api_client::{ApiClient, AuthMethod, TlsConfig};
-use goose_providers::base::{ModelInfo, ProviderDescriptor};
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::ollama::fetch_ollama_model_names;
-use goose_providers::openai::OpenAiProvider;
+use oi_kit_providers::api_client::{ApiClient, AuthMethod, TlsConfig};
+use oi_kit_providers::base::{ModelInfo, ProviderDescriptor};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::ollama::fetch_ollama_model_names;
+use oi_kit_providers::openai::OpenAiProvider;
 use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -111,7 +111,7 @@ fn build_ollama_api_client(
     config: &DeclarativeProviderConfig,
     tls_config: Option<TlsConfig>,
 ) -> Result<ApiClient> {
-    let normalized_base_url = goose_providers::openai::ensure_url_scheme(&config.base_url);
+    let normalized_base_url = oi_kit_providers::openai::ensure_url_scheme(&config.base_url);
     let url = url::Url::parse(&normalized_base_url)
         .map_err(|e| anyhow::anyhow!("Invalid base URL '{}': {}", config.base_url, e))?;
     let host = url[..url::Position::BeforePath].to_string();
@@ -181,7 +181,7 @@ impl Provider for OllamaCloudProvider {
         self.inner.skip_canonical_filtering()
     }
 
-    fn retry_config(&self) -> goose_providers::retry::RetryConfig {
+    fn retry_config(&self) -> oi_kit_providers::retry::RetryConfig {
         self.inner.retry_config()
     }
 
@@ -219,7 +219,7 @@ impl Provider for OllamaCloudProvider {
             .iter()
             .flatten()
             .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+        oi_kit_providers::context_limit::ContextLimitResolver::new(self.get_name())
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async {
                 if let Some(cached) = self
@@ -387,7 +387,7 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 provider.get_context_limit("unknown-model", None).await,
-                goose_providers::model::DEFAULT_CONTEXT_LIMIT
+                oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
             );
         }
 

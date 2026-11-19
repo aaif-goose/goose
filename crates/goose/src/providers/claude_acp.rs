@@ -19,7 +19,7 @@ pub(crate) const CLAUDE_ACP_BINARY: &str = "claude-agent-acp";
 
 pub struct ClaudeAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for ClaudeAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ClaudeAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CLAUDE_ACP_PROVIDER_NAME,

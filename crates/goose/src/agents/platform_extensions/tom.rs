@@ -4,7 +4,7 @@ use crate::agents::tool_execution::ToolCallContext;
 use crate::config::Config;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::mcp::client::Error;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::Tool;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,

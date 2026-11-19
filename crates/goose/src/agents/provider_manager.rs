@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use tracing::warn;
 
 use crate::config::Config;

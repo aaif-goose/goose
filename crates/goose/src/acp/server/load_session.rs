@@ -460,7 +460,7 @@ impl AcpConnection {
 mod tests {
     use super::*;
     use crate::conversation::message::InferenceMetadata;
-    use goose_providers::thinking::{
+    use oi_kit_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
     use rmcp::model::CallToolRequestParams;
@@ -501,7 +501,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],

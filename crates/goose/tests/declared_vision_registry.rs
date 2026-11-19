@@ -1,7 +1,7 @@
 use goose::config::declarative_providers::{create_custom_provider, CreateCustomProviderParams};
 use goose::conversation::message::Message;
 use goose::providers::{get_from_registry, refresh_custom_providers};
-use goose_providers::{base::ModelInfo, model::ModelConfig};
+use oi_kit_providers::{base::ModelInfo, model::ModelConfig};
 use serde_json::json;
 use wiremock::{
     matchers::{method, path},
