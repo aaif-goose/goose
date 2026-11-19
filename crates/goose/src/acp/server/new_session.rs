@@ -51,7 +51,7 @@ impl AcpConnection {
         validate_absolute_cwd(&args.cwd)?;
         let config = Config::global();
         let session_type = session_type_from_meta(args.meta.as_ref())?;
-        let current_mode: GooseMode = config.get_goose_mode().unwrap_or_default();
+        let current_mode: GooseMode = config.get_goose_mode_or_default().internal_err()?;
         let recipe = self.resolve_recipe_from_meta(args.meta.as_ref()).await?;
         let meta = new_session_meta_fields(args.meta.as_ref(), recipe.as_ref())?;
         let session_name = recipe_title(recipe.as_ref())

@@ -1329,6 +1329,18 @@ config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
 impl Config {
+    pub fn get_goose_mode_or_default(&self) -> Result<GooseMode, ConfigError> {
+        if let Err(env::VarError::NotUnicode(_)) = env::var("GOOSE_MODE") {
+            return Err(ConfigError::DeserializeError(
+                "GOOSE_MODE contains non-Unicode data".to_string(),
+            ));
+        }
+        match self.get_goose_mode() {
+            Err(ConfigError::NotFound(_)) => Ok(GooseMode::Auto),
+            result => result,
+        }
+    }
+
     pub(crate) fn resolve_goose_mode(&self) -> Result<GooseMode, ConfigError> {
         match self.get_param_strict("GOOSE_MODE") {
             Ok(mode) => Ok(mode),
@@ -1526,6 +1538,38 @@ mod tests {
         std::fs::write(config_file.path(), "GOOSE_MODE: invalid\n").unwrap();
         assert!(matches!(
             config.resolve_goose_mode(),
+            Err(ConfigError::DeserializeError(_))
+        ));
+    }
+
+    #[test]
+    fn goose_mode_or_default_rejects_only_malformed_values() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+
+        assert_eq!(config.get_goose_mode_or_default().unwrap(), GooseMode::Auto);
+        config.set_goose_mode(GooseMode::Approve).unwrap();
+        assert_eq!(
+            config.get_goose_mode_or_default().unwrap(),
+            GooseMode::Approve
+        );
+
+        std::fs::write(config_file.path(), "GOOSE_MODE: Approve\n").unwrap();
+        assert!(matches!(
+            config.get_goose_mode_or_default(),
+            Err(ConfigError::DeserializeError(_))
+        ));
+    }
+
+    #[test]
+    fn goose_mode_or_default_rejects_malformed_environment_value() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("smart-approve"))]);
+        let config = new_test_config();
+        assert!(matches!(
+            config.get_goose_mode_or_default(),
             Err(ConfigError::DeserializeError(_))
         ));
     }

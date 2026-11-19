@@ -646,6 +646,10 @@ async fn configure_session_prompts(
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    if let Err(error) = Config::global().get_goose_mode_or_default() {
+        output::render_error(&format!("Invalid GOOSE_MODE: {}", error));
+        process::exit(1);
+    }
     match try_build_session(session_config).await {
         Ok(session) => session,
         Err(error) => {
@@ -701,12 +705,9 @@ pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::
         process::exit(1);
     }
 
-    let session_id = resolve_session_id(
-        &session_config,
-        &session_manager,
-        config.get_goose_mode().unwrap_or_default(),
-    )
-    .await;
+    let goose_mode = config.get_goose_mode_or_default()?;
+
+    let session_id = resolve_session_id(&session_config, &session_manager, goose_mode).await;
 
     if session_config.container.is_some() {
         session_manager
@@ -829,7 +830,7 @@ pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::
         });
 
     services
-        .update_goose_mode(config.get_goose_mode().unwrap_or_default(), &session_id)
+        .update_goose_mode(goose_mode, &session_id)
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to set session mode: {}", e));
