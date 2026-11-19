@@ -42,7 +42,7 @@ use serde_json::Value;
 use crate::observability::{RequestDescriptor, RequestObserver, RequestOperation};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum GooseError {
+pub enum OiKitError {
     #[error("Rate limit exceeded{retry_after_suffix}")]
     RateLimited {
         retry_after_ms: Option<u64>,
@@ -62,7 +62,7 @@ pub enum GooseError {
     Generic { details: String },
 }
 
-impl GooseError {
+impl OiKitError {
     fn generic(error: impl ToString) -> Self {
         Self::Generic {
             details: error.to_string(),
@@ -70,13 +70,13 @@ impl GooseError {
     }
 }
 
-impl From<anyhow::Error> for GooseError {
+impl From<anyhow::Error> for OiKitError {
     fn from(error: anyhow::Error) -> Self {
         Self::generic(error)
     }
 }
 
-impl From<oi_kit_providers::errors::ProviderError> for GooseError {
+impl From<oi_kit_providers::errors::ProviderError> for OiKitError {
     fn from(error: oi_kit_providers::errors::ProviderError) -> Self {
         match error {
             oi_kit_providers::errors::ProviderError::Authentication(message) => {
@@ -127,7 +127,7 @@ impl From<oi_kit_providers::errors::ProviderError> for GooseError {
     }
 }
 
-impl From<serde_json::Error> for GooseError {
+impl From<serde_json::Error> for OiKitError {
     fn from(error: serde_json::Error) -> Self {
         Self::generic(error)
     }
@@ -151,8 +151,8 @@ fn is_output_token_limit(message: &str) -> bool {
 /// that request, allowing callers to keep concurrent request logs separate.
 #[uniffi::export(callback_interface)]
 pub trait RequestLogger: Send + Sync {
-    fn start(&self) -> Result<u64, GooseError>;
-    fn write(&self, request_id: u64, record: String) -> Result<(), GooseError>;
+    fn start(&self) -> Result<u64, OiKitError>;
+    fn write(&self, request_id: u64, record: String) -> Result<(), OiKitError>;
 }
 
 struct RequestLoggerAdapter {
@@ -189,11 +189,11 @@ impl oi_kit_providers::request_log::RequestLogHandle for RequestLogHandleAdapter
 ///
 /// A logger can only be installed once for the lifetime of the process.
 #[uniffi::export]
-pub fn install_request_logger(logger: Box<dyn RequestLogger>) -> Result<(), GooseError> {
+pub fn install_request_logger(logger: Box<dyn RequestLogger>) -> Result<(), OiKitError> {
     oi_kit_providers::request_log::install_logger(RequestLoggerAdapter {
         logger: Arc::from(logger),
     })
-    .map_err(|error| GooseError::generic(error.to_string()))
+    .map_err(|error| OiKitError::generic(error.to_string()))
 }
 
 /// A text message passed to a provider.
@@ -248,7 +248,7 @@ pub enum MessageContent {
 }
 
 impl ProviderMessage {
-    fn to_goose_message(&self) -> Result<Option<Message>, GooseError> {
+    fn to_goose_message(&self) -> Result<Option<Message>, OiKitError> {
         let role = match self.role {
             MessageRole::User | MessageRole::Tool => Role::User,
             MessageRole::Assistant => Role::Assistant,
@@ -262,7 +262,7 @@ impl ProviderMessage {
 }
 
 impl MessageContent {
-    fn to_goose_content(&self) -> Result<GooseMessageContent, GooseError> {
+    fn to_goose_content(&self) -> Result<GooseMessageContent, OiKitError> {
         match self {
             MessageContent::Text { text } => {
                 Ok(GooseMessageContent::text(sanitize_unicode_tags(text)))
@@ -277,7 +277,7 @@ impl MessageContent {
                 name,
             } => {
                 if !document_media_type_is_supported(mime_type) {
-                    return Err(GooseError::generic(format!(
+                    return Err(OiKitError::generic(format!(
                         "unsupported document media type {mime_type}: supported types are {}",
                         SUPPORTED_DOCUMENT_MEDIA_TYPES.join(", ")
                     )));
@@ -453,7 +453,7 @@ pub struct ProviderTool {
 }
 
 impl ProviderTool {
-    fn to_goose_tool(&self) -> Result<Tool, GooseError> {
+    fn to_goose_tool(&self) -> Result<Tool, OiKitError> {
         let schema = parse_json_object(&self.input_schema_json)?;
         let mut tool = Tool::new(self.name.clone(), self.description.clone(), schema);
         if let Some(annotations_json) = &self.annotations_json {
@@ -463,10 +463,10 @@ impl ProviderTool {
     }
 }
 
-fn parse_json_object(json: &str) -> Result<serde_json::Map<String, Value>, GooseError> {
+fn parse_json_object(json: &str) -> Result<serde_json::Map<String, Value>, OiKitError> {
     match serde_json::from_str(json)? {
         Value::Object(object) => Ok(object),
-        _ => Err(GooseError::generic("expected a JSON object")),
+        _ => Err(OiKitError::generic("expected a JSON object")),
     }
 }
 
@@ -521,7 +521,7 @@ impl ProviderModelConfig {
         &self,
         provider_name: &str,
         declared: &DeclaredVision,
-    ) -> Result<ModelConfig, GooseError> {
+    ) -> Result<ModelConfig, OiKitError> {
         let mut config = ModelConfig::new(&self.model_name)
             .with_declared_vision_support(&declared.models)
             .with_provider_vision_support(provider_name, declared.catalog_provider_id.as_deref())
@@ -546,7 +546,7 @@ impl ProviderModelConfig {
 fn merge_params(
     target: &mut serde_json::Map<String, Value>,
     params_json: Option<&String>,
-) -> Result<(), GooseError> {
+) -> Result<(), OiKitError> {
     if let Some(params_json) = params_json {
         for (key, value) in parse_json_object(params_json)? {
             target.insert(key, value);
@@ -573,7 +573,7 @@ pub struct Usage {
 }
 
 impl Usage {
-    fn from_provider_usage(usage: &ProviderUsage) -> Result<Self, GooseError> {
+    fn from_provider_usage(usage: &ProviderUsage) -> Result<Self, OiKitError> {
         Ok(Self {
             input_tokens: usage.usage.input_tokens,
             output_tokens: usage.usage.output_tokens,
@@ -617,13 +617,13 @@ pub enum StreamChunk {
         usage: Option<Usage>,
     },
     ErrorChunk {
-        error: GooseStreamError,
+        error: OiKitStreamError,
     },
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
-pub struct GooseStreamError {
-    pub kind: GooseStreamErrorKind,
+pub struct OiKitStreamError {
+    pub kind: OiKitStreamErrorKind,
     pub message: String,
     pub retry_after_ms: Option<u64>,
     /// Recovered from the message text, the only channel `ProviderError` has for it.
@@ -631,7 +631,7 @@ pub struct GooseStreamError {
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
-pub enum GooseStreamErrorKind {
+pub enum OiKitStreamErrorKind {
     RateLimited,
     OutputTokenLimitExceeded,
     ContextLengthExceeded,
@@ -641,40 +641,40 @@ pub enum GooseStreamErrorKind {
     Generic,
 }
 
-impl From<&GooseError> for GooseStreamError {
-    fn from(error: &GooseError) -> Self {
+impl From<&OiKitError> for OiKitStreamError {
+    fn from(error: &OiKitError) -> Self {
         let (kind, message, retry_after_ms) = match error {
-            GooseError::RateLimited {
+            OiKitError::RateLimited {
                 retry_after_ms,
                 retry_after_suffix,
             } => (
-                GooseStreamErrorKind::RateLimited,
+                OiKitStreamErrorKind::RateLimited,
                 format!("Rate limit exceeded{retry_after_suffix}"),
                 *retry_after_ms,
             ),
-            GooseError::OutputTokenLimitExceeded { details } => (
-                GooseStreamErrorKind::OutputTokenLimitExceeded,
+            OiKitError::OutputTokenLimitExceeded { details } => (
+                OiKitStreamErrorKind::OutputTokenLimitExceeded,
                 details.clone(),
                 None,
             ),
-            GooseError::ContextLengthExceeded { details } => (
-                GooseStreamErrorKind::ContextLengthExceeded,
+            OiKitError::ContextLengthExceeded { details } => (
+                OiKitStreamErrorKind::ContextLengthExceeded,
                 details.clone(),
                 None,
             ),
-            GooseError::Authentication { details } => {
-                (GooseStreamErrorKind::Authentication, details.clone(), None)
+            OiKitError::Authentication { details } => {
+                (OiKitStreamErrorKind::Authentication, details.clone(), None)
             }
-            GooseError::Timeout { details } => {
-                (GooseStreamErrorKind::Timeout, details.clone(), None)
+            OiKitError::Timeout { details } => {
+                (OiKitStreamErrorKind::Timeout, details.clone(), None)
             }
-            GooseError::ProviderUnavailable { details } => (
-                GooseStreamErrorKind::ProviderUnavailable,
+            OiKitError::ProviderUnavailable { details } => (
+                OiKitStreamErrorKind::ProviderUnavailable,
                 details.clone(),
                 None,
             ),
-            GooseError::Generic { details } => {
-                (GooseStreamErrorKind::Generic, details.clone(), None)
+            OiKitError::Generic { details } => {
+                (OiKitStreamErrorKind::Generic, details.clone(), None)
             }
         };
 
@@ -709,7 +709,7 @@ pub enum Feature {
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-fn runtime() -> Result<&'static tokio::runtime::Runtime, GooseError> {
+fn runtime() -> Result<&'static tokio::runtime::Runtime, OiKitError> {
     if let Some(runtime) = RUNTIME.get() {
         return Ok(runtime);
     }
@@ -717,7 +717,7 @@ fn runtime() -> Result<&'static tokio::runtime::Runtime, GooseError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(GooseError::generic)?;
+        .map_err(OiKitError::generic)?;
 
     if let Err(unused) = RUNTIME.set(runtime) {
         // Lost the init race; dropping a runtime inside an async context
@@ -739,7 +739,7 @@ impl<T> Drop for AbortOnDrop<T> {
 
 async fn run_on_runtime<T>(
     future: impl Future<Output = T> + Send + 'static,
-) -> Result<T, GooseError>
+) -> Result<T, OiKitError>
 where
     T: Send + 'static,
 {
@@ -748,11 +748,11 @@ where
     };
     (&mut task.handle).await.map_err(|error| {
         if error.is_cancelled() {
-            GooseError::Timeout {
+            OiKitError::Timeout {
                 details: "runtime task was cancelled".to_string(),
             }
         } else {
-            GooseError::generic(error)
+            OiKitError::generic(error)
         }
     })
 }
@@ -780,11 +780,11 @@ impl ProviderHandle {
         self.provider.get_name().to_string()
     }
 
-    fn model_config(&self, model: &ProviderModelConfig) -> Result<ModelConfig, GooseError> {
+    fn model_config(&self, model: &ProviderModelConfig) -> Result<ModelConfig, OiKitError> {
         model.to_goose_model_config(self.provider.get_name(), &self.declared)
     }
 
-    async fn context_limit(&self, model: ProviderModelConfig) -> Result<usize, GooseError> {
+    async fn context_limit(&self, model: ProviderModelConfig) -> Result<usize, OiKitError> {
         let normalized_model = ModelConfig::new(&model.model_name);
         let override_limit = model
             .context_limit
@@ -798,7 +798,7 @@ impl ProviderHandle {
         .await
     }
 
-    async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, GooseError> {
+    async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, OiKitError> {
         let provider = Arc::clone(&self.provider);
         let models =
             run_on_runtime(async move { provider.fetch_supported_model_info().await }).await??;
@@ -811,7 +811,7 @@ impl ProviderHandle {
         system: String,
         messages: Vec<ProviderMessage>,
         tools: Vec<ProviderTool>,
-    ) -> Result<Arc<ProviderStream>, GooseError> {
+    ) -> Result<Arc<ProviderStream>, OiKitError> {
         let timeout_ms = model.timeout_ms;
         let model = self.model_config(&model)?;
         let messages = convert_messages(messages)?;
@@ -831,7 +831,7 @@ impl ProviderHandle {
         .await
         {
             Ok(Ok(stream)) => stream,
-            Ok(Err(error)) => return Err(observer.fail(GooseError::from(error))),
+            Ok(Err(error)) => return Err(observer.fail(OiKitError::from(error))),
             Err(error) => return Err(observer.fail(error)),
         };
         observer.response_started();
@@ -854,7 +854,7 @@ impl ProviderHandle {
         system: String,
         messages: Vec<ProviderMessage>,
         tools: Vec<ProviderTool>,
-    ) -> Result<ProviderCompletion, GooseError> {
+    ) -> Result<ProviderCompletion, OiKitError> {
         let timeout_ms = model.timeout_ms;
         let model = self.model_config(&model)?;
         let messages = convert_messages(messages)?;
@@ -874,7 +874,7 @@ impl ProviderHandle {
         .await
         {
             Ok(Ok(completion)) => completion,
-            Ok(Err(error)) => return Err(observer.fail(GooseError::from(error))),
+            Ok(Err(error)) => return Err(observer.fail(OiKitError::from(error))),
             Err(error) => return Err(observer.fail(error)),
         };
         observer.response_started();
@@ -901,7 +901,7 @@ impl ProviderHandle {
 async fn run_provider_future<T>(
     timeout_ms: Option<u64>,
     future: impl Future<Output = T> + Send + 'static,
-) -> Result<T, GooseError>
+) -> Result<T, OiKitError>
 where
     T: Send + 'static,
 {
@@ -909,7 +909,7 @@ where
         if let Some(timeout_ms) = timeout_ms {
             tokio::time::timeout(Duration::from_millis(timeout_ms), future)
                 .await
-                .map_err(|_| GooseError::Timeout {
+                .map_err(|_| OiKitError::Timeout {
                     details: format!("request timed out after {timeout_ms}ms"),
                 })
         } else {
@@ -919,14 +919,14 @@ where
     .await?
 }
 
-fn convert_messages(messages: Vec<ProviderMessage>) -> Result<Vec<Message>, GooseError> {
+fn convert_messages(messages: Vec<ProviderMessage>) -> Result<Vec<Message>, OiKitError> {
     messages
         .iter()
         .filter_map(|message| message.to_goose_message().transpose())
         .collect()
 }
 
-fn convert_tools(tools: Vec<ProviderTool>) -> Result<Vec<Tool>, GooseError> {
+fn convert_tools(tools: Vec<ProviderTool>) -> Result<Vec<Tool>, OiKitError> {
     tools.iter().map(ProviderTool::to_goose_tool).collect()
 }
 
@@ -989,7 +989,7 @@ pub struct DecisionResponse {
 }
 
 impl TryFrom<DecisionRequest> for GooseDecisionRequest {
-    type Error = GooseError;
+    type Error = OiKitError;
 
     fn try_from(value: DecisionRequest) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -1100,7 +1100,7 @@ impl DecisionProvider {
     pub async fn create_decision(
         &self,
         request: DecisionRequest,
-    ) -> Result<DecisionResponse, GooseError> {
+    ) -> Result<DecisionResponse, OiKitError> {
         let request = request.try_into()?;
         let provider = Arc::clone(&self.provider);
         let response =
@@ -1156,11 +1156,11 @@ impl Provider {
         features
     }
 
-    pub async fn context_limit(&self, model: ProviderModelConfig) -> Result<u64, GooseError> {
+    pub async fn context_limit(&self, model: ProviderModelConfig) -> Result<u64, OiKitError> {
         Ok(self.handle.context_limit(model).await? as u64)
     }
 
-    pub async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, GooseError> {
+    pub async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, OiKitError> {
         self.handle.list_models().await
     }
 
@@ -1170,7 +1170,7 @@ impl Provider {
         system: String,
         messages: Vec<ProviderMessage>,
         tools: Vec<ProviderTool>,
-    ) -> Result<Arc<ProviderStream>, GooseError> {
+    ) -> Result<Arc<ProviderStream>, OiKitError> {
         self.handle.stream(model, system, messages, tools).await
     }
 
@@ -1180,7 +1180,7 @@ impl Provider {
         system: String,
         messages: Vec<ProviderMessage>,
         tools: Vec<ProviderTool>,
-    ) -> Result<ProviderCompletion, GooseError> {
+    ) -> Result<ProviderCompletion, OiKitError> {
         self.handle.complete(model, system, messages, tools).await
     }
 
@@ -1191,7 +1191,7 @@ impl Provider {
         model_name: String,
         messages: Vec<CompactionMessage>,
         templates: Option<CompactionTemplates>,
-    ) -> Result<CompactionSummary, GooseError> {
+    ) -> Result<CompactionSummary, OiKitError> {
         let messages: Vec<Message> = messages
             .iter()
             .map(CompactionMessage::to_goose_message)
@@ -1206,7 +1206,7 @@ impl Provider {
             oi_kit_context_management::summarize(&model, None, &templates, &messages).await
         })
         .await?
-        .map_err(GooseError::generic)?;
+        .map_err(OiKitError::generic)?;
 
         Ok(CompactionSummary {
             text: summary.message.as_concat_text(),
@@ -1282,7 +1282,7 @@ pub fn default_compaction_templates() -> CompactionTemplates {
 }
 
 #[uniffi::export]
-pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, GooseError> {
+pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, OiKitError> {
     let provider = oi_kit_providers::declarative::from_json(&json, None, EnvKeyResolver {})?;
     let config = oi_kit_providers::declarative::deserialize_provider_config(&json)?;
     let declared = DeclaredVision {
@@ -1302,7 +1302,7 @@ fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<Deci
 pub fn openrouter_decision_provider(
     api_key: String,
     base_url: Option<String>,
-) -> Result<Arc<DecisionProvider>, GooseError> {
+) -> Result<Arc<DecisionProvider>, OiKitError> {
     let client = ApiClient::new_with_tls(
         base_url.unwrap_or_else(|| "https://openrouter.ai".to_string()),
         AuthMethod::BearerToken(api_key),
@@ -1317,7 +1317,7 @@ pub fn openrouter_decision_provider(
 pub fn typesafe_decision_provider(
     api_key: String,
     base_url: Option<String>,
-) -> Result<Arc<DecisionProvider>, GooseError> {
+) -> Result<Arc<DecisionProvider>, OiKitError> {
     let client = ApiClient::new_with_tls(
         base_url.unwrap_or_else(|| oi_kit_providers::typesafe::TYPESAFE_DEFAULT_HOST.to_string()),
         AuthMethod::BearerToken(api_key),
@@ -1348,7 +1348,7 @@ pub fn openai_default_model() -> String {
 /// This preserves backward compatibility: existing code calling `openai_provider(api_key)`
 /// can continue to compile after the `base_url` parameter was added.
 #[uniffi::export]
-pub fn openai_provider_simple(api_key: String) -> Result<Arc<Provider>, GooseError> {
+pub fn openai_provider_simple(api_key: String) -> Result<Arc<Provider>, OiKitError> {
     openai_provider(api_key, None)
 }
 
@@ -1360,7 +1360,7 @@ pub fn openai_provider_simple(api_key: String) -> Result<Arc<Provider>, GooseErr
 pub fn openai_provider(
     api_key: String,
     base_url: Option<String>,
-) -> Result<Arc<Provider>, GooseError> {
+) -> Result<Arc<Provider>, OiKitError> {
     let raw = base_url.unwrap_or_else(|| "https://api.openai.com".to_string());
 
     let (host, query_params, has_v1) = parse_openai_base_url(&raw)?;
@@ -1435,7 +1435,7 @@ pub fn anthropic_provider(
     api_key: String,
     base_url: Option<String>,
     beta_headers: Vec<String>,
-) -> Result<Arc<Provider>, GooseError> {
+) -> Result<Arc<Provider>, OiKitError> {
     let mut api_client = ApiClient::new_with_tls(
         base_url.unwrap_or_else(|| "https://api.anthropic.com".to_string()),
         AuthMethod::ApiKey {
@@ -1469,7 +1469,7 @@ pub fn groq_default_model() -> String {
 }
 
 #[uniffi::export]
-pub fn groq_provider(api_key: String) -> Result<Arc<Provider>, GooseError> {
+pub fn groq_provider(api_key: String) -> Result<Arc<Provider>, OiKitError> {
     let json = oi_kit_providers::groq::JSON.replace("${GROQ_API_KEY}", &api_key);
     let provider = oi_kit_providers::declarative::from_json(
         &json,
@@ -1510,7 +1510,7 @@ pub fn databricks_default_model() -> String {
 }
 
 #[uniffi::export]
-pub fn databricks_provider(host: String, token: String) -> Result<Arc<Provider>, GooseError> {
+pub fn databricks_provider(host: String, token: String) -> Result<Arc<Provider>, OiKitError> {
     let retry_config = GooseDatabricksProvider::load_retry_config(|key| std::env::var(key).ok());
     let provider = GooseDatabricksProvider::new(
         host,
@@ -1538,7 +1538,7 @@ pub fn databricks_v2_provider(
     host: String,
     token: String,
     gateway_path: Option<String>,
-) -> Result<Arc<Provider>, GooseError> {
+) -> Result<Arc<Provider>, OiKitError> {
     let retry_config = GooseDatabricksV2Provider::load_retry_config(|key| std::env::var(key).ok());
     let provider = GooseDatabricksV2Provider::new(
         host,
@@ -1574,7 +1574,7 @@ struct ProviderStreamState {
 
 #[uniffi::export]
 impl ProviderStream {
-    pub async fn next_chunk(&self) -> Result<Option<StreamChunk>, GooseError> {
+    pub async fn next_chunk(&self) -> Result<Option<StreamChunk>, OiKitError> {
         let state = Arc::clone(&self.state);
         let timeout_ms = self.timeout_ms;
         let observer = Arc::clone(&self.observer);
@@ -1598,7 +1598,7 @@ impl ProviderStream {
                     {
                         Ok(next) => next,
                         Err(_) => {
-                            return Err(observer.fail(GooseError::Timeout {
+                            return Err(observer.fail(OiKitError::Timeout {
                                 details: format!("request timed out after {timeout_ms}ms"),
                             }))
                         }
@@ -1632,7 +1632,7 @@ impl ProviderStream {
                     }
                     Some(Err(error)) => {
                         state.ended = true;
-                        let error = GooseStreamError::from(&GooseError::from(error));
+                        let error = OiKitStreamError::from(&OiKitError::from(error));
                         observer.fail_stream(error.clone());
                         return Ok(Some(StreamChunk::ErrorChunk { error }));
                     }
@@ -1677,8 +1677,8 @@ fn message_to_chunks(message: Message) -> Vec<StreamChunk> {
                         provider_metadata_json,
                     }),
                     Err(error) => Some(StreamChunk::ErrorChunk {
-                        error: GooseStreamError {
-                            kind: GooseStreamErrorKind::Generic,
+                        error: OiKitStreamError {
+                            kind: OiKitStreamErrorKind::Generic,
                             message: error.to_string(),
                             retry_after_ms: None,
                             // Local parse failure: no provider response, so no request id.
@@ -1727,8 +1727,8 @@ mod tests {
             details: "slow down (provider request id: req_rate)".to_string(),
             retry_delay: Some(std::time::Duration::from_millis(1500)),
         };
-        let error = GooseStreamError::from(&GooseError::from(provider_error));
-        assert!(matches!(error.kind, GooseStreamErrorKind::RateLimited));
+        let error = OiKitStreamError::from(&OiKitError::from(provider_error));
+        assert!(matches!(error.kind, OiKitStreamErrorKind::RateLimited));
         assert_eq!(error.retry_after_ms, Some(1500));
         assert_eq!(error.request_id.as_deref(), Some("req_rate"));
     }

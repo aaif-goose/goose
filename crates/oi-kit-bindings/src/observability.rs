@@ -20,7 +20,7 @@ use std::{
 use oi_kit_providers::conversation::message::Message;
 use rmcp::model::Tool;
 
-use crate::bindings::{GooseError, GooseStreamError, Usage};
+use crate::bindings::{OiKitError, OiKitStreamError, Usage};
 
 /// Receives structured provider request lifecycle events.
 #[uniffi::export(callback_interface)]
@@ -78,7 +78,7 @@ pub struct RequestEndEvent {
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum RequestOutcome {
     Success,
-    Failure { error: GooseStreamError },
+    Failure { error: OiKitStreamError },
 }
 
 static HOOK: RwLock<Option<Arc<RegisteredHook>>> = RwLock::new(None);
@@ -219,10 +219,10 @@ impl RequestObserver {
         self.end(RequestOutcome::Success, usage, response_json);
     }
 
-    pub(crate) fn fail(&self, error: GooseError) -> GooseError {
+    pub(crate) fn fail(&self, error: OiKitError) -> OiKitError {
         self.end(
             RequestOutcome::Failure {
-                error: GooseStreamError::from(&error),
+                error: OiKitStreamError::from(&error),
             },
             None,
             None,
@@ -230,7 +230,7 @@ impl RequestObserver {
         error
     }
 
-    pub(crate) fn fail_stream(&self, error: GooseStreamError) {
+    pub(crate) fn fail_stream(&self, error: OiKitStreamError) {
         self.end(RequestOutcome::Failure { error }, None, None);
     }
 
@@ -389,7 +389,7 @@ mod tests {
     fn failure_reports_typed_error() {
         let registered = RegisteredRecorder::new(Recorder::default(), false);
         let observer = RequestObserver::start(descriptor());
-        observer.fail(GooseError::RateLimited {
+        observer.fail(OiKitError::RateLimited {
             retry_after_ms: Some(1_500),
             retry_after_suffix: String::new(),
         });
@@ -403,7 +403,7 @@ mod tests {
         };
         assert!(matches!(
             error.kind,
-            crate::bindings::GooseStreamErrorKind::RateLimited
+            crate::bindings::OiKitStreamErrorKind::RateLimited
         ));
         assert_eq!(error.retry_after_ms, Some(1_500));
         assert!(end.usage.is_none());
@@ -455,12 +455,12 @@ mod tests {
     fn end_is_emitted_at_most_once() {
         let registered = RegisteredRecorder::new(Recorder::default(), false);
         let observer = RequestObserver::start(descriptor());
-        observer.fail(GooseError::Timeout {
+        observer.fail(OiKitError::Timeout {
             details: "request timed out after 5ms".to_string(),
         });
         observer.succeeded(Some(usage()), None);
-        observer.fail_stream(GooseStreamError {
-            kind: crate::bindings::GooseStreamErrorKind::Generic,
+        observer.fail_stream(OiKitStreamError {
+            kind: crate::bindings::OiKitStreamErrorKind::Generic,
             message: "later read".to_string(),
             retry_after_ms: None,
             request_id: None,
@@ -476,7 +476,7 @@ mod tests {
         };
         assert!(matches!(
             error.kind,
-            crate::bindings::GooseStreamErrorKind::Timeout
+            crate::bindings::OiKitStreamErrorKind::Timeout
         ));
     }
 

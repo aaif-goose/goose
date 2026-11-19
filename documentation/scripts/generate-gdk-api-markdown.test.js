@@ -106,9 +106,9 @@ test("renders binding signatures, defaults, error payloads, and field documentat
     ),
   );
   assert.ok(
-    python.includes('id="gooseerror-variant-ratelimited-field-retry-after-ms"'),
+    python.includes('id="oikiterror-variant-ratelimited-field-retry-after-ms"'),
   );
-  assert.ok(python.includes("Raises `GooseError`."));
+  assert.ok(python.includes("Raises `OiKitError`."));
   assert.ok(!python.includes("<GdkApiReference"));
 
   const kotlin = renderMarkdown(
@@ -126,8 +126,8 @@ test("renders binding signatures, defaults, error payloads, and field documentat
   assert.ok(
     kotlin.includes("`requestHeaders` | `Map<String, String>?` | `null`"),
   );
-  assert.ok(kotlin.includes("@Throws(GooseException::class)"));
-  assert.ok(kotlin.includes("### `GooseException.RateLimited`"));
+  assert.ok(kotlin.includes("@Throws(OiKitException::class)"));
+  assert.ok(kotlin.includes("### `OiKitException.RateLimited`"));
 });
 
 test("Markdown exports turn static download links into fetchable paths", async (t) => {

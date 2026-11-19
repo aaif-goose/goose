@@ -213,7 +213,7 @@ def parse_signature(signature: str, docs: str, defaults: dict[str, str] | None =
         if inner:
             parts = split_top_level(inner)
             returns = clean_type(parts[0])
-            throws = clean_type(parts[1]) if len(parts) > 1 else "GooseError"
+            throws = clean_type(parts[1]) if len(parts) > 1 else "OiKitError"
         else:
             returns = result
     if returns in ("()", ""):
