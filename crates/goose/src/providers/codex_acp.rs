@@ -18,7 +18,7 @@ const CODEX_ACP_DOC_URL: &str = "https://github.com/agentclientprotocol/codex-ac
 
 pub struct CodexAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for CodexAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CODEX_ACP_PROVIDER_NAME,

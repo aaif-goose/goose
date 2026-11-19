@@ -14,8 +14,8 @@ use crate::session_context::{
 };
 use anyhow::{anyhow, Result};
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 
 pub const HUGGINGFACE_API_HOST: &str = "https://router.huggingface.co/v1";
@@ -152,7 +152,7 @@ impl Provider for HuggingFaceProvider {
             .iter()
             .flatten()
             .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+        oi_kit_providers::context_limit::ContextLimitResolver::new(self.get_name())
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async { Ok(None) })
             .await
@@ -200,7 +200,7 @@ impl Provider for HuggingFaceProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for HuggingFaceProvider {
+impl oi_kit_providers::base::ProviderDescriptor for HuggingFaceProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             huggingface_auth::HUGGINGFACE_PROVIDER_NAME,
@@ -394,7 +394,7 @@ fn completions_prefix(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use goose_providers::base::ProviderDescriptor as _;
+    use oi_kit_providers::base::ProviderDescriptor as _;
 
     use super::*;
     use crate::providers::base::ModelInfo;
@@ -481,7 +481,7 @@ mod tests {
     fn custom_provider_accepts_command_auth_without_huggingface_token() {
         let mut config = test_config();
         config.api_key_env.clear();
-        config.auth = Some(goose_providers::declarative::AuthConfig {
+        config.auth = Some(oi_kit_providers::declarative::AuthConfig {
             command: "echo".to_string(),
             args: vec!["token".to_string()],
             refresh_interval: 3600,

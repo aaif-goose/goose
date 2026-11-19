@@ -23,7 +23,7 @@ use crate::config::search_path::SearchPaths;
 use crate::config::Config;
 use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
-use goose_agent::mcp::client::{
+use oi_kit_agent::mcp::client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
 

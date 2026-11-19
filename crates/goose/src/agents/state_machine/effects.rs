@@ -4,7 +4,7 @@ use crate::providers::base::ProviderUsage;
 use crate::recipe::Recipe;
 use crate::session::ExtensionState;
 use anyhow::Result;
-use goose_agent::operation::{ConversationEffect, MachineEffect};
+use oi_kit_agent::operation::{ConversationEffect, MachineEffect};
 
 pub enum GooseEffect {
     Conversation(ConversationEffect),

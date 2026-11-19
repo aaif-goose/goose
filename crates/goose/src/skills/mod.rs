@@ -18,8 +18,8 @@ use crate::plugins::{
 use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
-use goose_agent::skills::SkillRoot;
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
+use oi_kit_agent::skills::SkillRoot;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -455,7 +455,7 @@ fn discover_skills_with_config(working_dir: Option<&Path>, config: &Config) -> V
             writable: dir.writable,
             preserve_path: dir.preserve_path,
         });
-    let mut sources = goose_agent::skills::discover_skills(roots);
+    let mut sources = oi_kit_agent::skills::discover_skills(roots);
     let mut seen: HashSet<_> = sources.iter().map(|source| source.name.clone()).collect();
 
     for content in builtin::get_all() {

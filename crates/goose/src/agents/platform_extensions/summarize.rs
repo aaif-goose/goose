@@ -16,7 +16,7 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
-use goose_agent::mcp::client::Error;
+use oi_kit_agent::mcp::client::Error;
 
 pub static EXTENSION_NAME: &str = "summarize";
 
@@ -148,7 +148,7 @@ impl PlatformExtension for SummarizeClient {
 
 async fn execute_summarize(
     provider: Arc<dyn Provider>,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
     session_id: &str,
     params: SummarizeParams,
     working_dir: &Path,

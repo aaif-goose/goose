@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::empty_response::{
+use oi_kit_agent::empty_response::{
     is_answer_content, response_recovery_attempts, RESPONSE_RECOVERY_OPERATION,
     RESPONSE_RECOVERY_RETRIED,
 };

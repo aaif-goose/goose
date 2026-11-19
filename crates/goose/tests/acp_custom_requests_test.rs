@@ -13,9 +13,9 @@ use common_tests::fixtures::{
 };
 use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};

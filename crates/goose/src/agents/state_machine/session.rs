@@ -12,8 +12,8 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::{Session, SessionManager};
-use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
+use oi_kit_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
+use oi_kit_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
 
 use super::ops_auto_effort::current_turn_effort;
 
@@ -33,7 +33,7 @@ impl MachineSession for Session {
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
     }
-    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
+    fn thinking_effort(&self) -> Option<oi_kit_providers::thinking::ThinkingEffort> {
         self.conversation
             .as_ref()
             .and_then(current_turn_effort)
@@ -183,7 +183,7 @@ struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
     hook_manager: &'a HookManager,
     tool_snapshot: &'a StdMutex<Option<Arc<ToolSnapshot>>>,
-    usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
+    usage: std::sync::Mutex<oi_kit_providers::conversation::token_usage::Usage>,
 }
 
 #[async_trait]
@@ -244,7 +244,7 @@ impl EffectUsage<GooseEffect> for SessionManager {
     fn usage(
         &self,
         effect: &GooseEffect,
-    ) -> Option<goose_providers::conversation::token_usage::Usage> {
+    ) -> Option<oi_kit_providers::conversation::token_usage::Usage> {
         match effect {
             GooseEffect::RecordUsage(usage) => Some(usage.usage),
             _ => None,

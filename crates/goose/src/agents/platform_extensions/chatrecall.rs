@@ -5,8 +5,8 @@ use crate::conversation::Conversation;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::mcp::client::Error;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, Role,
     ServerCapabilities, TextContent, Tool, ToolAnnotations,

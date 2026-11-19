@@ -2,29 +2,30 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::mcp::ExtensionOperation;
-use goose_agent::{
+use oi_kit_agent::mcp::ExtensionOperation;
+use oi_kit_agent::{
     bang_command::BangCommandOperation,
     empty_response::EmptyResponseOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
 };
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::decision::DecisionProvider;
-use goose_providers::model::ModelConfig;
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::decision::DecisionProvider;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
-    CompactionMode, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    ExpiredToolsOperation, FinalOutputOperation, GooseEffect, GooseExtensions,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseSkillSource, GooseToolApproval,
-    InferenceRunner, McpPromptOperation, Operation, PlatformExtensionOperation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, Step, StopHookOperation, SubagentOperation, SubdirectoryHintOperation,
-    ThinkingRecoveryOperation, ToolApprovalOperation, ToolDeferral, ToolDeferralOperation,
-    ToolPairCompactionOperation, UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    recipe_unsupported_message, CompactionMode, CompactionOperation, ContextRelevanceOperation,
+    DoctorOperation, ExpiredToolsOperation, FinalOutputOperation, GooseEffect, GooseExtensions,
+    GooseFinalOutputSchemaSource, GooseInferenceProvider, GooseInferenceRequestPreparer,
+    GooseSkillSource, GooseToolApproval, InferenceRunner, McpPromptOperation, Operation,
+    PlatformExtensionOperation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
+    ToolDeferral, ToolDeferralOperation, ToolPairCompactionOperation, UnavailableDecisions,
+    UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -168,7 +169,13 @@ pub(crate) fn build_state_machine(
         ));
     }
     operations.extend([
-        Arc::new(FinalOutputOperation::new(provider.clone())) as Arc<dyn Operation<_, _>>,
+        Arc::new(
+            FinalOutputOperation::new(
+                Arc::new(GooseFinalOutputSchemaSource),
+                provider.supports_builtin_tools(),
+            )
+            .with_unsupported_message(recipe_unsupported_message(provider.get_name())),
+        ) as Arc<dyn Operation<_, _>>,
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),

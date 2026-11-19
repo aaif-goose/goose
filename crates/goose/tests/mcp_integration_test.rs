@@ -22,9 +22,9 @@ use goose::agents::{StateMachineServices, StateMachineServicesConfig};
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
-use goose_agent::mcp::client::GooseMcpClientCapabilities;
 use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
+use oi_kit_agent::mcp::client::GooseMcpClientCapabilities;
 
 use test_case::test_case;
 
@@ -171,7 +171,7 @@ impl Fixture {
 fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
     let mut args = vec!["stdio".to_string()];
     args.extend(mode.map(str::to_string));
-    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
@@ -186,7 +186,7 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
 }
 
 fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
-    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
         name: name.to_string(),
         description: "HTTP fixture".to_string(),
         uri: uri.to_string(),
@@ -915,7 +915,7 @@ async fn test_replayed_session(
 
     let envs = Envs::new(env);
     let extension_config =
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".to_string(),
             description: "Test".to_string(),
             cmd,

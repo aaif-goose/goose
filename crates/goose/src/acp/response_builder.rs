@@ -10,8 +10,8 @@ use agent_client_protocol::schema::v1::{
     SessionModeId, SessionModeState, SessionNotification, SessionUpdate, UnstructuredCommandInput,
 };
 use agent_client_protocol::{Client, ConnectionTo};
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use serde::Serialize;
 use strum::{EnumMessage, VariantNames};
 
@@ -510,7 +510,7 @@ mod tests {
     use super::super::provider::THINKING_EFFORT_PARAM;
     use super::*;
     use agent_client_protocol::schema::v1::SessionConfigKind;
-    use goose_providers::thinking::ThinkingEffortOption;
+    use oi_kit_providers::thinking::ThinkingEffortOption;
     use test_case::test_case;
 
     fn model_selection(current: &str, models: &[&str]) -> ModelSelection {

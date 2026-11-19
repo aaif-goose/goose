@@ -176,7 +176,7 @@ fn config_to_goose_extension(
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -200,7 +200,7 @@ fn config_to_goose_extension(
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description,
             uri,
@@ -305,7 +305,7 @@ fn goose_extension_to_config(
                     }
                     secret_updates.push((env.name, serde_json::Value::String(env.value)));
                 }
-                ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                     name: stdio.name,
                     description: description.unwrap_or_default(),
                     cmd: stdio.command.to_string_lossy().to_string(),
@@ -318,8 +318,8 @@ fn goose_extension_to_config(
                     available_tools: available_tools.unwrap_or_default(),
                 })
             }
-            McpServer::Http(http) => {
-                ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            McpServer::Http(http) => ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                     name: http.name,
                     description: description.unwrap_or_default(),
                     uri: http.url,
@@ -337,8 +337,8 @@ fn goose_extension_to_config(
                     scopes,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
-                })
-            }
+                },
+            ),
             McpServer::Sse(_) => {
                 return Err(agent_client_protocol::Error::invalid_params()
                     .data("SSE is unsupported, migrate to streamable_http"));
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn stdio_config_converts_to_goose_mcp_extension_without_literal_envs() {
-        let config = ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let config = ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test-stdio".to_string(),
             description: "Test stdio".to_string(),
             cmd: "test-command".to_string(),
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn streamable_http_config_converts_to_goose_mcp_extension_without_literal_envs() {
         let config =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "test-http".to_string(),
                 description: "Test HTTP".to_string(),
                 uri: "https://example.com/mcp".to_string(),
@@ -654,7 +654,7 @@ mod tests {
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -726,7 +726,7 @@ mod tests {
             ]
         );
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             envs,
             env_keys,
             ..
@@ -764,7 +764,7 @@ mod tests {
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description,
             uri,

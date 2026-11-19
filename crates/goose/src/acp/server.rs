@@ -65,8 +65,8 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
-use goose_agent::mcp::client::GooseMcpHostInfo;
-use goose_providers::errors::ProviderError;
+use oi_kit_agent::mcp::client::GooseMcpHostInfo;
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
     TextContent as RmcpTextContent,
@@ -516,7 +516,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
             Ok(ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::Stdio {
+                oi_kit_agent::extension::ExtensionConfig::Stdio {
                     name: stdio.name,
                     description: String::new(),
                     cmd: stdio.command.to_string_lossy().to_string(),
@@ -533,7 +533,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
             Ok(ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                     name: http.name,
                     description: String::new(),
                     uri: http.url,
@@ -660,7 +660,7 @@ fn push_or_replace_extension(extensions: &mut Vec<ExtensionConfig>, extension: E
 
 fn resolve_default_provider_model_config(
     config: &Config,
-) -> Result<(String, goose_providers::model::ModelConfig), agent_client_protocol::Error> {
+) -> Result<(String, oi_kit_providers::model::ModelConfig), agent_client_protocol::Error> {
     let resolved_provider = config.get_goose_provider().map_err(|error| {
         agent_client_protocol::Error::internal_error()
             .data(format!("Failed to resolve provider: {}", error))
@@ -1725,7 +1725,7 @@ fn status_message_from_system_notification(
     }
 }
 
-/// Conversion to the sdk-types wire mirror carried by `message_usage`.
+/// Conversion to the acp-types wire mirror carried by `message_usage`.
 fn message_usage_update(
     message_id: Option<String>,
     usage: &crate::conversation::message::MessageUsage,
@@ -2712,8 +2712,8 @@ mod tests {
         McpServerStdio, PermissionOptionId, ResourceLink, Role as AcpRole,
         SelectedPermissionOutcome, TextResourceContents,
     };
-    use goose_providers::conversation::token_usage::Usage as TokenUsage;
-    use goose_providers::thinking::{
+    use oi_kit_providers::conversation::token_usage::Usage as TokenUsage;
+    use oi_kit_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
     use std::io::Write;
@@ -2769,7 +2769,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
@@ -3070,7 +3070,7 @@ extensions:
         assert_eq!(extensions.len(), 1);
         match &extensions[0] {
             ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::StreamableHttp { name, uri, .. },
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp { name, uri, .. },
             ) => {
                 assert_eq!(name, "zed-mcp");
                 assert_eq!(uri, "http://localhost/new");
@@ -3153,7 +3153,7 @@ extensions:
                 .args(vec!["stdio".into()])
                 .env(vec![EnvVariable::new("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        Ok(ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -3177,7 +3177,7 @@ extensions:
             McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
                 .headers(vec![HttpHeader::new("Authorization", "Bearer ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        Ok(ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
@@ -3583,7 +3583,7 @@ print(\"hello, world\")
             TokenUsage::default(),
         );
         session.model_config = Some(
-            goose_providers::model::ModelConfig::new("test-model")
+            oi_kit_providers::model::ModelConfig::new("test-model")
                 .with_context_limit(Some(258_000)),
         );
         let totals = SessionUsageTotals {
@@ -3797,7 +3797,7 @@ print(\"hello, world\")
             .services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
+                oi_kit_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
                     HashMap::from([("thinking_effort".to_string(), serde_json::json!("xhigh"))]),
                 ),
                 &session.id,

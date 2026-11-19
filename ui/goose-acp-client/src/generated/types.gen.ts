@@ -1748,7 +1748,7 @@ export type RecipeParameterInputTypeDto = 'string' | 'number' | 'boolean' | 'dat
 export type RecipeParameterRequirementDto = 'required' | 'optional' | 'user_prompt';
 
 export type RecipeResponseDto = {
-    json_schema?: unknown;
+    json_schema: unknown;
 };
 
 export type SubRecipeDto = {
@@ -2770,7 +2770,7 @@ export type StatusMessageUpdate = {
 
 /**
  * Wire mirror of the conversation `MessageUsage` (this crate cannot depend on
- * goose-provider-types); field names and serde casing MUST stay in parity.
+ * oi-kit-provider-types); field names and serde casing MUST stay in parity.
  */
 export type MessageUsageData = {
     inputTokens?: number | null;

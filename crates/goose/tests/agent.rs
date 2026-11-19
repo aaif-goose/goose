@@ -467,9 +467,9 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -625,9 +625,9 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::{SessionManager, SessionType};
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -978,9 +978,9 @@ mod tests {
         use goose::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, Role, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -1252,9 +1252,9 @@ mod tests {
         use goose::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -1403,10 +1403,10 @@ mod tests {
         }
 
         fn assert_formatter_adds_reasoning_to_tool_calls(messages: &[Message], provider: &str) {
-            use goose_providers::formats::openai::{
+            use oi_kit_providers::formats::openai::{
                 format_messages_with_options, OpenAiFormatOptions,
             };
-            use goose_providers::images::ImageFormat;
+            use oi_kit_providers::images::ImageFormat;
 
             assert!(
                 messages.iter().any(|m| m
@@ -1621,9 +1621,9 @@ mod tests {
         };
         use goose::session::session_manager::SessionType;
         use goose::session::{GoalState, SessionManager};
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicU32, Ordering};
@@ -2013,9 +2013,9 @@ mod tests {
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::Arc;
@@ -2128,10 +2128,10 @@ mod tests {
         use goose::conversation::message::{Message, MessageContent};
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
         use goose::session::{SessionManager, SessionType};
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
         use goose_test_support::McpFixture;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2278,7 +2278,6 @@ mod tests {
     mod empty_turn_tests {
         use super::*;
         use async_trait::async_trait;
-        use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
         use goose::agents::{AgentEvent, GoosePlatform, SessionConfig, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
@@ -2288,9 +2287,10 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
+        use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+        use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use oi_kit_providers::errors::ProviderError;
+        use oi_kit_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -2702,11 +2702,11 @@ mod tests {
                         .description("Structured output")
                         .prompt("Return structured output")
                         .response(Response {
-                            json_schema: Some(serde_json::json!({
+                            json_schema: serde_json::json!({
                                 "type": "object",
                                 "properties": { "result": { "type": "string" } },
                                 "required": ["result"]
-                            })),
+                            }),
                         })
                         .build()
                         .expect("valid recipe"),

@@ -1,5 +1,4 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::tool_execution::ToolCallContext;
@@ -16,8 +15,9 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::mcp::client::Error;
-use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{SourceEntry, SourceType};
+use oi_kit_agent::final_output::FinalOutputTool;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, MetaObject,
     ServerCapabilities, Tool,
@@ -62,7 +62,7 @@ const DEFAULT_RESUME_INSTRUCTIONS: &str = "Continue the task from where you left
 
 struct SubagentConfig {
     provider_name: String,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
     extensions: Vec<crate::config::ExtensionConfig>,
     working_dir: PathBuf,
     max_turns: usize,
@@ -956,21 +956,20 @@ impl SummonClient {
                 max_turns: None,
             })
             .max_turns = Some(max_turns);
-        if recipe
-            .response
-            .as_ref()
-            .and_then(|response| response.json_schema.as_ref())
-            .is_none()
-        {
+        if recipe.response.is_none() {
             recipe.response = Some(Response {
-                json_schema: Some(serde_json::json!({
+                json_schema: serde_json::json!({
                     "type": "object",
                     "properties": {"summary": {"type": "string"}},
                     "required": ["summary"]
-                })),
+                }),
             });
         }
-        FinalOutputTool::try_new(recipe.response.as_ref().unwrap().clone())
+        recipe
+            .response
+            .as_ref()
+            .unwrap()
+            .validate()
             .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
 
         let mut extension_data = ExtensionData::default();
@@ -1308,7 +1307,7 @@ impl SummonClient {
         session: &crate::session::Session,
         provider_name: &str,
         provider_default_model: Option<&str>,
-    ) -> Result<goose_providers::model::ModelConfig, anyhow::Error> {
+    ) -> Result<oi_kit_providers::model::ModelConfig, anyhow::Error> {
         let env_model = std::env::var("GOOSE_SUBAGENT_MODEL").ok();
         let env_provider = std::env::var("GOOSE_SUBAGENT_PROVIDER").ok();
         let recipe_settings = recipe.settings.as_ref();
@@ -1400,7 +1399,7 @@ impl SummonClient {
         params: &DelegateParams,
         recipe: &Recipe,
         session: &crate::session::Session,
-    ) -> Result<(String, goose_providers::model::ModelConfig)> {
+    ) -> Result<(String, oi_kit_providers::model::ModelConfig)> {
         let env_provider = std::env::var("GOOSE_SUBAGENT_PROVIDER").ok();
         let provider_name = recipe
             .settings
@@ -1569,7 +1568,7 @@ mod tests {
             ("GOOSE_SUBAGENT_MODEL", Some("test-model")),
         ]);
         let client = SummonClient::new(create_test_context())?;
-        let mut parent = session_with(goose_providers::model::ModelConfig::new("test-model"));
+        let mut parent = session_with(oi_kit_providers::model::ModelConfig::new("test-model"));
         let inherited = Recipe::from_content(
             "title: Parent\ndescription: Parent\nprompt: Run\nextensions:\n  - type: platform\n    name: summon\n",
         )?.extensions.unwrap();
@@ -1626,7 +1625,7 @@ mod tests {
             .update(&parent.id)
             .provider_name("openai")
             .model_config(
-                goose_providers::model::ModelConfig::new("test-model").with_cache_ttl("1h"),
+                oi_kit_providers::model::ModelConfig::new("test-model").with_cache_ttl("1h"),
             )
             .apply()
             .await
@@ -1685,13 +1684,7 @@ mod tests {
         let recipe = child.recipe.as_ref().unwrap();
         assert_eq!(recipe.settings.as_ref().unwrap().max_turns, Some(3));
         assert_eq!(
-            recipe
-                .response
-                .as_ref()
-                .unwrap()
-                .json_schema
-                .as_ref()
-                .unwrap()["required"],
+            recipe.response.as_ref().unwrap().json_schema["required"],
             serde_json::json!(["summary"])
         );
         assert!(
@@ -1803,7 +1796,7 @@ mod tests {
                 &Message::assistant().with_tool_request(
                     "final-output-call",
                     Ok(rmcp::model::CallToolRequestParams::new(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+                        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
                     )
                     .with_arguments(arguments)),
                 ),
@@ -1815,7 +1808,7 @@ mod tests {
                 &Message::user().with_tool_response(
                     "final-output-call",
                     Ok(CallToolResult::success(vec![ContentBlock::text(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
+                        oi_kit_agent::final_output::FINAL_OUTPUT_SUCCESS_MESSAGE,
                     )])),
                 ),
             )
@@ -2638,7 +2631,7 @@ You review code."#;
     const OVERRIDE_MODEL: &str = "claude-opus-4-6";
     const PROVIDER: &str = "anthropic";
 
-    fn session_with(parent: goose_providers::model::ModelConfig) -> crate::session::Session {
+    fn session_with(parent: oi_kit_providers::model::ModelConfig) -> crate::session::Session {
         crate::session::Session {
             provider_name: Some(PROVIDER.to_string()),
             model_config: Some(parent),
@@ -2648,8 +2641,8 @@ You review code."#;
 
     fn resolve_with_override(
         model: Option<&str>,
-        parent: goose_providers::model::ModelConfig,
-    ) -> goose_providers::model::ModelConfig {
+        parent: oi_kit_providers::model::ModelConfig,
+    ) -> oi_kit_providers::model::ModelConfig {
         let client = SummonClient::new(create_test_context()).unwrap();
         let params = DelegateParams {
             model: model.map(String::from),
@@ -2666,8 +2659,8 @@ You review code."#;
             .expect("resolve_model_config")
     }
 
-    fn parent_config() -> goose_providers::model::ModelConfig {
-        goose_providers::model::ModelConfig::new(PARENT_MODEL).with_canonical_limits(PROVIDER)
+    fn parent_config() -> oi_kit_providers::model::ModelConfig {
+        oi_kit_providers::model::ModelConfig::new(PARENT_MODEL).with_canonical_limits(PROVIDER)
     }
 
     #[tokio::test]
@@ -2680,7 +2673,7 @@ You review code."#;
         ]);
 
         let parent = parent_config();
-        let overridden = goose_providers::model::ModelConfig::new(OVERRIDE_MODEL)
+        let overridden = oi_kit_providers::model::ModelConfig::new(OVERRIDE_MODEL)
             .with_canonical_limits(PROVIDER);
         assert_ne!(parent.reasoning, overridden.reasoning);
 
@@ -2974,7 +2967,7 @@ You review code."#;
         };
         let session = crate::session::Session {
             provider_name: Some("openai".to_string()),
-            model_config: Some(goose_providers::model::ModelConfig::new(
+            model_config: Some(oi_kit_providers::model::ModelConfig::new(
                 "parent-openai-model",
             )),
             ..Default::default()

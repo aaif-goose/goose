@@ -1,7 +1,7 @@
 use super::*;
 use crate::agents::GoosePlatform;
 use crate::agents::StateMachineServices;
-use goose_agent::mcp::client::McpCallContext as ToolCallContext;
+use oi_kit_agent::mcp::client::McpCallContext as ToolCallContext;
 use rmcp::model::{CallToolResult, ErrorCode};
 use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
 use rmcp::{object, ServiceError as Error};
@@ -782,7 +782,7 @@ fn fixture_config(
 }
 
 fn missing_stdio(name: &str, temp_dir: &Path) -> ExtensionConfig {
-    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: String::new(),
         cmd: temp_dir.join("missing-binary").display().to_string(),
@@ -1597,9 +1597,8 @@ fn test_recover_mangled_tool_name_unprefixed_extension() {
 
 #[test]
 fn test_recover_mangled_tool_name_non_extension_manager_tools() {
-    // recipe__final_output and platform__manage_schedule are appended by
-    // Agent::list_tools outside the extension manager (see #9486); they
-    // use the same "__" convention, so no owner metadata is needed.
+    // Tools added outside the extension manager can still use the "__"
+    // convention without owner metadata (see #9486).
     let tools = [
         ("recipe__final_output", None),
         ("platform__manage_schedule", None),

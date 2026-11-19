@@ -36,7 +36,19 @@ describe('GooseMessage', () => {
     expect(screen.getByLabelText('ops_auto_effort: thinking high')).toBeInTheDocument();
   });
 
-  function renderFinalOutputTurn(response: ToolRenderState['response']) {
+  const successfulFinalOutput: ToolRenderState['response'] = {
+    type: 'toolResponse',
+    id: 'final-1',
+    toolResult: {
+      status: 'success',
+      value: {
+        content: [{ type: 'text', text: 'Final output successfully collected.' }],
+        isError: false,
+      },
+    },
+  };
+
+  function renderFinalOutputTurn(response: ToolRenderState['response'], name = 'final_output') {
     const message: Message = {
       id: 'assistant-1',
       content: [
@@ -45,7 +57,7 @@ describe('GooseMessage', () => {
           id: 'final-1',
           toolCall: {
             status: 'success',
-            value: { name: 'recipe__final_output', arguments: { answer: 'done' } },
+            value: { name, arguments: { answer: 'done' } },
           },
         },
       ],
@@ -74,21 +86,17 @@ describe('GooseMessage', () => {
   }
 
   it('renders a recipe final output call as a plain line with its usage', () => {
-    renderFinalOutputTurn({
-      type: 'toolResponse',
-      id: 'final-1',
-      toolResult: {
-        status: 'success',
-        value: {
-          content: [{ type: 'text', text: 'Final output successfully collected.' }],
-          isError: false,
-        },
-      },
-    });
+    renderFinalOutputTurn(successfulFinalOutput);
 
     expect(screen.getByText('Returned structured result')).toBeInTheDocument();
     expect(screen.queryByText(/final output/i)).not.toBeInTheDocument();
     expect(screen.getByText('1.5k tok')).toBeInTheDocument();
+  });
+
+  it('renders a final output call saved under the old tool name', () => {
+    renderFinalOutputTurn(successfulFinalOutput, 'recipe__final_output');
+
+    expect(screen.getByText('Returned structured result')).toBeInTheDocument();
   });
 
   it('reports a rejected final output result', () => {

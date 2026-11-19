@@ -1,7 +1,7 @@
 use crate::conversation::message::Message;
 use crate::token_counter::create_token_counter;
 use anyhow::Result;
-use goose_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
 use rmcp::model::Tool;
 
 /// Ensures that ProviderUsage has token counts, estimating them if necessary.
@@ -51,7 +51,7 @@ pub async fn ensure_usage_tokens(
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
-    use goose_providers::conversation::token_usage::Usage;
+    use oi_kit_providers::conversation::token_usage::Usage;
 
     #[tokio::test]
     async fn test_ensure_usage_tokens_already_complete() {

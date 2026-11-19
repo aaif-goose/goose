@@ -120,7 +120,7 @@ timeout: 300",
         )
         .unwrap();
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             client_id,
             client_secret_key,
             scopes,
@@ -145,7 +145,7 @@ timeout: 300",
         )
         .unwrap();
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             client_id,
             client_secret_key,
             scopes,
@@ -239,7 +239,7 @@ timeout: 300",
         ; "builtin_unchanged"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com".into(),
@@ -263,7 +263,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com".into(),
@@ -290,7 +290,7 @@ timeout: 300",
         ; "header_substitution"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -302,7 +302,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -317,7 +317,7 @@ timeout: 300",
         ; "env_keys_cleared"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -329,7 +329,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -348,7 +348,7 @@ timeout: 300",
         ; "env_key_resolved"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com".into(),
@@ -368,7 +368,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com".into(),
@@ -392,7 +392,7 @@ timeout: 300",
         ; "http_env_key_and_header_substitution"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp?api_key=$MY_SECRET".into(),
@@ -407,7 +407,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp?api_key=secret_value".into(),
@@ -429,7 +429,7 @@ timeout: 300",
         ; "http_env_key_uri_substitution"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -445,7 +445,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".into(),
             description: String::new(),
             cmd: "echo".into(),
@@ -464,7 +464,7 @@ timeout: 300",
         ; "env_key_skipped_when_already_in_envs"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp".into(),
@@ -479,7 +479,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp".into(),
@@ -501,7 +501,7 @@ timeout: 300",
         ; "http_client_id_substitution_and_oauth_fields_preserved"
     )]
     #[test_case(
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp".into(),
@@ -516,7 +516,7 @@ timeout: 300",
             bundled: None,
             available_tools: vec![],
         }),
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "test".into(),
             description: String::new(),
             uri: "https://example.com/mcp".into(),
@@ -558,7 +558,7 @@ timeout: 300",
             dir.path().join("secrets.yaml"),
         )
         .unwrap();
-        let config = ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let config = ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".to_string(),
             description: String::new(),
             cmd: "cmd".to_string(),
@@ -573,7 +573,7 @@ timeout: 300",
 
         let resolved = config.resolve(&cfg).await.unwrap();
 
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             envs, ..
         }) = resolved
         else {
@@ -587,7 +587,7 @@ timeout: 300",
     #[test]
     fn test_display_streamable_http_with_socket() {
         let config =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "test".into(),
                 description: String::new(),
                 uri: "http://localhost:8080/mcp".into(),
@@ -611,7 +611,7 @@ timeout: 300",
     #[test]
     fn test_display_streamable_http_without_socket() {
         let config =
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                 name: "test".into(),
                 description: String::new(),
                 uri: "http://localhost:8080/mcp".into(),

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
@@ -12,7 +12,7 @@ use crate::agents::state_machine;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
 use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
-use goose_agent::compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
+use oi_kit_agent::compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 
 /// The in-band request the model answers on the live conversation.
 const WRITE_SUMMARY: &str = "write a structured summary of the conversation so far";
@@ -166,7 +166,7 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
     .await?;
     let pipeline = pipeline
         .with_model_config(
-            goose_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
+            oi_kit_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
         )
         .await;
     let large_context = (0..500)

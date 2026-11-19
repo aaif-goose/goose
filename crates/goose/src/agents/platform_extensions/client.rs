@@ -1,5 +1,5 @@
 use crate::agents::tool_execution::ToolCallContext;
-use goose_agent::mcp::client::Error;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::*;
 use std::path::Path;
 use tokio_util::sync::CancellationToken;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_sdk_types::custom_requests::{
+use goose_acp_types::custom_requests::{
     RecipeAuthorDto, RecipeDto, RecipeExtensionDto, RecipeParameterDto,
     RecipeParameterInputTypeDto, RecipeParameterRequirementDto, RecipeResponseDto,
     RecipeRetryConfigDto, RecipeSettingsDto, RecipeSuccessCheckDto, SubRecipeDto,
@@ -320,7 +320,7 @@ fn extension_from_dto(dto: RecipeExtensionDto) -> Result<ExtensionConfig> {
             cwd,
             bundled,
             available_tools,
-        } => ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        } => ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description: description.unwrap_or_default(),
             cmd,
@@ -346,7 +346,7 @@ fn extension_from_dto(dto: RecipeExtensionDto) -> Result<ExtensionConfig> {
             scopes,
             bundled,
             available_tools,
-        } => ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        } => ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description: description.unwrap_or_default(),
             uri,
@@ -394,7 +394,7 @@ fn extension_to_dto(extension: ExtensionConfig) -> Result<RecipeExtensionDto> {
             bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             cmd,
@@ -417,7 +417,7 @@ fn extension_to_dto(extension: ExtensionConfig) -> Result<RecipeExtensionDto> {
             bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             description,
             uri,
@@ -464,8 +464,8 @@ pub fn recipe_manifest_to_list_entry_dto(
     last_modified: String,
     schedule_cron: Option<String>,
     slash_command: Option<String>,
-) -> Result<goose_sdk_types::custom_requests::RecipeListEntryDto> {
-    Ok(goose_sdk_types::custom_requests::RecipeListEntryDto {
+) -> Result<goose_acp_types::custom_requests::RecipeListEntryDto> {
+    Ok(goose_acp_types::custom_requests::RecipeListEntryDto {
         id,
         recipe: RecipeDto::try_from(recipe)?,
         file_path: file_path.to_string(),
@@ -547,12 +547,12 @@ mod tests {
                 options: Some(vec!["dev".to_string(), "prod".to_string()]),
             }]),
             response: Some(RecipeResponseDto {
-                json_schema: Some(json!({
+                json_schema: json!({
                     "type": "object",
                     "properties": {
                         "ok": { "type": "boolean" }
                     }
-                })),
+                }),
             }),
             sub_recipes: Some(vec![SubRecipeDto {
                 name: "child".to_string(),
@@ -586,7 +586,7 @@ mod tests {
             extension => panic!("expected builtin extension, got {extension:?}"),
         }
         match &recipe.extensions.as_ref().unwrap()[1] {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 available_tools,
                 ..
@@ -598,7 +598,7 @@ mod tests {
         }
         match &recipe.extensions.as_ref().unwrap()[2] {
             ExtensionConfig::External(
-                goose_agent::extension::ExtensionConfig::StreamableHttp {
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
                     envs,
                     available_tools,
                     ..

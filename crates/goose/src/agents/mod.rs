@@ -5,7 +5,6 @@ pub mod extension;
 pub mod extension_config;
 pub mod extension_manager;
 pub mod extension_runtime;
-pub mod final_output_tool;
 pub(crate) mod gen_ai_telemetry;
 mod large_response_handler;
 pub mod moim;
@@ -37,12 +36,12 @@ pub(crate) use active_run::StartRunError;
 pub use execute_commands::{context_management_unsupported_message, COMPACT_TRIGGERS};
 pub use extension::{ExtensionConfig, ExtensionError};
 pub use extension_manager::{ExtensionLoadResult, ExtensionManager};
-pub use goose_agent::events::AgentEvent;
-pub use goose_agent::mcp::Container;
-pub use goose_agent::mcp::{
+pub(crate) use large_response_handler::max_tool_response_size;
+pub use oi_kit_agent::events::AgentEvent;
+pub use oi_kit_agent::mcp::Container;
+pub use oi_kit_agent::mcp::{
     container, malware_check as extension_malware_check, tool_schema_normalize,
 };
-pub(crate) use large_response_handler::max_tool_response_size;
 pub use prompt_manager::PromptManager;
 #[cfg(feature = "scheduler")]
 pub use schedule_tool::ScheduleTool;

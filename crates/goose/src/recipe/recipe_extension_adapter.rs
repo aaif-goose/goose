@@ -78,8 +78,8 @@ enum RecipeExtensionConfigInternal {
 }
 
 macro_rules! make_extension {
-    (Stdio { $($fields:tt)* }) => { ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio { $($fields)* }) };
-    (StreamableHttp { $($fields:tt)* }) => { ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp { $($fields)* }) };
+    (Stdio { $($fields:tt)* }) => { ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio { $($fields)* }) };
+    (StreamableHttp { $($fields:tt)* }) => { ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp { $($fields)* }) };
     ($variant:ident { $($fields:tt)* }) => { ExtensionConfig::$variant { $($fields)* } };
 }
 
@@ -255,7 +255,7 @@ mod tests {
         assert_eq!(extensions.len(), 1);
 
         match &extensions[0] {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 ..
             }) => {

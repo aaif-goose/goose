@@ -2,7 +2,6 @@ use crate::session::builder::ExtensionFailure;
 use anstream::{adapter::strip_str, eprintln, println};
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, StyledObject, Term};
-use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use goose::agents::platform_extensions::todo::TODO_WRITE_TOOL_NAME_COMPLETE;
 use goose::config::Config;
 use goose::conversation::message::{
@@ -13,8 +12,9 @@ use goose::providers::canonical_cost::estimate_model_cost;
 #[cfg(target_os = "windows")]
 use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
-use goose_providers::conversation::token_usage::Usage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+use oi_kit_providers::conversation::token_usage::Usage;
 use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -301,10 +301,12 @@ pub fn set_thinking_message(s: &String) {
     }
 }
 
+const LEGACY_FINAL_OUTPUT_TOOL_NAME: &str = "recipe__final_output";
+
 fn is_final_output_request(req: &ToolRequest) -> bool {
-    req.tool_call
-        .as_ref()
-        .is_ok_and(|call| call.name == FINAL_OUTPUT_TOOL_NAME)
+    req.tool_call.as_ref().is_ok_and(|call| {
+        call.name == FINAL_OUTPUT_TOOL_NAME || call.name == LEGACY_FINAL_OUTPUT_TOOL_NAME
+    })
 }
 
 pub fn render_message(message: &Message, debug: bool) {
@@ -1757,6 +1759,19 @@ mod tests {
     use serde_json::json;
     use std::env;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn recognizes_current_and_legacy_final_output_calls() {
+        let is_final_output = |name: &str| {
+            let message = Message::assistant()
+                .with_tool_request("call", Ok(CallToolRequestParams::new(name.to_string())));
+            is_final_output_request(message.content[0].as_tool_request().unwrap())
+        };
+
+        assert!(is_final_output(FINAL_OUTPUT_TOOL_NAME));
+        assert!(is_final_output("recipe__final_output"));
+        assert!(!is_final_output("developer__shell"));
+    }
 
     #[test]
     fn recent_lines_accumulate_across_updates() {

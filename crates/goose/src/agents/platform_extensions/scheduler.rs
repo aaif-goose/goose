@@ -10,7 +10,7 @@ use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::platform_tools::{manage_schedule_tool, MANAGE_SCHEDULE_TOOL_NAME};
 use crate::agents::schedule_tool::ScheduleTool;
 use crate::agents::tool_execution::ToolCallContext;
-use goose_agent::mcp::client::Error;
+use oi_kit_agent::mcp::client::Error;
 
 use super::PlatformExtensionContext;
 

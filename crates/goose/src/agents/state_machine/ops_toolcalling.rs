@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::FutureExt;
-use goose_agent::tool_call_state::pending_tool_requests as pending_local_requests;
+use oi_kit_agent::tool_call_state::pending_tool_requests as pending_local_requests;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Role, Tool, ToolAnnotations,
 };

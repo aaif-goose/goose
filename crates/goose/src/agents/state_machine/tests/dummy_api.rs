@@ -499,7 +499,7 @@ impl DummyApiState {
 
         let input_tokens = serialized_chars(&body);
         let model = body["model"].as_str().expect("OpenAI request model");
-        let context_limit = goose_providers::model::ModelConfig::new(model)
+        let context_limit = oi_kit_providers::model::ModelConfig::new(model)
             .with_canonical_limits("openai")
             .context_limit();
         if input_tokens as usize > context_limit {
