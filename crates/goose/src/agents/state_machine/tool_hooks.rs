@@ -221,6 +221,9 @@ async fn emit_post_tool_hooks(
     let Ok(tool_call) = &request.tool_call else {
         return;
     };
+    if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
+        return;
+    }
     let tool_input = tool_call
         .arguments
         .as_ref()

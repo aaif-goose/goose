@@ -697,6 +697,10 @@ async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Re
         .payloads("pre.log")
         .iter()
         .all(|payload| payload["tool_name"] != FINAL_OUTPUT_TOOL_NAME));
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["tool_call_id"], "side-effect");
+    assert!(env.payloads("postfail.log").is_empty());
     Ok(())
 }
 
