@@ -162,6 +162,12 @@ function rendererPolicy(page: Page): Promise<string | null> {
   );
 }
 
+async function firstChatWindow(electron: ElectronApplication): Promise<Page> {
+  const findChat = () => electron.windows().find((page) => page.url().includes('#/'));
+  await expect.poll(() => Boolean(findChat())).toBe(true);
+  return findChat()!;
+}
+
 test('two backend windows keep distinct pins and CSP while sharing migrated preferences', async ({}, testInfo) => {
   const appDir = testInfo.outputPath('app');
   const profileDir = testInfo.outputPath('profile');
@@ -182,10 +188,7 @@ test('two backend windows keep distinct pins and CSP while sharing migrated pref
       args: [appDir],
       env: { ...process.env, GOOSE_EXTERNAL_BACKEND: '', GOOSE_PATH_ROOT: profileDir },
     });
-    await expect
-      .poll(() => electron?.windows().some((page) => page.url().includes('#/')))
-      .toBe(true);
-    const firstPage = electron.windows().find((page) => page.url().includes('#/'))!;
+    const firstPage = await firstChatWindow(electron);
     await expect(firstPage).toHaveTitle('Backend connection test');
     await connectWebSocket(firstPage);
     const secondWindow = electron.waitForEvent('window');
@@ -276,6 +279,12 @@ test('two backend windows keep distinct pins and CSP while sharing migrated pref
         )
       )
     ).toEqual(['previous input', 'new input']);
+    const settings = JSON.parse(await readFile(join(profileDir, 'settings.json'), 'utf8'));
+    expect(settings.rendererStorage).not.toHaveProperty('goose-chat-history');
+    expect(JSON.parse(await readFile(join(profileDir, 'chat-input-history.json'), 'utf8'))).toEqual([
+      { content: 'previous input', timestamp: expect.any(Number) },
+      { content: 'new input', timestamp: expect.any(Number) },
+    ]);
 
     const standaloneWindow = electron.waitForEvent('window');
     await firstPage.evaluate(() =>
@@ -299,5 +308,44 @@ test('two backend windows keep distinct pins and CSP while sharing migrated pref
   } finally {
     await electron?.close();
     await Promise.all([first.close(), second.close()]);
+  }
+});
+
+test('moves input history out of settings for profiles that already migrated', async ({}, testInfo) => {
+  const appDir = testInfo.outputPath('app');
+  const profileDir = testInfo.outputPath('profile');
+  const settingsPath = join(profileDir, 'settings.json');
+  const backend = await startBackend(testInfo.outputPath('backend'), 'test-key');
+  let electron: ElectronApplication | undefined;
+  try {
+    await mkdir(profileDir, { recursive: true });
+    const history = [{ content: 'saved input', timestamp: Date.now() }];
+    await writeFile(
+      settingsPath,
+      JSON.stringify({
+        showMenuBarIcon: false,
+        externalGoosed: backend.config,
+        rendererStorageMigrated: true,
+        rendererStorage: { navigation_width: '264', 'goose-chat-history': JSON.stringify(history) },
+      })
+    );
+    await buildTestApp(appDir, profileDir);
+    electron = await _electron.launch({
+      args: [appDir],
+      env: { ...process.env, GOOSE_EXTERNAL_BACKEND: '', GOOSE_PATH_ROOT: profileDir },
+    });
+    const page = await firstChatWindow(electron);
+    await expect(page).toHaveTitle('Backend connection test');
+    expect(await page.evaluate(() => window.electron.getRendererStorage('goose-chat-history'))).toBe(
+      JSON.stringify(history)
+    );
+    expect(JSON.parse(await readFile(settingsPath, 'utf8')).rendererStorage).toEqual({
+      navigation_width: '264',
+    });
+    await page.evaluate(() => window.electron.setRendererStorage('goose-chat-history', null));
+    expect(await readFile(join(profileDir, 'chat-input-history.json'), 'utf8')).toBe('[]');
+  } finally {
+    await electron?.close();
+    await backend.close();
   }
 });

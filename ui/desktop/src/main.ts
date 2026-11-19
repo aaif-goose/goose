@@ -3,6 +3,7 @@ import type {
   IpcMainInvokeEvent,
   OpenDialogOptions,
   OpenDialogReturnValue,
+  Session,
 } from 'electron';
 import {
   app,
@@ -86,6 +87,7 @@ import {
   CHAT_HISTORY_KEY,
   pruneStoredMessageHistory,
 } from './utils/localMessageStorage';
+import { addSharedDictionaryWord, copySharedDictionaryWords } from './spellCheckerDictionary';
 
 const windowIconPath = path.join(__dirname, '../images', getWindowIconFilename(process.platform));
 
@@ -202,6 +204,7 @@ function translateMenuLabels(items: MenuItem[]): void {
 
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const CHAT_HISTORY_FILE = path.join(app.getPath('userData'), 'chat-input-history.json');
 const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 const validLanguageSettings = new Set<Settings['language']>([
   'system',
@@ -257,9 +260,13 @@ function getSettings(): Settings {
 function updateSettings(modifier: (settings: Settings) => void): void {
   const settings = { ...getSettings() };
   modifier(settings);
-  const temporarySettingsFile = `${SETTINGS_FILE}.tmp`;
-  fsSync.writeFileSync(temporarySettingsFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
-  fsSync.renameSync(temporarySettingsFile, SETTINGS_FILE);
+  writePrivateFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+function writePrivateFile(filePath: string, contents: string): void {
+  const temporaryPath = `${filePath}.tmp`;
+  fsSync.writeFileSync(temporaryPath, contents, { mode: 0o600 });
+  fsSync.renameSync(temporaryPath, filePath);
 }
 
 function getConfiguredGooseLocale(): string | undefined {
@@ -764,20 +771,44 @@ let rendererStorageMigration: Promise<void> | undefined;
 
 function ensureRendererStorageMigrated(): Promise<void> {
   rendererStorageMigration ??= (async () => {
-    if (getSettings().rendererStorageMigrated) {
+    const { rendererStorageMigrated, rendererStorage } = getSettings();
+    const storedHistory = rendererStorage?.[CHAT_HISTORY_KEY];
+    if (rendererStorageMigrated && storedHistory === undefined) {
       return;
     }
     try {
-      const values = await readLegacyRendererStorage(
-        session.fromPartition(LEGACY_RENDERER_PARTITION),
-        getAppUrl()
-      );
-      updateSettings((settings) => migrateRendererStorage(settings, values));
+      const values = rendererStorageMigrated
+        ? new Map<string, string>()
+        : await readLegacyRendererStorage(
+            session.fromPartition(LEGACY_RENDERER_PARTITION),
+            getAppUrl()
+          );
+      const history = storedHistory === undefined ? values.get(CHAT_HISTORY_KEY) : storedHistory;
+      if (history !== undefined && !fsSync.existsSync(CHAT_HISTORY_FILE)) {
+        writePrivateFile(CHAT_HISTORY_FILE, pruneStoredMessageHistory(history) ?? '[]');
+      }
+      updateSettings((settings) => {
+        if (!rendererStorageMigrated) {
+          migrateRendererStorage(settings, values);
+        }
+        delete settings.rendererStorage?.[CHAT_HISTORY_KEY];
+      });
     } catch (error) {
       log.error('Failed to migrate renderer storage', error);
     }
   })();
   return rendererStorageMigration;
+}
+
+function addCustomSpellingWord(windowSession: Session, word: string): void {
+  if (process.platform === 'darwin') {
+    windowSession.addWordToSpellCheckerDictionary(word);
+    return;
+  }
+  const chatSessions = BrowserWindow.getAllWindows()
+    .filter((window) => gooseServeLeases.get(window.id))
+    .map((window) => window.webContents.session);
+  addSharedDictionaryWord(session.fromPartition(LEGACY_RENDERER_PARTITION), chatSessions, word);
 }
 
 function getRendererThemeConfig({ theme, useSystemTheme }: Settings) {
@@ -1216,6 +1247,12 @@ const createChat = async (
   let mainWindowState: ReturnType<typeof windowStateKeeper>;
   let mainWindow: BrowserWindow;
   try {
+    if (process.platform !== 'darwin') {
+      await copySharedDictionaryWords(
+        session.fromPartition(LEGACY_RENDERER_PARTITION),
+        windowSession
+      ).catch((error) => log.error('Failed to load the shared spelling dictionary', error));
+    }
     const backendCsp =
       externalBackend && gooseServeLease
         ? { enabled: true, url: httpBaseFromAcpWebSocketUrl(gooseServeLease.acpUrl) }
@@ -1325,8 +1362,7 @@ const createChat = async (
         menu.append(
           new MenuItem({
             label: menuT('Add to dictionary'),
-            click: () =>
-              mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+            click: () => addCustomSpellingWord(windowSession, params.misspelledWord),
           })
         );
       }
@@ -1914,7 +1950,7 @@ ipcMain.handle('get-setting', (_event, key: SettingKey) => {
   return validSettingKeys.has(key) ? getSettings()[key] : undefined;
 });
 
-const rendererStorageKeys = new Set<string>(RENDERER_STORAGE_KEYS);
+const rendererStorageKeys = new Set<string>([...RENDERER_STORAGE_KEYS, CHAT_HISTORY_KEY]);
 
 function isAppStorageRequest(event: IpcMainEvent): boolean {
   const frame = event.senderFrame;
@@ -1931,43 +1967,49 @@ function updateRendererStorage(modifier: (storage: RendererStorage) => void): vo
   }
 }
 
+function updateChatHistory(update: (stored: string | null) => string | null): string | null {
+  let next: string | null = null;
+  try {
+    const current = fsSync.existsSync(CHAT_HISTORY_FILE)
+      ? fsSync.readFileSync(CHAT_HISTORY_FILE, 'utf8')
+      : null;
+    next = update(current);
+    if (next !== null && next !== current) {
+      writePrivateFile(CHAT_HISTORY_FILE, next);
+    }
+  } catch (error) {
+    log.error('Failed to access chat input history', error);
+  }
+  return next;
+}
+
 ipcMain.on('renderer-storage:get', (event, key: RendererStorageKey) => {
   if (!isAppStorageRequest(event) || !rendererStorageKeys.has(key)) {
     event.returnValue = null;
     return;
   }
-  const value = getSettings().rendererStorage?.[key] ?? null;
-  const result = key === CHAT_HISTORY_KEY ? pruneStoredMessageHistory(value) : value;
-  if (result !== value) {
-    updateRendererStorage((storage) => {
-      storage[key] = result;
-    });
-  }
-  event.returnValue = result;
+  event.returnValue =
+    key === CHAT_HISTORY_KEY
+      ? updateChatHistory(pruneStoredMessageHistory)
+      : (getSettings().rendererStorage?.[key] ?? null);
 });
 
 ipcMain.on('renderer-storage:set', (event, key: RendererStorageKey, value: string | null) => {
-  if (
-    isAppStorageRequest(event) &&
-    rendererStorageKeys.has(key) &&
-    (value === null || (typeof value === 'string' && key !== CHAT_HISTORY_KEY))
-  ) {
-    updateRendererStorage((storage) => {
-      storage[key] = value;
-    });
+  if (isAppStorageRequest(event) && rendererStorageKeys.has(key)) {
+    if (key === CHAT_HISTORY_KEY) {
+      if (value === null) updateChatHistory(() => '[]');
+    } else if (value === null || typeof value === 'string') {
+      updateRendererStorage((storage) => {
+        storage[key] = value;
+      });
+    }
   }
   event.returnValue = null;
 });
 
 ipcMain.on('renderer-storage:append-message', (event, content: string) => {
   if (isAppStorageRequest(event) && typeof content === 'string') {
-    const current = getSettings().rendererStorage?.[CHAT_HISTORY_KEY] ?? null;
-    const next = appendStoredMessage(current, content);
-    if (next !== null && next !== current) {
-      updateRendererStorage((storage) => {
-        storage[CHAT_HISTORY_KEY] = next;
-      });
-    }
+    updateChatHistory((current) => appendStoredMessage(current, content));
   }
   event.returnValue = null;
 });

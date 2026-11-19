@@ -66,8 +66,7 @@ export const RENDERER_STORAGE_KEYS = [
   'navigation_expanded',
   'navigation_width',
   'sessions_include_acp',
-  CHAT_HISTORY_KEY,
 ] as const;
 
-export type RendererStorageKey = (typeof RENDERER_STORAGE_KEYS)[number];
+export type RendererStorageKey = (typeof RENDERER_STORAGE_KEYS)[number] | typeof CHAT_HISTORY_KEY;
 export type RendererStorage = Partial<Record<RendererStorageKey, string | null>>;
