@@ -1,11 +1,11 @@
 ---
-title: oi-kit (Open Intelligence Kit)
+title: Open Intelligence Kit (oi-kit)
 displayed_sidebar: gdkSidebar
 hide_table_of_contents: true
-description: Build agents with oi-kit, the Open Intelligence Kit.
+description: Build agents with the Open Intelligence Kit (oi-kit).
 ---
 
-# oi-kit (Open Intelligence Kit)
+# Open Intelligence Kit (oi-kit)
 
 Build agents that run across native applications, servers, and the browser,
 resume from persisted state, and give you control over how they work.

@@ -18,8 +18,8 @@ function HeroSection() {
         </div>
         <p className={styles.heroSubtitle}>
           Your open source AI agent. Use goose on desktop or in the terminal, or
-          build agents into your own applications with{" "}
-          <Link to="/docs/oi-kit/">oi-kit</Link>.
+          build agents into your own applications with the{" "}
+          <Link to="/docs/oi-kit/">Open Intelligence Kit (oi-kit)</Link>.
         </p>
         <div className={styles.heroActions}>
           <Link
@@ -352,7 +352,7 @@ function VideoSection() {
 
 export default function Home(): ReactNode {
   return (
-    <Layout description="Your open source AI agent. Use goose on desktop or in the terminal, or build agents into your own applications with oi-kit.">
+    <Layout description="Your open source AI agent. Use goose on desktop or in the terminal, or build agents into your own applications with the Open Intelligence Kit (oi-kit).">
       <HeroSection />
       <main>
         <FeaturesSection />

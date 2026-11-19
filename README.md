@@ -1,8 +1,8 @@
 <div align="center">
 
-# oi-kit and goose
+# Open Intelligence Kit (oi-kit) and goose
 
-_Build agents that run anywhere with oi-kit, the Open Intelligence Kit._
+_Build agents that run anywhere with oi-kit._
 
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0"
@@ -20,7 +20,7 @@ _Build agents that run anywhere with oi-kit, the Open Intelligence Kit._
 </div>
 
 
-[oi-kit (Open Intelligence Kit)](https://goose-docs.ai/docs/oi-kit/) provides the reusable Rust components for building agents. [goose](https://goose-docs.ai/docs/quickstart) is a complete agent built with oi-kit: use its desktop app or CLI, or make it the agent backend for your own application over ACP.
+[oi-kit](https://goose-docs.ai/docs/oi-kit/) provides the reusable Rust components for building agents. [goose](https://goose-docs.ai/docs/quickstart) is a complete agent built with oi-kit: use its desktop app or CLI, or make it the agent backend for your own application over ACP.
 
 Both live in this repository. goose is part of the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
 
