@@ -1,4 +1,4 @@
-import type { ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import { describe, expect, it } from 'vitest';
 import { toolNotificationEvent } from '../adapter/toolNotifications';
 

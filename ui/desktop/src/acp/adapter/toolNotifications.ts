@@ -1,4 +1,4 @@
-import type { ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import type {
   LiveOutputNotificationChunk,
   LiveOutputNotificationParams,

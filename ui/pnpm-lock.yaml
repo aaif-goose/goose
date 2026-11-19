@@ -23,8 +23,8 @@ importers:
         specifier: workspace:*
         version: link:../goose-acp-client
       '@agentclientprotocol/sdk':
-        specifier: 1.5.0
-        version: 1.5.0(zod@4.6.7)
+        specifier: 2.6.0
+        version: 2.6.0(zod@4.6.7)
       '@mcp-ui/client':
         specifier: 6.1.0
         version: 6.1.0(@preact/signals-core@1.14.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -389,8 +389,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: 1.5.0
-        version: 1.5.0(zod@4.6.7)
+        specifier: 2.6.0
+        version: 2.6.0(zod@4.6.7)
       '@hey-api/openapi-ts':
         specifier: ^0.99.0
         version: 0.99.0(magicast@0.5.5)(typescript@5.9.3)
@@ -425,10 +425,14 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@agentclientprotocol/sdk@1.5.0':
-    resolution: {integrity: sha512-524jwbB2iYWA+kWWyv9fhKbhU89dH/lu9u5EXwVNmfYzopV8BujCDxByBDZhxRUkB7RWIJzISCnwivdDk+bdVg==}
+  '@agentclientprotocol/sdk@2.6.0':
+    resolution: {integrity: sha512-3FtL6MkAV5F9qxg0FQV8wmBszIm2xuVPoDWOILIFSDQ+Vq3Twdh7Cw6Hk2GOPUbevgrTUpUAqZXQy7Geaj79mw==}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      '@modelcontextprotocol/server': ^2.4.0
+      zod: ^3.25.76 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
 
   '@alcalzone/ansi-tokenize@0.3.1':
     resolution: {integrity: sha512-cUD0PT0YX+rImRhfn7BfMRduP/tX/Zqt/N0dHlAyn2RlcJssCb5KsCJkhln61eh9vuJDkH8wKn3L8zJzzWXPFg==}
@@ -6295,7 +6299,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@agentclientprotocol/sdk@1.5.0(zod@4.6.7)':
+  '@agentclientprotocol/sdk@2.6.0(zod@4.6.7)':
     dependencies:
       zod: 4.6.7
 

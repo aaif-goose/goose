@@ -1,5 +1,5 @@
 import type { GooseSessionNotification_unstable } from '@aaif/goose-acp-client';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import type { Message } from '../types/message';
 import {
   applyElicitationRequest as applyElicitationRequestToState,

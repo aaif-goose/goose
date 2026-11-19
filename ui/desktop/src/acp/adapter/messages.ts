@@ -1,7 +1,7 @@
 import type {
   ContentBlock as AcpContentBlock,
   SessionNotification,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { ContentBlock, Message } from '../../types/message';
 import {
   type AcpChatStateChange,

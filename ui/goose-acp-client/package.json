@@ -40,10 +40,10 @@
     "zod": "^4.6.7"
   },
   "peerDependencies": {
-    "@agentclientprotocol/sdk": "^1.5.0"
+    "@agentclientprotocol/sdk": "^2.6.0"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "1.5.0",
+    "@agentclientprotocol/sdk": "2.6.0",
     "@hey-api/openapi-ts": "^0.99.0",
     "@types/node": "^26.6.6",
     "prettier": "^3.10.1",

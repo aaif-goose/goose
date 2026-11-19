@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RequestError } from '@agentclientprotocol/sdk';
+import { RequestError } from '@agentclientprotocol/sdk/unstable';
 import { formatAcpError, parseAcpCreditsExhaustedError } from '../errors';
 
 describe('formatAcpError', () => {

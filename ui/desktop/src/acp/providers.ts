@@ -8,7 +8,7 @@ import type {
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from '@aaif/goose-acp-client';
-import { methods } from '@agentclientprotocol/sdk';
+import { methods } from '@agentclientprotocol/sdk/unstable';
 import type {
   ProviderDetails,
   ThinkingEffort,

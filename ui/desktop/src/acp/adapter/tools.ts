@@ -2,7 +2,7 @@ import type {
   ContentBlock as AcpContentBlock,
   ToolCall,
   ToolCallUpdate,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { Message } from '../../types/message';
 import type { ContentBlock as GooseContentBlock } from '../../types/message';
 import { findMessageForChunk } from './messages';
