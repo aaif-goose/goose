@@ -11,13 +11,13 @@ Let's build a small coding agent. It can inspect a directory, run shell
 commands, and keep a conversation across turns and application restarts.
 
 This is an annotated walkthrough of Jack's
-[`ngrc` example](https://github.com/jamadeo/ngrc/tree/dc25c579cd40d85f8d90b61e80cbf02b8838564f).
+[`ngrc` example](https://github.com/jamadeo/ngrc/tree/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9).
 oi-kit handles inference, tool dispatch, and the model/tool loop. The application
 chooses the provider, tools, prompt, storage, and interface.
 
 The code blocks below are selected excerpts, with some setup shortened for
 clarity. Use the linked repository for the complete runnable program, imports,
-and session store. This walkthrough uses revision `dc25c57`, which pins oi-kit
+and session store. This walkthrough uses revision `5c438bf`, which pins oi-kit
 `0.1.0-alpha.15`; newer alpha releases may have different APIs.
 
 ## Run it first
@@ -36,7 +36,7 @@ what the shell can access. Model requests may incur charges.
 ```bash
 git clone https://github.com/jamadeo/ngrc.git
 cd ngrc
-git switch --detach dc25c579cd40d85f8d90b61e80cbf02b8838564f
+git switch --detach 5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9
 ```
 
 Set these to your own API key and a tool-capable OpenAI model available to your
@@ -59,7 +59,7 @@ The application also prints the path to its session file. Keep that path to
 ## Assemble the agent
 
 The central function in
-[`src/main.rs`](https://github.com/jamadeo/ngrc/blob/dc25c579cd40d85f8d90b61e80cbf02b8838564f/src/main.rs)
+[`src/main.rs`](https://github.com/jamadeo/ngrc/blob/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9/src/main.rs)
 is small enough to read in one go:
 
 ```rust
@@ -67,12 +67,17 @@ fn agent(
     provider: Arc<dyn Provider>,
     model: ModelConfig,
     cancel: CancellationToken,
+    extensions: Arc<Extensions>,
 ) -> StateMachine<'static, Session, Effect> {
     StateMachine::new(
         vec![
             Step::Operation(Arc::new(
                 ToolOperation::<Session>::new().with_async_tool::<Shell>(),
             )),
+            Step::Operation(Arc::new(oi_kit_agent::mcp::ExtensionOperation::new(
+                extensions,
+            ))),
+            Step::Operation(Arc::new(UnhandledToolCallsOperation::new())),
             Step::Inference(Arc::new(
                 InferenceRunner::<Session, Effect>::new(provider, model)
                     .with_request_preparer(Arc::new(Prompt)),
@@ -83,10 +88,15 @@ fn agent(
 }
 ```
 
-The machine has two steps, in order:
+The machine has four steps, in order:
 
 - `ToolOperation` exposes the shell tool to the model and executes pending
   calls to it.
+- `ExtensionOperation` does the same for tools from any MCP extensions loaded
+  with `--extensions`. Without that option, it adds no tools.
+- `UnhandledToolCallsOperation` answers any tool call that no earlier step
+  handled, such as a call to a tool that does not exist, with an error the model
+  can see.
 - `InferenceRunner` calls the provider with the conversation, prompt, and
   available tools.
 
@@ -104,15 +114,15 @@ The example uses three oi-kit crates:
 
 ```toml
 [dependencies]
-oi-kit-agent = "=0.1.0-alpha.15"
-oi-kit-provider-types = "=0.1.0-alpha.15"
-oi-kit-providers = { version = "=0.1.0-alpha.15", features = ["rustls-tls"] }
+oi-kit-agent = "0.1.0-alpha.15"
+oi-kit-provider-types = "0.1.0-alpha.15"
+oi-kit-providers = { version = "0.1.0-alpha.15", features = ["rustls-tls"] }
 ```
 
 `oi-kit-agent` provides the state machine and operations. `oi-kit-provider-types`
 provides shared interfaces and message types. `oi-kit-providers` supplies the
 OpenAI implementation. The `rustls-tls` feature enables HTTPS for this setup.
-The [full manifest](https://github.com/jamadeo/ngrc/blob/dc25c579cd40d85f8d90b61e80cbf02b8838564f/Cargo.toml)
+The [full manifest](https://github.com/jamadeo/ngrc/blob/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9/Cargo.toml)
 also includes Tokio, serialization, and the typed tool dependencies.
 
 Provider setup is explicit:
@@ -137,12 +147,13 @@ from the rest of the application.
 
 ## Give it one tool
 
-The model only gets one tool: `shell`. Its input and output are ordinary Rust
-types with generated JSON schemas:
+Unless you load MCP extensions, the model only gets one tool: `shell`. Its input
+and output are ordinary Rust types with generated JSON schemas:
 
 ```rust
 #[derive(Default, Deserialize, JsonSchema)]
 struct ShellInput {
+    /// A non-interactive /bin/bash command. Each call starts in the project directory.
     command: String,
 }
 
@@ -170,7 +181,7 @@ impl ToolBase for Shell {
     }
 
     fn description() -> Option<Cow<'static, str>> {
-        Some("Execute a non-interactive Bash command in the project directory. Commands time out after 120 seconds; cwd changes do not persist between calls.".into())
+        Some("Execute a non-interactive Bash command in the project directory. Use this to inspect, edit, and test code. Commands time out after 120 seconds; cwd changes do not persist between calls.".into())
     }
 }
 ```
@@ -181,6 +192,7 @@ session, so it can start commands in the session's saved working directory:
 ```rust
 impl AsyncTool<Session> for Shell {
     async fn invoke(session: &Session, input: ShellInput) -> Result<ShellOutput, ErrorData> {
+        eprintln!("\n$ {}", input.command);
         let mut command = tokio::process::Command::new("/bin/bash");
         command
             .arg("-c")
@@ -213,8 +225,8 @@ alongside stdout and stderr so it can decide what to do next.
 
 ## Prepare the model request
 
-The `Prompt` request preparer supplies the system prompt and forwards the tools
-collected from the machine's operations:
+The `Prompt` request preparer supplies the system prompt, appends any prompt text
+the machine's operations contribute, and forwards the tools they collected:
 
 ```rust
 struct Prompt;
@@ -228,7 +240,10 @@ impl InferenceRequestPreparer<Session> for Prompt {
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest> {
         Ok(PreparedInferenceRequest {
-            system_prompt: SYSTEM_PROMPT.into(),
+            system_prompt: std::iter::once(SYSTEM_PROMPT.to_owned())
+                .chain(input.prompt_parts.into_iter().map(|(_, text)| text))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
             tools: input.tools,
             additional_messages: vec![],
         })
@@ -331,7 +346,7 @@ let records = effects
 store.append(records)?;
 ```
 
-[`src/session.rs`](https://github.com/jamadeo/ngrc/blob/dc25c579cd40d85f8d90b61e80cbf02b8838564f/src/session.rs)
+[`src/session.rs`](https://github.com/jamadeo/ngrc/blob/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9/src/session.rs)
 implements the append-only JSONL store. It writes and syncs records before
 updating the in-memory session. Reopening the file replays those records to
 reconstruct the conversation, metadata, and usage. Assistant messages, tool
@@ -362,21 +377,23 @@ let display = tokio::spawn(async move {
                         print!("{}", text.text);
                         io::stdout().flush()?;
                     }
-                    MessageContent::Error(error) => eprintln!("{}", error.message),
+                    MessageContent::Error(error) => eprintln!("\n{}", error.message),
+                    MessageContent::SystemNotification(note) => eprintln!("\n{}", note.msg),
                     _ => {}
                 }
             }
         }
     }
+    println!();
     Ok::<_, io::Error>(())
 });
 
-let machine = agent(provider, model, cancel);
-let id = runtime.snapshot().id;
+let machine = agent(provider, model, cancel, runtime.1.clone());
+let id = runtime.session_id();
 let result = machine.run(runtime, &id, &emitter).await;
 drop(emitter);
 display.await??;
-let session = result?;
+result
 ```
 
 Streaming and persistence have separate jobs: the emitter updates the UI, while
@@ -418,7 +435,10 @@ turning it into an application that works on real data.
 To change the agent, start with one of the choices already visible here: add a
 tool, replace the request preparer, choose another provider, or implement a
 different session store. More specialized behavior can become another
-operation in the machine's ordered list.
+operation in the machine's ordered list. To give the agent more tools without
+writing them, load MCP extensions; the
+[`ngrc` README](https://github.com/jamadeo/ngrc/blob/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9/README.md#mcp-extensions-mvp)
+describes the configuration file.
 
 Explore the [demos](/docs/oi-kit/demos) for larger applications, or use the
 [reference](/docs/oi-kit/reference) to find the component APIs. For this example,
