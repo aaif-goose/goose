@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::FutureExt;
-use oi_kit_agent::tool_call_state::request_executable;
+use oi_kit_agent::tool_call_state::{open_tool_calls, ToolCallState};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Role, Tool, ToolAnnotations,
 };
@@ -24,7 +24,7 @@ use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::agents::StateMachineServices;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
-use crate::conversation::{unanswered_tool_requests, Conversation};
+use crate::conversation::Conversation;
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
@@ -513,16 +513,14 @@ impl Operation<Session, GooseEffect> for ExpiredToolsOperation {
 }
 
 pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    unanswered_tool_requests(messages)
-        .filter_map(|request| {
-            if let Err(parse_error) = &request.tool_call {
-                return Some((
-                    request.clone(),
-                    ToolDisposition::ParseError(parse_error.to_string()),
-                ));
-            }
-            (request_executable(request) == Some(true))
-                .then(|| (request.clone(), ToolDisposition::Execute))
+    open_tool_calls(messages)
+        .filter_map(|(request, state)| match (&request.tool_call, state) {
+            (Err(parse_error), _) => Some((
+                request.clone(),
+                ToolDisposition::ParseError(parse_error.to_string()),
+            )),
+            (Ok(_), ToolCallState::Executable) => Some((request.clone(), ToolDisposition::Execute)),
+            _ => None,
         })
         .collect()
 }

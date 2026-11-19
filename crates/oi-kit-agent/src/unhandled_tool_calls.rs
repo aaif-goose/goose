@@ -8,7 +8,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, yielded, ConversationEffect, Emitter,
     Operation, OperationResult,
 };
-use crate::tool_call_state::{add_error_response, tool_calls, ToolCallState};
+use crate::tool_call_state::{add_error_response, open_tool_calls, ToolCallState};
 
 pub struct UnhandledToolCallsOperation;
 
@@ -74,10 +74,7 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let open_calls: Vec<_> = tool_calls(messages_since_kickoff(conversation)?)
-            .into_iter()
-            .filter(|(request, state)| state.is_open() && !request.was_executed_externally())
-            .collect();
+        let open_calls: Vec<_> = open_tool_calls(messages_since_kickoff(conversation)?).collect();
         if let Some(tool_responses) = respond_to_unhandled_calls(&open_calls, emit) {
             return applied([E::from(ConversationEffect::AppendMessage(tool_responses))]);
         }

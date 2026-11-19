@@ -11,7 +11,7 @@ use crate::operation::ConversationEffect;
 pub const EXECUTABLE_KEY: &str = "goose.executable";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum ToolCallState<'a> {
+pub enum ToolCallState<'a> {
     Responded(&'a ToolResponse),
     Unchecked,
     Executable,
@@ -21,12 +21,12 @@ pub(crate) enum ToolCallState<'a> {
 }
 
 impl ToolCallState<'_> {
-    pub(crate) fn is_open(&self) -> bool {
+    pub fn is_open(&self) -> bool {
         !matches!(self, ToolCallState::Responded(_))
     }
 }
 
-pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallState<'_>)> {
+pub fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallState<'_>)> {
     let mut request_ids = HashSet::new();
     let mut requests = Vec::new();
     let mut tool_responses_by_id = HashMap::new();
@@ -76,6 +76,16 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
             (request, state)
         })
         .collect()
+}
+
+/// Tool calls the agent still owes a result for. Externally executed calls are
+/// answered by the client, so they are never open here.
+pub fn open_tool_calls(
+    messages: &[Message],
+) -> impl Iterator<Item = (&ToolRequest, ToolCallState<'_>)> {
+    tool_calls(messages)
+        .into_iter()
+        .filter(|(request, state)| state.is_open() && !request.was_executed_externally())
 }
 
 pub fn request_executable(request: &ToolRequest) -> Option<bool> {
