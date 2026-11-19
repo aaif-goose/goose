@@ -32,6 +32,11 @@ const i18n = defineMessages({
   running: { id: 'schedulesView.running', defaultMessage: 'Running' },
   paused: { id: 'schedulesView.paused', defaultMessage: 'Paused' },
   lastRun: { id: 'schedulesView.lastRun', defaultMessage: 'Last run: {date}' },
+  lastResultFailed: { id: 'schedulesView.lastResultFailed', defaultMessage: 'Last run failed' },
+  lastResultCancelled: {
+    id: 'schedulesView.lastResultCancelled',
+    defaultMessage: 'Last run cancelled',
+  },
   edit: { id: 'schedulesView.edit', defaultMessage: 'Edit' },
   resume: { id: 'schedulesView.resume', defaultMessage: 'Resume' },
   pause: { id: 'schedulesView.pause', defaultMessage: 'Pause' },
@@ -131,6 +136,16 @@ const ScheduleCard: React.FC<{
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
                 <Pause className="w-3 h-3 mr-1" />
                 {intl.formatMessage(i18n.paused)}
+              </span>
+            )}
+            {job.lastRunStatus === 'failed' && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                {intl.formatMessage(i18n.lastResultFailed)}
+              </span>
+            )}
+            {job.lastRunStatus === 'cancelled' && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">
+                {intl.formatMessage(i18n.lastResultCancelled)}
               </span>
             )}
           </div>

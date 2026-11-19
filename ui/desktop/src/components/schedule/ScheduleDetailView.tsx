@@ -38,6 +38,16 @@ const i18n = defineMessages({
   cronExpression: { id: 'scheduleDetailView.cronExpression', defaultMessage: 'Cron Expression:' },
   recipeSource: { id: 'scheduleDetailView.recipeSource', defaultMessage: 'Recipe Source:' },
   lastRun: { id: 'scheduleDetailView.lastRun', defaultMessage: 'Last Run:' },
+  lastResult: { id: 'scheduleDetailView.lastResult', defaultMessage: 'Last Result:' },
+  lastResultFailed: { id: 'scheduleDetailView.lastResultFailed', defaultMessage: 'Failed' },
+  lastResultCancelled: {
+    id: 'scheduleDetailView.lastResultCancelled',
+    defaultMessage: 'Cancelled',
+  },
+  lastResultSucceeded: {
+    id: 'scheduleDetailView.lastResultSucceeded',
+    defaultMessage: 'Succeeded',
+  },
   currentSession: { id: 'scheduleDetailView.currentSession', defaultMessage: 'Current Session:' },
   processStarted: { id: 'scheduleDetailView.processStarted', defaultMessage: 'Process Started:' },
   actions: { id: 'scheduleDetailView.actions', defaultMessage: 'Actions' },
@@ -346,6 +356,16 @@ const ScheduleDetailView: React.FC<ScheduleDetailViewProps> = ({ scheduleId, onN
                     <span className="font-semibold">{intl.formatMessage(i18n.lastRun)}</span>{' '}
                     {formatToLocalDateWithTimezone(scheduleDetails.lastRun)}
                   </p>
+                  {scheduleDetails.lastRunStatus && (
+                    <p className="text-sm text-text-primary">
+                      <span className="font-semibold">{intl.formatMessage(i18n.lastResult)}</span>{' '}
+                      {scheduleDetails.lastRunStatus === 'failed'
+                        ? intl.formatMessage(i18n.lastResultFailed)
+                        : scheduleDetails.lastRunStatus === 'cancelled'
+                          ? intl.formatMessage(i18n.lastResultCancelled)
+                          : intl.formatMessage(i18n.lastResultSucceeded)}
+                    </p>
+                  )}
                   {scheduleDetails.currentlyRunning && scheduleDetails.currentSessionId && (
                     <p className="text-sm text-text-primary">
                       <span className="font-semibold">{intl.formatMessage(i18n.currentSession)}</span>{' '}

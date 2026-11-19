@@ -6,7 +6,7 @@ use oi_kit_provider_types::conversation::Conversation;
 use oi_kit_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 use crate::operation::{
-    not_applicable, trailing_error, yielded, Emitter, Operation, OperationResult,
+    not_applicable, trailing_error_message, yielded, Emitter, Operation, OperationResult,
 };
 
 pub struct ExitOnErrorOperation;
@@ -26,12 +26,12 @@ where
         &self,
         _session: &S,
         conversation: &Conversation,
-        _emit: &Emitter,
+        emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        if trailing_error(conversation).is_none() {
+        let Some(message) = trailing_error_message(conversation) else {
             return not_applicable();
-        }
-
+        };
+        emit.record_failure(message);
         yielded()
     }
 }

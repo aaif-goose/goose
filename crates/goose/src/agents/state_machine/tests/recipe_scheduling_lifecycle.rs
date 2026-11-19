@@ -786,6 +786,7 @@ prompt: check
         source: recipe_path.to_string_lossy().into_owned(),
         cron: "0 0 0 1 1 *".to_string(),
         last_run: None,
+        last_run_status: None,
         currently_running: false,
         paused: false,
         current_session_id: None,

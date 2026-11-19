@@ -357,6 +357,7 @@ impl CompactionOperation {
                 if let Some(request_index) = request_index {
                     effects.extend(Self::abandon(messages, request_index)?);
                 }
+                emit.record_failure(error.to_string());
                 effects.push(E::from(emit.message(compaction_failure_message(&error))));
                 yielded_with(effects)
             }

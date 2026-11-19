@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 18;
+pub const CURRENT_SCHEMA_VERSION: i32 = 19;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -116,6 +116,10 @@ pub struct Session {
     pub system_prompt_extras: IndexMap<String, String>,
     #[serde(default)]
     pub container: Option<Container>,
+    /// Outcome of the scheduled invocation that created this session.
+    /// Set once by the scheduler; later replies do not rewrite it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_outcome: Option<String>,
 }
 
 impl From<&Session> for TokenState {
@@ -486,6 +490,10 @@ impl SessionManager {
 
     pub async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
         self.storage.get_session(id, include_messages).await
+    }
+
+    pub async fn set_run_outcome_once(&self, session_id: &str, outcome: &str) -> Result<bool> {
+        self.storage.set_run_outcome_once(session_id, outcome).await
     }
 
     pub fn update(&self, id: &str) -> SessionUpdateBuilder<'_> {
@@ -908,6 +916,7 @@ impl Default for Session {
             system_prompt_override: None,
             system_prompt_extras: IndexMap::new(),
             container: None,
+            run_outcome: None,
         }
     }
 }
@@ -1037,6 +1046,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             container: row
                 .try_get::<Option<String>, _>("container_id")?
                 .map(Container::new),
+            run_outcome: row.try_get("run_outcome").ok().flatten(),
         })
     }
 }
@@ -1201,7 +1211,8 @@ impl SessionStorage {
                 parent_session_id TEXT,
                 system_prompt_override TEXT,
                 system_prompt_extras_json TEXT,
-                container_id TEXT
+                container_id TEXT,
+                run_outcome TEXT
             )
         "#,
         )
@@ -1782,6 +1793,19 @@ impl SessionStorage {
             18 => {
                 Self::create_session_tags_table(tx).await?;
             }
+            19 => {
+                let has_column = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'run_outcome'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_column {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN run_outcome TEXT")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1884,7 +1908,8 @@ impl SessionStorage {
                           accumulated_cost, schedule_id, recipe_json, user_recipe_values_json,
                           provider_name, model_config_json, goose_mode,
                           archived_at, project_id, parent_session_id,
-                          system_prompt_override, system_prompt_extras_json, container_id
+                          system_prompt_override, system_prompt_extras_json, container_id,
+                          run_outcome
                 "#,
         )
             .bind(id)
@@ -1913,6 +1938,19 @@ impl SessionStorage {
         Ok(session)
     }
 
+    /// Writes the scheduled-run outcome only if this session does not already have one.
+    pub async fn set_run_outcome_once(&self, session_id: &str, outcome: &str) -> Result<bool> {
+        let pool = self.pool().await?;
+        let result = sqlx::query(
+            "UPDATE sessions SET run_outcome = ?, updated_at = datetime('now') WHERE id = ? AND run_outcome IS NULL",
+        )
+        .bind(outcome)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
         let pool = self.pool().await?;
         let mut session = sqlx::query_as::<_, Session>(
@@ -1926,7 +1964,8 @@ impl SessionStorage {
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
                archived_at, project_id, parent_session_id,
-               system_prompt_override, system_prompt_extras_json, container_id
+               system_prompt_override, system_prompt_extras_json, container_id,
+               run_outcome
         FROM sessions
         WHERE id = ?
     "#,
@@ -2436,6 +2475,7 @@ impl SessionStorage {
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id, s.parent_session_id,
                    s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
+                   s.run_outcome,
                    page.message_count, page.last_message_timestamp, page.sort_timestamp
             FROM (
                 SELECT s.id,
