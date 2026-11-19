@@ -15,11 +15,6 @@ const CLIENT_SECRET_PREFIX: &str = "GOOSE_CLIENT_SECRET_";
 
 static CLIENT_SECRETS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
 
-/// Keeps a secret an ACP client sent in this process's memory only, and returns
-/// the key a config can reference as `${KEY}` in place of the value, so the
-/// session record never holds it. The same value always gets the same key, so
-/// sending it again leaves the config, and its running extension, unchanged; a
-/// new value gets a new key, which restarts the extension with it.
 pub(crate) fn hold_client_secret(value: String) -> String {
     let mut secrets = CLIENT_SECRETS
         .lock()

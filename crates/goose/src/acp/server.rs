@@ -560,10 +560,8 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
 }
 
 /// Turns the HTTP headers an ACP client sent with an MCP server into config
-/// headers. ACP requires a client to send its MCP servers again when it loads a
-/// session, so goose need not remember any header: each value is held in this
-/// process's memory and referenced as a `${KEY}` placeholder, and the session
-/// record never stores it.
+/// headers. Effectively treats all headers sent over MCP as sensitive. ACP
+/// spec requires re-sending on resumption, so they need not be persisted
 fn client_http_headers(
     headers: Vec<HttpHeader>,
     env_keys: &mut Vec<String>,
