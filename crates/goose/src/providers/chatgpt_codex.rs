@@ -477,34 +477,32 @@ fn create_codex_request(
     tools: &[Tool],
 ) -> Result<Value> {
     let mut input_items = build_input_items(messages, &model_config.model_name)?;
-    let instructions = if uses_developer_prompt(&model_config.model_name) {
-        if !system.is_empty() {
-            input_items.insert(
-                0,
-                json!({
-                    "role": "developer",
-                    "content": [{ "type": "input_text", "text": system }],
-                }),
-            );
-        }
-        // Keep the instructions string for compatibility with the sign-in backend.
-        ""
-    } else {
-        system
-    };
+    let developer_prompt = uses_developer_prompt(&model_config.model_name);
+    if developer_prompt && !system.is_empty() {
+        input_items.insert(
+            0,
+            json!({
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": system }],
+            }),
+        );
+    }
     let reasoning_effort = reasoning_effort_for_config(model_config);
 
     let mut payload = json!({
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "instructions": instructions,
         "include": ["reasoning.encrypted_content"],
     });
 
     let payload_obj = payload
         .as_object_mut()
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
+
+    if !developer_prompt {
+        payload_obj.insert("instructions".to_string(), json!(system));
+    }
 
     if !tools.is_empty() {
         let tools_spec: Vec<Value> = tools
@@ -1967,7 +1965,7 @@ mod tests {
         });
 
         if developer_prompt {
-            assert_eq!(payload["instructions"], "");
+            assert!(payload.get("instructions").is_none());
             assert_eq!(
                 payload["input"],
                 json!([
@@ -1984,15 +1982,19 @@ mod tests {
         }
     }
 
-    #[test_case("gpt-5.4")]
-    #[test_case("gpt-6.2-sol")]
-    #[test_case("gpt-6.2-astra")]
-    fn test_empty_prompt_adds_no_developer_message(model_name: &str) {
+    #[test_case("gpt-5.4", false)]
+    #[test_case("gpt-6.2-sol", true)]
+    #[test_case("gpt-6.2-astra", true)]
+    fn test_empty_prompt_adds_no_developer_message(model_name: &str, developer_prompt: bool) {
         let model = ModelConfig::new(model_name);
         let messages = [Message::user().with_text("question")];
         let payload = create_codex_request(&model, "", &messages, &[]).unwrap();
 
-        assert_eq!(payload["instructions"], "");
+        if developer_prompt {
+            assert!(payload.get("instructions").is_none());
+        } else {
+            assert_eq!(payload["instructions"], "");
+        }
         assert_eq!(input_kinds(&payload), vec!["message:user"]);
     }
 
@@ -2034,7 +2036,7 @@ mod tests {
         assert!(tool_input.starts_with(first_input));
         assert!(follow_up_input.starts_with(tool_input));
         assert_eq!(follow_up["tools"], first["tools"]);
-        assert_eq!(follow_up["instructions"], "");
+        assert!(follow_up.get("instructions").is_none());
         assert_eq!(
             input_kinds(&follow_up),
             vec![
