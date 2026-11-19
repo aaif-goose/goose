@@ -270,11 +270,24 @@ impl AcpBuiltinSelection {
             }
         }
     }
+
+    /// No builtin default is added; only the explicitly requested builtins
+    /// load (possibly none).
+    pub fn without_defaults(builtins: Vec<String>) -> Self {
+        Self {
+            defaults: Vec::new(),
+            explicit: builtins,
+        }
+    }
 }
 
 pub struct AcpConnectionOptions {
     pub provider_factory: AcpProviderFactory,
     pub builtin_selection: AcpBuiltinSelection,
+    /// ACP `--no-builtins`: sessions start with only the client's `mcpServers`
+    /// and the explicitly selected builtins — no builtin default, no config
+    /// extensions, no plugin MCP servers.
+    pub no_builtins: bool,
     pub config_dir: std::path::PathBuf,
     /// One per server, shared by every connection.
     pub services: Arc<StateMachineServices>,
@@ -314,6 +327,7 @@ pub struct AcpConnection {
     services: Arc<StateMachineServices>,
     provider_factory: AcpProviderFactory,
     builtin_selection: AcpBuiltinSelection,
+    no_builtins: bool,
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
     connection_id: u64,
     client_supports_acp_elicitation: OnceCell<bool>,
@@ -612,6 +626,7 @@ fn selected_builtin_extensions(
 fn initial_session_extensions(
     config: &Config,
     builtin_selection: &AcpBuiltinSelection,
+    no_builtins: bool,
     project_root: &Path,
     mcp_servers: Vec<McpServer>,
     goose_extensions: Option<Vec<GooseExtension>>,
@@ -634,12 +649,15 @@ fn initial_session_extensions(
             push_or_replace_extension(&mut extensions, extension.clone());
         }
     } else {
-        for extension in get_enabled_extensions_with_config(config) {
-            push_or_replace_extension(&mut extensions, extension);
-        }
-        for extension in crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(project_root))
-        {
-            push_or_replace_extension(&mut extensions, extension);
+        if !no_builtins {
+            for extension in get_enabled_extensions_with_config(config) {
+                push_or_replace_extension(&mut extensions, extension);
+            }
+            for extension in
+                crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(project_root))
+            {
+                push_or_replace_extension(&mut extensions, extension);
+            }
         }
         add_mcp_servers(&mut extensions, mcp_servers)?;
     }
@@ -998,6 +1016,7 @@ impl AcpConnection {
             services,
             provider_factory: options.provider_factory,
             builtin_selection: options.builtin_selection,
+            no_builtins: options.no_builtins,
             client_mcp_host_info: OnceCell::new(),
             connection_id: NEXT_CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             client_supports_acp_elicitation: OnceCell::new(),
@@ -1190,6 +1209,7 @@ impl AcpConnection {
         let extensions = initial_session_extensions(
             config,
             &self.builtin_selection,
+            self.no_builtins,
             &session.working_dir,
             mcp_servers,
             goose_extensions,
@@ -2683,15 +2703,22 @@ impl agent_client_protocol::ConnectTo<Client> for LazyAcpConnection {
     }
 }
 
-pub async fn run(builtins: Vec<String>, enable_scheduler: bool) -> Result<()> {
+pub async fn run(no_builtins: bool, builtins: Vec<String>, enable_scheduler: bool) -> Result<()> {
     info!("listening on stdio");
 
     let outgoing = tokio::io::stdout().compat_write();
     let incoming = tokio::io::stdin().compat();
 
+    let builtin_selection = if no_builtins {
+        AcpBuiltinSelection::without_defaults(builtins)
+    } else {
+        AcpBuiltinSelection::from_requested(builtins)
+    };
+
     let server = crate::acp::server_factory::AcpServer::new(
         crate::acp::server_factory::AcpServerFactoryConfig {
-            builtins: AcpBuiltinSelection::from_requested(builtins),
+            builtins: builtin_selection,
+            no_builtins,
             config_dir: Paths::config_dir(),
             goose_platform: GoosePlatform::GooseCli,
             additional_source_roots: Vec::new(),
@@ -2849,6 +2876,106 @@ mod tests {
     }
 
     #[test]
+    fn without_defaults_selection_drops_the_developer_default() {
+        let selected = AcpBuiltinSelection::without_defaults(Vec::new());
+        assert!(selected.defaults.is_empty());
+        assert!(selected.explicit.is_empty());
+
+        let selected = AcpBuiltinSelection::without_defaults(vec!["github".to_string()]);
+        assert!(selected.defaults.is_empty());
+        assert_eq!(selected.explicit, vec!["github"]);
+    }
+
+    #[test]
+    fn no_builtins_starts_with_no_extensions() {
+        let (config, _c, _s) = config_with_yaml(
+            r#"
+extensions:
+  developer:
+    enabled: true
+    type: builtin
+    name: developer
+  computercontroller:
+    enabled: true
+    type: builtin
+    name: computercontroller
+"#,
+        );
+        let project_root = tempfile::tempdir().unwrap();
+
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::without_defaults(Vec::new()),
+            true,
+            project_root.path(),
+            vec![],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(extensions.is_empty());
+    }
+
+    #[test]
+    fn no_builtins_session_is_explicit_builtins_and_client_mcp_servers_only() {
+        let (config, _c, _s) = config_with_yaml(
+            r#"
+extensions:
+  developer:
+    enabled: true
+    type: builtin
+    name: developer
+  computercontroller:
+    enabled: true
+    type: builtin
+    name: computercontroller
+"#,
+        );
+        let project_root = tempfile::tempdir().unwrap();
+
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::without_defaults(vec!["memory".to_string()]),
+            true,
+            project_root.path(),
+            vec![McpServer::Http(McpServerHttp::new(
+                "zed-mcp",
+                "http://localhost/mcp",
+            ))],
+            None,
+            None,
+        )
+        .unwrap();
+
+        let names: Vec<String> = extensions.iter().map(ExtensionConfig::name).collect();
+        assert_eq!(names, vec!["memory".to_string(), "zed-mcp".to_string()]);
+    }
+
+    #[test]
+    fn no_builtins_does_not_change_recipe_selection_branch() {
+        let (config, _c, _s) = developer_enabled_config();
+        let project_root = tempfile::tempdir().unwrap();
+        let recipe_extensions = vec![builtin_to_extension_config("memory")];
+
+        let extensions = initial_session_extensions(
+            &config,
+            &default_builtin("developer"),
+            true,
+            project_root.path(),
+            vec![],
+            Some(vec![]),
+            Some(&recipe_extensions),
+        )
+        .unwrap();
+
+        assert!(has_developer(&extensions));
+        assert!(extensions
+            .iter()
+            .any(|extension| extension.name() == "memory"));
+    }
+
+    #[test]
     fn new_session_mcp_is_additive_to_enabled_config_extensions() {
         let (config, _c, _s) = config_with_yaml(
             r#"
@@ -2863,6 +2990,7 @@ extensions:
         let extensions = initial_session_extensions(
             &config,
             &AcpBuiltinSelection::default(),
+            false,
             project_root.path(),
             vec![McpServer::Http(McpServerHttp::new(
                 "zed-mcp",
@@ -2896,6 +3024,7 @@ extensions:
         let extensions = initial_session_extensions(
             &config,
             &AcpBuiltinSelection::from_requested(Vec::new()),
+            false,
             project_root.path(),
             vec![McpServer::Http(McpServerHttp::new(
                 "zed-mcp",
@@ -2944,6 +3073,7 @@ extensions:
             let extensions = initial_session_extensions(
                 &config,
                 &selection,
+                false,
                 project_root.path(),
                 vec![],
                 Some(vec![requested_builtin("memory")]),
@@ -2964,6 +3094,7 @@ extensions:
         let extensions = initial_session_extensions(
             &config,
             &default_builtin("developer"),
+            false,
             project_root.path(),
             vec![],
             Some(vec![]),
@@ -2994,6 +3125,7 @@ extensions:
         let extensions = initial_session_extensions(
             &config,
             &default_builtin("developer"),
+            false,
             project_root.path(),
             vec![McpServer::Http(McpServerHttp::new(
                 "zed-mcp",
@@ -3017,6 +3149,7 @@ extensions:
         let extensions = initial_session_extensions(
             &config,
             &default_builtin("developer"),
+            false,
             project_root.path(),
             vec![],
             Some(vec![]),
@@ -3639,6 +3772,7 @@ print(\"hello, world\")
         let connection = AcpConnection::new(AcpConnectionOptions {
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
+            no_builtins: false,
             config_dir: root.path().to_path_buf(),
             services,
             additional_source_roots: Vec::new(),
@@ -3772,6 +3906,7 @@ print(\"hello, world\")
             AcpConnection::new(AcpConnectionOptions {
                 provider_factory,
                 builtin_selection: AcpBuiltinSelection::default(),
+                no_builtins: false,
                 config_dir: root.path().to_path_buf(),
                 services,
                 additional_source_roots: Vec::new(),

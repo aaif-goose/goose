@@ -858,6 +858,13 @@ enum Command {
         )]
         builtins: Vec<String>,
 
+        #[arg(
+            long = "no-builtins",
+            help = "Sessions use only the client's mcpServers: no builtin default, no config or plugin extensions",
+            long_help = "Start the ACP server for a host that owns the tool surface. Sessions build their tool surface from the client's session/new mcpServers plus any --with-builtin extensions: the builtin default (developer), your config extensions, and project plugin MCP servers are not loaded."
+        )]
+        no_builtins: bool,
+
         #[arg(long, help = "Enable scheduled recipe execution")]
         enable_scheduler: bool,
     },
@@ -1731,6 +1738,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
+        no_builtins: false,
         config_dir: Paths::config_dir(),
         goose_platform: platform.into(),
         additional_source_roots,
@@ -2834,8 +2842,9 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp {
             builtins,
+            no_builtins,
             enable_scheduler,
-        }) => goose::acp::server::run(builtins, enable_scheduler).await,
+        }) => goose::acp::server::run(no_builtins, builtins, enable_scheduler).await,
         #[cfg(feature = "roaming")]
         Some(Command::Roam { command }) => handle_roam_command(command).await,
         #[cfg(feature = "acp-http")]

@@ -110,12 +110,11 @@ fn fork_session_response_precedes_available_commands() {
         .await;
         let (transport, _handle, _permission_manager) = spawn_acp_server_in_process(
             openai.uri(),
-            &[],
+            &TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                ..Default::default()
+            },
             data_root.path(),
-            GooseMode::default(),
-            None,
-            goose_test_support::TEST_MODEL,
-            true,
         )
         .await;
 

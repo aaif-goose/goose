@@ -34,6 +34,12 @@ Put the following three JavaScript blocks, in order, in a file named `app.mjs`.
 Launch `goose acp` as a subprocess. Its stdin and stdout carry ACP messages;
 stderr is for logs. The SDK turns those pipes into a bidirectional connection.
 
+By default each session also inherits your local config extensions, project
+plugin MCP servers, and the `developer` builtin. An embedding host that owns
+its own tool surface (editor bridges and similar) can pass `--no-builtins` so
+a session's extensions are exactly the servers it sends in `session/new`'s
+`mcpServers`, plus any names it opts into with `--with-builtin`.
+
 ```javascript
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";

@@ -32,7 +32,8 @@ use common_tests::{
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
 use goose::custom_requests::{
-    GetSessionInfoRequest, GetSessionInfoResponse, UpdateSessionProjectRequest,
+    GetSessionExtensionsRequest, GetSessionInfoRequest, GetSessionInfoResponse,
+    UpdateSessionProjectRequest,
 };
 use goose::recipe::{Recipe, Settings};
 use goose::recipe_deeplink;
@@ -915,12 +916,11 @@ fn test_new_session_response_precedes_available_commands() {
         .await;
         let (transport, _handle, _permission_manager) = spawn_acp_server_in_process(
             openai.uri(),
-            &[],
+            &TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                ..Default::default()
+            },
             data_root.path(),
-            GooseMode::default(),
-            None,
-            goose_test_support::TEST_MODEL,
-            true,
         )
         .await;
         assert_session_response_precedes_available_commands(
@@ -1435,6 +1435,78 @@ fn test_prompt_image_attachment() {
 #[test]
 fn test_prompt_mcp() {
     run_test(async { run_prompt_mcp::<AcpServerConnection>().await });
+}
+
+/// With `--no-builtins` the session surface is exactly the client's
+/// session/new mcpServers: the config-fixture extension in the yaml is
+/// ignored, and the client's fixture is both listed and executable.
+#[test]
+fn test_no_builtins_starts_with_client_mcp_servers_only() {
+    run_test(async {
+        let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+        let mcp = McpFixture::new().await;
+        let configured = McpFixture::new().await;
+        let openai = OpenAiFixture::new(
+            vec![
+                (
+                    format!("Use the get_code tool and output only its result.{TURN_CONTEXT_OPEN}"),
+                    include_str!("acp_test_data/openai_tool_call.txt"),
+                ),
+                (
+                    format!(r#""content":"{FAKE_CODE}""#),
+                    include_str!("acp_test_data/openai_tool_result.txt"),
+                ),
+            ],
+            expected_session_id.clone(),
+        )
+        .await;
+
+        let config_yaml = format!(
+            "GOOSE_MODEL: {}\nGOOSE_PROVIDER: openai\nextensions:\n  config-fixture:\n    enabled: true\n    type: streamable_http\n    name: config-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+            goose_test_support::TEST_MODEL,
+            configured.url
+        );
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp_dir.path().join(goose::config::base::CONFIG_YAML_NAME),
+            config_yaml,
+        )
+        .unwrap();
+
+        let config = TestConnectionConfig {
+            data_root: temp_dir.path().to_path_buf(),
+            mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+            no_builtins: true,
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+
+        let response = conn
+            .cx()
+            .send_request(GetSessionExtensionsRequest {
+                session_id: session.session_id().0.to_string(),
+            })
+            .block_task()
+            .await
+            .unwrap();
+        let extension_keys: Vec<String> = response
+            .extensions
+            .iter()
+            .map(|entry| entry.extension_key.clone())
+            .collect();
+        assert_eq!(extension_keys, vec!["mcp-fixture".to_string()]);
+
+        let output = session
+            .prompt(
+                "Use the get_code tool and output only its result.",
+                PermissionDecision::Cancel,
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.text, FAKE_CODE);
+    });
 }
 
 /// Two provider calls separated by a tool call. The canned responses report 2469

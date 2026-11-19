@@ -191,16 +191,8 @@ impl Connection for AcpServerConnection {
             false => (config.data_root.clone(), None),
         };
 
-        let (transport, _handle, permission_manager) = spawn_acp_server_in_process(
-            openai.uri(),
-            &config.builtins,
-            data_root.as_path(),
-            config.goose_mode,
-            config.provider_factory,
-            &config.current_model,
-            config.disable_session_naming,
-        )
-        .await;
+        let (transport, _handle, permission_manager) =
+            spawn_acp_server_in_process(openai.uri(), &config, data_root.as_path()).await;
 
         let updates = Arc::new(Mutex::new(Vec::new()));
         let notify = Arc::new(Notify::new());
