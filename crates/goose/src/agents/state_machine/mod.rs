@@ -8,7 +8,6 @@
 mod effects;
 mod inference_preparation;
 mod ops_auto_effort;
-mod ops_compaction;
 mod ops_context_relevance;
 mod ops_doctor;
 mod ops_final_output;
@@ -26,7 +25,6 @@ mod ops_subdirectory_hints;
 mod ops_thinking_recovery;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
-mod proactive_compaction;
 mod session;
 pub(crate) use session::run as run_goose;
 mod tool_approval;
@@ -38,29 +36,29 @@ mod usage;
 mod tests;
 
 pub use effects::GooseEffect;
-pub use goose_agent::command::Command;
-pub(super) use goose_agent::final_output::FinalOutputOperation;
-pub use goose_agent::machine::{
+pub use oi_kit_agent::command::Command;
+pub(super) use oi_kit_agent::final_output::FinalOutputOperation;
+pub use oi_kit_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
-pub use goose_agent::operation::{
+pub use oi_kit_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, StepResult, CLIENT_LOG,
 };
-pub(super) use goose_agent::slash_command::SlashCommandOperation;
-pub(super) use goose_agent::subagent::SubagentOperation;
-pub(super) use goose_agent::tool_approval::ToolApprovalOperation;
-pub(super) use goose_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
+pub(super) use oi_kit_agent::slash_command::SlashCommandOperation;
+pub(super) use oi_kit_agent::subagent::SubagentOperation;
+pub(super) use oi_kit_agent::tool_approval::ToolApprovalOperation;
+pub(super) use oi_kit_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,
 };
 
-pub(super) use goose_agent::skills::SkillOperation;
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
+pub(super) use oi_kit_agent::compaction::{CompactionMode, CompactionOperation};
+pub(super) use oi_kit_agent::skills::SkillOperation;
 pub(super) use ops_auto_effort::AutoEffortOperation;
-pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDecisions};
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_final_output::{recipe_unsupported_message, GooseFinalOutputSchemaSource};
@@ -77,5 +75,7 @@ pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_subdirectory_hints::SubdirectoryHintOperation;
 pub(super) use ops_thinking_recovery::ThinkingRecoveryOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
-pub(super) use ops_toolcalling::ToolExecutionOperation;
+pub(super) use ops_toolcalling::{
+    ExpiredToolsOperation, GooseExtensions, ToolDeferral, ToolDeferralOperation,
+};
 pub(super) use tool_approval::GooseToolApproval;

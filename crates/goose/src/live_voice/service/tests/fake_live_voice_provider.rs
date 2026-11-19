@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
-use goose_providers::live_voice_provider::{
+use oi_kit_providers::live_voice_provider::{
     DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
     ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
 };

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures::future::BoxFuture;
-use goose_providers::base::ProviderDescriptor;
-use goose_providers::snowflake::SnowflakeProvider;
+use oi_kit_providers::base::ProviderDescriptor;
+use oi_kit_providers::snowflake::SnowflakeProvider;
 
 use crate::config::{Config, ConfigError, ExtensionConfig};
 use crate::providers::api_client::TlsConfig;

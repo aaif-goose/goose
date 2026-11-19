@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::tool_approval::{ApprovalDecision, ToolApproval};
+use oi_kit_agent::tool_approval::{ApprovalDecision, ToolApproval};
 
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::config::permission::PermissionLevel;

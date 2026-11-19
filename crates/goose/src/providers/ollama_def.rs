@@ -14,7 +14,7 @@ use crate::{
         session_id_request_builder, session_id_request_builder_with_header_override,
     },
 };
-use goose_providers::{
+use oi_kit_providers::{
     api_client::{ApiClient, AuthMethod},
     base::ProviderDescriptor,
     ollama::{
@@ -27,7 +27,7 @@ use goose_providers::{
 pub struct OllamaProviderDef;
 
 impl ProviderDescriptor for OllamaProviderDef {
-    fn metadata() -> goose_providers::base::ProviderMetadata {
+    fn metadata() -> oi_kit_providers::base::ProviderMetadata {
         OllamaProvider::metadata().with_setup(
             crate::providers::catalog::ProviderSetupMetadata::new(
                 crate::providers::catalog::ProviderSetupCategory::Model,

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use super::super::container::Container;
-use super::super::extension::{ExtensionError, ExtensionResult};
-use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
-use super::stdio;
+use crate::agents::container::Container;
+use crate::agents::extension::{name_to_key, ExtensionError, ExtensionResult};
+use crate::agents::extension_runtime::{docker_exec, spawn_stdio};
 use crate::builtin_extension::get_builtin_extension;
-use crate::config::extensions::name_to_key;
+use crate::config::search_path::SearchPaths;
+use oi_kit_agent::mcp::client::{ConnectContext, McpClient, McpClientTrait};
 
 pub(super) async fn connect(
     name: &str,
@@ -23,13 +23,16 @@ pub(super) async fn connect(
             builtin = %name,
             "Starting builtin extension inside Docker container"
         );
-        let command = stdio::docker_exec(
+        let mut command = docker_exec(
             container,
             HashMap::new(),
             "goose",
             &["mcp".to_string(), key],
         );
-        return Ok(Box::new(stdio::spawn(command, ctx).await?));
+        if let Ok(path) = SearchPaths::builder().path() {
+            command.env("PATH", path);
+        }
+        return Ok(Box::new(spawn_stdio(command, ctx).await?));
     }
 
     let (server_read, client_write) = tokio::io::duplex(65536);

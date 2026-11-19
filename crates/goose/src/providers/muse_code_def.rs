@@ -2,16 +2,16 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
-use goose_providers::anthropic::{
+use oi_kit_providers::anthropic::{
     AnthropicFormatOptions, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION,
 };
-use goose_providers::api_client::{ApiClient, AuthMethod, AuthProvider, TlsConfig};
-use goose_providers::base::{
+use oi_kit_providers::api_client::{ApiClient, AuthMethod, AuthProvider, TlsConfig};
+use oi_kit_providers::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider,
     ProviderDescriptor, ProviderMetadata,
 };
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::Client;
 use rmcp::model::Tool;
@@ -728,8 +728,8 @@ mod tests {
 
     #[test]
     fn spark_requests_use_adaptive_thinking_and_replay_it() {
-        use goose_providers::conversation::message::MessageContent;
-        use goose_providers::formats::anthropic::create_request;
+        use oi_kit_providers::conversation::message::MessageContent;
+        use oi_kit_providers::formats::anthropic::create_request;
 
         let config =
             ModelConfig::new("muse-spark-1.3").with_canonical_limits(MUSE_CODE_PROVIDER_NAME);

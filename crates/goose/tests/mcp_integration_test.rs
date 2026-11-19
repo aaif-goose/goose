@@ -16,7 +16,6 @@ use tokio_util::sync::CancellationToken;
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{CallRequest, ClientContext, ExtensionSet};
-use goose::agents::mcp_client::GooseMcpClientCapabilities;
 use goose::agents::tool_snapshot::ToolSnapshot;
 use goose::agents::GoosePlatform;
 use goose::agents::{StateMachineServices, StateMachineServicesConfig};
@@ -25,6 +24,7 @@ use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
 use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
+use oi_kit_agent::mcp::client::GooseMcpClientCapabilities;
 
 use test_case::test_case;
 
@@ -107,6 +107,7 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
     ));
     let client = ClientContext {
         name: "extension-contract".to_string(),
+        version: "1.0.0".to_string(),
         capabilities: GooseMcpClientCapabilities {
             mcpui,
             host_info: None,
@@ -170,7 +171,7 @@ impl Fixture {
 fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
     let mut args = vec!["stdio".to_string()];
     args.extend(mode.map(str::to_string));
-    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
@@ -185,7 +186,7 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
 }
 
 fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
-    ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
         name: name.to_string(),
         description: "HTTP fixture".to_string(),
         uri: uri.to_string(),
@@ -850,10 +851,7 @@ async fn test_replayed_session(
     const TEST_WORKING_DIR: &str = "/tmp/goose_test";
     fs::create_dir_all(TEST_WORKING_DIR).ok();
 
-    let _env = env_lock::lock_env([
-        ("GOOSE_MCP_CLIENT_VERSION", Some("0.0.0")),
-        ("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR)),
-    ]);
+    let _env = env_lock::lock_env([("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR))]);
 
     // Setup test file for developer extension tests
     let test_file_path = "/tmp/goose_test/goose.txt";
@@ -917,7 +915,7 @@ async fn test_replayed_session(
 
     let envs = Envs::new(env);
     let extension_config =
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "test".to_string(),
             description: "Test".to_string(),
             cmd,
@@ -945,6 +943,7 @@ async fn test_replayed_session(
     ));
     let client = ClientContext {
         name: GoosePlatform::GooseDesktop.to_string(),
+        version: "0.0.0".to_string(),
         capabilities: GooseMcpClientCapabilities {
             mcpui: true,
             host_info: None,

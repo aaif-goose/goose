@@ -12,8 +12,8 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::{Session, SessionManager};
-use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
+use oi_kit_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
+use oi_kit_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
 
 use super::ops_auto_effort::current_turn_effort;
 
@@ -33,7 +33,7 @@ impl MachineSession for Session {
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
     }
-    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
+    fn thinking_effort(&self) -> Option<oi_kit_providers::thinking::ThinkingEffort> {
         self.conversation
             .as_ref()
             .and_then(current_turn_effort)
@@ -42,6 +42,9 @@ impl MachineSession for Session {
                     .as_ref()
                     .and_then(|config| config.thinking_effort())
             })
+    }
+    fn reported_context_tokens(&self) -> Option<i64> {
+        self.usage.total_tokens
     }
 }
 
@@ -63,7 +66,8 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         for effect in effects.iter_mut() {
             effect.ensure_message_ids();
         }
-        usage::enrich(session, effects);
+        let compaction = usage::is_compaction(session, effects);
+        usage::enrich(session, effects, compaction);
 
         for effect in effects.iter_mut() {
             match effect {
@@ -79,13 +83,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .apply()
                         .await?;
                 }
-                GooseEffect::CompactConversation {
-                    conversation,
-                    usage: replacement_usage,
-                } => {
-                    if let Some(provider_usage) = replacement_usage {
-                        usage::record(self, session, provider_usage, true).await?;
-                    }
+                GooseEffect::CompactConversation(conversation) => {
                     self.save_compacted_conversation(&session.id, conversation)
                         .await?;
                     self.update(&session.id)
@@ -139,7 +137,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .await?;
                 }
                 GooseEffect::RecordUsage(provider_usage) => {
-                    usage::record(self, session, provider_usage, false).await?;
+                    usage::record(self, session, provider_usage, compaction).await?;
                 }
             }
         }
@@ -167,7 +165,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(
                     conversation,
                 ))
-                | GooseEffect::CompactConversation { conversation, .. } => {
+                | GooseEffect::CompactConversation(conversation) => {
                     emit.emit(AgentEvent::HistoryReplaced(replaced_history(
                         conversation,
                         &effects[index + 1..],
@@ -185,7 +183,7 @@ struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
     hook_manager: &'a HookManager,
     tool_snapshot: &'a StdMutex<Option<Arc<ToolSnapshot>>>,
-    usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
+    usage: std::sync::Mutex<oi_kit_providers::conversation::token_usage::Usage>,
 }
 
 #[async_trait]
@@ -229,7 +227,7 @@ fn replaced_history(replacement: &Conversation, later_effects: &[GooseEffect]) -
                 !matches!(
                     effect,
                     GooseEffect::Conversation(ConversationEffect::ReplaceConversation(_))
-                        | GooseEffect::CompactConversation { .. }
+                        | GooseEffect::CompactConversation(_)
                 )
             })
             .filter_map(|effect| match effect {
@@ -246,12 +244,9 @@ impl EffectUsage<GooseEffect> for SessionManager {
     fn usage(
         &self,
         effect: &GooseEffect,
-    ) -> Option<goose_providers::conversation::token_usage::Usage> {
+    ) -> Option<oi_kit_providers::conversation::token_usage::Usage> {
         match effect {
-            GooseEffect::RecordUsage(usage)
-            | GooseEffect::CompactConversation {
-                usage: Some(usage), ..
-            } => Some(usage.usage),
+            GooseEffect::RecordUsage(usage) => Some(usage.usage),
             _ => None,
         }
     }

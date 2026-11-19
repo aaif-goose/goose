@@ -1,7 +1,6 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::ExtensionMutation;
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::is_hidden_extension;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
@@ -11,6 +10,7 @@ use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
     JsonObject, ServerCapabilities, Tool, ToolAnnotations,
@@ -415,9 +415,11 @@ fn search_available_extensions(enabled: &[String]) -> String {
                 ExtensionConfig::Builtin { description, .. }
                 | ExtensionConfig::Platform { description, .. }
                 | ExtensionConfig::External(
-                    goose_agent::extension::ExtensionConfig::StreamableHttp { description, .. },
+                    oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                        description, ..
+                    },
                 )
-                | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                | ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                     description,
                     ..
                 }) => description.clone(),

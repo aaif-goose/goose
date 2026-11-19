@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_agent::final_output::FinalOutputTool;
+use oi_kit_agent::final_output::FinalOutputTool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
@@ -773,7 +773,7 @@ isGlobal: true"#;
         let extensions = recipe.extensions.unwrap();
         assert_eq!(extensions.len(), 1);
 
-        if let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        if let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             description,
             ..

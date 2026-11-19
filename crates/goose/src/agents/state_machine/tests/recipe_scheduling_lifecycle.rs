@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 
 #[cfg(feature = "scheduler")]
@@ -18,8 +18,8 @@ use crate::conversation::message::Message;
 #[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
-use goose_agent::final_output::FINAL_OUTPUT_CONTINUATION_MESSAGE;
-use goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+use oi_kit_agent::final_output::FINAL_OUTPUT_CONTINUATION_MESSAGE;
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 
 #[tokio::test]
 async fn slash_recipe_extensions_remain_available_in_the_session() -> Result<()> {

@@ -1,4 +1,4 @@
-use goose_agent::final_output::FinalOutputSchemaSource;
+use oi_kit_agent::final_output::FinalOutputSchemaSource;
 use serde_json::Value;
 
 use crate::session::Session;

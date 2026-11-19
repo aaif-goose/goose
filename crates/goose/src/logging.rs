@@ -35,6 +35,7 @@ fn build_env_filter(extra_directives: &[&str]) -> EnvFilter {
     let mut filter = EnvFilter::new("")
         .add_directive("mcp_client=info".parse().unwrap())
         .add_directive("goose=info".parse().unwrap())
+        .add_directive("oi_kit=info".parse().unwrap())
         .add_directive(LevelFilter::WARN.into());
 
     for directive in extra_directives {

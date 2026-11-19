@@ -63,7 +63,7 @@ fn disambiguate_stdio_extension_names(
         if !renameable.contains(&idx) || counts.get(&config.key()).copied().unwrap_or(0) < 2 {
             continue;
         }
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             cmd,
             args,
@@ -258,7 +258,7 @@ async fn load_extensions(
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
 }
 
 fn validate_provider_override_context(
@@ -291,7 +291,7 @@ async fn resolve_provider_and_model(
     session_config: &SessionBuilderConfig,
     config: &Config,
     saved_provider: Option<String>,
-    saved_model_config: Option<goose_providers::model::ModelConfig>,
+    saved_model_config: Option<oi_kit_providers::model::ModelConfig>,
 ) -> ResolvedProviderConfig {
     let recipe_settings = session_config
         .recipe
@@ -1099,8 +1099,8 @@ mod tests {
         ])
     }
 
-    fn saved_model_config(model_name: &str) -> goose_providers::model::ModelConfig {
-        goose_providers::model::ModelConfig::new(model_name).with_merged_request_params(
+    fn saved_model_config(model_name: &str) -> oi_kit_providers::model::ModelConfig {
+        oi_kit_providers::model::ModelConfig::new(model_name).with_merged_request_params(
             std::collections::HashMap::from([(
                 "anthropic_beta".to_string(),
                 serde_json::json!(["prompt-caching-2024-07-31"]),
@@ -1194,7 +1194,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1256,7 +1256,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1290,7 +1290,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1402,7 +1402,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1475,7 +1475,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1502,7 +1502,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1528,7 +1528,7 @@ mod tests {
         ]);
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
-        let saved = goose_providers::model::ModelConfig::new("claude-sonnet-4-6");
+        let saved = oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {

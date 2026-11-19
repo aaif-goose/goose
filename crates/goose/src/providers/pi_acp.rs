@@ -20,7 +20,7 @@ pub(crate) const PI_ACP_BINARY: &str = "pi-acp";
 
 pub struct PiAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for PiAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for PiAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             PI_ACP_PROVIDER_NAME,

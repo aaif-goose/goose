@@ -5,7 +5,6 @@ mod shell_output_streaming;
 mod shell_process;
 pub mod tree;
 
-use crate::agents::mcp_client::Error;
 use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::ToolCallContext;
 use anyhow::Result;
@@ -13,6 +12,7 @@ use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
 use image::{ImageReadParams, ImageTool};
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
     ServerCapabilities, TextContent, Tool, ToolAnnotations,
@@ -160,7 +160,10 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "tree".to_string(),
-                "List a directory tree with line counts. Traversal respects .gitignore rules.".to_string(),
+                "List a directory tree with line counts. Traversal respects .gitignore rules. \
+                 Cloud-storage placeholders that are not downloaded to this machine are listed \
+                 by size instead of being read."
+                    .to_string(),
                 Self::schema::<TreeParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
@@ -172,7 +175,7 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "read_image".to_string(),
-                "Read an image from a local file path or http(s) URL and return it as image content for the model to inspect. Supports png, jpeg, gif, and webp.".to_string(),
+                "Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).".to_string(),
                 Self::schema::<ImageReadParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
@@ -279,6 +282,19 @@ mod tests {
 
         assert_eq!(annotations.read_only_hint, Some(false));
         assert_eq!(annotations.open_world_hint, Some(true));
+    }
+
+    #[test]
+    fn read_image_description_identifies_its_image_only_purpose() {
+        let read_image = DeveloperClient::get_tools()
+            .into_iter()
+            .find(|tool| tool.name == "read_image")
+            .unwrap();
+
+        assert_eq!(
+            read_image.description.as_deref(),
+            Some("Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).")
+        );
     }
 
     fn first_text(result: &CallToolResult) -> &str {

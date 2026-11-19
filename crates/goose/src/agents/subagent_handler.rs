@@ -10,8 +10,8 @@ use crate::{
 use anyhow::{anyhow, Result};
 use futures::stream::BoxStream;
 use futures::StreamExt;
-use goose_agent::final_output::FinalOutputTool;
-use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
+use oi_kit_agent::final_output::FinalOutputTool;
+use oi_kit_agent::subagent::{SubagentOutcome, SubagentUpdate};
 use serde::Serialize;
 use std::future::Future;
 use std::sync::Arc;
@@ -308,7 +308,7 @@ mod tests {
 
     use super::{failure_reason, spawn_run};
     use crate::conversation::message::{Message, MessageErrorKind};
-    use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
+    use oi_kit_agent::subagent::{SubagentOutcome, SubagentUpdate};
     use tokio::sync::{mpsc, oneshot};
 
     #[tokio::test]

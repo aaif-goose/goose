@@ -2,34 +2,37 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use goose_agent::{
+use oi_kit_agent::mcp::ExtensionOperation;
+use oi_kit_agent::{
     bang_command::BangCommandOperation,
     empty_response::EmptyResponseOperation,
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
 };
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::decision::DecisionProvider;
-use goose_providers::model::ModelConfig;
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::decision::DecisionProvider;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
-    recipe_unsupported_message, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
-    FinalOutputOperation, GooseEffect, GooseFinalOutputSchemaSource, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, GooseSkillSource, GooseToolApproval, InferenceRunner,
-    McpPromptOperation, Operation, PlatformExtensionOperation, ProjectOperation, RecipeOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, Step,
-    StopHookOperation, SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation,
-    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    recipe_unsupported_message, CompactionMode, CompactionOperation, ContextRelevanceOperation,
+    DoctorOperation, ExpiredToolsOperation, FinalOutputOperation, GooseEffect, GooseExtensions,
+    GooseFinalOutputSchemaSource, GooseInferenceProvider, GooseInferenceRequestPreparer,
+    GooseSkillSource, GooseToolApproval, InferenceRunner, McpPromptOperation, Operation,
+    PlatformExtensionOperation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
+    SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
+    ToolDeferral, ToolDeferralOperation, ToolPairCompactionOperation, UnavailableDecisions,
+    UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
 use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::StateMachineServices;
 use crate::config::Config;
+use crate::context_mgmt::{compaction_templates, GooseCompactionModel, GooseTokenEstimator};
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
@@ -40,6 +43,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) model_config: ModelConfig,
     pub(crate) context_limit: usize,
     pub(crate) compaction_threshold: f64,
+    pub(crate) standalone_compaction: bool,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
     pub(crate) defer_tools: bool,
@@ -99,12 +103,13 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
 
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
-) -> StateMachine<'_, Session, GooseEffect> {
+) -> anyhow::Result<StateMachine<'_, Session, GooseEffect>> {
     let StateMachineConfig {
         provider,
         model_config,
         context_limit,
         compaction_threshold,
+        standalone_compaction,
         tool_call_cutoff,
         tool_pair_summarization,
         defer_tools,
@@ -125,18 +130,52 @@ pub(crate) fn build_state_machine(
         context_relevance,
     } = config;
     let manages_own_context = provider.manages_own_context();
+    let deferral = Arc::new(ToolDeferral::new(defer_tools, always_load_tools));
 
     let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
         SkillOperation::new(Arc::new(GooseSkillSource)).with_no_skills_help(NO_SKILLS_HELP),
     );
-    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+    // Compaction precedes everything that reacts to an assistant reply, so it
+    // harvests the in-band summary before tool execution, steering, or turn-end
+    // logic sees it. Bang-shell turns never reach the model, so they go first.
+    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> =
+        vec![Arc::new(BangCommandOperation::new("shell", "command"))];
+    if !manages_own_context {
+        if let Some(decisions) = context_relevance {
+            operations.push(Arc::new(ContextRelevanceOperation::new(
+                decisions,
+                context_limit,
+                compaction_threshold,
+            )));
+        }
+        let mode = if standalone_compaction {
+            CompactionMode::Standalone
+        } else {
+            CompactionMode::InBand
+        };
+        operations.push(Arc::new(
+            CompactionOperation::new(
+                Arc::new(GooseCompactionModel::new(
+                    provider.clone(),
+                    model_config.clone(),
+                )),
+                Arc::new(GooseTokenEstimator),
+                context_limit,
+                compaction_threshold,
+            )
+            .with_templates(compaction_templates()?)
+            .with_mode(mode)
+            .with_compact_command(),
+        ));
+    }
+    operations.extend([
         Arc::new(
             FinalOutputOperation::new(
                 Arc::new(GooseFinalOutputSchemaSource),
                 provider.supports_builtin_tools(),
             )
             .with_unsupported_message(recipe_unsupported_message(provider.get_name())),
-        ),
+        ) as Arc<dyn Operation<_, _>>,
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
@@ -152,11 +191,16 @@ pub(crate) fn build_state_machine(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
         )),
-        Arc::new(ToolExecutionOperation::new(
+        Arc::new(ExpiredToolsOperation::new(Arc::clone(&tool_snapshot))),
+        Arc::new(ExtensionOperation::new(Arc::new(GooseExtensions::new(
             Arc::clone(&services),
             Arc::clone(&tool_snapshot),
-            defer_tools,
-            always_load_tools,
+            Arc::clone(&deferral),
+        )))),
+        Arc::new(ToolDeferralOperation::new(
+            Arc::clone(&services),
+            Arc::clone(&tool_snapshot),
+            deferral,
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
@@ -167,24 +211,6 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(BangCommandOperation::new("shell", "command")),
-    ];
-    if !manages_own_context {
-        if let Some(decisions) = context_relevance {
-            operations.push(Arc::new(ContextRelevanceOperation::new(
-                decisions,
-                context_limit,
-                compaction_threshold,
-            )));
-        }
-        operations.push(Arc::new(CompactionOperation::new(
-            provider.clone(),
-            model_config.clone(),
-            context_limit,
-            compaction_threshold,
-        )));
-    }
-    let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(ToolPairCompactionOperation::new(
             provider.clone(),
             model_config.clone(),
@@ -200,8 +226,7 @@ pub(crate) fn build_state_machine(
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
         Arc::new(StatusOperation::new(provider.clone(), model_config.clone())),
-    ];
-    operations.extend(remaining_operations);
+    ]);
     operations.extend(extra_operations);
     let request_preparer = GooseInferenceRequestPreparer {
         services,
@@ -229,5 +254,5 @@ pub(crate) fn build_state_machine(
     steps.extend(operations.into_iter().map(Step::Operation));
     steps.push(Step::Inference(inference));
 
-    StateMachine::new(steps, cancel)
+    Ok(StateMachine::new(steps, cancel))
 }

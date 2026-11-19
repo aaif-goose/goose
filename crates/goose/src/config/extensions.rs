@@ -19,7 +19,7 @@ pub struct ExtensionEntry {
     pub config: ExtensionConfig,
 }
 
-pub use goose_agent::extension::name_to_key;
+pub use oi_kit_agent::extension::name_to_key;
 
 pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     match config {
@@ -156,6 +156,48 @@ pub fn set_extension(entry: ExtensionEntry) {
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
     let key = entry.config.key();
     with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
+}
+
+pub(crate) fn add_extensions(config: &Config, entries: &[ExtensionEntry]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        std::env::var_os("EXTENSIONS").is_none(),
+        "cannot import while the EXTENSIONS environment override is set"
+    );
+    config.update_write_config(|values| {
+        let mut occupied: std::collections::HashSet<_> = get_available_extensions()
+            .into_iter()
+            .map(|extension| extension.key())
+            .chain(PLATFORM_EXTENSIONS.keys().map(|name| name_to_key(name)))
+            .collect();
+        for source in config.get_param_source_values::<Mapping>(EXTENSIONS_CONFIG_KEY)? {
+            for (key, value) in source {
+                occupied.extend(key.as_str().map(name_to_key));
+                occupied.extend(
+                    value
+                        .get("name")
+                        .and_then(serde_yaml::Value::as_str)
+                        .map(name_to_key),
+                );
+            }
+        }
+        let extension_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.into());
+        let extensions = values
+            .entry(extension_key)
+            .or_insert_with(|| serde_yaml::Value::Mapping(Mapping::new()));
+        let extensions = extensions
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow::anyhow!("invalid extensions mapping"))?;
+        for entry in entries {
+            let key = entry.config.key();
+            anyhow::ensure!(
+                occupied.insert(key.clone()),
+                "extension '{}' already exists",
+                entry.config.name()
+            );
+            extensions.insert(key.into(), serde_yaml::to_value(entry)?);
+        }
+        Ok(())
+    })
 }
 
 pub fn remove_extension(key: &str) {
@@ -331,6 +373,35 @@ mod tests {
         (config, config_file, secrets_file)
     }
 
+    #[test]
+    fn import_collision_rejects_the_whole_batch() {
+        let original = "extensions:\n  io_example_weather: {type: stdio, enabled: false, cmd: weather, args: []}\n";
+        let (config, file, _) = test_config(original);
+        let entries = [
+            builtin_entry("io.other/weather", true),
+            builtin_entry("io.example/weather", true),
+        ];
+        let error = add_extensions(&config, &entries).unwrap_err();
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), original);
+    }
+
+    #[test]
+    fn import_propagates_write_failure_without_replacing_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.yaml");
+        let original = "extensions: {}\n";
+        std::fs::write(&file, original).unwrap();
+        let config = Config::new_with_file_secrets(&file, dir.path().join("secrets.yaml")).unwrap();
+        std::fs::create_dir(file.with_extension("tmp")).unwrap();
+        let entries = [
+            builtin_entry("io.example/weather", true),
+            builtin_entry("io.other/weather", true),
+        ];
+        assert!(add_extensions(&config, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+    }
+
     fn read_extensions(config: &Config) -> Mapping {
         let content = std::fs::read_to_string(config.path()).unwrap();
         let values: Mapping = serde_yaml::from_str(&content).unwrap();
@@ -499,7 +570,7 @@ extensions:
     fn test_get_extension_by_name_resolves_saved_entry_by_key() {
         let saved = ExtensionEntry {
             enabled: true,
-            config: ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            config: ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name: "My Tool".to_string(),
                 description: "saved description".to_string(),
                 cmd: "my-tool".to_string(),
@@ -521,7 +592,7 @@ extensions:
         let resolved = get_extension_by_name_with_config(&config, &key).unwrap();
 
         match resolved {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 timeout,
                 available_tools,
                 ..
@@ -659,7 +730,7 @@ extensions:
             .get("brave-search")
             .expect("brave-search extension should parse");
         match &entry.config {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 ..
             }) => {
@@ -693,7 +764,7 @@ extensions:
             .expect("brave-search extension should parse when name is missing and env: is used");
         assert_eq!(entry.config.name(), "brave-search");
         match &entry.config {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 ..
             }) => {

@@ -4,7 +4,7 @@ use super::service::{
 use super::transcript::{DelegationContext, LiveTranscript};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
-use goose_providers::live_voice_provider::{
+use oi_kit_providers::live_voice_provider::{
     DelegationUpdate, DelegationUpdateDelivery, ProviderConnection, ProviderConnectionEvent,
 };
 use rmcp::model::Role;

@@ -10,7 +10,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -19,7 +19,6 @@ use super::dummy_api::{ApiCall, DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
 use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{
     AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
@@ -30,7 +29,8 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
-use goose_providers::model::ModelConfig;
+use oi_kit_agent::mcp::client::McpClientTrait;
+use oi_kit_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(
     Arc<StateMachineServices>,
@@ -62,14 +62,14 @@ async fn agent_with(
     tempfile::TempDir,
 )> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
-    let api_client = goose_providers::api_client::ApiClient::new_with_tls(
+    let api_client = oi_kit_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
-        goose_providers::api_client::AuthMethod::NoAuth,
+        oi_kit_providers::api_client::AuthMethod::NoAuth,
         None,
     )?
     .with_request_builder(crate::session_context::session_id_request_builder());
     let provider: Arc<dyn Provider> = Arc::new(
-        goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+        oi_kit_providers::openai::OpenAiProviderBuilder::new(api_client)
             .base_path("chat/completions")
             .name("openai")
             .build(),
@@ -98,7 +98,7 @@ async fn agent_with(
     services
         .update_provider(
             provider,
-            ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+            ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
                 .with_canonical_limits("openai"),
             &session.id,
         )
@@ -889,7 +889,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
     api.on("print the subagent marker")
         .call("shell", json!({ "command": "echo marker-from-subagent" }));
     api.on("marker-from-subagent").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "printed it" }),
     );
     api.on("printed it").reply("the subagent printed it");
@@ -991,7 +991,7 @@ async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Res
         json!({ "instructions": "name the planets", "max_turns": 3 }),
     );
     api.on("name the planets").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "planets named" }),
     );
     api.on("planets named").reply("delegated");
@@ -1011,7 +1011,7 @@ async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Res
         json!({ "resume": subagent_id, "instructions": "now list the colors" }),
     );
     api.on("now list the colors").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "colors listed" }),
     );
     api.on("colors listed").reply("resumed");
@@ -1053,7 +1053,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
     api.on("print the subagent marker")
         .call("shell", json!({ "command": "echo marker-from-subagent" }));
     api.on("marker-from-subagent").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "printed it" }),
     );
     api.on("printed it").reply("the subagent printed it");
@@ -1141,7 +1141,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
     api.on("find out who is asking")
         .call("asks_a_name__elicit", json!({ "echo_meta": true }));
     api.on("Ada Lovelace").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "it was Ada" }),
     );
     api.on("it was Ada").reply("Ada asked");
@@ -1225,12 +1225,12 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         json!({ "command": "printf 'ran-%s' denied" }),
     )]);
     api.on("ran-approved").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "approved one ran" }),
     );
     api.on(crate::agents::tool_execution::DECLINED_RESPONSE)
         .call(
-            goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+            oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
             json!({ "summary": "denied one stopped" }),
         );
     api.on("denied one stopped").reply("both are back");
@@ -1516,7 +1516,7 @@ async fn resume_until_completed(
         json!({ "resume": subagent_id, "instructions": "finish the count" }),
     );
     api.on("finish the count").call(
-        goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "counted after resume" }),
     );
     api.on("counted after resume").reply("all done");
@@ -1655,7 +1655,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
 
 fn attachment() -> crate::agents::Attachment {
     crate::agents::Attachment {
-        client: crate::agents::extension_manager::ClientContext::new(
+        client: crate::agents::extension_manager::client_context(
             &GoosePlatform::GooseDesktop,
             None,
         ),

@@ -5,7 +5,7 @@ use anyhow::Result;
 use rmcp::model::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
-pub use goose_sdk_types::custom_requests::{
+pub use goose_acp_types::custom_requests::{
     ContextCategory, ContextPart, ContextReportModel, ContextReportResponse, ContextSegment,
 };
 
@@ -144,7 +144,7 @@ impl StateMachineServices {
                 self.runtime.steer_queue(session_id),
                 tool_snapshot,
             )
-            .await;
+            .await?;
         let input = machine
             .collect_inference_input(&session, &next_conversation)
             .await?;

@@ -1,4 +1,4 @@
-use goose_providers::declarative::KeyResolver;
+use oi_kit_providers::declarative::KeyResolver;
 
 use crate::config::{Config, ConfigError};
 

@@ -5,7 +5,7 @@ use super::calculator_extension::{value, ADD};
 use super::pipeline::MessageKind::Error;
 use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
 #[cfg(feature = "tree-sitter")]
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
@@ -42,8 +42,8 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
     use crate::config::GooseMode;
     use crate::recipe::{Recipe, Response};
-    use goose_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
-    use goose_providers::model::ModelConfig;
+    use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
+    use oi_kit_providers::model::ModelConfig;
 
     let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         cache_read_tokens: Some(11),
