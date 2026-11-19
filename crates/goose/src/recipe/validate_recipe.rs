@@ -397,16 +397,16 @@ pub fn validate_recipe_for_scheduling(
         .map_err(|error| SchedulerRecipeError::InvalidSchema(error.to_string()))?;
     validate_scheduling_parameters(&recipe.parameters, &template_variables)
         .map_err(SchedulerRecipeError::InvalidSchema)?;
-    if let Some(schema) = recipe
-        .response
-        .as_ref()
-        .and_then(|response| response.json_schema.as_ref())
-    {
-        validate_json_schema(schema).map_err(|error| match error.to_string().as_str() {
-            "JSON schema must be an object" | "Empty JSON schema is not allowed" => {
-                SchedulerRecipeError::InvalidSchema(error.to_string())
+    if let Some(response) = &recipe.response {
+        validate_json_schema(&response.json_schema).map_err(|error| {
+            match error.to_string().as_str() {
+                "JSON schema must be an object" | "Empty JSON schema is not allowed" => {
+                    SchedulerRecipeError::InvalidSchema(error.to_string())
+                }
+                _ => SchedulerRecipeError::InvalidSchema(
+                    "response.json_schema is invalid".to_string(),
+                ),
             }
-            _ => SchedulerRecipeError::InvalidSchema("response.json_schema is invalid".to_string()),
         })?;
     }
 
@@ -523,9 +523,7 @@ pub(crate) fn validate_recipe_non_parameter_invariants(recipe: &Recipe) -> Resul
     validate_prompt_or_instructions(recipe)?;
     validate_retry_config(recipe)?;
     if let Some(response) = &recipe.response {
-        if let Some(json_schema) = &response.json_schema {
-            validate_json_schema(json_schema)?;
-        }
+        validate_json_schema(&response.json_schema)?;
     }
     Ok(())
 }

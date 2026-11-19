@@ -1748,7 +1748,7 @@ export type RecipeParameterInputTypeDto = 'string' | 'number' | 'boolean' | 'dat
 export type RecipeParameterRequirementDto = 'required' | 'optional' | 'user_prompt';
 
 export type RecipeResponseDto = {
-    json_schema?: unknown;
+    json_schema: unknown;
 };
 
 export type SubRecipeDto = {

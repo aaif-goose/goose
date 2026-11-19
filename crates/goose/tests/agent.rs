@@ -2702,11 +2702,11 @@ mod tests {
                         .description("Structured output")
                         .prompt("Return structured output")
                         .response(Response {
-                            json_schema: Some(serde_json::json!({
+                            json_schema: serde_json::json!({
                                 "type": "object",
                                 "properties": { "result": { "type": "string" } },
                                 "required": ["result"]
-                            })),
+                            }),
                         })
                         .build()
                         .expect("valid recipe"),

@@ -252,11 +252,11 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
         .description("Delegates, then returns structured output")
         .prompt("Research and summarize")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .extensions(vec![ExtensionConfig::Platform {
             name: "summon".to_string(),
@@ -309,11 +309,11 @@ async fn final_output_nudge_goes_in_before_a_queued_steer() -> Result<()> {
         .description("Returns structured output")
         .prompt("Research the topic")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -380,11 +380,11 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -425,11 +425,11 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -481,11 +481,11 @@ async fn code_mode_advertises_and_accepts_final_output() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -521,11 +521,11 @@ async fn structured_output_fails_fast_when_provider_manages_own_context() -> Res
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -684,7 +684,7 @@ async fn invalid_final_output_schema_stops_before_inference() -> Result<()> {
         .description("Invalid output")
         .instructions("This must not reach inference")
         .response(Response {
-            json_schema: Some(json!({})),
+            json_schema: json!({}),
         })
         .build()
         .expect("recipe shape is otherwise valid");
@@ -708,7 +708,7 @@ async fn boolean_final_output_schema_stops_before_inference() -> Result<()> {
         .description("Boolean output schema")
         .instructions("This must not reach inference")
         .response(Response {
-            json_schema: Some(json!(true)),
+            json_schema: json!(true),
         })
         .build()
         .expect("recipe shape is otherwise valid");

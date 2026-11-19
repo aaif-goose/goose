@@ -70,11 +70,11 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         .description("Persists across pipeline reconstruction")
         .instructions("Return a structured answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "answer": { "type": "string" } },
                 "required": ["answer"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");

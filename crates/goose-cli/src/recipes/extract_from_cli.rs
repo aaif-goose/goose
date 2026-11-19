@@ -124,12 +124,12 @@ mod tests {
         let response = response.unwrap();
         assert_eq!(
             response.json_schema,
-            Some(serde_json::json!({
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "result": {"type": "string"}
                 }
-            }))
+            })
         );
     }
 
@@ -212,12 +212,12 @@ mod tests {
         let response = response.unwrap();
         assert_eq!(
             response.json_schema,
-            Some(serde_json::json!({
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "result": {"type": "string"}
                 }
-            }))
+            })
         );
     }
 

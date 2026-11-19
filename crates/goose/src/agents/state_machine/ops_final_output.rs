@@ -20,8 +20,7 @@ impl FinalOutputSchemaSource<Session> for GooseFinalOutputSchemaSource {
             .recipe
             .as_ref()?
             .response
-            .as_ref()?
-            .json_schema
-            .clone()
+            .as_ref()
+            .map(|response| response.json_schema.clone())
     }
 }

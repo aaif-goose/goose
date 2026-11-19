@@ -624,11 +624,11 @@ fn final_output_recipe() -> crate::recipe::Recipe {
         .description("Exercises the final-output hook lifecycle")
         .instructions("Return a structured answer")
         .response(crate::recipe::Response {
-            json_schema: Some(serde_json::json!({
+            json_schema: serde_json::json!({
                 "type": "object",
                 "properties": { "answer": { "type": "string" } },
                 "required": ["answer"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe")

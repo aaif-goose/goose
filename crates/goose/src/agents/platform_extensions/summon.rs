@@ -956,18 +956,13 @@ impl SummonClient {
                 max_turns: None,
             })
             .max_turns = Some(max_turns);
-        if recipe
-            .response
-            .as_ref()
-            .and_then(|response| response.json_schema.as_ref())
-            .is_none()
-        {
+        if recipe.response.is_none() {
             recipe.response = Some(Response {
-                json_schema: Some(serde_json::json!({
+                json_schema: serde_json::json!({
                     "type": "object",
                     "properties": {"summary": {"type": "string"}},
                     "required": ["summary"]
-                })),
+                }),
             });
         }
         recipe
@@ -1689,13 +1684,7 @@ mod tests {
         let recipe = child.recipe.as_ref().unwrap();
         assert_eq!(recipe.settings.as_ref().unwrap().max_turns, Some(3));
         assert_eq!(
-            recipe
-                .response
-                .as_ref()
-                .unwrap()
-                .json_schema
-                .as_ref()
-                .unwrap()["required"],
+            recipe.response.as_ref().unwrap().json_schema["required"],
             serde_json::json!(["summary"])
         );
         assert!(
