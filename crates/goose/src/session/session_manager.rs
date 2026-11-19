@@ -15,9 +15,9 @@ use crate::session::session_naming::{
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
-use goose_providers::conversation::token_usage::Usage;
-use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
+use oi_kit_providers::conversation::token_usage::Usage;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Role;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -412,11 +412,10 @@ fn message_keyword_clause(keyword_count: usize) -> String {
     let visible = user_visible_message_sql("mq.metadata_json");
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages mq
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)
@@ -926,7 +925,7 @@ fn deserialize_session_model_config(
 ) -> Option<ModelConfig> {
     let mut model_config: ModelConfig = serde_json::from_str(json).ok()?;
     // TODO: Remove this workaround once ModelConfig guarantees deserialize(serialize(config)) == config.
-    if provider_name == Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME) {
+    if provider_name == Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME) {
         #[derive(Deserialize)]
         struct AzurePersistedFields {
             model_name: String,
@@ -2316,32 +2315,31 @@ impl SessionStorage {
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-
+        let mut matched_rows = HashMap::new();
         for message in conversation.messages() {
             let message_id = message
                 .id
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("compacted conversation message has no id"))?;
-            let stored_metadata_json = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT metadata_json FROM messages WHERE session_id = ? AND message_id = ?",
+            let stored_metadata_json = sqlx::query_as::<_, (i64, Option<String>)>(
+                "SELECT id, metadata_json FROM messages WHERE session_id = ? AND message_id = ? AND id > ? ORDER BY id LIMIT 1",
             )
             .bind(session_id)
             .bind(message_id)
+            .bind(matched_rows.get(message_id).copied().unwrap_or(0))
             .fetch_optional(&mut *tx)
             .await?;
-            if let Some(stored_metadata_json) = stored_metadata_json {
+            if let Some((row_id, stored_metadata_json)) = stored_metadata_json {
+                matched_rows.insert(message_id, row_id);
                 let mut metadata = stored_metadata_json
                     .and_then(|json| serde_json::from_str::<MessageMetadata>(&json).ok())
                     .unwrap_or_default();
                 metadata.agent_visible = message.metadata.agent_visible;
-                sqlx::query(
-                    "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
-                )
-                .bind(serde_json::to_string(&metadata)?)
-                .bind(session_id)
-                .bind(message_id)
-                .execute(&mut *tx)
-                .await?;
+                sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+                    .bind(serde_json::to_string(&metadata)?)
+                    .bind(row_id)
+                    .execute(&mut *tx)
+                    .await?;
             } else {
                 sqlx::query(
                     "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -2834,10 +2832,9 @@ impl SessionStorage {
             }
         }
 
-        let opt = |v: i64| Some(i32::try_from(v).unwrap_or(i32::MAX));
         Ok(SessionUsageTotals {
-            accumulated_usage: Usage::new(opt(input), opt(output), opt(total))
-                .with_cache_tokens(opt(cache_read), opt(cache_write)),
+            accumulated_usage: Usage::new(Some(input), Some(output), Some(total))
+                .with_cache_tokens(Some(cache_read), Some(cache_write)),
             accumulated_cost: cost,
         })
     }
@@ -3119,8 +3116,8 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use crate::providers::base::MessageStream;
-    use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
-    use goose_providers::errors::ProviderError;
+    use oi_kit_providers::conversation::token_usage::{CostSource, ProviderUsage};
+    use oi_kit_providers::errors::ProviderError;
     use rmcp::model::Tool;
     use tempfile::TempDir;
     use test_case::test_case;
@@ -3197,7 +3194,7 @@ mod tests {
         .unwrap();
 
         let config = deserialize_session_model_config(
-            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
             &json,
         )
         .unwrap();
@@ -3221,7 +3218,7 @@ mod tests {
     #[test]
     fn azure_session_model_config_preserves_explicit_thinking_effort() {
         let config = deserialize_session_model_config(
-            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            Some(oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
             r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null,"request_params":{"thinking_effort":"low"}}"#,
         )
         .unwrap();
@@ -3229,14 +3226,14 @@ mod tests {
         assert_eq!(config.model_name, "gpt-5-high");
         assert_eq!(
             config.thinking_effort(),
-            Some(goose_providers::thinking::ThinkingEffort::Low)
+            Some(oi_kit_providers::thinking::ThinkingEffort::Low)
         );
     }
 
     #[test]
     fn non_azure_session_model_config_keeps_suffix_normalization() {
         let config = deserialize_session_model_config(
-            Some(goose_providers::openai::OPEN_AI_PROVIDER_NAME),
+            Some(oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME),
             r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null}"#,
         )
         .unwrap();
@@ -3244,7 +3241,7 @@ mod tests {
         assert_eq!(config.model_name, "gpt-5");
         assert_eq!(
             config.thinking_effort(),
-            Some(goose_providers::thinking::ThinkingEffort::High)
+            Some(oi_kit_providers::thinking::ThinkingEffort::High)
         );
     }
 
@@ -3266,7 +3263,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
-        ) -> std::result::Result<MessageStream, goose_providers::errors::ProviderError> {
+        ) -> std::result::Result<MessageStream, oi_kit_providers::errors::ProviderError> {
             unimplemented!("session naming calls complete")
         }
 
@@ -4454,6 +4451,57 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    #[tokio::test]
+    async fn test_session_token_totals_beyond_i32_round_trip() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = create_session_for_list_with_message(
+            &sm,
+            "/tmp/session-list",
+            "Long running Postgres migration",
+        )
+        .await;
+        let over_i32 = i64::from(i32::MAX) + 3_061;
+        sqlx::query(
+            "UPDATE sessions SET accumulated_total_tokens = ?, accumulated_cache_read_tokens = ? \
+             WHERE id = ?",
+        )
+        .bind(over_i32)
+        .bind(over_i32)
+        .bind(&id)
+        .execute(sm.storage.pool().await.unwrap())
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, true).await.unwrap();
+        assert_eq!(session.accumulated_usage.total_tokens, Some(over_i32));
+        assert_eq!(
+            session.accumulated_usage.cache_read_input_tokens,
+            Some(over_i32)
+        );
+
+        let types = [SessionType::User];
+        let page = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    keyword: Some("postgres"),
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.sessions.len(), 1);
+        assert_eq!(
+            page.sessions[0].accumulated_usage.total_tokens,
+            Some(over_i32)
+        );
+    }
+
     fn tags(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs
             .iter()
@@ -5006,14 +5054,14 @@ mod tests {
 
                 sm.update(&session.id)
                     .user_provided_name(format!("Updated session {}", i))
-                    .usage(Usage::new(None, None, Some(100 * i)))
+                    .usage(Usage::new(None, None, Some(100 * i64::from(i))))
                     .apply()
                     .await
                     .unwrap();
 
                 let updated = sm.get_session(&session.id, true).await.unwrap();
                 assert_eq!(updated.message_count, 2);
-                assert_eq!(updated.usage.total_tokens, Some(100 * i));
+                assert_eq!(updated.usage.total_tokens, Some(100 * i64::from(i)));
 
                 session.id
             });
@@ -5231,7 +5279,6 @@ mod tests {
 
     #[test_case(GooseMode::Approve)]
     #[test_case(GooseMode::SmartApprove)]
-    #[test_case(GooseMode::Chat)]
     #[tokio::test]
     async fn test_goose_mode_persists(mode: GooseMode) {
         let temp_dir = TempDir::new().unwrap();
@@ -5567,7 +5614,7 @@ mod tests {
         assert_eq!(loaded.accumulated_usage, accumulated_usage);
     }
 
-    fn message_usage(input: i32, output: i32, cost: f64, is_compaction: bool) -> MessageUsage {
+    fn message_usage(input: i64, output: i64, cost: f64, is_compaction: bool) -> MessageUsage {
         MessageUsage {
             input_tokens: Some(input),
             output_tokens: Some(output),

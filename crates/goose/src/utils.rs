@@ -60,6 +60,24 @@ pub fn safe_truncate(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// `tempfile` creates directories with the default mode, so under a shared temporary root
+/// other users could read what goose writes into them. On Unix this builder creates them
+/// with `0700` instead.
+#[cfg(unix)]
+pub fn private_tempdir_builder() -> tempfile::Builder<'static, 'static> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut builder = tempfile::Builder::new();
+    builder.permissions(std::fs::Permissions::from_mode(0o700));
+    builder
+}
+
+// The Windows temporary directory is already private to each user.
+#[cfg(not(unix))]
+pub fn private_tempdir_builder() -> tempfile::Builder<'static, 'static> {
+    tempfile::Builder::new()
+}
+
 pub fn is_token_cancelled(cancellation_token: &Option<CancellationToken>) -> bool {
     cancellation_token
         .as_ref()
@@ -224,6 +242,21 @@ mod tests {
             split_command_args("O'Reilly wrote don't split").unwrap(),
             vec!["O'Reilly", "wrote", "don't", "split"]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_tempdir_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = private_tempdir_builder().tempdir().unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let nested = private_tempdir_builder().tempdir_in(parent.path()).unwrap();
+
+        for path in [dir.path(), nested.path()] {
+            let mode = std::fs::metadata(path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "{}", path.display());
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct TaskConfig {
     pub provider: Arc<dyn Provider>,
-    pub model_config: goose_providers::model::ModelConfig,
+    pub model_config: oi_kit_providers::model::ModelConfig,
     pub parent_session_id: String,
     pub parent_working_dir: PathBuf,
     pub extensions: Vec<ExtensionConfig>,

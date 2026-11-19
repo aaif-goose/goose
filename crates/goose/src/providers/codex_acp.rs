@@ -18,7 +18,7 @@ const CODEX_ACP_DOC_URL: &str = "https://github.com/agentclientprotocol/codex-ac
 
 pub struct CodexAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for CodexAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CODEX_ACP_PROVIDER_NAME,
@@ -74,7 +74,6 @@ impl ProviderDef for CodexAcpProvider {
                 (GooseMode::Auto, vec!["agent-full-access".to_string()]),
                 (GooseMode::SmartApprove, vec!["agent".to_string()]),
                 (GooseMode::Approve, vec!["read-only".to_string()]),
-                (GooseMode::Chat, vec!["read-only".to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {
@@ -162,7 +161,6 @@ mod tests {
                 true,
             ),
             ("approve", Some("approve"), ConfigFixture::Absent, true),
-            ("chat", Some("chat"), ConfigFixture::Absent, true),
             ("invalid", Some("invalid"), ConfigFixture::Absent, false),
             (
                 "configured_file",

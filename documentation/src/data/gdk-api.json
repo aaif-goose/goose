@@ -1,9 +1,9 @@
 {
   "versions": [
     {
-      "version": "0.1.0-alpha.13",
+      "version": "0.1.0-alpha.15",
       "docVersion": "0.1",
-      "source": "crates/goose-sdk/src/bindings.rs",
+      "source": "crates/oi-kit-bindings/src/bindings.rs",
       "functions": [
         {
           "name": "anthropic_default_model",
@@ -37,7 +37,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -66,7 +66,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -101,7 +101,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -116,7 +116,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -147,7 +147,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -162,7 +162,7 @@
             }
           ],
           "returns": null,
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -191,7 +191,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -206,7 +206,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -235,7 +235,7 @@
             }
           ],
           "returns": "DecisionProvider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         },
         {
@@ -264,13 +264,13 @@
             }
           ],
           "returns": "DecisionProvider",
-          "throws": "GooseError",
+          "throws": "OiKitError",
           "isAsync": false
         }
       ],
       "items": [
         {
-          "name": "GooseError",
+          "name": "OiKitError",
           "kind": "error",
           "docs": "",
           "fields": [],
@@ -373,7 +373,7 @@
               "docs": "",
               "params": [],
               "returns": "u64",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": false
             },
             {
@@ -394,7 +394,7 @@
                 }
               ],
               "returns": null,
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": false
             }
           ]
@@ -729,37 +729,37 @@
           "fields": [
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "reasoning_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
@@ -887,7 +887,7 @@
               "fields": [
                 {
                   "name": "error",
-                  "type": "GooseStreamError",
+                  "type": "OiKitStreamError",
                   "default": null,
                   "docs": ""
                 }
@@ -897,13 +897,13 @@
           "methods": []
         },
         {
-          "name": "GooseStreamError",
+          "name": "OiKitStreamError",
           "kind": "record",
           "docs": "",
           "fields": [
             {
               "name": "kind",
-              "type": "GooseStreamErrorKind",
+              "type": "OiKitStreamErrorKind",
               "default": null,
               "docs": ""
             },
@@ -930,7 +930,7 @@
           "methods": []
         },
         {
-          "name": "GooseStreamErrorKind",
+          "name": "OiKitStreamErrorKind",
           "kind": "enum",
           "docs": "",
           "fields": [],
@@ -1276,7 +1276,7 @@
                 }
               ],
               "returns": "DecisionResponse",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             }
           ]
@@ -1316,7 +1316,7 @@
                 }
               ],
               "returns": "u64",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             },
             {
@@ -1324,7 +1324,7 @@
               "docs": "",
               "params": [],
               "returns": "Vec<ProviderModelInfo>",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             },
             {
@@ -1357,7 +1357,7 @@
                 }
               ],
               "returns": "ProviderStream",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             },
             {
@@ -1390,7 +1390,7 @@
                 }
               ],
               "returns": "ProviderCompletion",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             },
             {
@@ -1417,7 +1417,7 @@
                 }
               ],
               "returns": "CompactionSummary",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             }
           ]
@@ -1446,7 +1446,7 @@
         {
           "name": "CompactionTemplates",
           "kind": "record",
-          "docs": "Overrides for the summarization and summary-rendering prompts.",
+          "docs": "Overrides for the summarization, summary-rendering, and in-band request prompts.",
           "fields": [
             {
               "name": "compaction",
@@ -1456,6 +1456,12 @@
             },
             {
               "name": "summary",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "request",
               "type": "String",
               "default": null,
               "docs": ""
@@ -1477,31 +1483,31 @@
             },
             {
               "name": "input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "total_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_read_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "cache_creation_input_tokens",
-              "type": "Option<i32>",
+              "type": "Option<i64>",
               "default": null,
               "docs": ""
             }
@@ -1521,7 +1527,7 @@
               "docs": "",
               "params": [],
               "returns": "Option<StreamChunk>",
-              "throws": "GooseError",
+              "throws": "OiKitError",
               "isAsync": true
             }
           ]

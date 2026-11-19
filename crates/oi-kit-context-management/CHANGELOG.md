@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
+
+### Fixed
+
+- *(usage)* store token counts as i64 ([#13422](https://github.com/aaif-goose/goose/pull/13422))
+- *(compaction)* reword prompt that Opus 5.5 refuses as distillation ([#13340](https://github.com/aaif-goose/goose/pull/13340))
+
+## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.1.0-alpha.10](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.9...gdk-v0.1.0-alpha.10) - 2026-09-24
+
+### Added
+
+- a lean ACP-only Goose binary ([#11961](https://github.com/aaif-goose/goose/pull/11961))
+
+### Fixed
+
+- fix context management dependency ([#11768](https://github.com/aaif-goose/goose/pull/11768))
+
+## [0.1.0-alpha.9](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.8...gdk-v0.1.0-alpha.9) - 2026-09-08
+
+### Other
+
+- update Cargo.toml dependencies

@@ -19,7 +19,7 @@ pub(crate) const AMP_ACP_BINARY: &str = "amp-acp";
 
 pub struct AmpAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for AmpAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for AmpAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             AMP_ACP_PROVIDER_NAME,
@@ -72,7 +72,6 @@ impl ProviderDef for AmpAcpProvider {
                 // "default" prompts before risky actions.
                 (GooseMode::Approve, vec!["default".to_string()]),
                 (GooseMode::SmartApprove, vec!["default".to_string()]),
-                (GooseMode::Chat, vec!["default".to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {

@@ -21,7 +21,7 @@ async function buildMain() {
           input: resolve(__dirname, '../src/main.ts'),
           output: {
             format: 'cjs',
-            entryFileNames: 'main.js'
+            entryFileNames: 'main.cjs'
           },
           external: [
             'electron',

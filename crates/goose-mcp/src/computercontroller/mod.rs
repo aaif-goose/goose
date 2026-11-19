@@ -218,9 +218,24 @@ pub struct XlsxToolParams {
 pub struct ComputerControllerServer {
     tool_router: ToolRouter<Self>,
     cache_dir: PathBuf,
+    // Owns the fallback cache directory so it is removed when the last server clone is dropped.
+    _fallback_cache_dir: Option<std::sync::Arc<tempfile::TempDir>>,
     instructions: String,
     #[cfg(target_os = "macos")]
     peekaboo_installed: Arc<AtomicBool>,
+}
+
+// Without a cache directory, files go to the system temporary directory. A fresh directory that
+// only the owner can open keeps them away from other users of a shared temporary root.
+fn private_fallback_cache_dir() -> anyhow::Result<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("goose-computer-controller-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(fs::Permissions::from_mode(0o700));
+    }
+    Ok(builder.tempdir()?)
 }
 
 impl Default for ComputerControllerServer {
@@ -235,10 +250,15 @@ impl ComputerControllerServer {
         // choose_app_strategy().cache_dir()
         // - macOS/Linux: ~/.cache/goose/computer_controller/
         // - Windows:     ~\AppData\Local\Block\goose\cache\computer_controller\
-        // keep previous behavior of defaulting to /tmp/
-        let cache_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
-            .map(|strategy| strategy.in_cache_dir("computer_controller"))
-            .unwrap_or_else(|_| std::env::temp_dir());
+        let app_cache_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
+            .map(|strategy| strategy.in_cache_dir("computer_controller"));
+        let (cache_dir, fallback_cache_dir) = match app_cache_dir {
+            Ok(dir) => (dir, None),
+            Err(_) => match private_fallback_cache_dir() {
+                Ok(dir) => (dir.path().to_path_buf(), Some(std::sync::Arc::new(dir))),
+                Err(_) => (std::env::temp_dir(), None),
+            },
+        };
 
         fs::create_dir_all(&cache_dir).unwrap_or_else(|_| {
             println!(
@@ -372,6 +392,7 @@ impl ComputerControllerServer {
         Self {
             tool_router,
             cache_dir,
+            _fallback_cache_dir: fallback_cache_dir,
             instructions,
             #[cfg(target_os = "macos")]
             peekaboo_installed: Arc::new(AtomicBool::new(crate::peekaboo::is_peekaboo_installed())),
@@ -884,5 +905,22 @@ impl ServerHandler for ComputerControllerServer {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(self.instructions.clone())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn fallback_cache_dir_is_a_new_owner_only_directory() {
+        let first = private_fallback_cache_dir().unwrap();
+        let second = private_fallback_cache_dir().unwrap();
+
+        assert_ne!(first.path(), second.path());
+        assert!(first.path().starts_with(std::env::temp_dir()));
+        let mode = fs::metadata(first.path()).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 }

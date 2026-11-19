@@ -150,14 +150,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             extras.insert("hints".to_string(), hints);
         }
 
-        if goose_mode == GooseMode::Chat {
-            extras.insert(
-                "chat_mode".to_string(),
-                "Right now you are in the chat only mode, no access to any tool use and system."
-                    .to_string(),
-            );
-        }
-
         let extras = extras
             .into_iter()
             .map(|(key, extra)| (key, sanitize_unicode_tags(&extra)))
@@ -563,7 +555,6 @@ mod tests {
         .await
         .unwrap();
         let context = PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager,
             scheduler: Some(scheduler),

@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::{inference::InferenceRunner, tool::ToolOperation};
-use goose_providers::{
+use oi_kit_agent::{inference::InferenceRunner, tool::ToolOperation};
+use oi_kit_providers::{
     base::{MessageStream, Provider},
     conversation::token_usage::{ProviderUsage, Usage},
     errors::ProviderError,
@@ -96,7 +96,8 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
         crate::agents::state_machine::session::run(
             &machine,
             pipeline.session_manager.as_ref(),
-            &pipeline.services().await.hook_manager,
+            &crate::hooks::HookManager::default(),
+            &Default::default(),
             &pipeline.session_id,
             &emit,
         )

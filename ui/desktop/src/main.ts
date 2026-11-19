@@ -191,6 +191,7 @@ const validLanguageSettings = new Set<Settings['language']>([
   'de',
   'it',
   'pt',
+  'nl',
   'id',
   'ms',
   'vi',

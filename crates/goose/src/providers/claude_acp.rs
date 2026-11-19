@@ -19,7 +19,7 @@ pub(crate) const CLAUDE_ACP_BINARY: &str = "claude-agent-acp";
 
 pub struct ClaudeAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for ClaudeAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ClaudeAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CLAUDE_ACP_PROVIDER_NAME,
@@ -78,8 +78,6 @@ impl ProviderDef for ClaudeAcpProvider {
                 (GooseMode::Approve, vec!["default".to_string()]),
                 // acceptEdits auto-accepts file edits but still prompts for risky ops.
                 (GooseMode::SmartApprove, vec!["acceptEdits".to_string()]),
-                // Plan mode disables tool execution, aligning with chat-only intent.
-                (GooseMode::Chat, vec!["plan".to_string()]),
             ]);
 
             let provider_config = AcpProviderConfig {

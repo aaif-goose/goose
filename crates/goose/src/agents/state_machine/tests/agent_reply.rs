@@ -10,6 +10,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +19,6 @@ use super::dummy_api::{ApiCall, DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
 use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{
     AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
@@ -29,7 +29,8 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
-use goose_providers::model::ModelConfig;
+use oi_kit_agent::mcp::client::McpClientTrait;
+use oi_kit_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(
     Arc<StateMachineServices>,
@@ -61,14 +62,14 @@ async fn agent_with(
     tempfile::TempDir,
 )> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
-    let api_client = goose_providers::api_client::ApiClient::new_with_tls(
+    let api_client = oi_kit_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
-        goose_providers::api_client::AuthMethod::NoAuth,
+        oi_kit_providers::api_client::AuthMethod::NoAuth,
         None,
     )?
     .with_request_builder(crate::session_context::session_id_request_builder());
     let provider: Arc<dyn Provider> = Arc::new(
-        goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+        oi_kit_providers::openai::OpenAiProviderBuilder::new(api_client)
             .base_path("chat/completions")
             .name("openai")
             .build(),
@@ -97,7 +98,7 @@ async fn agent_with(
     services
         .update_provider(
             provider,
-            ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+            ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
                 .with_canonical_limits("openai"),
             &session.id,
         )
@@ -136,8 +137,7 @@ async fn agent_with_calculator(
 
 async fn enable_developer(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
     services
-        .extension_manager
-        .enable(
+        .enable_extension(
             session_id,
             ExtensionConfig::Platform {
                 name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
@@ -148,16 +148,6 @@ async fn enable_developer(services: &Arc<StateMachineServices>, session_id: &str
             },
         )
         .await?;
-    Ok(())
-}
-
-fn install_skill(working_dir: &std::path::Path, content: &str) -> Result<()> {
-    let skill_dir = working_dir.join(".agents/skills/review");
-    std::fs::create_dir_all(&skill_dir)?;
-    std::fs::write(
-        skill_dir.join("SKILL.md"),
-        format!("---\nname: review\ndescription: Review code\n---\n{content}"),
-    )?;
     Ok(())
 }
 
@@ -463,7 +453,7 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() -> Result<()> {
+async fn pre_tool_use_reports_the_advertised_working_dir_after_a_mid_run_change() -> Result<()> {
     let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
     let (services, api, session_id, calculator, temp_dir) = agent_with_calculator(hooks).await?;
     services
@@ -502,7 +492,7 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
     changed?;
 
     assert_eq!(calculator.total(), 1);
-    let leased_working_dir = temp_dir.path().to_string_lossy().to_string();
+    let advertised_working_dir = temp_dir.path().to_string_lossy().to_string();
     assert!(calculator
         .contexts()
         .iter()
@@ -514,136 +504,14 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
                 .map(|payload| payload["working_dir"].as_str().map(str::to_string))
         })
         .collect::<serde_json::Result<Vec<_>>>()?;
-    assert_eq!(working_dirs, vec![Some(leased_working_dir)]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
-    let (services, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
-    install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
-    services
-        .update_goose_mode(GooseMode::Approve, &session_id)
-        .await?;
-
-    api.on("load review")
-        .call("load_skill", json!({ "name": "review" }));
-    api.on("OLD_SKILL_CONTENT").reply("loaded original skill");
-
-    let session_config = SessionConfig {
-        id: session_id,
-        schedule_id: None,
-        max_turns: Some(2),
-    };
-    let mut stream = services
-        .reply(
-            Message::user().with_text("load review"),
-            session_config.clone(),
-            Some(CancellationToken::new()),
-        )
-        .await?;
-    let confirmation_id = loop {
-        let event = stream
-            .next()
-            .await
-            .expect("state machine should request confirmation")?;
-        if let AgentEvent::Message(message) = event {
-            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
-                break confirmation_id;
-            }
-        }
-    };
-
-    let new_working_dir = tempfile::tempdir()?;
-    install_skill(new_working_dir.path(), "NEW_SKILL_CONTENT")?;
-    services
-        .session_manager
-        .update(&session_config.id)
-        .working_dir(new_working_dir.path().to_path_buf())
-        .apply()
-        .await?;
-    services
-        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
-        .await?;
-    let messages = stream_messages(stream).await?;
-
-    assert!(messages.iter().any(|message| {
-        message.content.iter().any(|content| {
-            content.as_tool_response_text().is_some_and(|text| {
-                text.contains("OLD_SKILL_CONTENT") && !text.contains("NEW_SKILL_CONTENT")
-            })
-        })
-    }));
-    let calls = api.calls();
-    assert_eq!(calls.len(), 2);
-    assert!(calls[1].input_contains("OLD_SKILL_CONTENT"));
-    assert!(!calls[1].input_contains("NEW_SKILL_CONTENT"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Result<()> {
-    let (services, api, session_id, working_dir) = agent_with_dummy_api().await?;
-    install_skill(working_dir.path(), "SKILL_MUST_NOT_LOAD")?;
-    services
-        .update_goose_mode(GooseMode::Approve, &session_id)
-        .await?;
-
-    api.on("load review")
-        .call("load_skill", json!({ "name": "review" }));
-    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
-
-    let session_config = SessionConfig {
-        id: session_id,
-        schedule_id: None,
-        max_turns: Some(2),
-    };
-    let mut stream = services
-        .reply(
-            Message::user().with_text("load review"),
-            session_config.clone(),
-            Some(CancellationToken::new()),
-        )
-        .await?;
-    let confirmation_id = loop {
-        let event = stream
-            .next()
-            .await
-            .expect("state machine should request confirmation")?;
-        if let AgentEvent::Message(message) = event {
-            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
-                break confirmation_id;
-            }
-        }
-    };
-
-    services
-        .runtime
-        .confirmations
-        .session(&session_config.id)
-        .clear_extension_lease();
-    services
-        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
-        .await?;
-    let messages = stream_messages(stream).await?;
-
-    assert!(messages.iter().any(|message| {
-        message.content.iter().any(|content| {
-            content
-                .as_tool_response_text()
-                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
-        })
-    }));
-    let calls = api.calls();
-    assert_eq!(calls.len(), 2);
-    assert!(!calls[1].input_contains("SKILL_MUST_NOT_LOAD"));
+    assert_eq!(working_dirs, vec![Some(advertised_working_dir)]);
     Ok(())
 }
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
-    let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
-    let (services, api, session_id, calculator, _temp_dir) = agent_with_calculator(hooks).await?;
+    let (services, api, session_id, calculator, _temp_dir) =
+        agent_with_calculator(crate::hooks::HookManager::default()).await?;
 
     api.on("add one").call(ADD, value(1));
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
@@ -677,7 +545,7 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         .runtime
         .confirmations
         .session(&session_config.id)
-        .clear_extension_lease();
+        .clear_tool_snapshot();
     services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -701,9 +569,6 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
                 .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
         }));
     assert_eq!(api.call_count(), 2);
-    assert!(std::fs::read_to_string(&hook_log_path)
-        .unwrap_or_default()
-        .is_empty());
 
     Ok(())
 }
@@ -744,7 +609,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
         .runtime
         .confirmations
         .session(&session_config.id)
-        .clear_extension_lease();
+        .clear_tool_snapshot();
     services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -1013,27 +878,9 @@ async fn bang_shell_visibility_is_enforced_when_state_machine_is_enabled() -> Re
 async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() -> Result<()> {
     let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse", "SessionEnd"], 0)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand this off").call(
         "delegate",
@@ -1042,7 +889,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
     api.on("print the subagent marker")
         .call("shell", json!({ "command": "echo marker-from-subagent" }));
     api.on("marker-from-subagent").call(
-        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "printed it" }),
     );
     api.on("printed it").reply("the subagent printed it");
@@ -1082,25 +929,114 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         std::slice::from_ref(subagent_id)
     );
     assert!(!services.tracks_confirmations_for(subagent_id));
-    assert!(services
-        .extension_manager
-        .scope_lease(subagent_id)
-        .await
-        .configs()
-        .is_empty());
+    assert!(services.scope_tools(subagent_id).await.configs().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn reply_and_steer_fire_the_prompt_hook_when_they_accept_input() -> Result<()> {
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["SessionStart", "UserPromptSubmit"], 0)?;
+    let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    api.on("say hi").reply("hi");
+
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("add one"),
+    )
+    .await?;
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("say hi"),
+    )
+    .await?;
+    services
+        .steer(&session_id, Message::user().with_text("then wave"))
+        .await?;
+
+    let working_dir = services
+        .session_manager
+        .get_session(&session_id, false)
+        .await?
+        .working_dir
+        .to_string_lossy()
+        .into_owned();
+    assert!(hook_payloads(&hook_log_path)
+        .iter()
+        .all(|payload| payload["working_dir"] == working_dir.as_str()));
+    assert_eq!(
+        hook_events(&hook_log_path, &session_id),
+        [
+            "SessionStart",
+            "UserPromptSubmit: add one",
+            "UserPromptSubmit: say hi",
+            "UserPromptSubmit: then wave",
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_subagent_fires_the_prompt_hooks_for_its_task_and_each_resume() -> Result<()> {
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["SessionStart", "UserPromptSubmit"], 0)?;
+    let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
+    let _guard = openai_env_for(&api);
+    enable_summon(&services, &session_id).await?;
+
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "name the planets", "max_turns": 3 }),
+    );
+    api.on("name the planets").call(
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "planets named" }),
+    );
+    api.on("planets named").reply("delegated");
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("hand this off"),
+    )
+    .await?;
+
+    let subagent_id = hook_sessions(&hook_log_path, "UserPromptSubmit")
+        .into_iter()
+        .find(|id| id != &session_id)
+        .expect("the subagent fired the prompt hook");
+    api.on("resume the helper").call(
+        "delegate",
+        json!({ "resume": subagent_id, "instructions": "now list the colors" }),
+    );
+    api.on("now list the colors").call(
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "colors listed" }),
+    );
+    api.on("colors listed").reply("resumed");
+    reply_messages(
+        &services,
+        session_id.clone(),
+        Message::user().with_text("resume the helper"),
+    )
+    .await?;
+
+    assert_eq!(
+        hook_events(&hook_log_path, &subagent_id),
+        [
+            "SessionStart".to_string(),
+            format!("UserPromptSubmit: Subagent ID: {subagent_id}\n\nname the planets"),
+            "UserPromptSubmit: now list the colors".to_string(),
+        ]
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1108,19 +1044,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         .apply()
         .await?;
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand this off").call(
         "delegate",
@@ -1129,7 +1053,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
     api.on("print the subagent marker")
         .call("shell", json!({ "command": "echo marker-from-subagent" }));
     api.on("marker-from-subagent").call(
-        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "printed it" }),
     );
     api.on("printed it").reply("the subagent printed it");
@@ -1166,14 +1090,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         }
     }
 
-    assert_eq!(
-        approved_tools,
-        vec![
-            "delegate",
-            "shell",
-            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
-        ]
-    );
+    assert_eq!(approved_tools, vec!["delegate", "shell"]);
     assert!(texts.concat().ends_with("the subagent printed it"));
     Ok(())
 }
@@ -1181,10 +1098,13 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
 fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
     use rmcp::ServiceExt;
     tokio::spawn(async move {
-        let running = goose_test_support::mcp::McpFixtureServer::new()
-            .serve((read, write))
-            .await
-            .unwrap();
+        // Server-to-client elicitation is only supported by the legacy protocol.
+        let running = goose_test_support::mcp::McpFixtureServer::with_max_protocol_version(
+            rmcp::model::ProtocolVersion::V_2025_11_25,
+        )
+        .serve((read, write))
+        .await
+        .unwrap();
         let _ = running.waiting().await;
     });
 }
@@ -1192,13 +1112,7 @@ fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexS
 #[tokio::test]
 async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     crate::builtin_extension::register_builtin_extension("asks_a_name", serve_elicit_fixture);
     for config in [
         ExtensionConfig::Builtin {
@@ -1217,10 +1131,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
             available_tools: Vec::new(),
         },
     ] {
-        services
-            .extension_manager
-            .enable(&session_id, config)
-            .await?;
+        services.enable_extension(&session_id, config).await?;
     }
 
     api.on("hand this off").call(
@@ -1230,7 +1141,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
     api.on("find out who is asking")
         .call("asks_a_name__elicit", json!({ "echo_meta": true }));
     api.on("Ada Lovelace").call(
-        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "it was Ada" }),
     );
     api.on("it was Ada").reply("Ada asked");
@@ -1281,13 +1192,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
 #[tokio::test]
 async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1295,19 +1200,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         .apply()
         .await?;
     enable_developer(&services, &session_id).await?;
-    services
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&services, &session_id).await?;
 
     api.on("hand both off").calls([
         (
@@ -1332,12 +1225,12 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         json!({ "command": "printf 'ran-%s' denied" }),
     )]);
     api.on("ran-approved").call(
-        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "approved one ran" }),
     );
     api.on(crate::agents::tool_execution::DECLINED_RESPONSE)
         .call(
-            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+            oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
             json!({ "summary": "denied one stopped" }),
         );
     api.on("denied one stopped").reply("both are back");
@@ -1431,12 +1324,32 @@ fn hook_log(
     Ok((hooks, hook_dir, plugin_dir.join("hook.log")))
 }
 
-fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
+fn hook_payloads(log: &std::path::Path) -> Vec<serde_json::Value> {
     std::fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|payload| payload["event"].as_str() == Some(event))
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+fn hook_events(log: &std::path::Path, session_id: &str) -> Vec<String> {
+    hook_payloads(log)
+        .iter()
+        .filter(|payload| payload["session_id"] == session_id)
+        .map(|payload| {
+            let event = payload["event"].as_str().unwrap_or_default();
+            match payload["message"].as_str() {
+                Some(message) => format!("{event}: {message}"),
+                None => event.to_string(),
+            }
+        })
+        .collect()
+}
+
+fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
+    hook_payloads(log)
+        .iter()
+        .filter(|payload| payload["event"] == event)
         .filter_map(|payload| payload["session_id"].as_str().map(str::to_string))
         .collect()
 }
@@ -1445,13 +1358,7 @@ fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
 async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     let (hooks, _hook_dir, hook_log) = hook_log(&["SessionEnd"], 0)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1473,12 +1380,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         loop {
             if let [subagent_id] = hook_sessions(&hook_log, "SessionEnd").as_slice() {
                 if !services.tracks_confirmations_for(subagent_id)
-                    && services
-                        .extension_manager
-                        .scope_lease(subagent_id)
-                        .await
-                        .configs()
-                        .is_empty()
+                    && services.scope_tools(subagent_id).await.configs().is_empty()
                 {
                     return subagent_id.clone();
                 }
@@ -1491,10 +1393,18 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     Ok(())
 }
 
+fn openai_env_for(api: &DummyApi) -> env_lock::EnvGuard<'static> {
+    env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring".to_string())),
+        ("OPENAI_HOST", Some(api.uri())),
+        ("OPENAI_BASE_PATH", Some("chat/completions".to_string())),
+        ("OPENAI_CUSTOM_HEADERS", Some(String::new())),
+    ])
+}
+
 async fn enable_summon(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
     services
-        .extension_manager
-        .enable(
+        .enable_extension(
             session_id,
             ExtensionConfig::Platform {
                 name: "summon".to_string(),
@@ -1606,7 +1516,7 @@ async fn resume_until_completed(
         json!({ "resume": subagent_id, "instructions": "finish the count" }),
     );
     api.on("finish the count").call(
-        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME,
         json!({ "summary": "counted after resume" }),
     );
     api.on("counted after resume").reply("all done");
@@ -1630,13 +1540,7 @@ async fn resume_until_completed(
 #[tokio::test]
 async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> {
     let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     enable_developer(&services, &session_id).await?;
     enable_summon(&services, &session_id).await?;
     api.on("hand this off").call(
@@ -1645,18 +1549,17 @@ async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> 
     );
     api.on("count the files")
         .call("shell", json!({ "command": "echo partial-progress" }));
-    api.on("max turns reached")
+    api.on(MAX_TURNS_MESSAGE)
         .reply("the subagent ran out of turns");
 
     reply_approving(&services, &session_id, "hand this off", None).await?;
     let subagent_id = delegated_subagent_id(&services, &session_id).await?;
-    assert!(
-        parent_texts(&services, &session_id)
-            .await?
-            .iter()
-            .any(|text| text
-                .starts_with(&format!("Subagent {subagent_id} failed: max turns reached")))
-    );
+    assert!(parent_texts(&services, &session_id)
+        .await?
+        .iter()
+        .any(|text| text.starts_with(&format!(
+            "Subagent {subagent_id} failed: {MAX_TURNS_MESSAGE}"
+        ))));
 
     let resumed_request =
         resume_until_completed(&services, &api, &session_id, &subagent_id).await?;
@@ -1668,13 +1571,7 @@ async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> 
 async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resumes() -> Result<()> {
     let (hooks, _hook_dir, hook_log) = hook_log(&["SessionEnd"], 2)?;
     let (services, api, session_id, _temp_dir) = agent_with_hooks(hooks).await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
+    let _guard = openai_env_for(&api);
     services
         .session_manager
         .update(&session_id)
@@ -1695,8 +1592,7 @@ async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resum
     tokio::time::timeout(Duration::from_secs(1), async {
         while services.tracks_confirmations_for(&subagent_id)
             || !services
-                .extension_manager
-                .scope_lease(&subagent_id)
+                .scope_tools(&subagent_id)
                 .await
                 .configs()
                 .is_empty()
@@ -1759,7 +1655,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
 
 fn attachment() -> crate::agents::Attachment {
     crate::agents::Attachment {
-        client: crate::agents::extension_manager::ClientContext::new(
+        client: crate::agents::extension_manager::client_context(
             &GoosePlatform::GooseDesktop,
             None,
         ),

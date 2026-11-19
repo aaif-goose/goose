@@ -584,6 +584,9 @@ impl GatewayHandler {
                                         pending_text.push_str(&t.text);
                                     }
                                 }
+                                MessageContent::Error(error) => {
+                                    pending_text.push_str(&error.message);
+                                }
                                 MessageContent::ToolRequest(req) => {
                                     // Flush any accumulated text before
                                     // the tool runs — the user sees the
