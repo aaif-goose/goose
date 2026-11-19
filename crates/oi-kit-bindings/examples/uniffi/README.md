@@ -53,6 +53,6 @@ Or run the same flow through the oi-kit-bindings justfile:
 just --justfile crates/oi-kit-bindings/justfile kotlin
 ```
 
-The Kotlin example consumes the local Maven artifact `io.github.aaif-goose:oi-kit` from `mavenLocal()` and imports the generated package namespace `io.github.aaif_goose`.
+The Kotlin example consumes the local Maven artifact `org.oi-kit:oi-kit` from `mavenLocal()` and imports the generated package namespace `org.oi_kit`.
 
 On newer JDKs, the example enables native access with `--enable-native-access=ALL-UNNAMED` because oi-kit uses JNA to load the bundled native library.

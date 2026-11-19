@@ -4,7 +4,7 @@ plugins {
     id("com.vanniktech.maven.publish") version "0.34.0"
 }
 
-group = "io.github.aaif-goose"
+group = "org.oi-kit"
 version = oiKitVersion()
 
 fun oiKitVersion(): String {
@@ -53,7 +53,7 @@ mavenPublishing {
     }
 
     coordinates(
-        groupId = "io.github.aaif-goose",
+        groupId = "org.oi-kit",
         artifactId = "oi-kit",
         version = project.version.toString(),
     )

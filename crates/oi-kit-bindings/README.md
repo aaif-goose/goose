@@ -4,7 +4,7 @@ Python and Kotlin bindings for the Open Intelligence Kit (oi-kit), published as
 `oi-kit` on PyPI and Maven.
 
 With `--features uniffi` the crate compiles to native bindings for Python and
-Kotlin (namespace `oi_kit` / `io.github.aaif_goose`). The UniFFI surface lets
+Kotlin (namespace `oi_kit` / `org.oi_kit`). The UniFFI surface lets
 callers construct providers, stream provider completions, perform non-streaming
 completion, and pass rich message/tool content across the FFI boundary.
 
@@ -83,7 +83,7 @@ into the package, and writes the wheel to `crates/oi-kit-bindings/python/dist/`.
 
 ## Maven package
 
-The Maven Central artifact is published as `io.github.aaif-goose:oi-kit` and uses
+The Maven Central artifact is published as `org.oi-kit:oi-kit` and uses
 the Rust crate version from `crates/oi-kit-bindings/Cargo.toml`.
 
 ```bash

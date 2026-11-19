@@ -29,7 +29,7 @@ kotlin_dir="$maven_dir/src/main/kotlin"
 support_kotlin_dir="$maven_dir/src/support/kotlin"
 resources_dir="$maven_dir/src/main/resources"
 
-rm -rf "$kotlin_dir/io/github/aaif_goose" "$resources_dir/$resource_prefix"
+rm -rf "$kotlin_dir/org/oi_kit" "$resources_dir/$resource_prefix"
 mkdir -p "$kotlin_dir" "$resources_dir/$resource_prefix" "$resources_dir/META-INF"
 cp LICENSE "$resources_dir/META-INF/LICENSE"
 
@@ -40,7 +40,7 @@ cp LICENSE "$resources_dir/META-INF/LICENSE"
   --no-format \
   --out-dir "$kotlin_dir" 2>/dev/null
 
-python3 - "$kotlin_dir/io/github/aaif_goose/oi_kit.kt" <<'PY'
+python3 - "$kotlin_dir/org/oi_kit/oi_kit.kt" <<'PY'
 import sys
 from pathlib import Path
 

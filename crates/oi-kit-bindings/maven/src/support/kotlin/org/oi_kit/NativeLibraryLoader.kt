@@ -1,4 +1,4 @@
-package io.github.aaif_goose
+package org.oi_kit
 
 import com.sun.jna.Platform
 import java.nio.file.Files

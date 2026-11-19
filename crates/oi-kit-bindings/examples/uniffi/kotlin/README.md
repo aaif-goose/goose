@@ -1,7 +1,7 @@
 # Kotlin/JVM oi-kit smoke test
 
 This is a small downstream Kotlin/JVM app that consumes the Maven artifact
-`io.github.aaif-goose:oi-kit` from `mavenLocal()`.
+`org.oi-kit:oi-kit` from `mavenLocal()`.
 
 From the repository root, first build and publish the Maven artifact locally:
 

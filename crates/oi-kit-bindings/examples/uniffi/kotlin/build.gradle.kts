@@ -13,7 +13,7 @@ fun oiKitVersion(): String {
 }
 
 dependencies {
-    implementation("io.github.aaif-goose:oi-kit:${oiKitVersion()}")
+    implementation("org.oi-kit:oi-kit:${oiKitVersion()}")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 }
 

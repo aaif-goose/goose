@@ -1,11 +1,11 @@
-import io.github.aaif_goose.MessageContent
-import io.github.aaif_goose.MessageRole
-import io.github.aaif_goose.ProviderMessage
-import io.github.aaif_goose.ProviderModelConfig
-import io.github.aaif_goose.StreamChunk
-import io.github.aaif_goose.streamFlow
-import io.github.aaif_goose.providers.openai.defaultModel
-import io.github.aaif_goose.providers.openai.provider as openAiProvider
+import org.oi_kit.MessageContent
+import org.oi_kit.MessageRole
+import org.oi_kit.ProviderMessage
+import org.oi_kit.ProviderModelConfig
+import org.oi_kit.StreamChunk
+import org.oi_kit.streamFlow
+import org.oi_kit.providers.openai.defaultModel
+import org.oi_kit.providers.openai.provider as openAiProvider
 import kotlinx.coroutines.runBlocking
 
 fun main() = runBlocking {

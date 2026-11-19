@@ -144,7 +144,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           mkdir -p maven-artifacts
-          cp -R "$HOME/.m2/repository/io/github/aaif-goose/oi-kit/$VERSION" maven-artifacts/
+          cp -R "$HOME/.m2/repository/org/oi-kit/oi-kit/$VERSION" maven-artifacts/
 
       - name: Upload Maven artifact bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -181,7 +181,7 @@ jobs:
         shell: bash
         run: |
           version=$(grep -m1 '^version =' crates/oi-kit-bindings/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
-          target="$HOME/.m2/repository/io/github/aaif-goose/oi-kit/$version"
+          target="$HOME/.m2/repository/org/oi-kit/oi-kit/$version"
           mkdir -p "$target"
           find maven-artifacts -type f -exec cp -t "$target" {} +
 
@@ -193,7 +193,7 @@ jobs:
           cat > "$RUNNER_TEMP/LoadNativeLibrary.java" <<'JAVA'
           public class LoadNativeLibrary {
               public static void main(String[] args) {
-                  System.out.println(io.github.aaif_goose.GooseKt.openaiDefaultModel());
+                  System.out.println(org.oi_kit.Oi_kitKt.openaiDefaultModel());
               }
           }
           JAVA

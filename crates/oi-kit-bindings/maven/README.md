@@ -1,7 +1,7 @@
 # oi-kit Maven package
 
 This project packages the UniFFI-generated Kotlin/JVM bindings for `oi-kit-bindings`
-as the Maven artifact `io.github.aaif-goose:oi-kit`.
+as the Maven artifact `org.oi-kit:oi-kit`.
 
 The artifact version is read from `crates/oi-kit-bindings/Cargo.toml`, so it stays in
 lockstep with the Rust crate version. The jar includes the generated Kotlin API
