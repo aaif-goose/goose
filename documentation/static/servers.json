@@ -804,6 +804,18 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "lemlist",
+    "name": "lemlist",
+    "description": "Run sales outreach in lemlist: campaigns and their stats, email and LinkedIn sequences, leads, B2B people search, and domain deliverability",
+    "type": "streamable-http",
+    "url": "https://app.lemlist.com/mcp",
+    "link": "https://github.com/l3mpire/lemlist-plugin",
+    "installation_notes": "Hosted remote server, official from lemlist. Sign in with your lemlist account via OAuth on first connect; no API key to paste.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 
 ]
