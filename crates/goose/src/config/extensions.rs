@@ -393,7 +393,7 @@ mod tests {
         let original = "extensions: {}\n";
         std::fs::write(&file, original).unwrap();
         let config = Config::new_with_file_secrets(&file, dir.path().join("secrets.yaml")).unwrap();
-        std::fs::create_dir(file.with_extension("tmp")).unwrap();
+        std::fs::create_dir(dir.path().join("config.yaml.lock")).unwrap();
         let entries = [
             builtin_entry("io.example/weather", true),
             builtin_entry("io.other/weather", true),

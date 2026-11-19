@@ -887,6 +887,7 @@ impl Config {
         update: impl FnOnce(&mut Mapping) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         let mut values = match std::fs::read_to_string(self.write_path()) {
             Ok(content) => parse_yaml_content(&content)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Mapping::new(),
