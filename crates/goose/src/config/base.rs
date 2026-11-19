@@ -1499,6 +1499,9 @@ pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
 
 impl crate::agents::extension_config::ExtensionConfigResolver for Config {
     fn get_secret(&self, key: &str) -> anyhow::Result<String> {
+        if let Some(secret) = crate::agents::extension_config::client_secret(key) {
+            return secret;
+        }
         Ok(self.get_secret::<String>(key)?)
     }
 }

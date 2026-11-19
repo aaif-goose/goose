@@ -40,7 +40,7 @@ impl ToolInfo {
 
 #[cfg(test)]
 mod tests {
-    use crate::agents::extension_config::{Envs, ExtensionConfig};
+    use crate::agents::extension_config::{hold_client_secret, Envs, ExtensionConfig};
     use crate::config;
     use test_case::test_case;
 
@@ -547,6 +547,46 @@ timeout: 300",
         .unwrap();
         cfg.set("MY_SECRET", &"secret_value", true).unwrap();
         assert_eq!(config.resolve(&cfg).await.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_hold_client_secret_keys_by_value() {
+        let key = hold_client_secret("held-value-a".into());
+        assert_eq!(hold_client_secret("held-value-a".into()), key);
+        assert_ne!(hold_client_secret("held-value-b".into()), key);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fails_for_client_secret_not_held_by_this_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = config::Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let key = "GOOSE_CLIENT_SECRET_from_another_process".to_string();
+        let config =
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "test".into(),
+                description: String::new(),
+                uri: "https://example.com/mcp".into(),
+                envs: Envs::default(),
+                env_keys: vec![key.clone()],
+                headers: [("Authorization".into(), format!("${{{key}}}"))].into(),
+                timeout: None,
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: None,
+                available_tools: vec![],
+            });
+
+        let error = config.resolve(&cfg).await.unwrap_err().to_string();
+        assert!(
+            error.contains("send this MCP server again"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

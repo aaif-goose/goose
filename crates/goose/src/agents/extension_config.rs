@@ -5,9 +5,47 @@ pub use oi_kit_agent::extension::{
     ProcessExit, DEFAULT_EXTENSION_TIMEOUT,
 };
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 pub const DEFAULT_EXTENSION: &str = "developer";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
+
+const CLIENT_SECRET_PREFIX: &str = "GOOSE_CLIENT_SECRET_";
+
+static CLIENT_SECRETS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
+
+pub(crate) fn hold_client_secret(value: String) -> String {
+    let mut secrets = CLIENT_SECRETS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(key) = secrets
+        .iter()
+        .find_map(|(key, held)| (*held == value).then(|| key.clone()))
+    {
+        return key;
+    }
+    let key = format!("{CLIENT_SECRET_PREFIX}{}", uuid::Uuid::new_v4().simple());
+    secrets.insert(key.clone(), value);
+    key
+}
+
+pub(crate) fn client_secret(key: &str) -> Option<anyhow::Result<String>> {
+    if !key.starts_with(CLIENT_SECRET_PREFIX) {
+        return None;
+    }
+    let value = CLIENT_SECRETS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(key)
+        .cloned();
+    Some(value.ok_or_else(|| {
+        anyhow::anyhow!(
+            "secret '{key}' was sent by an ACP client and is only held in memory by the \
+             goose process it was sent to; send this MCP server again when loading the session"
+        )
+    }))
+}
 
 // Keep transport variants directly matchable, like the oi-kit transport enum;
 // boxing here would require a second match just to inspect transport fields.
