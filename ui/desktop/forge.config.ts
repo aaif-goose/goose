@@ -60,6 +60,14 @@ if (process.env.APPLE_TEAM_ID) {
 module.exports = {
   packagerConfig: cfg,
   rebuildConfig: {},
+  hooks: {
+    // Workaround for electron/forge#4444 (q leaves Electron running); remove once Forge releases #4437.
+    postStart: async (_forgeConfig, appProcess) => {
+      const forwardSigint = () => appProcess.kill('SIGINT');
+      process.prependListener('SIGINT', forwardSigint);
+      appProcess.once('exit', () => process.off('SIGINT', forwardSigint));
+    },
+  },
   publishers: [
     {
       name: '@electron-forge/publisher-github',
