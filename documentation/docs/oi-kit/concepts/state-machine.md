@@ -114,4 +114,4 @@ effects or guarantee that work started outside the async task has stopped.
 
 Next, read [Operations](/docs/oi-kit/concepts/operations) to see how to compose a
 policy into this cycle. The full API is in
-[`goose-agent::machine`](https://docs.rs/goose-agent/latest/goose_agent/machine/).
+[`oi-kit-agent::machine`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/machine/).

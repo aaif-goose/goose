@@ -796,7 +796,7 @@ Groq offers several open source models that support tool calling, including:
 - **llama-3.3-70b-versatile** - Meta's Llama 3.3 model for versatile applications
 - **llama-3.1-8b-instant** - Meta's Llama 3.1 model for fast inference
 
-For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/groq.json).
+For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/groq.json).
 
 To set up Groq with goose, follow these steps:
 
@@ -828,7 +828,7 @@ To set up Groq with goose, follow these steps:
 ### EmpirioLabs AI
 [EmpirioLabs AI](https://empiriolabs.ai/) offers specialized AI model hosting for open, proprietary, and custom stacks, with streaming chat models. To use EmpirioLabs AI with goose, you need an API key from [EmpirioLabs AI](https://platform.empiriolabs.ai/dashboard/api-keys).
 
-EmpirioLabs AI serves chat models that support tool calling. The [model catalog](https://empiriolabs.ai/models) lists the current models and their context windows, and the live list is also available at `https://api.empiriolabs.ai/v1/models`. For the EmpirioLabs AI models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs AI documentation](https://docs.empiriolabs.ai).
+EmpirioLabs AI serves chat models that support tool calling. The [model catalog](https://empiriolabs.ai/models) lists the current models and their context windows, and the live list is also available at `https://api.empiriolabs.ai/v1/models`. For the EmpirioLabs AI models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs AI documentation](https://docs.empiriolabs.ai).
 
 To set up EmpirioLabs AI with goose, follow these steps:
 
@@ -867,7 +867,7 @@ FuturMix offers models that support tool calling, including:
 - **deepseek-chat** - DeepSeek V3 with 131K context
 - **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
 
-For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/futurmix.json).
+For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/futurmix.json).
 
 To set up FuturMix with goose, follow these steps:
 
@@ -906,7 +906,7 @@ Novita AI offers many models that support tool calling, including:
 - **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
 - **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
 
-For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/novita.json).
+For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/novita.json).
 
 To set up Novita AI with goose, follow these steps:
 
@@ -943,7 +943,7 @@ Routstr aggregates models from many upstream providers, including:
 - **deepseek-v4-pro** — DeepSeek V4 Pro
 - **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
 
-`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/routstr.json).
+`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-providers/src/declarative/definitions/routstr.json).
 
 To set up Routstr with goose, follow these steps:
 

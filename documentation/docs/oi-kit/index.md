@@ -47,14 +47,14 @@ compose agent behavior and when to write your own operation or provider.
 ### [Reference](/docs/oi-kit/reference)
 
 Look up the generated Rust APIs for the
-[agent runtime](https://docs.rs/goose-agent/latest/goose_agent/),
-[providers](https://docs.rs/goose-providers/latest/goose_providers/), and
-[context management](https://docs.rs/goose-context-management/latest/goose_context_management/).
+[agent runtime](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/),
+[providers](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/), and
+[context management](https://docs.rs/oi-kit-context-management/latest/oi_kit_context_management/).
 Explore the shared provider bindings through the
 [Python API](/docs/oi-kit/sdk/api-reference?language=python) and
 [Kotlin API](/docs/oi-kit/sdk/api-reference?language=kotlin), with runnable examples in
-[Python](https://github.com/aaif-goose/goose/blob/main/crates/goose-sdk/examples/uniffi/provider.py)
-and [Kotlin](https://github.com/aaif-goose/goose/blob/main/crates/goose-sdk/examples/uniffi/kotlin/src/main/kotlin/Main.kt).
+[Python](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-bindings/examples/uniffi/provider.py)
+and [Kotlin](https://github.com/aaif-goose/goose/blob/main/crates/oi-kit-bindings/examples/uniffi/kotlin/src/main/kotlin/Main.kt).
 For apps using goose as a backend, consult the [ACP reference](/docs/oi-kit/acp/reference).
 Use the reference when you need exact types, methods, and configuration details
 while building.

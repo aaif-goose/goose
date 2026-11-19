@@ -104,13 +104,13 @@ The example uses three oi-kit crates:
 
 ```toml
 [dependencies]
-goose-agent = "=0.1.0-alpha.12"
-goose-provider-types = "=0.1.0-alpha.12"
-goose-providers = { version = "=0.1.0-alpha.12", features = ["rustls-tls"] }
+oi-kit-agent = "=0.1.0-alpha.12"
+oi-kit-provider-types = "=0.1.0-alpha.12"
+oi-kit-providers = { version = "=0.1.0-alpha.12", features = ["rustls-tls"] }
 ```
 
-`goose-agent` provides the state machine and operations. `goose-provider-types`
-provides shared interfaces and message types. `goose-providers` supplies the
+`oi-kit-agent` provides the state machine and operations. `oi-kit-provider-types`
+provides shared interfaces and message types. `oi-kit-providers` supplies the
 OpenAI implementation. The `rustls-tls` feature enables HTTPS for this setup.
 The [full manifest](https://github.com/jamadeo/ngrc/blob/dc25c579cd40d85f8d90b61e80cbf02b8838564f/Cargo.toml)
 also includes Tokio, serialization, and the typed tool dependencies.

@@ -10,7 +10,7 @@ Huddle is a small desktop application for talking to a local agent. A live voice
 model handles the conversation. When a request needs work, Huddle passes it to
 an ACP agent and sends the result back to the voice model to speak aloud.
 
-Built with **oi-kit + ACP**: the live provider interface from `goose-providers`,
+Built with **oi-kit + ACP**: the live provider interface from `oi-kit-providers`,
 with goose or another ACP agent doing the delegated work.
 
 [Source](https://github.com/jamadeo/goose-huddle)

@@ -46,7 +46,7 @@ Suppose an application should allow at most three assistant turns for each
 user request. Once the current tool results have been saved, it should hand
 control back to the user instead of making another model call.
 
-This example illustrates the `Operation` contract. For an application turn limit, use the reusable `goose_agent::max_turns::MaxTurnsOperation` instead; its usage is shown after the example.
+This example illustrates the `Operation` contract. For an application turn limit, use the reusable `oi_kit_agent::max_turns::MaxTurnsOperation` instead; its usage is shown after the example.
 
 We can implement this without changing inference or the state machine. This
 native Rust operation works with any session and any effect type that can
@@ -55,11 +55,11 @@ represent a `Message`:
 ```rust
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::operation::{
+use oi_kit_agent::operation::{
     assistant_turn_count, ends_turn, messages_since_kickoff,
     not_applicable, yielded_with, Emitter, Operation, OperationResult,
 };
-use goose_provider_types::conversation::{message::Message, Conversation};
+use oi_kit_provider_types::conversation::{message::Message, Conversation};
 
 struct TurnLimit {
     max_turns: u32,
@@ -126,7 +126,7 @@ on assistant turns, not a dollar, token, or tool-call budget.
 `MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`:
 
 ```rust
-use goose_agent::max_turns::MaxTurnsOperation;
+use oi_kit_agent::max_turns::MaxTurnsOperation;
 
 let turn_limit = MaxTurnsOperation::new(3);
 ```
@@ -137,21 +137,21 @@ At exhaustion, it appends a user-visible `ResourceExhausted` error and yields. Y
 
 ### Reusable oi-kit components {#reusable-gdk-components}
 
-These are public APIs in `goose-agent`; your application supplies the required
+These are public APIs in `oi-kit-agent`; your application supplies the required
 tools, provider, or subagent runner:
 
 | Component                                                                                                    | Purpose                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| [`ToolOperation`](https://docs.rs/goose-agent/latest/goose_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
-| [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
-| [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
-| [`ExitOnErrorOperation`](https://docs.rs/goose-agent/latest/goose_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
-| [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
-| [`EmptyResponseOperation`](https://docs.rs/goose-agent/latest/goose_agent/empty_response/struct.EmptyResponseOperation.html) | Retry empty provider responses before exposing the failure. |
-| [`SteerOperation`](https://docs.rs/goose-agent/latest/goose_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
-| [`SlashCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/slash_command/struct.SlashCommandOperation.html) | Run the command named by a kickoff message that starts with `/`, using the commands its operations offer. |
-| [`BangCommandOperation`](https://docs.rs/goose-agent/latest/goose_agent/bang_command/struct.BangCommandOperation.html) | Turn a user message beginning with `!` into a call to a tool you name, without inference. |
-| [`FinalOutputOperation`](https://docs.rs/goose-agent/latest/goose_agent/final_output/struct.FinalOutputOperation.html) | Offer a structured final output tool for the schema your `FinalOutputSchemaSource` returns, validate the model's answer, and remind the model to call it. |
+| [`ToolOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
+| [`SubagentOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
+| [`MaxTurnsOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
+| [`ExitOnErrorOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/exit_on_error/struct.ExitOnErrorOperation.html) | Mark the boundary after error recovery operations and yield when an unresolved error remains. |
+| [`InferenceRunner`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
+| [`EmptyResponseOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/empty_response/struct.EmptyResponseOperation.html) | Retry empty provider responses before exposing the failure. |
+| [`SteerOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/steer/struct.SteerOperation.html)          | Incorporate queued user guidance between model and tool turns. |
+| [`SlashCommandOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/slash_command/struct.SlashCommandOperation.html) | Run the command named by a kickoff message that starts with `/`, using the commands its operations offer. |
+| [`BangCommandOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/bang_command/struct.BangCommandOperation.html) | Turn a user message beginning with `!` into a call to a tool you name, without inference. |
+| [`FinalOutputOperation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/final_output/struct.FinalOutputOperation.html) | Offer a structured final output tool for the schema your `FinalOutputSchemaSource` returns, validate the model's answer, and remind the model to call it. |
 
 ### Operations in goose
 
@@ -204,4 +204,4 @@ Cancellation does not roll back external actions.
 
 For a larger example, [GooseBusters](/docs/oi-kit/demos/goosebusters) uses custom
 operations to coordinate a phone call. The full contract and result types are
-in [`goose-agent::operation`](https://docs.rs/goose-agent/latest/goose_agent/operation/).
+in [`oi-kit-agent::operation`](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/operation/).

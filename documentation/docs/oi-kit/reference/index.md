@@ -7,13 +7,13 @@ description: oi-kit crates and generated API documentation for Rust, Python, and
 # oi-kit Reference
 
 oi-kit is a set of Rust crates. Use the crates your application needs, or use the
-Python and Kotlin bindings provided by `goose-sdk`.
+Python and Kotlin bindings provided by `oi-kit-bindings`.
 
 ## Crates
 
 Each crate links to its generated Rust documentation on docs.rs.
 
-### [goose-agent](https://docs.rs/goose-agent/latest/goose_agent/)
+### [oi-kit-agent](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/)
 
 The agent runtime: a state machine built from an ordered list of operations and
 inference steps. Each step can inspect the conversation, produce effects, or
@@ -29,7 +29,7 @@ application-specific behavior stay under your control. Persistence is supplied
 by your runtime, not an embedded database. The core also supports WebAssembly
 hosts, with platform-specific differences described in the crate documentation.
 
-### [goose-provider-types](https://docs.rs/goose-provider-types/latest/goose_provider_types/)
+### [oi-kit-provider-types](https://docs.rs/oi-kit-provider-types/latest/oi_kit_provider_types/)
 
 The common language between an application and a model backend. It defines the
 `Provider` trait, `ModelConfig`, `Conversation`, messages and their content,
@@ -43,9 +43,9 @@ without needing the provider implementations or agent runtime. A provider
 implements streaming through `MessageStream`; the default `complete` method
 collects that stream into a message and usage. Text can arrive incrementally,
 while tool calls are emitted once their arguments are assembled.
-`goose-providers` re-exports these modules when you also need a working backend.
+`oi-kit-providers` re-exports these modules when you also need a working backend.
 
-### [goose-providers](https://docs.rs/goose-providers/latest/goose_providers/)
+### [oi-kit-providers](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/)
 
 The model backend implementations. It includes providers for services such as
 OpenAI, Anthropic, Google Gemini, Azure AI Foundry, and Databricks, as well as
@@ -63,7 +63,7 @@ and voice interfaces support applications beyond text completions, with an
 optional WebSocket transport. For native HTTPS connections, enable either
 `rustls-tls` or `native-tls`; neither is enabled by default.
 
-### [goose-context-management](https://docs.rs/goose-context-management/latest/goose_context_management/)
+### [oi-kit-context-management](https://docs.rs/oi-kit-context-management/latest/oi_kit_context_management/)
 
 Summarization and conversation compaction for histories that are getting too
 large for a model's context window. `summarize` turns a slice of messages into
@@ -79,7 +79,7 @@ fallback, `CompactingProvider` wraps a provider and retries a context-length
 error once with a summarized history. Compaction does not require the agent
 state machine, and the trait-based API leaves saving the result to your app.
 
-### [goose-local-inference](https://docs.rs/goose-local-inference/latest/goose_local_inference/)
+### [oi-kit-local-inference](https://docs.rs/oi-kit-local-inference/latest/oi_kit_local_inference/)
 
 Runs models on the user's machine, using llama.cpp for GGUF models and an
 optional MLX backend on Apple silicon. It handles loading models, sharing loaded
@@ -88,7 +88,7 @@ interprets model output, including tool calls and reasoning blocks, and handles
 image input for supported models. This is the inference engine, not a separate
 model server your application must launch.
 
-Use it through `goose-providers`' `local-inference` feature to get a
+Use it through `oi-kit-providers`' `local-inference` feature to get a
 `LocalInferenceProvider` that implements the same `Provider` interface as remote
 backends. Models can be loaded from local paths; the optional `hf-hub` feature
 adds Hugging Face discovery, downloads, cache inventory, and model-management
@@ -96,7 +96,7 @@ APIs. CUDA, Vulkan, and MLX are selected through features. These backends have
 native build requirements, and the models you can run depend on available
 memory and hardware.
 
-### [goose-download-manager](https://docs.rs/goose-download-manager/latest/goose_download_manager/)
+### [oi-kit-download-manager](https://docs.rs/oi-kit-download-manager/latest/oi_kit_download_manager/)
 
 Background downloads for model files, with progress that an application can
 display. A `DownloadManager` tracks jobs by model ID and exposes status, bytes
@@ -109,10 +109,10 @@ partial transfers, retries transient failures, and renames completed files into
 place. Bearer-token support lets it fetch files from authenticated endpoints.
 Use this crate when your application already knows the download URLs and
 destination paths. Model discovery and cache inventory belong to the
-`hf-hub` layer in `goose-local-inference`; the download manager itself does not
+`hf-hub` layer in `oi-kit-local-inference`; the download manager itself does not
 choose a model or load it for inference.
 
-### [goose-sdk-types](https://docs.rs/goose-sdk-types/latest/goose_sdk_types/)
+### [goose-acp-types](https://docs.rs/goose-acp-types/latest/goose_acp_types/)
 
 The shared wire types for goose's additions to ACP. Its request, response, and
 notification types describe methods under `_goose/*`, including extension and
@@ -129,15 +129,13 @@ or establish a connection: use an ACP client library for transport and standard
 protocol methods, and the [goose ACP reference](/docs/oi-kit/acp/reference) for the
 additional methods.
 
-### [goose-sdk](https://docs.rs/goose-sdk/latest/goose_sdk/)
+### [oi-kit-bindings](https://docs.rs/oi-kit-bindings/latest/oi_kit_bindings/)
 
-The cross-language bindings package and a small Rust entry point for the shared
-wire types. With default features, it re-exports `custom_requests` and
-`custom_notifications` from `goose-sdk-types`. It is not an umbrella crate that
+The cross-language bindings package. It is not an umbrella crate that
 automatically assembles an agent or exposes every oi-kit component; Rust
 applications building an in-process runtime use the component crates above.
 
-The optional `uniffi` feature exposes native APIs to Python and Kotlin. These
+The `uniffi` feature exposes native APIs to Python and Kotlin. These
 bindings let you construct providers, list models, send typed message and tool
 content, stream or collect completions, and compact conversations. They also
 include typed decision requests and observability hooks for provider calls.

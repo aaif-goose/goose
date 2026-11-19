@@ -37,12 +37,12 @@ Use oi-kit's Rust crates to assemble an agent or call models directly. Python an
 
 Use the docs.rs version selector to match your dependencies; `latest` may differ from the version you installed.
 
-- [StateMachine](https://docs.rs/goose-agent/latest/goose_agent/machine/struct.StateMachine.html): Assemble and run steps, or drive stepping and effect application yourself.
-- [Operation](https://docs.rs/goose-agent/latest/goose_agent/operation/trait.Operation.html): Implement custom behavior and inference contributions.
-- [Tools](https://docs.rs/goose-agent/latest/goose_agent/tool/index.html): Define and execute typed tools.
-- [Provider contract](https://docs.rs/goose-provider-types/latest/goose_provider_types/base/trait.Provider.html): Implement streaming model calls and inspect capabilities.
-- [Provider implementations](https://docs.rs/goose-providers/latest/goose_providers/): Construct backends and configure HTTP authentication.
-- [Compaction](https://docs.rs/goose-context-management/latest/goose_context_management/): Summarize conversations through your own storage interfaces.
+- [StateMachine](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/machine/struct.StateMachine.html): Assemble and run steps, or drive stepping and effect application yourself.
+- [Operation](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/operation/trait.Operation.html): Implement custom behavior and inference contributions.
+- [Tools](https://docs.rs/oi-kit-agent/latest/oi_kit_agent/tool/index.html): Define and execute typed tools.
+- [Provider contract](https://docs.rs/oi-kit-provider-types/latest/oi_kit_provider_types/base/trait.Provider.html): Implement streaming model calls and inspect capabilities.
+- [Provider implementations](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/): Construct backends and configure HTTP authentication.
+- [Compaction](https://docs.rs/oi-kit-context-management/latest/oi_kit_context_management/): Summarize conversations through your own storage interfaces.
 
 ### Generated Python and Kotlin APIs
 

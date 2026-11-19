@@ -20,7 +20,7 @@ requires them.
 
 ## Authentication mechanisms
 
-The following mechanisms are defined in `goose-providers::api_client`:
+The following mechanisms are defined in `oi-kit-providers::api_client`:
 
 | Mechanism                 | Use                                                                                  |
 | ------------------------- | ------------------------------------------------------------------------------------ |
@@ -70,7 +70,7 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::api_client::AuthProvider;
+use oi_kit_providers::api_client::AuthProvider;
 
 struct AppAuth {
     token: Arc<RwLock<String>>,
@@ -109,4 +109,4 @@ connection has its own authentication. See
 [Build an app with goose](/docs/oi-kit/acp#use-a-server-instead) for that path.
 
 The full HTTP authentication and TLS APIs are in
-[`goose-providers::api_client`](https://docs.rs/goose-providers/latest/goose_providers/api_client/).
+[`oi-kit-providers::api_client`](https://docs.rs/oi-kit-providers/latest/oi_kit_providers/api_client/).

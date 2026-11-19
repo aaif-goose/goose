@@ -10,7 +10,7 @@ Tell lifewiki something about your life and an agent turns it into a personal
 wiki. Add a later note that contradicts an earlier one, and the agent updates
 the relevant pages while keeping the original notes and their history.
 
-Built with **oi-kit**: `goose-agent`, `goose-providers`, and optional local inference.
+Built with **oi-kit**: `oi-kit-agent`, `oi-kit-providers`, and optional local inference.
 
 [Source](https://github.com/jamadeo/lifewiki) ·
 [Watch the recording](https://github.com/jamadeo/lifewiki/blob/main/demo/demo.mov)

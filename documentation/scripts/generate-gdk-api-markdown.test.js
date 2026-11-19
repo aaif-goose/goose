@@ -50,7 +50,7 @@ test("publishes the linked APIs and preserves versioned snapshots", (t) => {
         path.join(outputDir, doc.version, filename),
         "utf8",
       );
-      assert.ok(snapshot.includes(`goose-sdk ${doc.version}`));
+      assert.ok(snapshot.includes(`oi-kit-bindings ${doc.version}`));
       if (index === 0) assert.equal(latest, snapshot);
       else assert.notEqual(latest, snapshot);
       for (const func of doc.functions) {
