@@ -32,8 +32,8 @@ before deciding what to do next.
 
 Read [Hello World](/docs/oi-kit/hello-world) for a concrete assembly of these
 pieces. These pages explain the design; the [reference](/docs/oi-kit/reference)
-links to the full APIs. Examples here follow the oi-kit APIs in this checkout
-(`0.1.0-alpha.15`); Hello World follows the example's pinned alpha.12 release.
+links to the full APIs. Examples here and in Hello World follow oi-kit
+`0.1.0-alpha.15`.
 
 If you want an existing agent behind your own interface instead, you can
-[build an app with goose over ACP](/docs/oi-kit/acp) without assembling the runtime.
+[build an app over ACP](/docs/oi-kit/acp) without assembling the runtime.

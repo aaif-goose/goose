@@ -18,11 +18,11 @@ chooses the provider, tools, prompt, storage, and interface.
 The code blocks below are selected excerpts, with some setup shortened for
 clarity. Use the linked repository for the complete runnable program, imports,
 and session store. This walkthrough uses revision `dc25c57`, which pins oi-kit
-`0.1.0-alpha.12`; newer alpha releases may have different APIs.
+`0.1.0-alpha.15`; newer alpha releases may have different APIs.
 
 ## Run it first
 
-You need Rust 1.94.1 or later, macOS or Linux with `/bin/bash`, and an OpenAI
+You need Rust 1.95.0 or later, macOS or Linux with `/bin/bash`, and an OpenAI
 API key. Choose a model that supports tool calling. You do not need the goose
 CLI, a goose configuration file, or an MCP server.
 
@@ -104,9 +104,9 @@ The example uses three oi-kit crates:
 
 ```toml
 [dependencies]
-oi-kit-agent = "=0.1.0-alpha.12"
-oi-kit-provider-types = "=0.1.0-alpha.12"
-oi-kit-providers = { version = "=0.1.0-alpha.12", features = ["rustls-tls"] }
+oi-kit-agent = "=0.1.0-alpha.15"
+oi-kit-provider-types = "=0.1.0-alpha.15"
+oi-kit-providers = { version = "=0.1.0-alpha.15", features = ["rustls-tls"] }
 ```
 
 `oi-kit-agent` provides the state machine and operations. `oi-kit-provider-types`
@@ -422,4 +422,4 @@ operation in the machine's ordered list.
 
 Explore the [demos](/docs/oi-kit/demos) for larger applications, or use the
 [reference](/docs/oi-kit/reference) to find the component APIs. For this example,
-select version `0.1.0-alpha.12` in the generated Rust documentation.
+select version `0.1.0-alpha.15` in the generated Rust documentation.
