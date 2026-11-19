@@ -2,7 +2,7 @@
 title: oi-kit
 displayed_sidebar: gdkSidebar
 hide_table_of_contents: true
-description: Build agents with oi-kit.
+description: Build agents with oi-kit, the Open Intelligence Kit.
 ---
 
 # oi-kit
@@ -10,9 +10,10 @@ description: Build agents with oi-kit.
 Build agents that run across native applications, servers, and the browser,
 resume from persisted state, and give you control over how they work.
 
-oi-kit is the set of reusable agent-runtime components used to build goose. It
-provides model integrations, a composable state machine, tools, context
-management, and the interfaces needed to run an agent inside your application.
+oi-kit (Open Intelligence Kit) is the set of reusable agent-runtime components
+used to build goose. It provides model integrations, a composable state machine,
+tools, context management, and the interfaces needed to run an agent inside your
+application.
 
 ## Explore oi-kit {#explore-gdk}
 
