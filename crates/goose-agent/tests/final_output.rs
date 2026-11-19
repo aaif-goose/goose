@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use goose_agent::final_output::{
     FinalOutputOperation, FinalOutputSchemaSource, FinalOutputTool,
     FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_NOT_ALONE_MESSAGE,
@@ -10,11 +9,8 @@ use goose_agent::machine::MachineSession;
 use goose_agent::operation::{
     ConversationEffect, Emitter, Operation, OperationResult, RunStatus, StepResult,
 };
-use goose_provider_types::base::{MessageStream, Provider};
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
-use goose_provider_types::errors::ProviderError;
-use goose_provider_types::model::ModelConfig;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, Role, Tool};
 use rmcp::object;
 use serde_json::{json, Value};
@@ -43,31 +39,6 @@ impl FinalOutputSchemaSource<Session> for SessionSchemaSource {
     }
 }
 
-struct TestProvider {
-    supports_builtin_tools: bool,
-}
-
-#[async_trait]
-impl Provider for TestProvider {
-    fn get_name(&self) -> &str {
-        "final-output-test"
-    }
-
-    fn supports_builtin_tools(&self) -> bool {
-        self.supports_builtin_tools
-    }
-
-    async fn stream(
-        &self,
-        _model_config: &ModelConfig,
-        _system: &str,
-        _messages: &[Message],
-        _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
-        unreachable!("final output never calls the provider")
-    }
-}
-
 fn answer_schema() -> Value {
     json!({
         "type": "object",
@@ -77,12 +48,7 @@ fn answer_schema() -> Value {
 }
 
 fn operation(supports_builtin_tools: bool) -> FinalOutputOperation<Session> {
-    FinalOutputOperation::new(
-        Arc::new(SessionSchemaSource),
-        Arc::new(TestProvider {
-            supports_builtin_tools,
-        }),
-    )
+    FinalOutputOperation::new(Arc::new(SessionSchemaSource), supports_builtin_tools)
 }
 
 fn session(schema: Option<Value>, messages: Vec<Message>) -> Session {
@@ -331,7 +297,7 @@ async fn stops_with_an_error_when_the_provider_cannot_offer_the_tool() {
     assert_eq!(messages.len(), 1);
     assert!(messages[0]
         .as_concat_text()
-        .contains("provider `final-output-test` can't receive the `final_output` tool"));
+        .contains("the provider can't receive the `final_output` tool"));
     assert!(result.effects.iter().any(|effect| matches!(
         effect,
         ConversationEffect::SetMessageVisibility {

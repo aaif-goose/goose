@@ -131,8 +131,11 @@ pub(crate) fn build_state_machine(
     );
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(
-            FinalOutputOperation::new(Arc::new(GooseFinalOutputSchemaSource), provider.clone())
-                .with_unsupported_message(recipe_unsupported_message(provider.get_name())),
+            FinalOutputOperation::new(
+                Arc::new(GooseFinalOutputSchemaSource),
+                provider.supports_builtin_tools(),
+            )
+            .with_unsupported_message(recipe_unsupported_message(provider.get_name())),
         ),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))

@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_provider_types::base::Provider;
 use goose_provider_types::conversation::message::{Message, MessageContent, ToolRequest};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
@@ -28,13 +27,9 @@ pub const FINAL_OUTPUT_NOT_ALONE_MESSAGE: &str =
     "final_output was not accepted because it was called together with other tools. \
      Read the results of those tools, then call final_output on its own.";
 
-fn default_unsupported_message(provider_name: &str) -> String {
-    format!(
-        "This session asks for structured final output, but provider `{provider_name}` can't \
-         receive the `final_output` tool, so the model can never provide it. Run it with a \
-         different provider."
-    )
-}
+const DEFAULT_UNSUPPORTED_MESSAGE: &str =
+    "This session asks for structured final output, but the provider can't receive the \
+     `final_output` tool, so the model can never provide it. Run it with a different provider.";
 
 pub trait FinalOutputSchemaSource<S>: MaybeSend + MaybeSync {
     fn json_schema(&self, session: &S) -> Option<Value>;
@@ -297,21 +292,21 @@ where
 
 pub struct FinalOutputOperation<S> {
     source: Arc<dyn FinalOutputSchemaSource<S>>,
-    provider: Arc<dyn Provider>,
-    unsupported_message: Option<String>,
+    supports_builtin_tools: bool,
+    unsupported_message: String,
 }
 
 impl<S> FinalOutputOperation<S> {
-    pub fn new(source: Arc<dyn FinalOutputSchemaSource<S>>, provider: Arc<dyn Provider>) -> Self {
+    pub fn new(source: Arc<dyn FinalOutputSchemaSource<S>>, supports_builtin_tools: bool) -> Self {
         Self {
             source,
-            provider,
-            unsupported_message: None,
+            supports_builtin_tools,
+            unsupported_message: DEFAULT_UNSUPPORTED_MESSAGE.to_string(),
         }
     }
 
     pub fn with_unsupported_message(mut self, message: impl Into<String>) -> Self {
-        self.unsupported_message = Some(message.into());
+        self.unsupported_message = message.into();
         self
     }
 
@@ -366,12 +361,8 @@ where
             return not_applicable();
         };
 
-        if !self.provider.supports_builtin_tools() {
-            let message = self
-                .unsupported_message
-                .clone()
-                .unwrap_or_else(|| default_unsupported_message(self.provider.get_name()));
-            return stop_with_error(conversation, message, emit);
+        if !self.supports_builtin_tools {
+            return stop_with_error(conversation, self.unsupported_message.clone(), emit);
         }
 
         let messages = messages_since_kickoff(conversation)?;
