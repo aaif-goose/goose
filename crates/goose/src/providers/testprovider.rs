@@ -13,9 +13,9 @@ use super::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::conversation::message::{Message, ToolResponse};
 use crate::utils::bytes_to_hex;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::{CallToolResult, Tool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,7 +139,7 @@ impl TestProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for TestProvider {
+impl oi_kit_providers::base::ProviderDescriptor for TestProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             Self::PROVIDER_NAME,
@@ -223,7 +223,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use chrono::Utc;
-    use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::{Role, TextContent};
     use std::env;
 

@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use goose::providers::utils::RequestLog;
-use goose_providers::request_log::RequestLogger;
+use oi_kit_providers::request_log::RequestLogger;
 use serial_test::serial;
 use std::fs;
 use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};

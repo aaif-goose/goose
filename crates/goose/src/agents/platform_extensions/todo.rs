@@ -5,8 +5,8 @@ use crate::session::extension_data;
 use crate::session::extension_data::ExtensionState;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::mcp::client::Error;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
     Tool, ToolAnnotations,

@@ -5,7 +5,7 @@ use crate::agents::extension::{name_to_key, ExtensionError, ExtensionResult};
 use crate::agents::extension_runtime::{docker_exec, spawn_stdio};
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::search_path::SearchPaths;
-use goose_agent::mcp::client::{ConnectContext, McpClient, McpClientTrait};
+use oi_kit_agent::mcp::client::{ConnectContext, McpClient, McpClientTrait};
 
 pub(super) async fn connect(
     name: &str,

@@ -22,7 +22,7 @@ const MODE_AGENT: &str = "https://agentclientprotocol.com/protocol/session-modes
 
 pub struct CopilotAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for CopilotAcpProvider {
+impl oi_kit_providers::base::ProviderDescriptor for CopilotAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             COPILOT_ACP_PROVIDER_NAME,

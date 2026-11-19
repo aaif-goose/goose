@@ -16,7 +16,7 @@ use crate::conversation::message::MessageContent;
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::Session;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 
 pub struct ToolPairCompactionOperation {
     provider: Arc<dyn Provider>,

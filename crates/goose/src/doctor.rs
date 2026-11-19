@@ -11,7 +11,7 @@ use crate::session::{
     config_path, latest_llm_log_path, read_capped, read_tail, recent_cli_log_paths, Session,
     SessionManager, SystemInfo,
 };
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 
 pub(crate) const DEVELOPER_EXTENSION_REQUIRED_MESSAGE: &str = "**Goose Doctor**\n\n\
 `/doctor` requires the Developer extension, but it is disabled for this session.\n\n\
@@ -151,7 +151,7 @@ async fn save_and_set(
     session_manager: &SessionManager,
     session_id: &str,
     provider: Arc<dyn Provider>,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
 ) -> anyhow::Result<()> {
     let config = Config::global();
     crate::config::set_active_provider(config, provider.get_name(), &model_config.model_name)?;
@@ -165,7 +165,7 @@ async fn save_and_set(
 
 async fn test_provider(
     provider: &dyn Provider,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
 ) -> Result<(), ProviderError> {
     let messages = vec![Message::user().with_text("Say 'hello' and nothing else.")];
     crate::session_context::with_session_id(
@@ -184,7 +184,7 @@ async fn test_provider(
 async fn try_create_and_test(
     provider_name: &str,
     model_name: &str,
-) -> Result<(Arc<dyn Provider>, goose_providers::model::ModelConfig), ProviderError> {
+) -> Result<(Arc<dyn Provider>, oi_kit_providers::model::ModelConfig), ProviderError> {
     let model_config =
         crate::model_config::model_config_from_user_config(provider_name, model_name)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
@@ -201,7 +201,7 @@ async fn try_other_models(
     provider_name: &str,
     skip_model: &str,
     log: &mut Vec<String>,
-) -> Option<(Arc<dyn Provider>, goose_providers::model::ModelConfig)> {
+) -> Option<(Arc<dyn Provider>, oi_kit_providers::model::ModelConfig)> {
     let entry = providers::get_from_registry(provider_name).await.ok()?;
     let temp = entry.create_with_default_model(vec![]).await.ok()?;
     let toolshim = Config::global()
@@ -225,7 +225,7 @@ async fn try_other_models(
 async fn try_other_providers(
     skip: &str,
     log: &mut Vec<String>,
-) -> Option<(Arc<dyn Provider>, goose_providers::model::ModelConfig)> {
+) -> Option<(Arc<dyn Provider>, oi_kit_providers::model::ModelConfig)> {
     for (meta, _) in providers::providers().await {
         if meta.name == skip {
             continue;

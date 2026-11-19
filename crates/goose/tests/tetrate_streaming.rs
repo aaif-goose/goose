@@ -3,7 +3,7 @@ use futures::StreamExt;
 use goose::conversation::message::{Message, MessageContent};
 use goose::providers::base::Provider;
 use goose::providers::tetrate::TetrateProvider;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use rmcp::object;
 use serial_test::serial;

@@ -8,9 +8,9 @@ use crate::providers::base::{
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use crate::providers::google::GOOGLE_DOC_URL;
 use crate::providers::private_file::write_private_file;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 
 const GEMINI_OAUTH_DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 use crate::providers::retry::ProviderRetry;
@@ -890,7 +890,7 @@ impl GeminiOAuthProvider {
 
         let request = (self.request_builder)(request.json(&wrapped))
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        let response = goose_providers::http_status::send_bounded(
+        let response = oi_kit_providers::http_status::send_bounded(
             request,
             Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )
@@ -898,7 +898,7 @@ impl GeminiOAuthProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let text = goose_providers::http_status::read_error_body(response)
+            let text = oi_kit_providers::http_status::read_error_body(response)
                 .await
                 .unwrap_or_else(|| "unknown error".to_string());
 
@@ -928,7 +928,7 @@ impl GeminiOAuthProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for GeminiOAuthProvider {
+impl oi_kit_providers::base::ProviderDescriptor for GeminiOAuthProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             GEMINI_OAUTH_PROVIDER_NAME,

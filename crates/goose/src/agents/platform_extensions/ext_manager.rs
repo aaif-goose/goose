@@ -9,8 +9,8 @@ use crate::config::{get_all_extensions, get_extension_by_name};
 use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::mcp::client::Error;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
     JsonObject, ServerCapabilities, Tool, ToolAnnotations,
@@ -415,9 +415,11 @@ fn search_available_extensions(enabled: &[String]) -> String {
                 ExtensionConfig::Builtin { description, .. }
                 | ExtensionConfig::Platform { description, .. }
                 | ExtensionConfig::External(
-                    goose_agent::extension::ExtensionConfig::StreamableHttp { description, .. },
+                    oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                        description, ..
+                    },
                 )
-                | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+                | ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                     description,
                     ..
                 }) => description.clone(),

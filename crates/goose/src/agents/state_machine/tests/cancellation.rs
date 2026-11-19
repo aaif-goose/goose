@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::{inference::InferenceRunner, tool::ToolOperation};
-use goose_providers::{
+use oi_kit_agent::{inference::InferenceRunner, tool::ToolOperation};
+use oi_kit_providers::{
     base::{MessageStream, Provider},
     conversation::token_usage::{ProviderUsage, Usage},
     errors::ProviderError,

@@ -1415,10 +1415,10 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         crate::session::CliSession::parse_stdio_extension(&extension_command)?
     };
     match &mut extension {
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name, ..
         })
-        | ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        | ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             ..
         }) => {
@@ -2329,7 +2329,7 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 
 async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     use goose::config::extension_install::{install, preview};
-    use goose_agent::extension::registry::{ServerDocument, ServerSelection};
+    use oi_kit_agent::extension::registry::{ServerDocument, ServerSelection};
     use std::io::IsTerminal;
     match command {
         PluginCommand::ImportServer {

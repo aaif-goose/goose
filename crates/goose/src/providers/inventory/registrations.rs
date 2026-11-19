@@ -21,7 +21,7 @@ use crate::providers::ollama::OLLAMA_PROVIDER_NAME;
 use crate::providers::openai::{OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_PROVIDER_NAME};
 use crate::providers::pi_acp::{PI_ACP_BINARY, PI_ACP_PROVIDER_NAME};
 use crate::providers::xai_oauth::TokenCache as XaiOAuthTokenCache;
-use goose_providers::azure_foundry::{endpoint_kind, EndpointKind, AZURE_FOUNDRY_PROVIDER_NAME};
+use oi_kit_providers::azure_foundry::{endpoint_kind, EndpointKind, AZURE_FOUNDRY_PROVIDER_NAME};
 
 pub fn openai_inventory() -> InventoryRegistration {
     InventoryRegistration::new(true, || {

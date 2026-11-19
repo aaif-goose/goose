@@ -19,7 +19,7 @@ pub struct ExtensionEntry {
     pub config: ExtensionConfig,
 }
 
-pub use goose_agent::extension::name_to_key;
+pub use oi_kit_agent::extension::name_to_key;
 
 pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     match config {
@@ -570,7 +570,7 @@ extensions:
     fn test_get_extension_by_name_resolves_saved_entry_by_key() {
         let saved = ExtensionEntry {
             enabled: true,
-            config: ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            config: ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name: "My Tool".to_string(),
                 description: "saved description".to_string(),
                 cmd: "my-tool".to_string(),
@@ -592,7 +592,7 @@ extensions:
         let resolved = get_extension_by_name_with_config(&config, &key).unwrap();
 
         match resolved {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 timeout,
                 available_tools,
                 ..
@@ -730,7 +730,7 @@ extensions:
             .get("brave-search")
             .expect("brave-search extension should parse");
         match &entry.config {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 ..
             }) => {
@@ -764,7 +764,7 @@ extensions:
             .expect("brave-search extension should parse when name is missing and env: is used");
         assert_eq!(entry.config.name(), "brave-search");
         match &entry.config {
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 envs,
                 ..
             }) => {

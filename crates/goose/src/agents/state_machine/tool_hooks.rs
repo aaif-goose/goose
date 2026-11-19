@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use goose_agent::tool_call_state::request_executable;
+use oi_kit_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;

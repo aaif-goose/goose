@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::{
+use oi_kit_providers::{
     decision::{
         DecisionAnswer, DecisionProvider, DecisionQuestion, DecisionRequest, DecisionResponse,
         NoulCriteria,
@@ -403,7 +403,7 @@ impl Operation<Session, GooseEffect> for ContextRelevanceOperation {
         conversation: &Conversation,
         emit: &super::Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let Some(context_tokens) = goose_agent::compaction::proactive_compaction_tokens(
+        let Some(context_tokens) = oi_kit_agent::compaction::proactive_compaction_tokens(
             session,
             conversation,
             &crate::context_mgmt::GooseTokenEstimator,

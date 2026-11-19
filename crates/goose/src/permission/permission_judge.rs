@@ -13,7 +13,7 @@ use std::sync::Arc;
 async fn resolve_model_config(
     session_manager: &crate::session::SessionManager,
     session_id: &str,
-) -> anyhow::Result<goose_providers::model::ModelConfig> {
+) -> anyhow::Result<oi_kit_providers::model::ModelConfig> {
     if !session_id.is_empty() {
         if let Ok(session) = session_manager.get_session(session_id, false).await {
             if let Some(model_config) = session.model_config {

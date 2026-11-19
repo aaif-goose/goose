@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::context_limit::ContextLimitResolver;
+use oi_kit_providers::context_limit::ContextLimitResolver;
 
 use crate::config::Config;
 use crate::providers::base::Provider;

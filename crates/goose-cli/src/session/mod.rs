@@ -377,7 +377,7 @@ impl CliSession {
         });
 
         Ok(ExtensionConfig::External(
-            goose_agent::extension::ExtensionConfig::Stdio {
+            oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name,
                 cmd,
                 args: parts,
@@ -414,7 +414,7 @@ impl CliSession {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "unnamed".to_string());
 
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name,
             uri: extension_url.to_string(),
             envs: Envs::new(HashMap::new()),
@@ -1108,7 +1108,7 @@ impl CliSession {
             .services
             .session_manager
             .update(&self.session_id)
-            .usage(goose_providers::conversation::token_usage::Usage::new(
+            .usage(oi_kit_providers::conversation::token_usage::Usage::new(
                 Some(0),
                 Some(0),
                 Some(0),
@@ -2714,11 +2714,11 @@ fn handle_agent_error(e: &anyhow::Error, is_stream_json_mode: bool) {
         });
     }
 
-    if e.downcast_ref::<goose_providers::errors::ProviderError>()
+    if e.downcast_ref::<oi_kit_providers::errors::ProviderError>()
         .map(|provider_error| {
             matches!(
                 provider_error,
-                goose_providers::errors::ProviderError::ContextLengthExceeded(_)
+                oi_kit_providers::errors::ProviderError::ContextLengthExceeded(_)
             )
         })
         .unwrap_or(false)
@@ -2774,8 +2774,8 @@ fn format_elapsed_time(duration: std::time::Duration) -> String {
 fn build_switched_model_config(
     provider_name: &str,
     model_name: &str,
-    current_model_config: &goose_providers::model::ModelConfig,
-) -> Result<goose_providers::model::ModelConfig> {
+    current_model_config: &oi_kit_providers::model::ModelConfig,
+) -> Result<oi_kit_providers::model::ModelConfig> {
     goose::model_config::model_config_from_user_config(provider_name, model_name)
         .map(|config| {
             config
@@ -2925,7 +2925,7 @@ mod tests {
 
     #[test_case(
         "/usr/bin/my-server",
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "my-server".into(),
             cmd: "/usr/bin/my-server".into(),
             args: vec![],
@@ -2941,7 +2941,7 @@ mod tests {
     )]
     #[test_case(
         "MY_SECRET=s3cret npx -y @modelcontextprotocol/server-everything",
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "npx".into(),
             cmd: "npx".into(),
             args: vec!["-y".into(), "@modelcontextprotocol/server-everything".into()],
@@ -2957,7 +2957,7 @@ mod tests {
     )]
     #[test_case(
         r#""/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java" -classpath "/path/with spaces/lib.jar" Main"#,
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "java".into(),
             cmd: "/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java".into(),
             args: vec!["-classpath".into(), "/path/with spaces/lib.jar".into(), "Main".into()],
@@ -2992,10 +2992,10 @@ mod tests {
         assert_eq!(absolute.name(), "memory");
         assert!(matches!(
             absolute,
-            ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio { cmd, .. }) if cmd == "/usr/local/bin/mcp"
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio { cmd, .. }) if cmd == "/usr/local/bin/mcp"
         ));
         let config = CliSession::parse_stdio_extension("memory:API_KEY=k npx -y srv").unwrap();
-        let ExtensionConfig::External(goose_agent::extension::ExtensionConfig::Stdio {
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name,
             cmd,
             args,
@@ -3053,7 +3053,7 @@ mod tests {
             ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
         ]);
 
-        let current_model_config = goose_providers::model::ModelConfig {
+        let current_model_config = oi_kit_providers::model::ModelConfig {
             model_name: "gpt-4o".to_string(),
             context_limit: Some(128_000),
             temperature: Some(0.25),
@@ -3071,7 +3071,7 @@ mod tests {
 
         let switched =
             build_switched_model_config("openai", "gpt-5.4", &current_model_config).unwrap();
-        let expected = goose_providers::model::ModelConfig::new("gpt-5.4")
+        let expected = oi_kit_providers::model::ModelConfig::new("gpt-5.4")
             .with_canonical_limits("openai")
             .with_temperature(Some(0.25))
             .with_toolshim(true)
@@ -3098,12 +3098,12 @@ mod tests {
             ("GOOSE_THINKING_EFFORT", None::<&str>),
         ]);
 
-        let current = goose_providers::model::ModelConfig::new("gpt-5.4-high")
+        let current = oi_kit_providers::model::ModelConfig::new("gpt-5.4-high")
             .with_canonical_limits("openai");
         assert_eq!(current.model_name, "gpt-5.4");
         assert_eq!(
             current.thinking_effort(),
-            Some(goose_providers::thinking::ThinkingEffort::High)
+            Some(oi_kit_providers::thinking::ThinkingEffort::High)
         );
 
         let switched = build_switched_model_config("openai", "gpt-5.4", &current).unwrap();
@@ -3131,7 +3131,7 @@ mod tests {
 
     #[test_case(
         "https://mcp.kiwi.com", 300,
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "mcp_kiwi_com".into(),
             uri: "https://mcp.kiwi.com".into(),
             envs: Envs::default(),
@@ -3150,7 +3150,7 @@ mod tests {
     )]
     #[test_case(
         "http://localhost:8080/api", 300,
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "localhost_8080_api".into(),
             uri: "http://localhost:8080/api".into(),
             envs: Envs::default(),
@@ -3169,7 +3169,7 @@ mod tests {
     )]
     #[test_case(
         "http://localhost:9090/other", 300,
-        ExtensionConfig::External(goose_agent::extension::ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "localhost_9090_other".into(),
             uri: "http://localhost:9090/other".into(),
             envs: Envs::default(),
@@ -3210,8 +3210,8 @@ mod tests {
 
         sm.update(&old.id)
             .provider_name("anthropic")
-            .model_config(goose_providers::model::ModelConfig::new("test-model"))
-            .accumulated_usage(goose_providers::conversation::token_usage::Usage::new(
+            .model_config(oi_kit_providers::model::ModelConfig::new("test-model"))
+            .accumulated_usage(oi_kit_providers::conversation::token_usage::Usage::new(
                 Some(100),
                 Some(50),
                 Some(150),
@@ -3276,19 +3276,19 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
         ) -> std::result::Result<
             goose::providers::base::MessageStream,
-            goose_providers::errors::ProviderError,
+            oi_kit_providers::errors::ProviderError,
         > {
             Ok(goose::providers::base::stream_from_single_message(
                 Message::assistant().with_text("stub reply"),
                 ProviderUsage::new(
                     "stub".to_string(),
-                    goose_providers::conversation::token_usage::Usage::default(),
+                    oi_kit_providers::conversation::token_usage::Usage::default(),
                 ),
             ))
         }
@@ -3324,7 +3324,7 @@ mod tests {
         services
             .update_provider(
                 Arc::new(StubProvider),
-                goose_providers::model::ModelConfig::new("stub-model"),
+                oi_kit_providers::model::ModelConfig::new("stub-model"),
                 &session.id,
             )
             .await

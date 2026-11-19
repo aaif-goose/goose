@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_agent::max_turns::MAX_TURNS_MESSAGE;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 
 #[cfg(feature = "scheduler")]

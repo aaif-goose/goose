@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use futures::future::BoxFuture;
-use goose_providers::{
+use oi_kit_providers::{
     api_client::{ApiClient, AuthMethod, TlsConfig},
     base::{ProviderDescriptor, ProviderMetadata},
     openrouter::OpenRouterProvider,

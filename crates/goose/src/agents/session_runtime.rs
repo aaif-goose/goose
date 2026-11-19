@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use goose_agent::steer::SteerQueue;
 use indexmap::IndexMap;
+use oi_kit_agent::steer::SteerQueue;
 use tokio::sync::mpsc;
 
 use super::active_run::ActiveRunRegistry;

@@ -1,4 +1,4 @@
-pub use goose_providers::local_inference::*;
+pub use oi_kit_providers::local_inference::*;
 
 use crate::config::ExtensionConfig;
 use crate::providers::api_client::TlsConfig;
@@ -25,9 +25,9 @@ fn resolve_bool_param(key: &'static str) -> Result<Option<bool>> {
 
 fn resolve_model_settings(
     model_id: &str,
-) -> Result<Option<goose_providers::local_inference::model::ModelSettings>> {
+) -> Result<Option<oi_kit_providers::local_inference::model::ModelSettings>> {
     let settings = crate::config::Config::global()
-        .get_param::<HashMap<String, goose_providers::local_inference::model::ModelSettings>>(
+        .get_param::<HashMap<String, oi_kit_providers::local_inference::model::ModelSettings>>(
             LOCAL_MODEL_SETTINGS_KEY,
         )
         .unwrap_or_default();
@@ -36,11 +36,11 @@ fn resolve_model_settings(
 
 fn write_model_settings(
     model_id: &str,
-    settings: &goose_providers::local_inference::model::ModelSettings,
+    settings: &oi_kit_providers::local_inference::model::ModelSettings,
 ) -> Result<()> {
     crate::config::Config::global().update_param::<HashMap<
         String,
-        goose_providers::local_inference::model::ModelSettings,
+        oi_kit_providers::local_inference::model::ModelSettings,
     >, _, _>(LOCAL_MODEL_SETTINGS_KEY, |mut all_settings| {
         all_settings.insert(model_id.to_string(), settings.clone());
         all_settings
