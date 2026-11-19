@@ -16,11 +16,10 @@ use oi_kit_provider_types::conversation::message::{
     summarized_tool_result_text, Message, MessageContent, ToolRequest, ToolResponse,
     TOOL_RESULT_SUMMARY_OPERATION,
 };
-use oi_kit_provider_types::conversation::token_usage::ProviderUsage;
 use oi_kit_provider_types::conversation::Conversation;
+use oi_kit_provider_types::maybe_send::MaybeSend;
 use rmcp::model::Role;
 
-use crate::inference::InferenceEffect;
 use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
@@ -50,8 +49,8 @@ struct ToolResult<'a> {
 }
 
 enum Outcome {
-    Summarized(String, ProviderUsage),
-    Kept(Option<ProviderUsage>),
+    Summarized(String),
+    Kept,
     Failed,
 }
 
@@ -100,7 +99,7 @@ impl ToolPairCompactionOperation {
         };
         let response = format_response(result.response);
         if response.len() <= summarized_tool_result_text("").len() {
-            return Outcome::Kept(None);
+            return Outcome::Kept;
         }
         let pair = format!(
             "{}\n{response}",
@@ -114,8 +113,8 @@ impl ToolPairCompactionOperation {
             .model
             .complete(SYSTEM_PROMPT, &[Message::user().with_text(pair)])
             .await;
-        let (message, usage) = match reply {
-            Ok(reply) => reply,
+        let message = match reply {
+            Ok((message, _)) => message,
             Err(error) => {
                 tracing::warn!("Failed to summarize tool result: {error}");
                 return Outcome::Failed;
@@ -126,9 +125,9 @@ impl ToolPairCompactionOperation {
             return Outcome::Failed;
         }
         if summarized_tool_result_text(&summary).len() >= response.len() {
-            return Outcome::Kept(Some(usage));
+            return Outcome::Kept;
         }
-        Outcome::Summarized(summary, usage)
+        Outcome::Summarized(summary)
     }
 }
 
@@ -161,7 +160,7 @@ fn tool_request<'a>(messages: &'a [Message], tool_call_id: &str) -> Option<&'a T
 impl<S, E> Operation<S, E> for ToolPairCompactionOperation
 where
     S: MachineSession,
-    E: InferenceEffect + From<ConversationEffect>,
+    E: From<ConversationEffect> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         TOOL_RESULT_SUMMARY_OPERATION
@@ -192,11 +191,9 @@ where
 
         let mut effects = Vec::new();
         for (result, outcome) in batch.iter().zip(outcomes) {
-            let (note, usage) = match outcome {
-                Outcome::Summarized(summary, usage) => {
-                    (serde_json::Value::String(summary), Some(usage))
-                }
-                Outcome::Kept(usage) => (serde_json::Value::Null, usage),
+            let note = match outcome {
+                Outcome::Summarized(summary) => serde_json::Value::String(summary),
+                Outcome::Kept => serde_json::Value::Null,
                 Outcome::Failed => {
                     self.failed
                         .lock()
@@ -205,7 +202,6 @@ where
                     continue;
                 }
             };
-            effects.extend(usage.map(E::record_usage));
             effects.push(E::from(ConversationEffect::SetMessageOperationNote {
                 message_id: result.message_id.to_string(),
                 operation: TOOL_RESULT_SUMMARY_OPERATION.to_string(),
