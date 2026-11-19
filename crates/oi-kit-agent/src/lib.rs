@@ -28,4 +28,6 @@ pub mod compaction;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod subprocess;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod tool_pair_compaction;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod tool_visibility;

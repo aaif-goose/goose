@@ -23,7 +23,6 @@ mod ops_stop_hook;
 mod ops_subagent;
 mod ops_subdirectory_hints;
 mod ops_thinking_recovery;
-mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod session;
 pub(crate) use session::run as run_goose;
@@ -74,7 +73,6 @@ pub(super) use ops_stop_hook::{StopHookOperation, DEFAULT_BLOCK_CAP};
 pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_subdirectory_hints::SubdirectoryHintOperation;
 pub(super) use ops_thinking_recovery::ThinkingRecoveryOperation;
-pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::{
     ExpiredToolsOperation, GooseExtensions, ToolDeferral, ToolDeferralOperation,
 };

@@ -16,8 +16,6 @@ use oi_kit_providers::model::ModelConfig;
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::GooseEffect;
 
-pub(super) use oi_kit_agent::inference::chat_span;
-
 pub struct GooseInferenceProvider {
     inner: Arc<dyn Provider>,
 }
