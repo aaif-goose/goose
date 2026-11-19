@@ -20,7 +20,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     Operation, OperationResult,
 };
-use crate::tool_call_state::{tool_calls, ToolCallState};
+use crate::tool_call_state::pending_tool_requests;
 
 pub const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
@@ -179,17 +179,13 @@ fn load_skill_tool() -> Tool {
 }
 
 fn pending_load_skill_calls(messages: &[Message]) -> Vec<&ToolRequest> {
-    tool_calls(messages)
-        .into_iter()
-        .filter(|(request, state)| {
-            *state == ToolCallState::Executable
-                && !request.was_executed_externally()
-                && request
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|call| call.name == LOAD_SKILL_TOOL_NAME)
+    pending_tool_requests(messages)
+        .filter(|request| {
+            request
+                .tool_call
+                .as_ref()
+                .is_ok_and(|call| call.name == LOAD_SKILL_TOOL_NAME)
         })
-        .map(|(request, _)| request)
         .collect()
 }
 

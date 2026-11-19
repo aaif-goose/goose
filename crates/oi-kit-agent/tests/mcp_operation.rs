@@ -14,13 +14,9 @@ use oi_kit_agent::{
         ExtensionOperation, ExtensionSet, ExtensionSource, ExtensionSpec,
     },
     operation::{ConversationEffect, Emitter},
-    tool_call_state::EXECUTABLE_KEY,
     unhandled_tool_calls::UnhandledToolCallsOperation,
 };
-use oi_kit_provider_types::conversation::{
-    message::{Message, MessageContent},
-    Conversation,
-};
+use oi_kit_provider_types::conversation::{message::Message, Conversation};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, InitializeResult, JsonObject,
     ListToolsResult, Tool,
@@ -186,14 +182,11 @@ impl Fixture {
         Ok(())
     }
 
-    fn approve_call(&mut self) {
-        let mut message = Message::assistant()
-            .with_tool_request("call", Ok(CallToolRequestParams::new("server__echo")));
-        let MessageContent::ToolRequest(request) = &mut message.content[0] else {
-            unreachable!();
-        };
-        request.tool_meta = Some(serde_json::json!({ EXECUTABLE_KEY: true }));
-        self.session.conversation.push(message);
+    fn request_call(&mut self) {
+        self.session.conversation.push(
+            Message::assistant()
+                .with_tool_request("call", Ok(CallToolRequestParams::new("server__echo"))),
+        );
     }
 
     async fn execute(&self) -> Result<CallToolResult> {
@@ -219,7 +212,7 @@ async fn execution_uses_current_selection_without_another_tool_collection() -> R
     let mut fixture = Fixture::new();
     fixture.advertise().await?;
     *fixture.source.selection.lock().unwrap() = vec![Config("replacement")];
-    fixture.approve_call();
+    fixture.request_call();
     let result = fixture.execute().await?;
     assert_eq!(result.content[0].as_text().unwrap().text, "replacement");
     assert!(fixture.host.dropped.lock().unwrap().contains(&"original"));
@@ -229,7 +222,7 @@ async fn execution_uses_current_selection_without_another_tool_collection() -> R
 #[tokio::test]
 async fn execution_without_inference_or_after_manager_release_acquires_a_lease() -> Result<()> {
     let mut fixture = Fixture::new();
-    fixture.approve_call();
+    fixture.request_call();
     let result = fixture.execute().await?;
     assert_eq!(result.content[0].as_text().unwrap().text, "original");
 
@@ -245,7 +238,7 @@ async fn removed_tool_returns_an_error_instead_of_using_the_inference_lease() ->
     let mut fixture = Fixture::new();
     fixture.advertise().await?;
     *fixture.source.selection.lock().unwrap() = Vec::new();
-    fixture.approve_call();
+    fixture.request_call();
     let result = fixture.execute().await?;
     assert_eq!(result.is_error, Some(true));
     assert_eq!(*fixture.host.dropped.lock().unwrap(), vec!["original"]);
@@ -264,7 +257,7 @@ async fn manager_release_drops_resources_without_dropping_the_operation() -> Res
 #[tokio::test]
 async fn manager_release_keeps_an_in_flight_call_alive_until_completion() -> Result<()> {
     let mut fixture = Fixture::new();
-    fixture.approve_call();
+    fixture.request_call();
     let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, CancellationToken::new());
     let execution = fixture.machine.step(&fixture.session, &emit);

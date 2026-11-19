@@ -105,7 +105,6 @@ impl ToolApproval<()> for FakeApproval {
 
 struct Outcome {
     status: Option<RunStatus>,
-    marks: Vec<(String, serde_json::Value)>,
     appended: Vec<Message>,
     shown: Vec<Message>,
 }
@@ -141,7 +140,6 @@ async fn run(operation: &ToolApprovalOperation<'_, ()>, messages: Vec<Message>) 
         .collect();
     let mut outcome = Outcome {
         status: None,
-        marks: Vec::new(),
         appended: Vec::new(),
         shown,
     };
@@ -150,10 +148,6 @@ async fn run(operation: &ToolApprovalOperation<'_, ()>, messages: Vec<Message>) 
         for effect in result.effects {
             match effect {
                 ConversationEffect::AppendMessage(message) => outcome.appended.push(message),
-                ConversationEffect::PatchToolRequestMeta {
-                    tool_call_id,
-                    patch,
-                } => outcome.marks.push((tool_call_id, patch)),
                 _ => panic!("unexpected effect"),
             }
         }
@@ -228,27 +222,25 @@ fn tool_response(id: &str) -> Message {
     )
 }
 
-fn ready(id: &str) -> (String, serde_json::Value) {
-    (id.to_string(), json!({ EXECUTABLE_KEY: true }))
-}
-
-fn waiting(id: &str) -> (String, serde_json::Value) {
-    (id.to_string(), json!({ EXECUTABLE_KEY: false }))
-}
-
 #[tokio::test]
-async fn allow_marks_the_call_ready_to_run() -> Result<()> {
+async fn allow_remembers_the_call_after_reload() -> Result<()> {
     let approval = FakeApproval::new(&[]);
 
+    let mut messages = vec![kickoff(), calls(&["a"])];
     let outcome = run(
         &ToolApprovalOperation::new(approval.clone()),
-        vec![kickoff(), calls(&["a"])],
+        messages.clone(),
     )
     .await?;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(outcome.marks, vec![ready("a")]);
-    assert!(outcome.appended.is_empty());
+    assert_eq!(outcome.appended.len(), 1);
+    assert!(!outcome.appended[0].is_agent_visible());
+    assert!(!outcome.appended[0].is_user_visible());
+    assert!(outcome.shown.is_empty());
+    messages.extend(outcome.appended);
+    let outcome = run(&ToolApprovalOperation::new(approval.clone()), messages).await?;
+    assert!(outcome.status.is_none());
     assert_eq!(approval.checked(), vec![vec!["a"]]);
     Ok(())
 }
@@ -260,20 +252,19 @@ async fn deny_streams_an_error_response_with_the_reason_and_leaves_no_mark() -> 
     let outcome = run(&operation, vec![kickoff(), calls(&["a"])]).await?;
 
     let expected = vec![("a".to_string(), "no".to_string())];
-    assert!(outcome.marks.is_empty());
     assert_eq!(outcome.responses(), expected);
     assert_eq!(outcome.shown_responses(), expected);
     Ok(())
 }
 
 #[tokio::test]
-async fn ask_marks_false_and_saves_a_confirmation_request_without_streaming_it() -> Result<()> {
+async fn ask_saves_a_confirmation_request_without_streaming_it() -> Result<()> {
     let operation =
         ToolApprovalOperation::new(FakeApproval::new(&[("a", Reply::Ask(Some("careful")))]));
 
     let outcome = run(&operation, vec![kickoff(), calls(&["a"])]).await?;
 
-    assert_eq!(outcome.marks, vec![waiting("a")]);
+    assert_eq!(outcome.appended.len(), 1);
     let confirmation_requests = outcome.confirmation_requests();
     assert_eq!(confirmation_requests.len(), 1);
     assert_eq!(
@@ -307,7 +298,7 @@ async fn checks_a_mixed_batch_in_one_call() -> Result<()> {
     .await?;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(outcome.marks, vec![ready("a"), waiting("c")]);
+    assert_eq!(outcome.appended.len(), 3);
     assert_eq!(
         outcome.responses(),
         vec![("b".to_string(), "no".to_string())]
@@ -318,27 +309,40 @@ async fn checks_a_mixed_batch_in_one_call() -> Result<()> {
 }
 
 #[tokio::test]
-async fn leaves_waiting_and_ready_calls_alone() -> Result<()> {
+async fn pauses_for_a_persisted_confirmation_even_without_a_flag() -> Result<()> {
     let approval = FakeApproval::new(&[]);
 
     let outcome = run(
         &ToolApprovalOperation::new(approval.clone()),
         vec![
             kickoff(),
-            marked_call("waiting", false),
+            calls(&["waiting"]),
             confirmation_request("waiting"),
-            marked_call("ready", true),
         ],
     )
     .await?;
 
-    assert!(outcome.status.is_none());
+    assert_eq!(outcome.status, Some(RunStatus::Yielded));
+    assert!(outcome.appended.is_empty());
     assert!(approval.checked().is_empty());
     Ok(())
 }
 
 #[tokio::test]
-async fn a_user_allow_tells_the_approval_once_and_marks_the_call_ready() -> Result<()> {
+async fn a_legacy_block_without_a_confirmation_is_denied() -> Result<()> {
+    let approval = FakeApproval::new(&[]);
+    let operation = ToolApprovalOperation::new(approval.clone());
+    let outcome = run(&operation, vec![kickoff(), marked_call("blocked", false)]).await?;
+    assert_eq!(
+        outcome.responses(),
+        vec![("blocked".to_string(), DEFAULT_DECLINED_MESSAGE.to_string())]
+    );
+    assert!(approval.checked().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_user_allow_tells_the_approval_once() -> Result<()> {
     let approval = FakeApproval::new(&[]);
     let operation = ToolApprovalOperation::new(approval.clone());
     let choice = click("c", Permission::AlwaysAllow);
@@ -346,35 +350,17 @@ async fn a_user_allow_tells_the_approval_once_and_marks_the_call_ready() -> Resu
     assert!(!choice.is_agent_visible());
     assert!(choice.id.is_some());
 
-    let outcome = run(
-        &operation,
-        vec![
-            kickoff(),
-            marked_call("c", false),
-            confirmation_request("c"),
-            choice,
-        ],
-    )
-    .await?;
-
-    assert_eq!(outcome.marks, vec![ready("c")]);
+    let mut messages = vec![kickoff(), calls(&["c"]), confirmation_request("c"), choice];
+    let outcome = run(&operation, messages.clone()).await?;
+    assert_eq!(outcome.appended.len(), 1);
     assert_eq!(
         approval.told(),
         vec![("c".to_string(), Permission::AlwaysAllow)]
     );
     assert!(approval.checked().is_empty());
 
-    let outcome = run(
-        &operation,
-        vec![
-            kickoff(),
-            marked_call("c", true),
-            confirmation_request("c"),
-            click("c", Permission::AlwaysAllow),
-        ],
-    )
-    .await?;
-
+    messages.extend(outcome.appended);
+    let outcome = run(&operation, messages).await?;
     assert!(outcome.status.is_none());
     assert_eq!(approval.told().len(), 1);
     Ok(())
@@ -385,42 +371,24 @@ async fn handles_one_user_answer_per_pass() -> Result<()> {
     let approval = FakeApproval::new(&[]);
     let operation = ToolApprovalOperation::new(approval.clone());
 
-    let outcome = run(
-        &operation,
-        vec![
-            kickoff(),
-            marked_call("a", false),
-            marked_call("b", false),
-            confirmation_request("a"),
-            confirmation_request("b"),
-            click("a", Permission::AllowOnce),
-            click("b", Permission::DenyOnce),
-        ],
-    )
-    .await?;
-
-    assert_eq!(outcome.marks, vec![ready("a")]);
+    let mut messages = vec![
+        kickoff(),
+        calls(&["a", "b"]),
+        confirmation_request("a"),
+        confirmation_request("b"),
+        click("a", Permission::AllowOnce),
+        click("b", Permission::DenyOnce),
+    ];
+    let outcome = run(&operation, messages.clone()).await?;
+    assert_eq!(outcome.appended.len(), 1);
     assert!(outcome.responses().is_empty());
     assert_eq!(
         approval.told(),
         vec![("a".to_string(), Permission::AllowOnce)]
     );
 
-    let outcome = run(
-        &operation,
-        vec![
-            kickoff(),
-            marked_call("a", true),
-            marked_call("b", false),
-            confirmation_request("a"),
-            confirmation_request("b"),
-            click("a", Permission::AllowOnce),
-            click("b", Permission::DenyOnce),
-        ],
-    )
-    .await?;
-
-    assert!(outcome.marks.is_empty());
+    messages.extend(outcome.appended);
+    let outcome = run(&operation, messages).await?;
     assert_eq!(
         outcome.responses(),
         vec![("b".to_string(), DEFAULT_DECLINED_MESSAGE.to_string())]
@@ -451,7 +419,7 @@ async fn applies_a_user_answer_before_checking_new_calls() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(outcome.marks, vec![ready("answered")]);
+    assert_eq!(outcome.appended.len(), 1);
     assert!(approval.checked().is_empty());
     Ok(())
 }
@@ -473,7 +441,6 @@ async fn a_user_deny_responds_with_the_declined_message() -> Result<()> {
         conversation(),
     )
     .await?;
-    assert!(outcome.marks.is_empty());
     assert_eq!(
         outcome.responses(),
         vec![("c".to_string(), DEFAULT_DECLINED_MESSAGE.to_string())]

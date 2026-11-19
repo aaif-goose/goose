@@ -1,6 +1,5 @@
 use oi_kit_agent::{
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
-    tool_call_state::EXECUTABLE_KEY,
     unhandled_tool_calls::UnhandledToolCallsOperation,
 };
 use oi_kit_provider_types::conversation::{
@@ -69,16 +68,6 @@ fn call(id: &str, tool_meta: Option<Value>) -> Message {
     )
 }
 
-fn marked_call(id: &str, executable: bool) -> Message {
-    call(id, Some(json!({ EXECUTABLE_KEY: executable })))
-}
-
-fn confirmation_request(id: &str) -> Message {
-    Message::assistant()
-        .with_action_required(id, id.to_string(), Default::default(), None)
-        .user_only()
-}
-
 fn tool_responses(ids: &[&str]) -> Message {
     ids.iter().fold(Message::user(), |message, id| {
         message.with_tool_response(
@@ -93,41 +82,11 @@ fn not_available(id: &str) -> (String, String) {
 }
 
 #[tokio::test]
-async fn pauses_when_every_open_call_is_waiting() {
-    let outcome = run(vec![
-        kickoff(),
-        marked_call("a", true),
-        tool_responses(&["a"]),
-        marked_call("c", false),
-        confirmation_request("c"),
-    ])
-    .await;
-
-    assert_eq!(outcome.status, Some(RunStatus::Yielded));
-    assert!(outcome.responses.is_empty());
-}
-
-#[tokio::test]
-async fn responds_to_open_calls_that_are_not_awaiting_confirmation() {
-    let outcome = run(vec![
-        kickoff(),
-        marked_call("allowed", true),
-        call("unchecked", None),
-        marked_call("declined", false),
-        marked_call("waiting", false),
-        confirmation_request("waiting"),
-    ])
-    .await;
+async fn responds_to_unanswered_calls_without_approval_metadata() {
+    let outcome = run(vec![kickoff(), call("unclaimed", None)]).await;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(
-        outcome.responses,
-        vec![
-            not_available("allowed"),
-            not_available("unchecked"),
-            not_available("declined"),
-        ]
-    );
+    assert_eq!(outcome.responses, vec![not_available("unclaimed")]);
 }
 
 #[tokio::test]
@@ -154,7 +113,7 @@ async fn explains_calls_that_could_not_be_parsed() {
 async fn does_nothing_when_no_call_is_open() {
     let outcome = run(vec![
         kickoff(),
-        marked_call("a", true),
+        call("a", None),
         tool_responses(&["a"]),
         call(
             "external",

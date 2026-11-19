@@ -10,7 +10,6 @@ use goose_acp_types::custom_requests::{SourceEntry, SourceType};
 use oi_kit_agent::operation::{ConversationEffect, Emitter, Operation, OperationResult};
 use oi_kit_agent::skills::{SkillOperation, SkillSource, LOAD_SKILL_TOOL_NAME};
 use oi_kit_agent::slash_command::SlashCommandOperation;
-use oi_kit_agent::tool_call_state::EXECUTABLE_KEY;
 use oi_kit_provider_types::conversation::message::{Message, MessageContent};
 use oi_kit_provider_types::conversation::Conversation;
 use rmcp::model::CallToolRequestParams;
@@ -60,15 +59,13 @@ fn emitter() -> Emitter {
     Emitter::new(tx, CancellationToken::new())
 }
 
-fn load_skill_call(id: &str, arguments: serde_json::Value, executable: bool) -> Message {
+fn load_skill_call(id: &str, arguments: serde_json::Value) -> Message {
     let serde_json::Value::Object(arguments) = arguments else {
         panic!("arguments must be an object")
     };
-    Message::assistant().with_tool_request_with_metadata(
+    Message::assistant().with_tool_request(
         id,
         Ok(CallToolRequestParams::new(LOAD_SKILL_TOOL_NAME).with_arguments(arguments)),
-        None,
-        Some(json!({ EXECUTABLE_KEY: executable })),
     )
 }
 
@@ -101,28 +98,29 @@ fn tool_results(message: &Message) -> Vec<(String, bool, String)> {
 }
 
 #[tokio::test]
-async fn answers_approved_load_skill_calls_and_leaves_the_rest() -> Result<()> {
+async fn answers_unanswered_load_skill_calls() -> Result<()> {
     let conversation = Conversation::new_unvalidated(vec![
         Message::user().with_text("help me review"),
         load_skill_call(
             "skill",
             json!({ "name": "review", "args": "Button \"design system\"" }),
-            true,
         ),
-        load_skill_call(
-            "file",
-            json!({ "name": "review/references/guide.md" }),
-            true,
+        load_skill_call("file", json!({ "name": "review/references/guide.md" })),
+        load_skill_call("missing", json!({ "name": "reviews" })),
+        load_skill_call("denied", json!({ "name": "review" })),
+        Message::user().with_tool_response(
+            "denied",
+            Ok(rmcp::model::CallToolResult::error(vec![
+                rmcp::model::ContentBlock::text("denied"),
+            ])),
         ),
-        load_skill_call("missing", json!({ "name": "reviews" }), true),
-        load_skill_call("waiting", json!({ "name": "review" }), false),
     ]);
 
     let OperationResult::Applied(step) =
         Operation::<(), ConversationEffect>::run(&operation(), &(), &conversation, &emitter())
             .await?
     else {
-        panic!("approved load_skill calls should be answered");
+        panic!("unanswered load_skill calls should be answered");
     };
     let results = tool_results(appended(&step.effects)[0]);
 

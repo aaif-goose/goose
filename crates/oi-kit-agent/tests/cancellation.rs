@@ -13,7 +13,6 @@ use oi_kit_agent::{
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{applied, not_applicable, ConversationEffect, Emitter, Operation, OperationResult},
     tool::{ToolOperation, ToolProvider},
-    tool_call_state::EXECUTABLE_KEY,
 };
 use oi_kit_provider_types::conversation::{
     message::{Message, MessageContent},
@@ -23,7 +22,6 @@ use rmcp::{
     handler::server::router::tool::{SyncTool, ToolBase},
     model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Tool},
 };
-use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -300,16 +298,11 @@ impl ToolProvider<Session> for FinishingTools {
     }
 }
 
-fn executable_calls(calls: &[(&str, &str)]) -> Message {
+fn tool_requests(calls: &[(&str, &str)]) -> Message {
     calls
         .iter()
         .fold(Message::assistant(), |message, (id, name)| {
-            message.with_tool_request_with_metadata(
-                *id,
-                Ok(CallToolRequestParams::new(name.to_string())),
-                None,
-                Some(json!({ EXECUTABLE_KEY: true })),
-            )
+            message.with_tool_request(*id, Ok(CallToolRequestParams::new(name.to_string())))
         })
 }
 
@@ -325,7 +318,7 @@ async fn stop_saves_completed_results_then_responds_to_each_open_request_once() 
     let emit = Emitter::new(tx, cancel.clone());
     let runtime = Runtime::new([
         Message::user().with_text("kickoff"),
-        executable_calls(&[
+        tool_requests(&[
             ("completed", "finish"),
             ("blocking", "blocking_sync"),
             ("remaining", "finish"),

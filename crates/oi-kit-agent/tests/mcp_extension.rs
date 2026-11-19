@@ -16,20 +16,18 @@ use oi_kit_agent::{
         ClientContext, ExtensionHost, ExtensionLease, ExtensionManager, ExtensionOperation,
         ExtensionSet, ExtensionSource,
     },
-    operation::{ConversationEffect, Emitter, MachineEffect},
-    tool_approval::{ApprovalDecision, ToolApproval, ToolApprovalOperation},
+    operation::{Emitter, MachineEffect},
     unhandled_tool_calls::UnhandledToolCallsOperation,
 };
 use oi_kit_provider_types::{
     base::{MessageStream, Provider},
     conversation::{
-        message::{Message, MessageContent, ToolRequest},
+        message::{Message, MessageContent},
         token_usage::{ProviderUsage, Usage},
         Conversation,
     },
     errors::ProviderError,
     model::ModelConfig,
-    permission::Permission,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -103,29 +101,6 @@ impl ExtensionSource<Session, ExtensionConfig> for Extensions {
     }
 }
 
-struct AllowAll;
-
-#[async_trait]
-impl ToolApproval<Session> for AllowAll {
-    async fn check(
-        &self,
-        _session: &Session,
-        _conversation: &Conversation,
-        requests: &[&ToolRequest],
-    ) -> Result<Vec<ApprovalDecision>> {
-        Ok(requests.iter().map(|_| ApprovalDecision::Allow).collect())
-    }
-
-    async fn on_confirmation(
-        &self,
-        _session: &Session,
-        _request: &ToolRequest,
-        _permission: &Permission,
-    ) -> Result<()> {
-        Ok(())
-    }
-}
-
 /// Calls `calculator__add` if the model was offered it, then answers with text.
 struct ScriptedProvider {
     advertised: Mutex<Vec<Vec<String>>>,
@@ -165,19 +140,13 @@ impl Provider for ScriptedProvider {
 }
 
 enum Effect {
-    Conversation(Box<ConversationEffect>),
+    Message(Box<Message>),
     Usage,
 }
 
 impl From<Message> for Effect {
     fn from(message: Message) -> Self {
-        Effect::Conversation(Box::new(message.into()))
-    }
-}
-
-impl From<ConversationEffect> for Effect {
-    fn from(effect: ConversationEffect) -> Self {
-        Effect::Conversation(Box::new(effect))
+        Effect::Message(Box::new(message))
     }
 }
 
@@ -189,8 +158,10 @@ impl InferenceEffect for Effect {
 
 impl MachineEffect for Effect {
     fn ensure_message_ids(&mut self) {
-        if let Effect::Conversation(effect) = self {
-            effect.ensure_message_ids();
+        if let Effect::Message(message) = self {
+            if message.id.is_none() {
+                **message = message.as_ref().clone().with_generated_id_if_missing();
+            }
         }
     }
 }
@@ -231,37 +202,12 @@ impl EffectHandler<Session, Effect> for Store {
         _emit: &Emitter,
     ) -> Result<()> {
         let mut session = self.session.lock().unwrap();
-        let mut messages = session.conversation.messages().clone();
         for effect in effects {
-            let Effect::Conversation(effect) = effect else {
-                continue;
-            };
-            match effect.as_ref() {
-                ConversationEffect::AppendMessage(message) => messages.push(message.clone()),
-                ConversationEffect::PatchToolRequestMeta {
-                    tool_call_id,
-                    patch,
-                } => patch_tool_request(&mut messages, tool_call_id, patch),
-                _ => {}
+            if let Effect::Message(message) = effect {
+                session.conversation.push(message.as_ref().clone());
             }
         }
-        session.conversation = Conversation::new_unvalidated(messages);
         Ok(())
-    }
-}
-
-fn patch_tool_request(messages: &mut [Message], id: &str, patch: &serde_json::Value) {
-    let request = messages
-        .iter_mut()
-        .flat_map(|message| message.content.iter_mut())
-        .find_map(|content| match content {
-            MessageContent::ToolRequest(request) if request.id == id => Some(request),
-            _ => None,
-        })
-        .expect("patched tool request exists");
-    let meta = request.tool_meta.get_or_insert_with(|| json!({}));
-    for (key, value) in patch.as_object().unwrap() {
-        meta[key] = value.clone();
     }
 }
 
@@ -284,7 +230,6 @@ async fn runs_a_turn_against_a_stdio_server() -> Result<()> {
     let cancel = CancellationToken::new();
     let machine = StateMachine::<Session, Effect>::new(
         vec![
-            Step::Operation(Arc::new(ToolApprovalOperation::new(Arc::new(AllowAll)))),
             Step::Operation(Arc::new(ExtensionOperation::new(Arc::new(Extensions {
                 manager: Arc::clone(&manager),
                 server,

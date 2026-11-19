@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::FutureExt;
-use oi_kit_agent::tool_call_state::request_executable;
+use oi_kit_agent::tool_call_state::pending_tool_requests as pending_local_requests;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Role, Tool, ToolAnnotations,
 };
@@ -24,7 +24,7 @@ use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::agents::StateMachineServices;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
-use crate::conversation::{unanswered_tool_requests, Conversation};
+use crate::conversation::Conversation;
 use crate::session::Session;
 
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
@@ -513,16 +513,13 @@ impl Operation<Session, GooseEffect> for ExpiredToolsOperation {
 }
 
 pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, ToolDisposition)> {
-    unanswered_tool_requests(messages)
-        .filter_map(|request| {
-            if let Err(parse_error) = &request.tool_call {
-                return Some((
-                    request.clone(),
-                    ToolDisposition::ParseError(parse_error.to_string()),
-                ));
-            }
-            (request_executable(request) == Some(true))
-                .then(|| (request.clone(), ToolDisposition::Execute))
+    pending_local_requests(messages)
+        .map(|request| {
+            let disposition = match &request.tool_call {
+                Ok(_) => ToolDisposition::Execute,
+                Err(error) => ToolDisposition::ParseError(error.to_string()),
+            };
+            (request.clone(), disposition)
         })
         .collect()
 }
@@ -649,7 +646,6 @@ impl ToolExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oi_kit_agent::tool_call_state::EXECUTABLE_KEY;
 
     #[test]
     fn extension_prompt_parts_render_one_block_per_extension() {
@@ -690,12 +686,10 @@ mod tests {
     }
 
     #[test]
-    fn executable_requests_are_pending() {
-        let message = Message::assistant().with_tool_request_with_metadata(
+    fn unanswered_requests_are_pending() {
+        let message = Message::assistant().with_tool_request(
             "operation-generated",
             Ok(CallToolRequestParams::new("registered__tool")),
-            None,
-            Some(serde_json::json!({ EXECUTABLE_KEY: true })),
         );
 
         let pending = pending_tool_requests(&[message]);

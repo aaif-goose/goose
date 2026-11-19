@@ -20,29 +20,31 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
 use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 
-async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
+async fn pipeline_with_gated_add() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
     pipeline.set_permission(ADD, PermissionLevel::AlwaysAllow);
-    api.on("add four and halve it")
-        .calls([("free", ADD, value(4)), ("gated", DIVIDE, value(2))]);
+    api.on("add four and two").calls([
+        ("free", ADD, value(4)),
+        ("gated", ADD_WITH_AUDIENCE, value(2)),
+    ]);
     Ok((pipeline, api))
 }
 
 #[tokio::test]
 async fn no_inference_while_a_tool_confirmation_is_open() -> Result<()> {
-    let (pipeline, api) = pipeline_with_gated_divide().await?;
+    let (pipeline, api) = pipeline_with_gated_add().await?;
 
-    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
+    let awaiting_confirmation = pipeline.run(["add four and two"]).await?;
     assert_eq!(api.call_count(), 1);
-    assert_eq!(pipeline.calculator_total(), 4);
-    awaiting_confirmation.assert_message(-1, ToolResponse, "result: 4");
+    assert_eq!(pipeline.calculator_total(), 0);
+    awaiting_confirmation.assert_message(-1, Confirmation, "");
 
-    api.on("result: 2").reply("halved");
+    api.on("result: 6").reply("added");
     pipeline.confirm("gated", Permission::AllowOnce).await?;
     let result = pipeline.resume().await?;
-    result.assert_message(-1, Agent, "halved");
-    assert_eq!(pipeline.calculator_total(), 2);
+    result.assert_message(-1, Agent, "added");
+    assert_eq!(pipeline.calculator_total(), 6);
     assert_eq!(api.call_count(), 2);
     assert!(api.calls().last().unwrap().answers_every_tool_call_next());
     Ok(())
@@ -50,12 +52,12 @@ async fn no_inference_while_a_tool_confirmation_is_open() -> Result<()> {
 
 #[tokio::test]
 async fn steer_waits_for_an_open_tool_confirmation() -> Result<()> {
-    let (pipeline, api) = pipeline_with_gated_divide().await?;
+    let (pipeline, api) = pipeline_with_gated_add().await?;
     pipeline
         .steer(Message::user().with_text("then say done"))
         .await;
 
-    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
+    let awaiting_confirmation = pipeline.run(["add four and two"]).await?;
     assert_eq!(api.call_count(), 1);
     assert!(pipeline.has_pending_steers().await);
     assert!(!awaiting_confirmation
@@ -68,7 +70,7 @@ async fn steer_waits_for_an_open_tool_confirmation() -> Result<()> {
     pipeline.confirm("gated", Permission::AllowOnce).await?;
     let result = pipeline.resume().await?;
     result.assert_message(-1, Agent, "done");
-    assert_eq!(pipeline.calculator_total(), 2);
+    assert_eq!(pipeline.calculator_total(), 6);
     assert!(!pipeline.has_pending_steers().await);
     let messages = result.conversation().messages();
     let steer = messages
@@ -86,16 +88,17 @@ async fn steer_waits_for_an_open_tool_confirmation() -> Result<()> {
 
 #[tokio::test]
 async fn max_turns_waits_for_an_open_tool_confirmation() -> Result<()> {
-    let (pipeline, api) = pipeline_with_gated_divide().await?;
+    let (pipeline, api) = pipeline_with_gated_add().await?;
     let pipeline = pipeline.with_max_turns(1);
 
-    let awaiting_confirmation = pipeline.run(["add four and halve it"]).await?;
-    awaiting_confirmation.assert_message(-1, ToolResponse, "result: 4");
+    let awaiting_confirmation = pipeline.run(["add four and two"]).await?;
+    assert_eq!(pipeline.calculator_total(), 0);
+    awaiting_confirmation.assert_message(-1, Confirmation, "");
 
     pipeline.confirm("gated", Permission::AllowOnce).await?;
     let result = pipeline.resume().await?;
     result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
-    assert_eq!(pipeline.calculator_total(), 2);
+    assert_eq!(pipeline.calculator_total(), 6);
     assert_eq!(api.call_count(), 1);
     Ok(())
 }

@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use oi_kit_agent::tool_call_state::request_executable;
+use oi_kit_agent::tool_call_state::pending_tool_requests;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 
 use crate::agents::state_machine::ops_toolcalling::{advertised_working_dir, tool_span};
@@ -76,6 +76,9 @@ pub(crate) async fn fire_post_tool_hooks(
         .as_ref()
         .and_then(|conversation| messages_since_kickoff(conversation).ok())
         .unwrap_or_default();
+    let pending = pending_tool_requests(turn)
+        .map(|request| (request.id.as_str(), request))
+        .collect::<HashMap<_, _>>();
     let hooks = appended_messages(effects)
         .flat_map(|message| {
             message
@@ -84,12 +87,7 @@ pub(crate) async fn fire_post_tool_hooks(
                 .filter_map(MessageContent::as_tool_response)
         })
         .filter_map(|response| {
-            let request = turn
-                .iter()
-                .flat_map(|message| &message.content)
-                .filter_map(MessageContent::as_tool_request)
-                .find(|request| request.id == response.id)
-                .filter(|request| request_executable(request) == Some(true))?;
+            let &request = pending.get(response.id.as_str())?;
             Some(emit_post_tool_hooks(
                 hook_manager,
                 &session.id,
@@ -223,6 +221,9 @@ async fn emit_post_tool_hooks(
     let Ok(tool_call) = &request.tool_call else {
         return;
     };
+    if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
+        return;
+    }
     let tool_input = tool_call
         .arguments
         .as_ref()

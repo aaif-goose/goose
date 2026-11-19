@@ -1,18 +1,23 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{ensure, Result};
 use async_trait::async_trait;
-use oi_kit_provider_types::conversation::message::{Message, MessageContent, ToolRequest};
+use oi_kit_provider_types::conversation::message::{
+    ActionRequiredData, Message, MessageContent, ToolRequest,
+};
 use oi_kit_provider_types::conversation::Conversation;
 use oi_kit_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use oi_kit_provider_types::permission::Permission;
 use rmcp::model::CallToolRequestParams;
 
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
-    OperationResult,
+    applied, messages_since_kickoff, not_applicable, yielded, Emitter, Operation, OperationResult,
 };
-use crate::tool_call_state::{add_error_response, mark_executable, tool_calls, ToolCallState};
+use crate::tool_call_state::{add_error_response, pending_tool_requests, request_executable};
+
+const APPROVAL_OPERATION: &str = "tool_approval";
+const SEEN: &str = "seen";
 
 pub const DEFAULT_DECLINED_MESSAGE: &str = "The user declined to run this tool.";
 
@@ -53,6 +58,16 @@ pub fn confirmation_response_message(tool_call_id: &str, permission: Permission)
         .with_generated_id_if_missing()
 }
 
+fn seen_message(ids: &[&str]) -> Message {
+    let mut message = Message::user().with_visibility(false, false);
+    message
+        .metadata
+        .set_operation_note(APPROVAL_OPERATION, SEEN, serde_json::json!(ids));
+    message
+}
+
+/// Optional policy step. Place it before tool handlers; it yields the turn while
+/// any of its confirmation requests are unanswered.
 pub struct ToolApprovalOperation<'a, S> {
     approval: Arc<dyn ToolApproval<S> + 'a>,
     declined_message: String,
@@ -71,7 +86,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
         self
     }
 
-    async fn apply_user_answer<E: From<ConversationEffect>>(
+    async fn apply_user_answer<E: From<Message>>(
         &self,
         session: &S,
         request: &ToolRequest,
@@ -82,16 +97,14 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
             .on_confirmation(session, request, permission)
             .await?;
         if matches!(permission, Permission::AllowOnce | Permission::AlwaysAllow) {
-            return applied([E::from(mark_executable(&request.id, true))]);
+            return applied([E::from(seen_message(&[&request.id]))]);
         }
         let mut tool_responses = Message::user();
         add_error_response(&mut tool_responses, request, &self.declined_message);
-        applied([E::from(ConversationEffect::from(
-            emit.message(tool_responses),
-        ))])
+        applied([E::from(emit.message(tool_responses))])
     }
 
-    async fn check_new_calls<E: From<ConversationEffect>>(
+    async fn check_new_calls<E: From<Message>>(
         &self,
         session: &S,
         conversation: &Conversation,
@@ -112,20 +125,23 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
 
         let mut effects = Vec::new();
         let mut tool_responses = Message::user();
+        let mut seen = Vec::new();
         for ((request, call), decision) in unchecked.into_iter().zip(decisions) {
             match decision {
-                ApprovalDecision::Allow => effects.push(mark_executable(&request.id, true)),
+                ApprovalDecision::Allow => seen.push(request.id.as_str()),
                 ApprovalDecision::Deny { reason } => {
                     add_error_response(&mut tool_responses, request, &reason)
                 }
                 ApprovalDecision::Ask { prompt } => {
-                    effects.push(mark_executable(&request.id, false));
-                    effects.push(confirmation_request(request, call, prompt).into());
+                    effects.push(confirmation_request(request, call, prompt));
                 }
             }
         }
+        if !seen.is_empty() {
+            effects.push(seen_message(&seen));
+        }
         if !tool_responses.content.is_empty() {
-            effects.push(emit.message(tool_responses).into());
+            effects.push(emit.message(tool_responses));
         }
         applied(effects.into_iter().map(E::from))
     }
@@ -152,10 +168,10 @@ fn confirmation_request(
 impl<S, E> Operation<S, E> for ToolApprovalOperation<'_, S>
 where
     S: MaybeSend + MaybeSync + 'static,
-    E: From<ConversationEffect> + MaybeSend + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
-        "tool_approval"
+        APPROVAL_OPERATION
     }
 
     async fn run(
@@ -164,31 +180,77 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let calls: Vec<_> = tool_calls(messages_since_kickoff(conversation)?)
-            .into_iter()
-            .filter(|(request, _)| !request.was_executed_externally())
-            .filter_map(|(request, state)| Some((request, request.tool_call.as_ref().ok()?, state)))
+        let messages = messages_since_kickoff(conversation)?;
+        let seen: HashSet<_> = messages
+            .iter()
+            .filter(|message| !message.is_agent_visible() && !message.is_user_visible())
+            .filter_map(|message| message.metadata.operation_note(APPROVAL_OPERATION, SEEN))
+            .filter_map(serde_json::Value::as_array)
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
             .collect();
+        let mut confirmations = HashSet::new();
+        let mut answers = HashMap::new();
+        for action in messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(|content| match content {
+                MessageContent::ActionRequired(action) => Some(&action.data),
+                _ => None,
+            })
+        {
+            match action {
+                ActionRequiredData::ToolConfirmation { id, .. } => {
+                    confirmations.insert(id.as_str());
+                }
+                ActionRequiredData::ToolConfirmationResponse { id, permission } => {
+                    answers.insert(id.as_str(), permission);
+                }
+                _ => {}
+            }
+        }
 
-        let user_answer = calls.iter().find_map(|(request, _, state)| match state {
-            ToolCallState::UserAnswered(permission) => Some((*request, *permission)),
-            _ => None,
-        });
-        if let Some((request, permission)) = user_answer {
+        let mut unchecked = Vec::new();
+        let mut waiting = false;
+        let mut legacy_denials = Message::user();
+        for request in pending_tool_requests(messages) {
+            let id = request.id.as_str();
+            let Ok(call) = &request.tool_call else {
+                continue;
+            };
+            let legacy = request_executable(request);
+            if seen.contains(id) {
+                continue;
+            }
+            if confirmations.contains(id) {
+                if let Some(&permission) = answers.get(id) {
+                    if legacy == Some(true)
+                        && matches!(permission, Permission::AllowOnce | Permission::AlwaysAllow)
+                    {
+                        continue;
+                    }
+                    return self
+                        .apply_user_answer(session, request, permission, emit)
+                        .await;
+                }
+                waiting = true;
+            } else if legacy == Some(false) {
+                add_error_response(&mut legacy_denials, request, &self.declined_message);
+            } else {
+                unchecked.push((request, call));
+            }
+        }
+        if !legacy_denials.content.is_empty() {
+            return applied([E::from(emit.message(legacy_denials))]);
+        }
+        if !unchecked.is_empty() {
             return self
-                .apply_user_answer(session, request, permission, emit)
+                .check_new_calls(session, conversation, unchecked, emit)
                 .await;
         }
-
-        let unchecked: Vec<_> = calls
-            .into_iter()
-            .filter(|(_, _, state)| *state == ToolCallState::Unchecked)
-            .map(|(request, call, _)| (request, call))
-            .collect();
-        if unchecked.is_empty() {
-            return not_applicable();
+        if waiting {
+            return yielded();
         }
-        self.check_new_calls(session, conversation, unchecked, emit)
-            .await
+        not_applicable()
     }
 }

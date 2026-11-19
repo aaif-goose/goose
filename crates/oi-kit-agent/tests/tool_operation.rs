@@ -15,7 +15,6 @@ use oi_kit_agent::{
         RunStatus,
     },
     tool::{ToolOperation, ToolProvider},
-    tool_call_state::EXECUTABLE_KEY,
 };
 use oi_kit_provider_types::conversation::{
     message::{Message, MessageContent},
@@ -111,15 +110,6 @@ fn operation() -> ToolOperation<()> {
         .with_async_tool::<Greet>()
 }
 
-fn executable(mut message: Message) -> Message {
-    for content in &mut message.content {
-        if let MessageContent::ToolRequest(request) = content {
-            request.tool_meta.get_or_insert_with(|| json!({}))[EXECUTABLE_KEY] = json!(true);
-        }
-    }
-    message
-}
-
 fn appended_message(result: OperationResult<ConversationEffect>) -> Message {
     let OperationResult::Applied(result) = result else {
         panic!("operation should apply");
@@ -151,20 +141,18 @@ async fn advertises_user_defined_tools_directly() {
 async fn dispatches_calls_to_user_defined_tools() {
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("do both"),
-        executable(
-            Message::assistant()
-                .with_tool_request(
-                    "call-1",
-                    Ok(CallToolRequestParams::new("add").with_arguments(
-                        serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
-                    )),
-                )
-                .with_tool_request(
-                    "call-2",
-                    Ok(CallToolRequestParams::new("greet")
-                        .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
-                ),
-        ),
+        Message::assistant()
+            .with_tool_request(
+                "call-1",
+                Ok(CallToolRequestParams::new("add").with_arguments(
+                    serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
+                )),
+            )
+            .with_tool_request(
+                "call-2",
+                Ok(CallToolRequestParams::new("greet")
+                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+            ),
     ]);
 
     let message = appended_message(
@@ -253,10 +241,8 @@ async fn rediscovers_dynamic_tools_for_inference_and_execution() {
 
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("call the dynamic tool"),
-        executable(
-            Message::assistant()
-                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
-        ),
+        Message::assistant()
+            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
     ]);
     let message = appended_message(
         <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
@@ -326,10 +312,8 @@ async fn rejects_duplicate_dynamic_tool_names_at_both_boundaries() {
 
     let conversation = Conversation::new_unvalidated([
         kickoff,
-        executable(
-            Message::assistant()
-                .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
-        ),
+        Message::assistant()
+            .with_tool_request("dynamic-call", Ok(CallToolRequestParams::new("dynamic"))),
     ]);
     let execution_error = match <ToolOperation<bool> as Operation<bool, ConversationEffect>>::run(
         &operation,
@@ -474,30 +458,27 @@ async fn skips_calls_it_should_not_run() {
     };
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("old turn"),
-        executable(Message::assistant().with_tool_request("stale", add())),
+        Message::assistant().with_tool_request("stale", add()),
         Message::user().with_text("new turn"),
-        executable(
-            Message::assistant()
-                .with_tool_request("responded", add())
-                .with_tool_request(
-                    "unavailable",
-                    Ok(CallToolRequestParams::new("not_registered")),
-                )
-                .with_tool_request_with_metadata(
-                    "external",
-                    add(),
-                    None,
-                    Some(json!({"goose.external_dispatch": true})),
-                ),
-        ),
         Message::assistant()
-            .with_tool_request("unmarked", add())
+            .with_tool_request("responded", add())
+            .with_tool_request(
+                "unavailable",
+                Ok(CallToolRequestParams::new("not_registered")),
+            )
             .with_tool_request_with_metadata(
-                "blocked",
+                "external",
                 add(),
                 None,
-                Some(json!({ EXECUTABLE_KEY: false })),
+                Some(json!({"goose.external_dispatch": true})),
             ),
+        Message::assistant().with_tool_request("denied", add()),
+        Message::user().with_tool_response(
+            "denied",
+            Ok(CallToolResult::error(vec![
+                rmcp::model::ContentBlock::text("denied"),
+            ])),
+        ),
         Message::user().with_tool_response(
             "responded",
             Ok(CallToolResult::structured(json!({"sum": 5}))),

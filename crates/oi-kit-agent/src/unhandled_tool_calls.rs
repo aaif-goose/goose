@@ -5,10 +5,9 @@ use oi_kit_provider_types::conversation::Conversation;
 use oi_kit_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, yielded, ConversationEffect, Emitter,
-    Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::tool_call_state::{add_error_response, tool_calls, ToolCallState};
+use crate::tool_call_state::{add_error_response, pending_tool_requests};
 
 pub struct UnhandledToolCallsOperation;
 
@@ -24,15 +23,12 @@ impl Default for UnhandledToolCallsOperation {
     }
 }
 
-fn respond_to_unhandled_calls(
-    calls: &[(&ToolRequest, ToolCallState<'_>)],
+fn respond_to_unhandled_calls<'a>(
+    calls: impl Iterator<Item = &'a ToolRequest>,
     emit: &Emitter,
 ) -> Option<Message> {
     let mut tool_responses = Message::user();
-    for (request, state) in calls {
-        if *state == ToolCallState::AwaitingUser {
-            continue;
-        }
+    for request in calls {
         match &request.tool_call {
             Ok(tool_call) => {
                 tracing::error!(tool_call_id = %request.id, tool_name = %tool_call.name, "tool call was not handled by any operation");
@@ -62,7 +58,7 @@ fn respond_to_unhandled_calls(
 impl<S, E> Operation<S, E> for UnhandledToolCallsOperation
 where
     S: MaybeSend + MaybeSync + 'static,
-    E: From<ConversationEffect> + MaybeSend + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         "unhandled_tool_calls"
@@ -74,18 +70,9 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let open_calls: Vec<_> = tool_calls(messages_since_kickoff(conversation)?)
-            .into_iter()
-            .filter(|(request, state)| state.is_open() && !request.was_executed_externally())
-            .collect();
-        if let Some(tool_responses) = respond_to_unhandled_calls(&open_calls, emit) {
-            return applied([E::from(ConversationEffect::AppendMessage(tool_responses))]);
-        }
-        if open_calls
-            .iter()
-            .any(|(_, state)| *state == ToolCallState::AwaitingUser)
-        {
-            return yielded();
+        let open_calls = pending_tool_requests(messages_since_kickoff(conversation)?);
+        if let Some(tool_responses) = respond_to_unhandled_calls(open_calls, emit) {
+            return applied([E::from(tool_responses)]);
         }
         not_applicable()
     }
