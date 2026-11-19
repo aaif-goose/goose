@@ -1,6 +1,6 @@
 # goose and oi-kit
 
-> This site covers using goose, the open-source agent application, and building applications with oi-kit (Open Intelligence Kit).
+> This site covers using goose, the open-source agent application, and building applications with the Open Intelligence Kit (oi-kit).
 
 Read the relevant documentation before writing commands, configuration, or code. Guides and Python/Kotlin references below are Markdown; native Rust APIs link to docs.rs.
 
