@@ -101,12 +101,14 @@ function FeaturesSection() {
         <div className={styles.featuresGridTop}>
           <FeatureCard
             icon="🖥️"
-            title="Desktop app, CLI, and API"
+            title="Desktop app, CLI, or your own app"
             description={
               <p>
                 A native desktop app for macOS, Linux, and Windows. A full CLI
-                for terminal workflows. An API to embed it anywhere. Built
-                in Rust for performance and portability.
+                for terminal workflows. Use goose as the agent behind your own
+                app through the{" "}
+                <Link to="/docs/oi-kit/acp/">Agent Client Protocol (ACP)</Link>.
+                Built in Rust for performance and portability.
               </p>
             }
           />
@@ -124,13 +126,15 @@ function FeaturesSection() {
           />
           <FeatureCard
             icon="🤖"
-            title="Any LLM, including your subscriptions"
+            title="Local models and 85+ providers"
             description={
               <p>
-                Works with 15+ providers — Anthropic, OpenAI, Google, Ollama,
-                OpenRouter, Azure, Bedrock, and more. Use API keys or your
-                existing Claude, ChatGPT, or Gemini subscriptions via{" "}
-                <Link to="/docs/guides/acp-providers">ACP</Link>.
+                Load and run local models directly inside goose, with control
+                over inference and visibility into how they run—no Ollama or
+                separate server required. goose also supports{" "}
+                <Link to="/docs/getting-started/providers">over 85 providers</Link>,
+                including Anthropic, OpenAI, Gemini, OpenRouter, and Amazon
+                Bedrock.
               </p>
             }
           />
