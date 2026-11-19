@@ -10,7 +10,7 @@ displayed_sidebar: gdkSidebar
 Let's build a small coding agent. It can inspect a directory, run shell
 commands, and keep a conversation across turns and application restarts.
 
-This is an annotated walkthrough of Jack's
+This is an annotated walkthrough of the
 [`ngrc` example](https://github.com/jamadeo/ngrc/tree/5c438bf200d63da2b742f3dba5eaf6a51ef0e2d9).
 oi-kit handles inference, tool dispatch, and the model/tool loop. The application
 chooses the provider, tools, prompt, storage, and interface.
