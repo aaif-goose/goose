@@ -84,6 +84,17 @@ fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfi
     if provider_name == oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model
     } else {
+        // The provider name may have no catalog row of its own, or a different
+        // service's row under the same model name, so the declared catalog
+        // identity sets the output limit first.
+        let catalog_provider_id =
+            crate::config::declarative_providers::load_provider(provider_name)
+                .ok()
+                .and_then(|provider| provider.config.catalog_provider_id);
+        let model = match catalog_provider_id.as_deref() {
+            Some(catalog_provider_id) => model.with_canonical_output_limit(catalog_provider_id),
+            None => model,
+        };
         model
             .with_canonical_limits(provider_name)
             .with_canonical_vision_support(provider_name)
@@ -418,5 +429,31 @@ mod canonical_vision_tests {
         let model = apply_canonical_limits("my-custom-provider", ModelConfig::new("some-model"));
 
         assert_eq!(model.supports_vision, None);
+    }
+}
+
+#[cfg(test)]
+mod catalog_output_limit_tests {
+    use super::*;
+
+    // Bundled perplexity declares catalog_provider_id perplexity-agent, whose
+    // rows differ from the ones the provider name falls back to.
+    #[test_case::test_case("perplexity/deepseek-v4-pro-0813", Some(384000); "native row disagrees")]
+    #[test_case::test_case("perplexity/nemotron-3.5-super-120b-a12b", Some(131072); "only catalog row")]
+    fn declared_catalog_identity_sets_output_limit_without_reasoning(
+        model: &str,
+        max_tokens: Option<i32>,
+    ) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+        let reasoning_without_catalog = ModelConfig::new(model)
+            .with_canonical_limits("perplexity")
+            .reasoning;
+
+        let config = apply_canonical_limits("perplexity", ModelConfig::new(model));
+
+        assert_eq!(config.max_tokens, max_tokens);
+        assert_eq!(config.reasoning, reasoning_without_catalog);
     }
 }
