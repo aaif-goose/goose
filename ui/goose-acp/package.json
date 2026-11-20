@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose-acp",
-  "version": "1.60.2",
+  "version": "1.60.3",
   "description": "Install and resolve the Goose executable through npm",
   "license": "Apache-2.0",
   "repository": {
