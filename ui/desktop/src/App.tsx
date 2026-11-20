@@ -15,7 +15,7 @@ import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
-import { acpListSessions, acpDeleteSession } from './acp/sessions';
+import { acpListSessions, acpDeleteSession, acpGetSessionListItem } from './acp/sessions';
 import { acpChatSessionStore } from './acp/chatSessionStore';
 
 import { ChatType } from './types/chat';
@@ -51,7 +51,7 @@ import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
-import { getInitialWorkingDir } from './utils/workingDir';
+import { getEffectiveWorkingDir, getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
@@ -599,7 +599,15 @@ export function AppInner() {
   useEffect(() => {
     return window.electron.onStartRecipe(async (payload) => {
       try {
-        const newSession = await createSession(getInitialWorkingDir(), {
+        const sessionId =
+          location.pathname === '/pair'
+            ? new URLSearchParams(location.search).get('resumeSessionId')
+            : null;
+        const workingDir = sessionId
+          ? (acpChatSessionStore.getSnapshot(sessionId)?.session?.working_dir ??
+            (await acpGetSessionListItem(sessionId)).workingDir)
+          : await getEffectiveWorkingDir();
+        const newSession = await createSession(workingDir, {
           ...payload,
           allExtensions: extensionsList,
         });
@@ -621,7 +629,7 @@ export function AppInner() {
         console.error('Failed to start recipe from deep link:', error);
       }
     });
-  }, [extensionsList, navigate]);
+  }, [extensionsList, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     try {

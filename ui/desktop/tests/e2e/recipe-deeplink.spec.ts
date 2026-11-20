@@ -21,6 +21,7 @@ interface AcpRequest {
   params?: {
     sessionId?: string;
     cwd?: string;
+    workingDir?: string;
     deeplink?: string;
     _meta?: Record<string, unknown>;
     prompt?: Array<{ text?: string }>;
@@ -159,6 +160,10 @@ function createAcpPeer() {
           });
           break;
         }
+        case '_goose/unstable/session/working-dir/update':
+          sessions.get(params!.sessionId!)!.cwd = params!.workingDir!;
+          reply(id, {});
+          break;
         case 'session/prompt': {
           const sessionId = params!.sessionId!;
           prompts.push({ sessionId, text: params!.prompt!.map((part) => part.text).join('') });
@@ -309,6 +314,13 @@ test('opens a parameterized link in the focused chat while its existing run cont
         text: 'Keep this run going',
       });
 
+    const selectedDir = testInfo.outputPath('selected-workdir');
+    await mkdir(selectedDir);
+    await second.evaluate((dir) => window.electron.addRecentDir(dir), selectedDir);
+    await second.getByRole('button', { name: 'focused-workdir', exact: true }).click();
+    await second.getByRole('menuitem', { name: /selected-workdir/ }).click();
+    await expect(second.getByRole('button', { name: 'selected-workdir', exact: true })).toBeVisible();
+
     await electron.evaluate(({ app, BrowserWindow }) => {
       const target = BrowserWindow.getAllWindows().find((win) =>
         win.webContents.getURL().includes('resumeSessionId=original')
@@ -334,7 +346,7 @@ test('opens a parameterized link in the focused chat while its existing run cont
       });
     expect(peer.launches).toEqual([
       expect.objectContaining({
-        cwd,
+        cwd: selectedDir,
         _meta: expect.objectContaining({
           recipeDeeplink: 'warm',
           scheduledJobId: 'daily-recipe',
