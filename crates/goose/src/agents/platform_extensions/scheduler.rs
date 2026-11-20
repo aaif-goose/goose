@@ -1,15 +1,16 @@
 //! Exposes schedule management when Goose has a scheduler configured.
 
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, ListToolsResult,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool,
 };
-use rmcp::model::{JsonObject, ServerCapabilities};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::platform_tools::{manage_schedule_tool, MANAGE_SCHEDULE_TOOL_NAME};
 use crate::agents::schedule_tool::ScheduleTool;
 use crate::agents::tool_execution::ToolCallContext;
+use oi_kit_agent::mcp::client::Error;
 
 use super::PlatformExtensionContext;
 
@@ -38,16 +39,9 @@ impl SchedulerClient {
 }
 
 #[async_trait::async_trait]
-impl McpClientTrait for SchedulerClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult::with_all_items(
-            vec![manage_schedule_tool()],
-        ))
+impl PlatformExtension for SchedulerClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(vec![manage_schedule_tool()])
     }
 
     async fn call_tool(

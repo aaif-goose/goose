@@ -1,10 +1,14 @@
 import {
   client,
   methods,
-  type Client,
   type ClientConnection,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionNotification,
   type Stream,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import {
   GOOSE_EXT_AGENT_REQUESTS,
   GOOSE_EXT_NOTIFICATIONS,
@@ -21,9 +25,10 @@ import {
 const [gooseSessionUpdate, providerDeviceCode] = GOOSE_EXT_NOTIFICATIONS;
 const [gooseRecipeParamsRequest] = GOOSE_EXT_AGENT_REQUESTS;
 
-export type GooseAcpCallbacks = Required<
-  Pick<Client, 'requestPermission' | 'sessionUpdate' | 'createElicitation'>
-> & {
+export type GooseAcpCallbacks = {
+  requestPermission: (request: RequestPermissionRequest) => Promise<RequestPermissionResponse>;
+  sessionUpdate: (notification: SessionNotification) => Promise<void>;
+  createElicitation: (request: CreateElicitationRequest) => Promise<CreateElicitationResponse>;
   unstable_sessionRecipeRequestParams: (
     request: RequestRecipeParams_unstable
   ) => Promise<RecipeParamsResponse_unstable>;

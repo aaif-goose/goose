@@ -1,4 +1,4 @@
-import { methods } from '@agentclientprotocol/sdk';
+import { methods } from '@agentclientprotocol/sdk/unstable';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {

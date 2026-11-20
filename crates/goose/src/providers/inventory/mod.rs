@@ -1385,6 +1385,17 @@ mod tests {
     }
 
     #[test]
+    fn vercel_inventory_enriches_gateway_model_ids() {
+        let models =
+            enrich_model_ids_with_canonical("vercel", &["moonshotai/kimi-k2.5".to_string()]);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "Kimi K2.5");
+        assert!(models[0].context_limit.is_some());
+        assert!(models[0].reasoning.is_some());
+    }
+
+    #[test]
     fn databricks_v2_inventory_prefers_goose_model_ids_for_duplicate_names() {
         let models = enrich_model_ids_with_canonical(
             "databricks_v2",

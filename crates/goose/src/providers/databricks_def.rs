@@ -1,9 +1,9 @@
 use anyhow::Result;
 use futures::future::BoxFuture;
-use goose_providers::api_client::TlsConfig;
-use goose_providers::base::ProviderDescriptor;
-use goose_providers::databricks::DatabricksProvider;
-use goose_providers::databricks_auth::{
+use oi_kit_providers::api_client::TlsConfig;
+use oi_kit_providers::base::ProviderDescriptor;
+use oi_kit_providers::databricks::DatabricksProvider;
+use oi_kit_providers::databricks_auth::{
     DatabricksAuth, DatabricksOauthTokenProvider, DatabricksRefreshHook,
     DatabricksSessionIdProvider, DatabricksTokenResolver,
 };
@@ -15,7 +15,7 @@ use crate::providers::base::ProviderDef;
 pub struct DatabricksProviderDef;
 
 impl ProviderDescriptor for DatabricksProviderDef {
-    fn metadata() -> goose_providers::base::ProviderMetadata {
+    fn metadata() -> oi_kit_providers::base::ProviderMetadata {
         DatabricksProvider::metadata().with_setup(
             crate::providers::catalog::ProviderSetupMetadata::new(
                 crate::providers::catalog::ProviderSetupCategory::Model,
@@ -108,7 +108,10 @@ fn token_resolver() -> DatabricksTokenResolver {
 }
 
 fn refresh_hook() -> DatabricksRefreshHook {
-    Arc::new(|| Config::global().invalidate_secrets_cache())
+    Arc::new(|| {
+        Config::global().invalidate_secrets_cache();
+        crate::providers::oauth::force_oauth_token_refresh();
+    })
 }
 
 fn session_id_provider() -> DatabricksSessionIdProvider {

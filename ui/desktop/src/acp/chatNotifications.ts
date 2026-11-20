@@ -2,7 +2,7 @@ import type {
   GooseSessionNotification_unstable,
   ProviderDeviceCodeNotification_unstable,
 } from '@aaif/goose-acp-client';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import { AppEvents } from '../constants/events';
 import { maybeHandlePlatformEvent } from '../utils/platform_events';
 import { toolNotificationEvent } from './adapter/toolNotifications';

@@ -10,11 +10,11 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::ExtensionLease;
-use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
@@ -25,8 +25,9 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_agent::mcp::client::McpClientTrait;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffort;
 
 struct FeatureProvider {
     inner: Arc<dyn Provider>,
@@ -48,7 +49,10 @@ impl Provider for RecordingProvider {
         self.inner.provider_session_id()
     }
 
-    async fn resume(&self, session_id: &str) -> Result<(), goose_providers::errors::ProviderError> {
+    async fn resume(
+        &self,
+        session_id: &str,
+    ) -> Result<(), oi_kit_providers::errors::ProviderError> {
         self.inner.resume(session_id).await
     }
 
@@ -58,7 +62,8 @@ impl Provider for RecordingProvider {
         system: &str,
         messages: &[Message],
         tools: &[rmcp::model::Tool],
-    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+    ) -> Result<crate::providers::base::MessageStream, oi_kit_providers::errors::ProviderError>
+    {
         self.model_configs
             .lock()
             .unwrap()
@@ -79,7 +84,7 @@ impl Provider for RecordingProvider {
     async fn fetch_model_info(
         &self,
         model_name: &str,
-    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+    ) -> Result<oi_kit_providers::base::ModelInfo, oi_kit_providers::errors::ProviderError> {
         self.inner.fetch_model_info(model_name).await
     }
 }
@@ -96,7 +101,8 @@ impl Provider for FeatureProvider {
         system: &str,
         messages: &[Message],
         tools: &[rmcp::model::Tool],
-    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+    ) -> Result<crate::providers::base::MessageStream, oi_kit_providers::errors::ProviderError>
+    {
         self.inner
             .stream(model_config, system, messages, tools)
             .await
@@ -113,7 +119,7 @@ impl Provider for FeatureProvider {
     async fn fetch_model_info(
         &self,
         model_name: &str,
-    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+    ) -> Result<oi_kit_providers::base::ModelInfo, oi_kit_providers::errors::ProviderError> {
         let mut model_info = self.inner.fetch_model_info(model_name).await?;
         if let Some(resolved_model) = self.features.resolved_model {
             model_info.resolved_model = Some(resolved_model.to_string());
@@ -172,20 +178,35 @@ impl TestPipeline {
             .await
     }
 
-    fn extension_lease(
+    fn tool_snapshot(
         &self,
         services: &StateMachineServices,
-    ) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
+    ) -> Arc<StdMutex<Option<Arc<ToolSnapshot>>>> {
         services
             .runtime
             .confirmations
             .session(&self.session_id)
-            .extension_lease()
+            .tool_snapshot()
+    }
+
+    async fn fire_tool_hooks(
+        &self,
+        session: &Session,
+        effects: &mut Vec<GooseEffect>,
+        emit: &Emitter,
+    ) {
+        let lease = self.tool_snapshot(self.services().await);
+        if let Some(denials) =
+            fire_pre_tool_hooks(&self.hook_manager, &lease, session, effects).await
+        {
+            effects.push(emit.message(denials).into());
+        }
+        fire_post_tool_hooks(&self.hook_manager, &lease, session, effects).await;
     }
 
     async fn start_new_turn(&self) {
         let services = self.services().await;
-        *self.extension_lease(services).lock().unwrap() = None;
+        *self.tool_snapshot(services).lock().unwrap() = None;
     }
 
     pub(super) async fn machine(
@@ -207,6 +228,7 @@ impl TestPipeline {
                 services.runtime.steer_queue(&self.session_id),
             )
             .await
+            .expect("state machine should build")
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
@@ -252,6 +274,34 @@ impl TestPipeline {
             .apply()
             .await?;
         self.reconstruct().await
+    }
+
+    pub(super) fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    pub(super) fn with_context_relevance(
+        mut self,
+        decisions: Arc<dyn oi_kit_providers::decision::DecisionProvider>,
+    ) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.context_relevance = Some(decisions);
+        self
+    }
+
+    pub(super) fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.always_load_tools = tools;
+        self
+    }
+
+    pub(super) fn with_deferred_tools(mut self) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.defer_tools = true;
+        self
     }
 
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
@@ -318,8 +368,8 @@ impl TestPipeline {
         self
     }
 
-    pub(super) async fn set_total_tokens(&self, tokens: i32) {
-        use goose_providers::conversation::token_usage::Usage;
+    pub(super) async fn set_total_tokens(&self, tokens: i64) {
+        use oi_kit_providers::conversation::token_usage::Usage;
         self.session_manager
             .update(&self.session_id)
             .usage(Usage::new(None, None, Some(tokens)))
@@ -337,8 +387,7 @@ impl TestPipeline {
         for extension in recipe.extensions.clone().unwrap_or_default() {
             self.services()
                 .await
-                .extension_manager
-                .enable(&self.session_id, extension)
+                .enable_extension(&self.session_id, extension)
                 .await?;
         }
         Ok(())
@@ -382,7 +431,11 @@ impl TestPipeline {
     }
 
     pub(super) async fn steer(&self, message: Message) {
-        self.services().await.steer(&self.session_id, message).await;
+        self.services()
+            .await
+            .steer(&self.session_id, message)
+            .await
+            .expect("steer the test session");
     }
 
     pub(super) async fn has_pending_steers(&self) -> bool {
@@ -404,7 +457,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<oi_kit_agent::mcp::client::McpCallContext> {
         self.calculator.contexts()
     }
 
@@ -423,12 +476,12 @@ impl TestPipeline {
         pipeline.turn_settings = self.turn_settings.clone();
         pipeline.max_turns = self.max_turns;
         let lease = self
-            .extension_lease(self.services().await)
+            .tool_snapshot(self.services().await)
             .lock()
             .unwrap()
             .clone();
         *pipeline
-            .extension_lease(pipeline.services().await)
+            .tool_snapshot(pipeline.services().await)
             .lock()
             .unwrap() = lease;
         Ok(pipeline)
@@ -475,11 +528,7 @@ impl TestPipeline {
         let mut events = Vec::new();
 
         for text in user_messages {
-            self.start_new_turn().await;
-            self.session_manager
-                .add_message(&self.session_id, &Message::user().with_text(text))
-                .await?;
-
+            self.send(&Message::user().with_text(text)).await?;
             events.extend(run_machine(self).await?);
         }
 
@@ -487,10 +536,7 @@ impl TestPipeline {
     }
 
     pub(super) async fn run_message(&self, message: Message) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &message)
-            .await?;
+        self.send(&message).await?;
         let events = run_machine(self).await?;
         Ok(TestRun::new(self.session().await?, events))
     }
@@ -499,22 +545,20 @@ impl TestPipeline {
         mut self,
         message: &str,
     ) -> Result<(Self, TestRun, usize)> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
 
         let cancel = CancellationToken::new();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
             let machine = self.machine(cancel.clone()).await;
             let mut result = machine.step(&session, &emit).await?;
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
@@ -555,12 +599,15 @@ impl TestPipeline {
         Ok(())
     }
 
-    pub(super) async fn start_turn(&self) -> Result<()> {
-        crate::agents::state_machine::session::run_turn_start_hooks(
-            &self.services().await.hook_manager,
-            &self.session().await?,
-        )
-        .await
+    pub(super) async fn send(&self, message: &Message) -> Result<()> {
+        self.start_new_turn().await;
+        self.session_manager
+            .add_message(&self.session_id, message)
+            .await?;
+        self.services()
+            .await
+            .emit_hooks_for_saved_prompt(&self.session_id)
+            .await
     }
 
     pub(super) async fn resume(&self) -> Result<TestRun> {
@@ -589,8 +636,7 @@ impl TestPipeline {
         Ok(self
             .services()
             .await
-            .extension_manager
-            .current_lease(&self.session_id)
+            .current_tools(&self.session_id)
             .await?
             .configs()
             .iter()
@@ -610,8 +656,7 @@ impl TestPipeline {
     pub(super) async fn add_extension(&self, name: &str) -> Result<()> {
         self.services()
             .await
-            .extension_manager
-            .enable(
+            .enable_extension(
                 &self.session_id,
                 ExtensionConfig::Platform {
                     name: name.to_string(),
@@ -636,10 +681,7 @@ impl TestPipeline {
         message: &str,
         cancel: CancellationToken,
     ) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         self.run_turn(cancel).await
     }
 
@@ -650,7 +692,8 @@ impl TestPipeline {
         let session = crate::agents::state_machine::session::run(
             &machine,
             self.session_manager.as_ref(),
-            &self.services().await.hook_manager,
+            &self.hook_manager,
+            &self.tool_snapshot(self.services().await),
             &self.session_id,
             &emit,
         )
@@ -669,17 +712,13 @@ impl TestPipeline {
         action: ElicitationAction,
         user_data: serde_json::Value,
     ) -> Result<TestRun> {
-        self.start_new_turn().await;
-        self.session_manager
-            .add_message(&self.session_id, &Message::user().with_text(message))
-            .await?;
+        self.send(&Message::user().with_text(message)).await?;
         let cancel = CancellationToken::new();
         let machine = self.machine(cancel.clone()).await;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
-        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -733,6 +772,8 @@ impl TestPipeline {
                     }
                 }
             };
+            self.fire_tool_hooks(&session, &mut result.effects, &emit)
+                .await;
             assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
             machine
                 .apply(
@@ -821,7 +862,7 @@ async fn test_pipeline_with_components(
             GooseMode::Auto,
         )
         .await?;
-    let model_config = ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+    let model_config = ModelConfig::new(oi_kit_providers::openai::OPEN_AI_DEFAULT_MODEL)
         .with_canonical_limits("openai");
     session_manager
         .update(&session.id)
@@ -855,13 +896,13 @@ async fn build_test_pipeline(
         .provider_name
         .as_deref()
         .expect("test session has a provider");
-    let api_client = goose_providers::api_client::ApiClient::new_with_tls(
+    let api_client = oi_kit_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
-        goose_providers::api_client::AuthMethod::NoAuth,
+        oi_kit_providers::api_client::AuthMethod::NoAuth,
         None,
     )?;
     let provider: Arc<dyn Provider> = Arc::new(
-        goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+        oi_kit_providers::openai::OpenAiProviderBuilder::new(api_client)
             .base_path("chat/completions")
             .name(provider_name)
             .preserve_thinking_context(provider_features.preserves_thinking)
@@ -895,10 +936,14 @@ async fn build_test_pipeline(
             on_failure_timeout: std::time::Duration::from_secs(1),
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
+            defer_tools: false,
+            always_load_tools: Vec::new(),
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
+            standalone_compaction: false,
             tool_call_cutoff: None,
             auto_effort: None,
+            context_relevance: None,
         },
         max_turns: MAX_TURNS,
         session_id: session.id.clone(),
@@ -951,10 +996,7 @@ async fn enable_session_extensions(
                 )
                 .await;
         } else {
-            services
-                .extension_manager
-                .enable(&session.id, extension)
-                .await?;
+            services.enable_extension(&session.id, extension).await?;
         }
     }
 
@@ -1084,9 +1126,8 @@ impl TestRun {
             .collect()
     }
 
-    pub(super) fn assert_emitted(&self, contains: &str) {
-        let emitted = self
-            .events
+    fn emitted_texts(&self) -> Vec<String> {
+        self.events
             .iter()
             .filter_map(|event| match event {
                 AgentEvent::Message(message) => Some(
@@ -1099,7 +1140,11 @@ impl TestRun {
                 ),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    pub(super) fn assert_emitted(&self, contains: &str) {
+        let emitted = self.emitted_texts();
         assert!(
             emitted.iter().any(|message| message.contains(contains)),
             "no emitted message contains {contains:?}:\n{}",
@@ -1107,14 +1152,27 @@ impl TestRun {
         );
     }
 
+    pub(super) fn assert_not_emitted(&self, contains: &str) {
+        let emitted = self.emitted_texts();
+        assert!(
+            !emitted.iter().any(|message| message.contains(contains)),
+            "an emitted message contains {contains:?}:\n{}",
+            emitted.join("\n")
+        );
+    }
+
     pub(super) fn assert_emitted_message_matches_persisted(&self, contains: &str) {
+        let contains_text = |message: &Message| {
+            message
+                .content
+                .iter()
+                .any(|content| content.to_string().contains(contains))
+        };
         let emitted = self
             .events
             .iter()
             .find_map(|event| match event {
-                AgentEvent::Message(message) if message.as_concat_text().contains(contains) => {
-                    Some(message)
-                }
+                AgentEvent::Message(message) if contains_text(message) => Some(message),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no emitted message contains {contains:?}"));
@@ -1122,7 +1180,7 @@ impl TestRun {
             .conversation()
             .messages()
             .iter()
-            .find(|message| message.as_concat_text().contains(contains))
+            .find(|message| contains_text(message))
             .unwrap_or_else(|| panic!("no persisted message contains {contains:?}"));
         assert_eq!(emitted.id, persisted.id);
     }
@@ -1209,12 +1267,15 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 5] = [
+const TOOL_OPERATIONS: [&str; 8] = [
+    "final_output",
     "tool_approval",
     "skills",
-    "recipe",
-    "tool_execution",
-    "remaining_tool_calls",
+    "expired_tools",
+    "extensions",
+    "tool_deferral",
+    "platform_extensions",
+    "unhandled_tool_calls",
 ];
 
 fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step: Option<&str>) {
@@ -1234,15 +1295,23 @@ fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step
 
 fn has_open_tool_call(turn: &[Message]) -> bool {
     let mut open = HashSet::new();
-    for content in turn.iter().flat_map(|message| &message.content) {
-        match content {
-            MessageContent::ToolRequest(request) if !request.was_executed_externally() => {
-                open.insert(request.id.as_str());
+    let mut answering_hidden_request = false;
+    for message in turn {
+        if message.role == rmcp::model::Role::User && !message.is_turn_context() {
+            answering_hidden_request = message.metadata.hide_response;
+        }
+        for content in &message.content {
+            match content {
+                MessageContent::ToolRequest(request)
+                    if !request.was_executed_externally() && !answering_hidden_request =>
+                {
+                    open.insert(request.id.as_str());
+                }
+                MessageContent::ToolResponse(response) => {
+                    open.remove(response.id.as_str());
+                }
+                _ => {}
             }
-            MessageContent::ToolResponse(response) => {
-                open.remove(response.id.as_str());
-            }
-            _ => {}
         }
     }
     !open.is_empty()
@@ -1254,10 +1323,12 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
     let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
-    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let mut result = machine.step(&session, &emit).await?;
+        pipeline
+            .fire_tool_hooks(&session, &mut result.effects, &emit)
+            .await;
         assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
         machine
             .apply(

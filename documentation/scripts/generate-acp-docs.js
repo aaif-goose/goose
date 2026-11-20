@@ -8,7 +8,7 @@ const OUTPUT_FILE = path.join(
   ROOT,
   'documentation',
   'docs',
-  'gdk',
+  'oi-kit',
   'acp',
   'reference.md'
 );
@@ -239,13 +239,13 @@ function renderDocumentation(schemas, meta, gooseVersion = 'Preview') {
 
   const output = [
     '---',
-    'title: goose ACP Reference',
-    'sidebar_label: goose extensions',
+    'title: ACP Extensions Reference',
+    'sidebar_label: ACP extensions reference',
     'displayed_sidebar: gdkSidebar',
     'sidebar_position: 2',
     '---',
     '',
-    '# goose ACP Reference',
+    '# ACP Extensions Reference',
     '',
     'This reference documents goose-specific Agent Client Protocol methods. Standard ACP methods are documented by the [Agent Client Protocol specification](https://agentclientprotocol.com/).',
     '',

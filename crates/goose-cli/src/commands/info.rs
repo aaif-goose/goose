@@ -4,7 +4,7 @@ use goose::config::paths::Paths;
 use goose::config::Config;
 use goose::conversation::message::Message;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use serde_yaml;
 use std::time::Duration;
 

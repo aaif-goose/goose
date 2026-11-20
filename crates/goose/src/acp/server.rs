@@ -9,10 +9,10 @@ pub(super) use crate::acp::response_builder::{
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
-use crate::agents::extension_manager::ClientContext;
-use crate::agents::mcp_client::GooseMcpHostInfo;
+use crate::agents::extension_config::hold_client_secret;
+use crate::agents::extension_manager::client_context;
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations, turn_failure,
+    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
 use crate::agents::{
     Attachment, ExtensionConfig, ExtensionLoadResult, GoosePlatform, SessionConfig,
@@ -46,15 +46,16 @@ use agent_client_protocol::schema::v1::{
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, ContentBlock, Cost, CurrentModeUpdate, DeleteSessionRequest,
     DeleteSessionResponse, EmbeddedResourceResource, ForkSessionRequest, ForkSessionResponse,
-    ImageContent, Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
-    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer,
-    Meta, NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
-    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionDeleteCapabilities, SessionId, SessionInfoUpdate,
-    SessionListCapabilities, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallId, ToolCallUpdate, Usage, UsageUpdate,
+    HttpHeader, ImageContent, Implementation, InitializeRequest, InitializeResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    McpCapabilities, McpServer, Meta, NewSessionRequest, NewSessionResponse, PermissionOption,
+    PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
+    SessionCloseCapabilities, SessionConfigOption, SessionDeleteCapabilities, SessionId,
+    SessionInfoUpdate, SessionListCapabilities, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, TextContent, ToolCallId, ToolCallUpdate, Usage,
+    UsageUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::util::MatchDispatchFrom;
@@ -66,7 +67,8 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
-use goose_providers::errors::ProviderError;
+use oi_kit_agent::mcp::client::GooseMcpHostInfo;
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
     TextContent as RmcpTextContent,
@@ -84,7 +86,8 @@ use url::Url;
 use uuid::Uuid;
 
 use self::message_meta::{
-    content_chunk_for_message, message_meta_without_steer, populate_output_token_limit_content,
+    content_chunk_for_message, live_transcript_chunk, message_meta_without_steer,
+    populate_output_token_limit_content,
 };
 use self::tool_calls::chain::{breaks_consecutive_tool_calls, ReadyToolChain, ToolChainTracker};
 use self::tool_calls::conversion::{
@@ -99,6 +102,7 @@ mod agent_mentions;
 use crate::agents::{ActiveRunRegistry, StartRunError};
 mod apps;
 mod config;
+mod context_report;
 mod custom_dispatch;
 mod diagnostics;
 mod dictation;
@@ -358,6 +362,50 @@ fn meta_string(
     Ok(Some(value.to_string()))
 }
 
+const MAX_SESSION_TAGS: usize = 16;
+const MAX_SESSION_TAG_KEY_BYTES: usize = 128;
+const MAX_SESSION_TAG_VALUE_BYTES: usize = 1024;
+
+/// Client-owned `key -> value` string labels from `_meta.tags`, sorted by key.
+fn meta_tags(meta: Option<&Meta>) -> Result<Vec<(String, String)>, agent_client_protocol::Error> {
+    let invalid = |message: String| agent_client_protocol::Error::invalid_params().data(message);
+    let Some(value) = meta.and_then(|m| m.get("tags")) else {
+        return Ok(Vec::new());
+    };
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(tags) = value.as_object() else {
+        return Err(invalid("tags must be an object".to_string()));
+    };
+    if tags.len() > MAX_SESSION_TAGS {
+        return Err(invalid(format!(
+            "tags may have at most {MAX_SESSION_TAGS} entries"
+        )));
+    }
+    let mut parsed = tags
+        .iter()
+        .map(|(key, value)| {
+            if key.is_empty() || key.len() > MAX_SESSION_TAG_KEY_BYTES {
+                return Err(invalid(format!(
+                    "tag keys must be 1-{MAX_SESSION_TAG_KEY_BYTES} bytes"
+                )));
+            }
+            let Some(value) = value.as_str() else {
+                return Err(invalid(format!("tag {key} must be a string")));
+            };
+            if value.len() > MAX_SESSION_TAG_VALUE_BYTES {
+                return Err(invalid(format!(
+                    "tag {key} must be at most {MAX_SESSION_TAG_VALUE_BYTES} bytes"
+                )));
+            }
+            Ok((key.clone(), value.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parsed.sort();
+    Ok(parsed)
+}
+
 fn agent_capabilities_meta() -> Option<Meta> {
     let mut goose = serde_json::Map::new();
     goose.insert("recipeParameterScopes".to_string(), serde_json::json!({}));
@@ -469,44 +517,66 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     match mcp_server {
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
-            Ok(ExtensionConfig::Stdio {
-                name: stdio.name,
-                description: String::new(),
-                cmd: stdio.command.to_string_lossy().to_string(),
-                args: stdio.args,
-                envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
-                env_keys: vec![],
-                timeout,
-                cwd: None,
-                bundled: Some(false),
-                available_tools: vec![],
-            })
+            Ok(ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::Stdio {
+                    name: stdio.name,
+                    description: String::new(),
+                    cmd: stdio.command.to_string_lossy().to_string(),
+                    args: stdio.args,
+                    envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
+                    env_keys: vec![],
+                    timeout,
+                    cwd: None,
+                    bundled: Some(false),
+                    available_tools: vec![],
+                },
+            ))
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
-            Ok(ExtensionConfig::StreamableHttp {
-                name: http.name,
-                description: String::new(),
-                uri: http.url,
-                envs: Envs::default(),
-                env_keys: vec![],
-                headers: http
-                    .headers
-                    .into_iter()
-                    .map(|h| (h.name, h.value))
-                    .collect(),
-                timeout,
-                socket: None,
-                client_id: None,
-                client_secret_key: None,
-                scopes: vec![],
-                bundled: Some(false),
-                available_tools: vec![],
-            })
+            let mut env_keys = vec![];
+            let headers = client_http_headers(http.headers, &mut env_keys);
+            Ok(ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                    name: http.name,
+                    description: String::new(),
+                    uri: http.url,
+                    envs: Envs::default(),
+                    env_keys,
+                    headers,
+                    timeout,
+                    socket: None,
+                    client_id: None,
+                    client_secret_key: None,
+                    scopes: vec![],
+                    bundled: Some(false),
+                    available_tools: vec![],
+                },
+            ))
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
         _ => Err("Unknown MCP server type".to_string()),
     }
+}
+
+/// Turns the HTTP headers an ACP client sent with an MCP server into config
+/// headers. Effectively treats all headers sent over MCP as sensitive. ACP
+/// spec requires re-sending on resumption, so they need not be persisted
+fn client_http_headers(
+    headers: Vec<HttpHeader>,
+    env_keys: &mut Vec<String>,
+) -> HashMap<String, String> {
+    headers
+        .into_iter()
+        .map(|header| {
+            let key = hold_client_secret(header.value);
+            let placeholder = format!("${{{key}}}");
+            if !env_keys.contains(&key) {
+                env_keys.push(key);
+            }
+            (header.name, placeholder)
+        })
+        .collect()
 }
 
 fn mcp_server_configs(
@@ -610,7 +680,7 @@ fn push_or_replace_extension(extensions: &mut Vec<ExtensionConfig>, extension: E
 
 fn resolve_default_provider_model_config(
     config: &Config,
-) -> Result<(String, goose_providers::model::ModelConfig), agent_client_protocol::Error> {
+) -> Result<(String, oi_kit_providers::model::ModelConfig), agent_client_protocol::Error> {
     let resolved_provider = config.get_goose_provider().map_err(|error| {
         agent_client_protocol::Error::internal_error()
             .data(format!("Failed to resolve provider: {}", error))
@@ -695,7 +765,7 @@ fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     }
 }
 
-fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
+fn to_nonnegative_u64(value: Option<i64>) -> Option<u64> {
     value.and_then(|v| u64::try_from(v).ok())
 }
 
@@ -814,7 +884,7 @@ impl AcpConnection {
                 session_id,
                 self.connection_id,
                 Attachment {
-                    client: ClientContext::new(&self.services.goose_platform, None),
+                    client: client_context(&self.services.goose_platform, None),
                     session_names: None,
                 },
                 run_id,
@@ -1022,7 +1092,7 @@ impl AcpConnection {
                 .get_or_init(|| spawn_session_name_update_notifier(cx.clone()))
                 .clone()
         });
-        let client = ClientContext::new(
+        let client = client_context(
             &self.services.goose_platform,
             self.client_mcp_host_info.get().cloned(),
         );
@@ -1057,8 +1127,7 @@ impl AcpConnection {
         // what lets the session response report extensions that fail.
         let extension_results = self
             .services
-            .extension_manager
-            .current_lease(&session.id)
+            .current_tools(&session.id)
             .await
             .internal_err()?
             .start()
@@ -1676,7 +1745,7 @@ fn status_message_from_system_notification(
     }
 }
 
-/// Conversion to the sdk-types wire mirror carried by `message_usage`.
+/// Conversion to the acp-types wire mirror carried by `message_usage`.
 fn message_usage_update(
     message_id: Option<String>,
     usage: &crate::conversation::message::MessageUsage,
@@ -2125,6 +2194,21 @@ impl AcpConnection {
                     }
                 }
                 Ok(crate::agents::AgentEvent::HistoryReplaced(_)) => {
+                    if let Err(error) = self
+                        .send_session_usage_updates(
+                            cx,
+                            acp_session_id,
+                            session_id,
+                            &mut context_limit,
+                        )
+                        .await
+                    {
+                        warn!(
+                            session_id,
+                            ?error,
+                            "Failed to send post-compaction usage update"
+                        );
+                    }
                     if self.supports_goose_custom_notifications() {
                         cx.send_notification(GooseSessionNotification {
                             session_id: session_id.to_string(),
@@ -2156,7 +2240,8 @@ impl AcpConnection {
                 if let Some(error) = session
                     .conversation
                     .as_ref()
-                    .and_then(turn_failure)
+                    .and_then(Conversation::last)
+                    .filter(|message| message.error_kind().is_some())
                     .and_then(|message| {
                         message
                             .content
@@ -2301,7 +2386,10 @@ impl AcpConnection {
 
         let message_id = format!("steer_{}", Uuid::new_v4());
         let message = message.with_id(message_id.clone());
-        self.services.steer(&req.session_id, message).await;
+        self.services
+            .steer(&req.session_id, message)
+            .await
+            .internal_err()?;
 
         if let Some(cx) = self.client_cx.get() {
             let _ = Self::send_queued_steer_update(
@@ -2640,12 +2728,12 @@ mod tests {
     use super::*;
     use crate::session::session_manager::SessionType;
     use agent_client_protocol::schema::v1::{
-        EmbeddedResource, EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse,
-        McpServerStdio, PermissionOptionId, ResourceLink, Role as AcpRole,
-        SelectedPermissionOutcome, TextResourceContents,
+        EmbeddedResource, EnvVariable, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
+        PermissionOptionId, ResourceLink, Role as AcpRole, SelectedPermissionOutcome,
+        TextResourceContents,
     };
-    use goose_providers::conversation::token_usage::Usage as TokenUsage;
-    use goose_providers::thinking::{
+    use oi_kit_providers::conversation::token_usage::Usage as TokenUsage;
+    use oi_kit_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
     use std::io::Write;
@@ -2701,7 +2789,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
@@ -3001,7 +3089,9 @@ extensions:
 
         assert_eq!(extensions.len(), 1);
         match &extensions[0] {
-            ExtensionConfig::StreamableHttp { name, uri, .. } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp { name, uri, .. },
+            ) => {
                 assert_eq!(name, "zed-mcp");
                 assert_eq!(uri, "http://localhost/new");
             }
@@ -3083,7 +3173,7 @@ extensions:
                 .args(vec!["stdio".into()])
                 .env(vec![EnvVariable::new("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::Stdio {
+        Ok(ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -3100,23 +3190,19 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        })
+        }))
     )]
     #[test_case(
         McpServer::Http(
             McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
-                .headers(vec![HttpHeader::new("Authorization", "Bearer ghp_xxxxxxxxxxxx")])
         ),
-        Ok(ExtensionConfig::StreamableHttp {
+        Ok(ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
             envs: Envs::default(),
             env_keys: vec![],
-            headers: HashMap::from([(
-                "Authorization".into(),
-                "Bearer ghp_xxxxxxxxxxxx".into()
-            )]),
+            headers: HashMap::new(),
             timeout: None,
             socket: None,
             client_id: None,
@@ -3124,7 +3210,7 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        })
+        }))
     )]
     #[test_case(
         McpServer::Sse(McpServerSse::new("test-sse", "https://agent-fin.biodnd.com/sse")),
@@ -3135,6 +3221,51 @@ extensions:
         expected: Result<ExtensionConfig, String>,
     ) {
         assert_eq!(mcp_server_to_extension_config(input), expected);
+    }
+
+    #[tokio::test]
+    async fn mcp_headers_are_held_in_memory() {
+        let token = "Bearer unit-test-secret-header";
+        let server = McpServer::Http(
+            McpServerHttp::new("github", "https://example.com/mcp").headers(vec![
+                HttpHeader::new("Authorization", token),
+                HttpHeader::new("X-Trace", "trace-value"),
+            ]),
+        );
+
+        let config = mcp_server_to_extension_config(server.clone()).unwrap();
+        assert_eq!(mcp_server_to_extension_config(server).unwrap(), config);
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+            headers,
+            env_keys,
+            ..
+        }) = &config
+        else {
+            panic!("expected streamable http config");
+        };
+        assert_eq!(env_keys.len(), 2);
+        for (name, key) in [("Authorization", &env_keys[0]), ("X-Trace", &env_keys[1])] {
+            assert_eq!(headers[name], format!("${{{key}}}"));
+        }
+        let stored = serde_json::to_string(&config).unwrap();
+        assert!(!stored.contains(token));
+        assert!(!stored.contains("trace-value"));
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+            headers,
+            ..
+        }) = config.resolve(&cfg).await.unwrap()
+        else {
+            panic!("expected streamable http config");
+        };
+        assert_eq!(headers["Authorization"], token);
+        assert_eq!(headers["X-Trace"], "trace-value");
     }
 
     fn new_resource_link(content: &str) -> anyhow::Result<(ResourceLink, NamedTempFile)> {
@@ -3513,7 +3644,7 @@ print(\"hello, world\")
             TokenUsage::default(),
         );
         session.model_config = Some(
-            goose_providers::model::ModelConfig::new("test-model")
+            oi_kit_providers::model::ModelConfig::new("test-model")
                 .with_context_limit(Some(258_000)),
         );
         let totals = SessionUsageTotals {
@@ -3727,7 +3858,7 @@ print(\"hello, world\")
             .services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
+                oi_kit_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
                     HashMap::from([("thinking_effort".to_string(), serde_json::json!("xhigh"))]),
                 ),
                 &session.id,
@@ -3740,7 +3871,7 @@ print(\"hello, world\")
                 &session.id,
                 server.connection_id,
                 Attachment {
-                    client: ClientContext::new(&GoosePlatform::GooseCli, None),
+                    client: client_context(&GoosePlatform::GooseCli, None),
                     session_names: None,
                 },
             )

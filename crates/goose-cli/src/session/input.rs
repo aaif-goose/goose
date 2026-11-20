@@ -426,7 +426,7 @@ fn help_text() -> String {
 /model --provider <name> [model] - Switch to a different provider (optionally specifying a model)
 /model --effort <level> [model] - Set the thinking effort for this session (off, low, medium, high, max)
 /compact - Compact the current conversation to reduce context length while preserving key information.
-{additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
+{additional_builtin_help}/status - Show session status: session ID, model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
 /skills - List available skills or enable skills by name (usage: /skills [<name>...])

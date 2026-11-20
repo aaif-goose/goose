@@ -5,7 +5,7 @@ import OriginalDocItemMetadata from "@theme-original/DocItem/Metadata";
 
 export default function DocItemMetadata(): ReactNode {
   const { metadata, frontMatter, assets } = useDoc();
-  if (!metadata.id.startsWith("gdk/")) {
+  if (!metadata.id.startsWith("oi-kit/")) {
     return <OriginalDocItemMetadata />;
   }
 
@@ -14,7 +14,7 @@ export default function DocItemMetadata(): ReactNode {
       title={metadata.title}
       description={metadata.description}
       keywords={frontMatter.keywords}
-      image={assets.image ?? frontMatter.image ?? "/img/gdk/social-preview.png"}
+      image={assets.image ?? frontMatter.image ?? "/img/gdk/social-preview-oi-kit.png"}
     />
   );
 }

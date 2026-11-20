@@ -1,25 +1,37 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import MarkdownContent from './MarkdownContent';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import Expand from './ui/Expand';
+import { AppEvents } from '../constants/events';
+import type { ShowThinking } from '../utils/settings';
 
 interface ThinkingContentProps {
   content: string;
-  isExpanded: boolean;
 }
 
-export default function ThinkingContent({ content, isExpanded }: ThinkingContentProps) {
+export default function ThinkingContent({ content }: ThinkingContentProps) {
+  const [showThinking, setShowThinking] = useState<ShowThinking | null>(null);
   const [manualToggle, setManualToggle] = useState<boolean | null>(null);
-  const prevIsExpanded = useRef(isExpanded);
 
   useEffect(() => {
-    if (prevIsExpanded.current && !isExpanded) {
-      setManualToggle(null);
-    }
-    prevIsExpanded.current = isExpanded;
-  }, [isExpanded]);
+    const loadShowThinking = () => {
+      window.electron.getSetting('showThinking').then(setShowThinking);
+    };
 
-  const expanded = manualToggle !== null ? manualToggle : isExpanded;
+    loadShowThinking();
+    window.addEventListener(AppEvents.SHOW_THINKING_CHANGED, loadShowThinking);
+
+    return () => {
+      window.removeEventListener(AppEvents.SHOW_THINKING_CHANGED, loadShowThinking);
+    };
+  }, []);
+
+  // Wait for the setting so 'never' and 'always' do not flash a collapsed block.
+  if (showThinking === null || showThinking === 'never') {
+    return null;
+  }
+
+  const expanded = manualToggle !== null ? manualToggle : showThinking === 'always';
 
   return (
     <Collapsible open={expanded} onOpenChange={(open) => setManualToggle(open)} className="mb-2">

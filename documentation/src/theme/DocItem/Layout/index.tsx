@@ -455,7 +455,7 @@ function PageActionsMenu(): ReactNode {
 function useShouldShowCopyButton(): boolean {
   const {metadata} = useDoc();
 
-  if (metadata.id.startsWith('gdk/')) {
+  if (metadata.id.startsWith('oi-kit/')) {
     return false;
   }
 

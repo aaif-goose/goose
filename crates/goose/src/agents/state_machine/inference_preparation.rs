@@ -1,21 +1,22 @@
 //! Goose-specific inference request preparation.
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::PromptManager;
+use crate::agents::StateMachineServices;
 use crate::config::GooseMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
-use goose_agent::operation::{messages_since_kickoff, InferenceInput};
-use goose_providers::conversation::message::Message;
-use goose_providers::conversation::Conversation;
+use oi_kit_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
+use oi_kit_agent::operation::{messages_since_kickoff, InferenceInput};
+use oi_kit_providers::conversation::message::Message;
+use oi_kit_providers::conversation::Conversation;
 use std::sync::{Arc, Mutex as StdMutex};
 
 pub struct GooseInferenceRequestPreparer<'a> {
-    pub(crate) extension_manager: Arc<ExtensionManager>,
-    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    pub(crate) services: Arc<StateMachineServices>,
+    pub(crate) tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) context_limit: usize,
 }
@@ -23,14 +24,11 @@ pub struct GooseInferenceRequestPreparer<'a> {
 #[async_trait]
 impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
     async fn prepare_session(&self, session: &Session) -> Result<Option<Session>> {
-        let (session, lease) = self
-            .extension_manager
-            .current_session_snapshot(session)
-            .await?;
+        let (session, lease) = self.services.current_session_snapshot(session).await?;
         *self
-            .extension_lease
+            .tool_snapshot
             .lock()
-            .expect("extension lease unavailable") = Some(Arc::new(lease));
+            .expect("tool snapshot unavailable") = Some(Arc::new(lease));
         Ok(Some(session))
     }
 
@@ -42,9 +40,9 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
     ) -> Result<PreparedInferenceRequest> {
         #[cfg(feature = "code-mode")]
         let code_execution_mode = self
-            .extension_lease
+            .tool_snapshot
             .lock()
-            .expect("extension lease unavailable")
+            .expect("tool snapshot unavailable")
             .as_ref()
             .is_some_and(|lease| {
                 lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)

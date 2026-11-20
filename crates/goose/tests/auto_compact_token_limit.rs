@@ -8,9 +8,10 @@ use goose::conversation::message::Message;
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
 use goose::session::SessionType;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use goose::token_counter::create_token_counter;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -122,7 +123,7 @@ async fn verify_reply(
     services: &Arc<StateMachineServices>,
     session_id: &str,
     context: usize,
-    tokens: i32,
+    tokens: i64,
     expected_compaction: bool,
 ) -> Result<()> {
     let provider = Arc::new(CompactionProvider::default());
@@ -149,6 +150,14 @@ async fn verify_reply(
         .usage(Usage::new(Some(tokens), Some(0), Some(tokens)))
         .apply()
         .await?;
+    let token_counter = create_token_counter().await.map_err(anyhow::Error::msg)?;
+    let report = services
+        .build_context_report(session_id, &token_counter)
+        .await?;
+    assert_eq!(
+        report.auto_compaction_pending, expected_compaction,
+        "context report: context={context}, tokens={tokens}"
+    );
     let stream = services
         .reply(
             Message::user().with_text("continue"),

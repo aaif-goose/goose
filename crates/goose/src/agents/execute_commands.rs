@@ -6,8 +6,7 @@ pub fn slash_commands_enabled() -> bool {
         .unwrap_or(true)
 }
 
-pub const COMPACT_TRIGGERS: &[&str] =
-    &["/compact", "Please compact this conversation", "/summarize"];
+pub const COMPACT_TRIGGERS: &[&str] = &["/compact", "/summarize"];
 
 pub struct CommandDef {
     pub name: &'static str,
@@ -50,7 +49,7 @@ static COMMANDS: &[CommandDef] = &[
     },
     CommandDef {
         name: "status",
-        description: "Show session status: model, provider, mode, and token usage",
+        description: "Show session status: session ID, model, provider, mode, and token usage",
     },
 ];
 

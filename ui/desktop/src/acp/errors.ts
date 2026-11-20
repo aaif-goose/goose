@@ -1,4 +1,4 @@
-import { RequestError } from '@agentclientprotocol/sdk';
+import { RequestError } from '@agentclientprotocol/sdk/unstable';
 import { errorMessage } from '../utils/conversionUtils';
 
 export interface AcpCreditsExhaustedError {

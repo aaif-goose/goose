@@ -1,31 +1,20 @@
-use futures::{Stream, StreamExt};
-use rmcp::model::CallToolResult;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 use std::path::PathBuf;
 
 use crate::agents::container::Container;
-use crate::conversation::message::Message;
-use crate::mcp_utils::ToolResult;
-use rmcp::model::ServerNotification;
+pub use crate::agents::extension_runtime::{ToolCallNotificationEmitter, ToolCallResult};
 
-#[derive(Clone)]
-pub(crate) struct ToolCallNotificationEmitter {
-    sender: mpsc::Sender<ServerNotification>,
-}
-
-impl ToolCallNotificationEmitter {
-    pub(crate) fn new(sender: mpsc::Sender<ServerNotification>) -> Self {
-        Self { sender }
-    }
-
-    pub(crate) fn emit_best_effort(&self, notification: ServerNotification) {
-        // Do not let a slow notification consumer delay tool execution.
-        let _ = self.sender.try_send(notification);
-    }
+#[cfg(feature = "code-mode")]
+#[async_trait::async_trait]
+pub(crate) trait ToolAccess: Send + Sync {
+    async fn tools(&self) -> Vec<rmcp::model::Tool>;
+    async fn call(
+        &self,
+        call: rmcp::model::CallToolRequestParams,
+        request: crate::agents::extension_manager::CallRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<ToolCallResult, rmcp::model::ErrorData>;
 }
 
 /// Context passed through the tool call dispatch chain.
@@ -35,8 +24,9 @@ pub struct ToolCallContext {
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
     container: Option<Container>,
-    extension_lease: Option<Arc<ExtensionLease>>,
+    tool_snapshot: Option<Arc<ToolSnapshot>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
+    services: Option<Arc<StateMachineServices>>,
 }
 
 impl ToolCallContext {
@@ -50,7 +40,8 @@ impl ToolCallContext {
             working_dir,
             tool_call_request_id,
             container: None,
-            extension_lease: None,
+            tool_snapshot: None,
+            services: None,
             notification_emitter: None,
         }
     }
@@ -64,13 +55,23 @@ impl ToolCallContext {
         self.container.as_ref()
     }
 
-    pub(crate) fn with_extension_lease(mut self, extension_lease: Arc<ExtensionLease>) -> Self {
-        self.extension_lease = Some(extension_lease);
+    pub(crate) fn with_services(mut self, services: Arc<StateMachineServices>) -> Self {
+        self.services = Some(services);
         self
     }
 
-    pub(crate) fn extension_lease(&self) -> Option<&Arc<ExtensionLease>> {
-        self.extension_lease.as_ref()
+    pub(crate) fn with_tool_snapshot(mut self, tool_snapshot: Arc<ToolSnapshot>) -> Self {
+        self.tool_snapshot = Some(tool_snapshot);
+        self
+    }
+
+    pub(crate) fn tool_snapshot(&self) -> Option<&Arc<ToolSnapshot>> {
+        self.tool_snapshot.as_ref()
+    }
+
+    #[cfg(feature = "code-mode")]
+    pub(crate) fn tools(&self) -> &dyn ToolAccess {
+        self
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -90,75 +91,48 @@ impl ToolCallContext {
     }
 }
 
-// ToolCallResult combines the result of a tool call with an optional notification stream that
-// can be used to receive notifications from the tool.
-pub struct ToolCallResult {
-    pub result: Box<dyn Future<Output = ToolResult<rmcp::model::CallToolResult>> + Send + Unpin>,
-    pub notification_stream: Option<Box<dyn Stream<Item = ServerNotification> + Send + Unpin>>,
-    pub action_required_stream: Option<Box<dyn Stream<Item = Message> + Send + Unpin>>,
-}
-
-impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
-    fn from(result: ToolResult<rmcp::model::CallToolResult>) -> Self {
+impl From<&ToolCallContext> for crate::agents::extension_manager::CallRequest {
+    fn from(ctx: &ToolCallContext) -> Self {
         Self {
-            result: Box::new(futures::future::ready(result)),
-            notification_stream: None,
-            action_required_stream: None,
+            tool_call_id: ctx.tool_call_request_id.clone(),
+            notification_emitter: ctx.notification_emitter().cloned(),
+            container: ctx.container().cloned(),
         }
     }
 }
 
-use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::StateMachineServices;
-
-pub(super) enum ToolStreamItem<T> {
-    ActionRequired(Message),
-    Message(ServerNotification),
-    Result(T),
-}
-
-pub(super) type ToolStream =
-    Pin<Box<dyn Stream<Item = ToolStreamItem<ToolResult<CallToolResult>>> + Send>>;
-
-pub(super) fn tool_stream<S, A, F>(rx: S, action_required_rx: A, done: F) -> ToolStream
-where
-    S: Stream<Item = ServerNotification> + Send + Unpin + 'static,
-    A: Stream<Item = Message> + Send + Unpin + 'static,
-    F: Future<Output = ToolResult<CallToolResult>> + Send + 'static,
-{
-    Box::pin(async_stream::stream! {
-        tokio::pin!(done);
-        let mut rx = rx;
-        let mut action_required_rx = action_required_rx;
-
-        loop {
-            tokio::select! {
-                Some(msg) = action_required_rx.next() => {
-                    yield ToolStreamItem::ActionRequired(msg);
-                }
-                Some(msg) = rx.next() => {
-                    yield ToolStreamItem::Message(msg);
-                }
-                r = &mut done => {
-                    yield ToolStreamItem::Result(r);
-                    break;
-                }
-            }
-        }
-    })
-}
 
 pub const DECLINED_RESPONSE: &str = "The user has declined to run this tool. \
     DO NOT attempt to call this tool again. \
     If there are no alternative methods to proceed, clearly explain the situation and STOP.";
 
-pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool call was skipped in goose chat mode. \
-                                        DO NOT apologize for skipping the tool call. DO NOT say sorry. \
-                                        Provide an explanation of what the tool call would do, structured as a \
-                                        plan for the user. Again, DO NOT apologize. \
-                                        **Example Plan:**\n \
-                                        1. **Identify Task Scope** - Determine the purpose and expected outcome.\n \
-                                        2. **Outline Steps** - Break down the steps.\n \
-                                        If needed, adjust the explanation based on user preferences or questions.";
+#[cfg(feature = "code-mode")]
+#[async_trait::async_trait]
+impl ToolAccess for ToolCallContext {
+    async fn tools(&self) -> Vec<rmcp::model::Tool> {
+        self.tool_snapshot
+            .as_ref()
+            .expect("platform calls carry a snapshot")
+            .tools()
+            .await
+    }
 
-impl StateMachineServices {}
+    async fn call(
+        &self,
+        call: rmcp::model::CallToolRequestParams,
+        request: crate::agents::extension_manager::CallRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<ToolCallResult, rmcp::model::ErrorData> {
+        let services = self
+            .services
+            .as_ref()
+            .expect("platform calls carry services");
+        self.tool_snapshot
+            .as_ref()
+            .expect("platform calls carry a snapshot")
+            .call(call, request, cancellation, services)
+            .await
+    }
+}

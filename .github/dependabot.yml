@@ -8,6 +8,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # rehype-katex only accepts katex ^0.16; remove once remarkjs/remark-math#121 ships.
+      - dependency-name: "katex"
+        versions: [">=0.17"]
     groups:
       ui-minor-and-patch:
         update-types:
@@ -31,3 +35,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

@@ -4,21 +4,19 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose_agent::inference::InferenceEffect;
-pub use goose_agent::inference::InferenceRunner;
-use goose_providers::base::{MessageStream, ModelInfo, Provider};
-use goose_providers::conversation::message::Message;
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
+use oi_kit_agent::compaction::CompactionEffect;
+use oi_kit_agent::inference::InferenceEffect;
+pub use oi_kit_agent::inference::InferenceRunner;
+use oi_kit_providers::base::{MessageStream, ModelInfo, Provider};
+use oi_kit_providers::conversation::message::Message;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::GooseEffect;
 
-pub(super) use goose_agent::inference::{chat_span, record_chat_usage};
-
-pub(super) const ADVERTISED_TOOLS_NOTE: &str = "advertised_tools";
-pub(super) const LLM_OPERATION_NAME: &str = "llm";
+pub(super) use oi_kit_agent::inference::chat_span;
 
 pub struct GooseInferenceProvider {
     inner: Arc<dyn Provider>,
@@ -36,40 +34,10 @@ impl InferenceEffect for GooseEffect {
     }
 }
 
-fn enrich_unclaimed_tool_errors(messages: &[Message], tools: &[rmcp::model::Tool]) -> Vec<Message> {
-    let mut available_tools = tools
-        .iter()
-        .map(|tool| tool.name.as_ref())
-        .collect::<Vec<_>>();
-    available_tools.sort_unstable();
-    available_tools.dedup();
-    let available_tools = available_tools.join(", ");
-    let mut messages = messages.to_vec();
-    for message in &mut messages {
-        for content in &mut message.content {
-            let goose_providers::conversation::message::MessageContent::ToolResponse(response) =
-                content
-            else {
-                continue;
-            };
-            let Some(metadata) = &mut response.metadata else {
-                continue;
-            };
-            if metadata
-                .remove(super::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR)
-                .is_none()
-            {
-                continue;
-            }
-            let Ok(result) = &mut response.tool_result else {
-                continue;
-            };
-            result.content.push(rmcp::model::ContentBlock::text(format!(
-                "Available tools: [{available_tools}]."
-            )));
-        }
+impl CompactionEffect for GooseEffect {
+    fn compact(conversation: oi_kit_providers::conversation::Conversation) -> Self {
+        GooseEffect::CompactConversation(conversation)
     }
-    messages
 }
 
 fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model::Tool]) {
@@ -79,7 +47,7 @@ fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model:
         .collect::<Vec<_>>();
 
     for content in &mut message.content {
-        let goose_providers::conversation::message::MessageContent::ToolRequest(request) = content
+        let oi_kit_providers::conversation::message::MessageContent::ToolRequest(request) = content
         else {
             continue;
         };
@@ -149,7 +117,6 @@ impl Provider for GooseInferenceProvider {
         messages: &[Message],
         tools: &[rmcp::model::Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let messages = enrich_unclaimed_tool_errors(messages, tools);
         let (tools, toolshim_tools, system_prompt) =
             crate::agents::reply_parts::prepare_tools_for_provider(
                 tools.to_vec(),
@@ -161,25 +128,13 @@ impl Provider for GooseInferenceProvider {
             .chain(toolshim_tools.iter())
             .cloned()
             .collect::<Vec<_>>();
-        let mut advertised_tool_names = advertised_tools
-            .iter()
-            .map(|tool| tool.name.to_string())
-            .collect::<Vec<_>>();
-        advertised_tool_names.sort_unstable();
-        advertised_tool_names.dedup();
-        let advertised_tools_note = serde_json::Value::Array(
-            advertised_tool_names
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        );
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let stream = crate::agents::reply_parts::stream_response_from_provider(
             self.inner.clone(),
             model_config.clone(),
             &session_id,
             &system_prompt,
-            &messages,
+            messages,
             &tools,
             &toolshim_tools,
         )
@@ -188,13 +143,6 @@ impl Provider for GooseInferenceProvider {
             result.map(|(message, usage)| {
                 let message = message.map(|mut message| {
                     prepare_tool_requests(&mut message, &advertised_tools);
-                    if message.role == rmcp::model::Role::Assistant {
-                        message.metadata.set_operation_note(
-                            LLM_OPERATION_NAME,
-                            ADVERTISED_TOOLS_NOTE,
-                            advertised_tools_note.clone(),
-                        );
-                    }
                     message
                 });
                 (message, usage)
@@ -221,7 +169,7 @@ mod canonicalization_tests {
             .with_tool_request("request", Ok(CallToolRequestParams::new(name.to_string())))
     }
 
-    fn tool_request(message: &Message) -> &goose_providers::conversation::message::ToolRequest {
+    fn tool_request(message: &Message) -> &oi_kit_providers::conversation::message::ToolRequest {
         message.content[0].as_tool_request().unwrap()
     }
 

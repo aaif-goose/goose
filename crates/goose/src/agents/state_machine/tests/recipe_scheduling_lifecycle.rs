@@ -1,4 +1,5 @@
 use anyhow::Result;
+use oi_kit_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 
 #[cfg(feature = "scheduler")]
@@ -6,21 +7,19 @@ use super::dummy_api::DummyApi;
 use super::dummy_api::ProviderFeatures;
 #[cfg(feature = "scheduler")]
 use super::pipeline::test_pipeline_with_scheduler;
-use super::pipeline::{
-    test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error,
-    MessageKind::ToolResponse,
-};
+#[cfg(feature = "scheduler")]
+use super::pipeline::MessageKind::ToolResponse;
+use super::pipeline::{test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error};
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 #[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
-use crate::config::GooseMode;
 use crate::conversation::message::Message;
 #[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
+use oi_kit_agent::final_output::FINAL_OUTPUT_CONTINUATION_MESSAGE;
+use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 
 #[tokio::test]
 async fn slash_recipe_extensions_remain_available_in_the_session() -> Result<()> {
@@ -162,32 +161,7 @@ extensions:
 }
 
 #[tokio::test]
-async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
-    let recipe = Recipe::builder()
-        .title("Chat recipe")
-        .description("Chat recipe")
-        .prompt("Try to delegate")
-        .extensions(vec![ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        }])
-        .build()
-        .expect("valid recipe");
-    pipeline.set_recipe(recipe).await?;
-    api.on("Try to delegate")
-        .call("delegate", json!({ "instructions": "Do the work" }));
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("delegation stayed in chat");
-
-    let result = pipeline.run(["Try to delegate"]).await?;
-    result.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
-    result.assert_message(-1, Agent, "delegation stayed in chat");
-
+async fn recipe_delegation_respects_child_turn_limit() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     pipeline.remove_extension("todo").await?;
     let host = api.uri();
@@ -237,8 +211,8 @@ settings:
         .call("delegate", json!({ "source": "bounded" }));
     api.on("Keep taking actions")
         .unadvertised_call("keep_working", json!({}));
-    api.on("failed: max turns reached")
-        .reply("child stopped on time");
+    let failure = format!("failed: {MAX_TURNS_MESSAGE}");
+    api.on(&failure).reply("child stopped on time");
 
     let result = pipeline.run(["Delegate the bounded child"]).await?;
     assert_eq!(api.call_count(), 3);
@@ -253,9 +227,7 @@ settings:
         .find(|message| {
             message.is_agent_visible()
                 && !message.is_user_visible()
-                && message
-                    .as_concat_text()
-                    .contains("failed: max turns reached")
+                && message.as_concat_text().contains(&failure)
         })
         .expect("child turn-limit failure is delivered to the parent LLM");
     assert_eq!(delivery.role, rmcp::model::Role::User);
@@ -280,11 +252,11 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
         .description("Delegates, then returns structured output")
         .prompt("Research and summarize")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .extensions(vec![ExtensionConfig::Platform {
             name: "summon".to_string(),
@@ -337,11 +309,11 @@ async fn final_output_nudge_goes_in_before_a_queued_steer() -> Result<()> {
         .description("Returns structured output")
         .prompt("Research the topic")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -408,11 +380,11 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -453,11 +425,11 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -476,7 +448,9 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
         .build()
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
+    let calls_before = api.call_count();
     let passed = pipeline.run(["check the work"]).await?;
+    assert_eq!(api.call_count() - calls_before, 1);
     assert!(!shows_empty_fallback(passed.conversation()));
 
     let (pipeline, api) = test_pipeline().await?;
@@ -507,11 +481,11 @@ async fn code_mode_advertises_and_accepts_final_output() -> Result<()> {
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -547,11 +521,11 @@ async fn structured_output_fails_fast_when_provider_manages_own_context() -> Res
         .description("Return structured output")
         .instructions("Compute the answer")
         .response(Response {
-            json_schema: Some(json!({
+            json_schema: json!({
                 "type": "object",
                 "properties": { "result": { "type": "string" } },
                 "required": ["result"]
-            })),
+            }),
         })
         .build()
         .expect("valid recipe");
@@ -710,7 +684,7 @@ async fn invalid_final_output_schema_stops_before_inference() -> Result<()> {
         .description("Invalid output")
         .instructions("This must not reach inference")
         .response(Response {
-            json_schema: Some(json!({})),
+            json_schema: json!({}),
         })
         .build()
         .expect("recipe shape is otherwise valid");
@@ -734,7 +708,7 @@ async fn boolean_final_output_schema_stops_before_inference() -> Result<()> {
         .description("Boolean output schema")
         .instructions("This must not reach inference")
         .response(Response {
-            json_schema: Some(json!(true)),
+            json_schema: json!(true),
         })
         .build()
         .expect("recipe shape is otherwise valid");

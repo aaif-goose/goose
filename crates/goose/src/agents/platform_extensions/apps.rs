@@ -1,5 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
 };
@@ -11,10 +11,11 @@ use crate::goose_apps::{GooseApp, McpAppCache, WindowProps};
 use crate::prompt_template::render_template;
 use crate::providers::base::{Provider, ProviderUsage};
 use async_trait::async_trait;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListResourcesResult, ListToolsResult, MetaObject, ReadResourceResult, Resource,
-    ResourceContents, ServerCapabilities, Tool as McpTool,
+    ListResourcesResult, MetaObject, ReadResourceResult, Resource, ResourceContents,
+    ServerCapabilities, Tool as McpTool,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -27,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 async fn complete_app_content(
     provider: Arc<dyn Provider>,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
     session_id: &str,
     system_prompt: String,
     messages: &[Message],
@@ -266,7 +267,7 @@ impl AppsManagerClient {
         &self,
         session_id: &str,
         provider_name: &str,
-    ) -> Result<goose_providers::model::ModelConfig, String> {
+    ) -> Result<oi_kit_providers::model::ModelConfig, String> {
         let model_config = self.context.model_config_for_session(session_id).await?;
         match crate::providers::get_from_registry(provider_name).await {
             Ok(entry) => Ok(entry
@@ -339,7 +340,7 @@ impl AppsManagerClient {
         .await?;
 
         if let (Some(output), Some(max)) = (usage.usage.output_tokens, model_config.max_tokens) {
-            if output >= max {
+            if output >= i64::from(max) {
                 return Err("App content generation was truncated because the response hit the token limit. Try simplifying your app description.".to_string());
             }
         }
@@ -388,7 +389,7 @@ impl AppsManagerClient {
         .await?;
 
         if let (Some(output), Some(max)) = (usage.usage.output_tokens, model_config.max_tokens) {
-            if output >= max {
+            if output >= i64::from(max) {
                 return Err("App content update was truncated because the response hit the token limit. Try requesting smaller changes.".to_string());
             }
         }
@@ -563,13 +564,8 @@ impl AppsManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AppsManagerClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+impl PlatformExtension for AppsManagerClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<McpTool>, Error> {
         let tools = vec![
             McpTool::new(
                 "list_apps".to_string(),
@@ -593,12 +589,7 @@ impl McpClientTrait for AppsManagerClient {
             )),
         ];
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(tools)
     }
 
     async fn call_tool(
@@ -778,7 +769,7 @@ mod tests {
     use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
     use crate::providers::base::{stream_from_single_message, MessageStream, Usage};
     use crate::session::SessionManager;
-    use goose_providers::errors::ProviderError;
+    use oi_kit_providers::errors::ProviderError;
     use std::path::Path;
     use std::sync::Mutex;
 
@@ -795,7 +786,7 @@ mod tests {
 
         async fn stream(
             &self,
-            model_config: &goose_providers::model::ModelConfig,
+            model_config: &oi_kit_providers::model::ModelConfig,
             system: &str,
             _messages: &[Message],
             tools: &[McpTool],
@@ -814,7 +805,6 @@ mod tests {
         AppsManagerClient {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
-                extension_manager: None,
                 providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
@@ -845,7 +835,7 @@ mod tests {
     async fn app_content_completion_uses_toolshim() {
         let provider = Arc::new(AppContentProvider::default());
         let model_config =
-            goose_providers::model::ModelConfig::new("test-model").with_toolshim(true);
+            oi_kit_providers::model::ModelConfig::new("test-model").with_toolshim(true);
         let tool = AppsManagerClient::create_app_content_tool();
         let tool_schema = AppsManagerClient::schema::<CreateAppContentResponse>();
 
@@ -893,11 +883,7 @@ mod tests {
     async fn management_tools_are_model_only_while_listing_remains_shared() {
         let temp = tempfile::tempdir().unwrap();
         let client = test_client(temp.path().join("apps"));
-        let tools = client
-            .list_tools("session", None, CancellationToken::new())
-            .await
-            .unwrap()
-            .tools;
+        let tools = client.list_tools("session").await.unwrap();
 
         for name in ["create_app", "iterate_app", "delete_app"] {
             let tool = tools.iter().find(|tool| tool.name == name).unwrap();

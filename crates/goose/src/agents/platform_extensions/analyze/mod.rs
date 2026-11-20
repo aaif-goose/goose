@@ -4,17 +4,18 @@ pub mod languages;
 pub mod parser;
 
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
 use ignore::WalkBuilder;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use parser::{FileAnalysis, Parser};
 use rayon::prelude::*;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool, ToolAnnotations,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ServerCapabilities,
+    Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
@@ -209,13 +210,8 @@ impl AnalyzeClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AnalyzeClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+impl PlatformExtension for AnalyzeClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
         let tool = Tool::new(
             "analyze".to_string(),
             "Analyze code structure in 3 modes: 1) Directory overview - file tree with LOC/function/class counts to max_depth. 2) File details - functions, classes, imports. 3) Symbol focus - call graphs across directory to max_depth (requires file or directory path, case-sensitive). Typical flow: directory → files → symbols. Functions called >3x show •N.".to_string(),
@@ -229,12 +225,7 @@ impl McpClientTrait for AnalyzeClient {
             Some(false),
         ));
 
-        Ok(ListToolsResult {
-            tools: vec![tool],
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(vec![tool])
     }
 
     async fn call_tool(
@@ -277,7 +268,6 @@ mod tests {
 
     fn ctx() -> PlatformExtensionContext {
         PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager: Arc::new(SessionManager::new(std::env::temp_dir())),
             scheduler: None,

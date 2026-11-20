@@ -1,5 +1,5 @@
 use crate::acp::custom_requests::GooseExtension;
-use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
+use crate::acp::server::{meta_string, meta_tags, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GooseMode};
 use crate::model_config::resolve_provider_and_model_config;
@@ -10,8 +10,8 @@ use crate::session::{ExtensionData, Session, SessionType};
 use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffortSupport;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::warn;
@@ -32,6 +32,8 @@ struct NewSessionMetaFields {
     /// Client-supplied title, recorded as user-set so goose's own name
     /// generation leaves it alone. `None` when a recipe title took precedence.
     client_title: Option<String>,
+    /// Client-owned labels that `session/list` can filter on via an index.
+    tags: Vec<(String, String)>,
 }
 
 impl AcpConnection {
@@ -212,6 +214,13 @@ impl AcpConnection {
             .apply()
             .await
             .internal_err_ctx("Failed to update session")?;
+        if !config.meta.tags.is_empty() {
+            self.services
+                .session_manager
+                .set_session_tags(session_id, &config.meta.tags)
+                .await
+                .internal_err_ctx("Failed to save session tags")?;
+        }
         Ok(())
     }
 
@@ -278,6 +287,7 @@ fn new_session_meta_fields(
         // precedence it has today and a client title only replaces the
         // "New Chat" fallback.
         client_title: session_title.filter(|_| recipe_title(recipe).is_none()),
+        tags: meta_tags(meta)?,
     })
 }
 

@@ -40,9 +40,9 @@ use crate::model_config::model_config_from_user_config;
 use crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use anyhow::Result;
 use futures::StreamExt;
-use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai::create_request;
-use goose_providers::images::ImageFormat;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::formats::openai::create_request;
+use oi_kit_providers::images::ImageFormat;
 use reqwest::Client;
 use rmcp::model::{object, CallToolRequestParams, ContentBlock, Tool};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
@@ -1280,11 +1280,19 @@ pub fn convert_tool_messages_to_text(messages: &[Message]) -> Conversation {
 
 /// Modifies the system prompt to include tool usage instructions when tool interpretation is enabled
 pub fn modify_system_prompt_for_tool_json(system_prompt: &str, tools: &[Tool]) -> String {
+    format!(
+        "{}\n\n{}",
+        system_prompt,
+        toolshim_system_prompt_appendix(tools)
+    )
+}
+
+pub fn toolshim_system_prompt_appendix(tools: &[Tool]) -> String {
     let tool_info = format_tool_info(tools);
 
     format!(
-        "{}\n\n{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
-        system_prompt, tool_info
+        "{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
+        tool_info
     )
 }
 
