@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useConfig } from '../ConfigContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -142,19 +142,107 @@ type NumberSetting =
 
 type NumberSettings = Record<NumberSetting, string>;
 
-const defaultNumberSettings: NumberSettings = {
-  maxTurns: '1000',
-  compactionThreshold: '80',
-  compactionTokenLimit: '225000',
-  toolCallCutoff: '',
-  retryTimeout: '300',
-  failureTimeout: '600',
-  stopHookBlockCap: '8',
+type NumberField = {
+  configKey: string;
+  min: number;
+  max: number;
+  step?: number;
+  integer: boolean;
+  toConfig: (value: number) => number;
+  display: (configValue: unknown) => string;
 };
 
-function readNumber(value: unknown, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const U32_MAX = 2 ** 32 - 1;
+const U64_MAX = 2 ** 64 - 1;
+
+// Quoted YAML numbers such as "20" are read back as strings; goose parses them as numbers.
+function parseFloatSetting(value: unknown) {
+  const number =
+    typeof value === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(value.trim())
+      ? Number(value)
+      : value;
+  return typeof number === 'number' && Number.isFinite(number) ? number : undefined;
 }
+
+// goose reads every field except the threshold as an unsigned integer, so a fraction, a negative
+// number or a quoted "20.0" is rejected there and the default applies.
+function parseUnsignedSetting(value: unknown, limit: number) {
+  const number = typeof value === 'string' && /^\+?\d+$/.test(value.trim()) ? Number(value) : value;
+  return typeof number === 'number' && Number.isInteger(number) && number >= 0 && number <= limit
+    ? number
+    : undefined;
+}
+
+const asIs = (value: number) => value;
+const displayUnsigned = (fallback: number, limit: number) => (value: unknown) =>
+  String(parseUnsignedSetting(value, limit) ?? fallback);
+
+const numberFields: Record<NumberSetting, NumberField> = {
+  maxTurns: {
+    configKey: 'GOOSE_MAX_TURNS',
+    min: 1,
+    max: 10000,
+    integer: true,
+    toConfig: asIs,
+    display: displayUnsigned(1000, U32_MAX),
+  },
+  compactionThreshold: {
+    configKey: 'GOOSE_AUTO_COMPACT_THRESHOLD',
+    min: 1,
+    max: 99,
+    step: 0.1,
+    integer: false,
+    toConfig: (percent) => percent / 100,
+    display: (value) => String(Number(((parseFloatSetting(value) ?? 0.8) * 100).toFixed(2))),
+  },
+  compactionTokenLimit: {
+    configKey: 'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+    min: 1000,
+    max: 10000000,
+    step: 1000,
+    integer: true,
+    toConfig: asIs,
+    display: displayUnsigned(225000, U64_MAX),
+  },
+  toolCallCutoff: {
+    configKey: 'GOOSE_TOOL_CALL_CUTOFF',
+    min: 1,
+    max: 100000,
+    integer: true,
+    toConfig: asIs,
+    display: (value) => String(parseUnsignedSetting(value, U64_MAX) ?? ''),
+  },
+  retryTimeout: {
+    configKey: 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS',
+    min: 1,
+    max: 3600,
+    integer: true,
+    toConfig: asIs,
+    display: displayUnsigned(300, U64_MAX),
+  },
+  failureTimeout: {
+    configKey: 'GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS',
+    min: 1,
+    max: 3600,
+    integer: true,
+    toConfig: asIs,
+    display: displayUnsigned(600, U64_MAX),
+  },
+  stopHookBlockCap: {
+    configKey: 'GOOSE_STOP_HOOK_BLOCK_CAP',
+    min: 1,
+    max: 100,
+    integer: true,
+    toConfig: asIs,
+    display: displayUnsigned(8, U32_MAX),
+  },
+};
+
+const numberFieldEntries = Object.entries(numberFields) as [NumberSetting, NumberField][];
+
+const defaultNumberSettings = Object.fromEntries(
+  numberFieldEntries.map(([setting, field]) => [setting, field.display(null)])
+) as NumberSettings;
 
 function OperationRow({
   title,
@@ -242,60 +330,40 @@ export default function AgentLoopSettings() {
   const [typesafeApiKeyConfigured, setTypesafeApiKeyConfigured] = useState(false);
   const [toolPairCompactionEnabled, setToolPairCompactionEnabled] = useState(false);
   const [numbers, setNumbers] = useState(defaultNumberSettings);
+  // Per field, the value last loaded or sent to config ('' while a removal is pending, null after
+  // a failed write). A blur only writes when the input differs from it, so leaving a field
+  // unchanged never pins the displayed effective value into the user's config.
+  const requestedNumbers = useRef<Record<NumberSetting, string | null>>(defaultNumberSettings);
+  // Writes for one field run in order so that the last edit is the one that persists.
+  const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
 
   useEffect(() => {
     let active = true;
 
     Promise.all([
-      read('GOOSE_MAX_TURNS', false),
-      read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
-      read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
+      Promise.all(
+        numberFieldEntries.map(async ([setting, field]) => [
+          setting,
+          field.display(await read(field.configKey, false)),
+        ])
+      ),
       read('GOOSE_SLASH_COMMANDS_ENABLED', false),
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
-      read('GOOSE_TOOL_CALL_CUTOFF', false),
-      read('GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', false),
-      read('GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS', false),
-      read('GOOSE_STOP_HOOK_BLOCK_CAP', false),
       read('GOOSE_AUTO_EFFORT_ENABLED', false),
       read('TYPESAFE_API_KEY', true),
-    ]).then(
-      ([
-        maxTurns,
-        compactionThreshold,
-        compactionTokenLimit,
-        slashCommands,
-        toolPairCompaction,
-        toolCallCutoff,
-        retryTimeout,
-        failureTimeout,
-        stopHookBlockCap,
-        autoEffort,
-        typesafeApiKey,
-      ]) => {
-        if (!active) return;
+    ]).then(([loadedNumbers, slashCommands, toolPairCompaction, autoEffort, typesafeApiKey]) => {
+      if (!active) return;
 
-        setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
-        setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
-        setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
-        setToolPairCompactionEnabled(
-          typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
-        );
-        setNumbers({
-          maxTurns: String(readNumber(maxTurns, 1000)),
-          compactionThreshold: String(
-            Number((readNumber(compactionThreshold, 0.8) * 100).toFixed(2))
-          ),
-          compactionTokenLimit: String(readNumber(compactionTokenLimit, 225000)),
-          toolCallCutoff:
-            typeof toolCallCutoff === 'number' && Number.isFinite(toolCallCutoff)
-              ? String(toolCallCutoff)
-              : '',
-          retryTimeout: String(readNumber(retryTimeout, 300)),
-          failureTimeout: String(readNumber(failureTimeout, 600)),
-          stopHookBlockCap: String(readNumber(stopHookBlockCap, 8)),
-        });
-      }
-    );
+      setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
+      setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
+      setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
+      setToolPairCompactionEnabled(
+        typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
+      );
+      const loaded = Object.fromEntries(loadedNumbers) as NumberSettings;
+      requestedNumbers.current = loaded;
+      setNumbers(loaded);
+    });
 
     return () => {
       active = false;
@@ -306,19 +374,64 @@ export default function AgentLoopSettings() {
     setNumbers((current) => ({ ...current, [setting]: value }));
   };
 
-  const saveNumber = async (
-    setting: NumberSetting,
-    configKey: string,
-    min: number,
-    max: number,
-    serialize: (value: number) => number = (value) => value,
-    integer = true
-  ) => {
-    const parsed = Number(numbers[setting]);
+  const writeNumber = (setting: NumberSetting, requested: string, write: () => Promise<void>) => {
+    requestedNumbers.current = { ...requestedNumbers.current, [setting]: requested };
+    const previous = numberWrites.current[setting] ?? Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(write)
+      .catch((error) => {
+        if (requestedNumbers.current[setting] === requested) {
+          requestedNumbers.current = { ...requestedNumbers.current, [setting]: null };
+        }
+        throw error;
+      });
+    numberWrites.current[setting] = next;
+    return next;
+  };
+
+  const resetNumber = async (setting: NumberSetting) => {
+    if (requestedNumbers.current[setting] === '') return;
+    const { configKey, display } = numberFields[setting];
+    await writeNumber(setting, '', async () => {
+      await remove(configKey, false);
+      const effective = display(await read(configKey, false, { throwOnError: true }));
+      if (requestedNumbers.current[setting] !== '') return;
+      requestedNumbers.current = { ...requestedNumbers.current, [setting]: effective };
+      setNumbers((current) =>
+        current[setting].trim() === '' ? { ...current, [setting]: effective } : current
+      );
+    });
+  };
+
+  const saveNumber = async (setting: NumberSetting) => {
+    const input = numbers[setting].trim();
+    if (input === '') {
+      await resetNumber(setting);
+      return;
+    }
+    // Compare before clamping: an out-of-range value from config (e.g. a threshold of 0, which
+    // disables compaction) must survive an unchanged blur.
+    if (input === requestedNumbers.current[setting]) return;
+    const { configKey, min, max, integer, toConfig } = numberFields[setting];
+    const parsed = Number(input);
     const clamped = Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : min));
     const value = integer ? Math.round(clamped) : clamped;
     setNumber(setting, String(value));
-    await upsert(configKey, serialize(value), false);
+    if (String(value) === requestedNumbers.current[setting]) return;
+    await writeNumber(setting, String(value), () => upsert(configKey, toConfig(value), false));
+  };
+
+  const numberInputProps = (setting: NumberSetting) => {
+    const { min, max, step } = numberFields[setting];
+    return {
+      value: numbers[setting],
+      min,
+      max,
+      step,
+      onChange: (value: string) => setNumber(setting, value),
+      onBlur: () => saveNumber(setting),
+    };
   };
 
   const handleToolPairCompactionToggle = async (checked: boolean) => {
@@ -348,14 +461,6 @@ export default function AgentLoopSettings() {
     await remove('TYPESAFE_API_KEY', true);
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(false);
-  };
-
-  const saveToolCallCutoff = async () => {
-    if (numbers.toolCallCutoff.trim() === '') {
-      await remove('GOOSE_TOOL_CALL_CUTOFF', false);
-      return;
-    }
-    await saveNumber('toolCallCutoff', 'GOOSE_TOOL_CALL_CUTOFF', 1, 100000);
   };
 
   return (
@@ -427,11 +532,7 @@ export default function AgentLoopSettings() {
           >
             <NumberInput
               label={intl.formatMessage(i18n.turnsLabel)}
-              value={numbers.maxTurns}
-              min={1}
-              max={10000}
-              onChange={(value) => setNumber('maxTurns', value)}
-              onBlur={() => saveNumber('maxTurns', 'GOOSE_MAX_TURNS', 1, 10000)}
+              {...numberInputProps('maxTurns')}
             />
           </OperationRow>
 
@@ -442,37 +543,11 @@ export default function AgentLoopSettings() {
             <div className="flex flex-wrap items-center gap-4">
               <NumberInput
                 label={intl.formatMessage(i18n.thresholdLabel)}
-                value={numbers.compactionThreshold}
-                min={1}
-                max={99}
-                step={0.1}
-                onChange={(value) => setNumber('compactionThreshold', value)}
-                onBlur={() =>
-                  saveNumber(
-                    'compactionThreshold',
-                    'GOOSE_AUTO_COMPACT_THRESHOLD',
-                    1,
-                    99,
-                    (value) => value / 100,
-                    false
-                  )
-                }
+                {...numberInputProps('compactionThreshold')}
               />
               <NumberInput
                 label={intl.formatMessage(i18n.tokenLimitLabel)}
-                value={numbers.compactionTokenLimit}
-                min={1000}
-                max={10000000}
-                step={1000}
-                onChange={(value) => setNumber('compactionTokenLimit', value)}
-                onBlur={() =>
-                  saveNumber(
-                    'compactionTokenLimit',
-                    'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
-                    1000,
-                    10000000
-                  )
-                }
+                {...numberInputProps('compactionTokenLimit')}
               />
             </div>
           </OperationRow>
@@ -486,13 +561,9 @@ export default function AgentLoopSettings() {
             <div className="flex flex-wrap items-center gap-4">
               <NumberInput
                 label={intl.formatMessage(i18n.cutoffLabel)}
-                value={numbers.toolCallCutoff}
-                min={1}
-                max={100000}
+                {...numberInputProps('toolCallCutoff')}
                 placeholder={intl.formatMessage(i18n.autoPlaceholder)}
                 disabled={!toolPairCompactionEnabled}
-                onChange={(value) => setNumber('toolCallCutoff', value)}
-                onBlur={saveToolCallCutoff}
               />
             </div>
           </OperationRow>
@@ -504,23 +575,11 @@ export default function AgentLoopSettings() {
             <div className="flex flex-col gap-2">
               <NumberInput
                 label={intl.formatMessage(i18n.retryTimeoutLabel)}
-                value={numbers.retryTimeout}
-                min={1}
-                max={3600}
-                onChange={(value) => setNumber('retryTimeout', value)}
-                onBlur={() =>
-                  saveNumber('retryTimeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', 1, 3600)
-                }
+                {...numberInputProps('retryTimeout')}
               />
               <NumberInput
                 label={intl.formatMessage(i18n.failureTimeoutLabel)}
-                value={numbers.failureTimeout}
-                min={1}
-                max={3600}
-                onChange={(value) => setNumber('failureTimeout', value)}
-                onBlur={() =>
-                  saveNumber('failureTimeout', 'GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS', 1, 3600)
-                }
+                {...numberInputProps('failureTimeout')}
               />
             </div>
           </OperationRow>
@@ -531,11 +590,7 @@ export default function AgentLoopSettings() {
           >
             <NumberInput
               label={intl.formatMessage(i18n.blockLimitLabel)}
-              value={numbers.stopHookBlockCap}
-              min={1}
-              max={100}
-              onChange={(value) => setNumber('stopHookBlockCap', value)}
-              onBlur={() => saveNumber('stopHookBlockCap', 'GOOSE_STOP_HOOK_BLOCK_CAP', 1, 100)}
+              {...numberInputProps('stopHookBlockCap')}
             />
           </OperationRow>
         </CardContent>
