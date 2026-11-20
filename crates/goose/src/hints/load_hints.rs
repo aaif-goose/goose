@@ -23,19 +23,27 @@ pub fn get_context_filenames() -> Vec<String> {
         })
 }
 
-#[derive(Default)]
 pub struct SubdirectoryHintTracker {
     loaded_dirs: HashSet<PathBuf>,
+    loaded_files: HashSet<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
 }
 
+impl Default for SubdirectoryHintTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubdirectoryHintTracker {
     pub fn new() -> Self {
+        let hints_filenames = get_context_filenames();
         Self {
             loaded_dirs: HashSet::new(),
+            loaded_files: global_hint_paths(&hints_filenames).into_iter().collect(),
             pending_dirs: Vec::new(),
-            hints_filenames: get_context_filenames(),
+            hints_filenames,
         }
     }
 
@@ -90,9 +98,12 @@ impl SubdirectoryHintTracker {
             if self.loaded_dirs.contains(&dir) {
                 continue;
             }
-            if let Some(content) =
-                load_hints_from_directory(&dir, &working_dir, &self.hints_filenames)
-            {
+            if let Some(content) = load_hints_from_directory(
+                &dir,
+                &working_dir,
+                &self.hints_filenames,
+                &mut self.loaded_files,
+            ) {
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
             }
@@ -116,6 +127,7 @@ fn load_hints_from_directory(
     directory: &Path,
     working_dir: &Path,
     hints_filenames: &[String],
+    loaded_files: &mut HashSet<PathBuf>,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -131,16 +143,16 @@ fn load_hints_from_directory(
 
     let mut directories: Vec<PathBuf> = directory
         .ancestors()
-        .take_while(|d| d.starts_with(working_dir) && *d != working_dir)
-        .map(|d| d.to_path_buf())
+        .take_while(|dir| dir.starts_with(working_dir) && *dir != working_dir)
+        .map(Path::to_path_buf)
         .collect();
     directories.reverse();
 
     let mut contents = Vec::new();
-    for dir in &directories {
+    for dir in directories {
         for hints_filename in hints_filenames {
             let hints_path = dir.join(hints_filename);
-            if hints_path.is_file() {
+            if hints_path.is_file() && loaded_files.insert(hints_path.clone()) {
                 let mut visited = HashSet::new();
                 let expanded = read_referenced_files(
                     &hints_path,
@@ -237,16 +249,7 @@ pub fn load_hint_files(
     let mut global_hints_contents = Vec::with_capacity(hints_filenames.len());
     let mut local_hints_contents = Vec::with_capacity(hints_filenames.len());
 
-    let mut global_hints_paths: Vec<PathBuf> = hints_filenames
-        .iter()
-        .map(|name| Paths::in_config_dir(name))
-        .collect();
-    if hints_filenames
-        .iter()
-        .any(|name| name == AGENTS_MD_FILENAME)
-    {
-        global_hints_paths.push(Paths::in_agents_home_dir(AGENTS_MD_FILENAME));
-    }
+    let global_hints_paths = global_hint_paths(hints_filenames);
 
     for global_hints_path in &global_hints_paths {
         if global_hints_path.is_file() {
@@ -308,6 +311,20 @@ pub fn load_hint_files(
     }
 
     hints
+}
+
+fn global_hint_paths(hints_filenames: &[String]) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = hints_filenames
+        .iter()
+        .map(|name| Paths::in_config_dir(name))
+        .collect();
+    if hints_filenames
+        .iter()
+        .any(|name| name == AGENTS_MD_FILENAME)
+    {
+        paths.push(Paths::in_agents_home_dir(AGENTS_MD_FILENAME));
+    }
+    paths
 }
 
 #[cfg(test)]
@@ -835,6 +852,63 @@ End of hints"#;
         assert_eq!(hints.len(), 1);
         assert!(hints[0].0.contains("nested"));
         assert!(hints[0].1.contains("nested subdirectory hints"));
+    }
+
+    #[test]
+    fn tracker_does_not_reload_shared_parent_hints_for_siblings() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        let parent = project_root.join("parent");
+        let first = parent.join("first");
+        let second = parent.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(parent.join(GOOSE_HINTS_FILENAME), "shared parent hints").unwrap();
+        fs::write(first.join(GOOSE_HINTS_FILENAME), "first hints").unwrap();
+        fs::write(second.join(GOOSE_HINTS_FILENAME), "second hints").unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for path in ["parent/first/file.rs", "parent/second/file.rs"] {
+            let args: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_value(serde_json::json!({ "path": path })).unwrap();
+            tracker.record_tool_arguments(&Some(args), &project_root);
+        }
+
+        let hints = tracker.load_new_hints(&project_root);
+        assert_eq!(hints.len(), 2);
+        assert!(hints[0].1.contains("shared parent hints"));
+        assert!(hints[0].1.contains("first hints"));
+        assert!(hints[1].1.contains("second hints"));
+        assert!(!hints[1].1.contains("shared parent hints"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_does_not_reload_global_hints_inside_working_directory() {
+        let root = TempDir::new().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", root.path());
+
+        let config_dir = root.path().join("config");
+        let nested = config_dir.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(config_dir.join(AGENTS_MD_FILENAME), "global instructions").unwrap();
+
+        let initial_hints = load_hint_files(
+            root.path(),
+            &[AGENTS_MD_FILENAME.to_string()],
+            &Gitignore::empty(),
+        );
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let args: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({ "path": "config/nested/file.rs" })).unwrap();
+        tracker.record_tool_arguments(&Some(args), root.path());
+        let hints = tracker.load_new_hints(root.path());
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+
+        assert!(initial_hints.contains("global instructions"));
+        assert!(hints.is_empty());
     }
 
     #[test]
