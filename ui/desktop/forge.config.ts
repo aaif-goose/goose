@@ -95,8 +95,9 @@ module.exports = {
     {
       name: '@electron-forge/maker-deb',
       config: {
-        name: 'Goose',
-        bin: 'Goose',
+        name: 'goose',
+        productName: 'Goose',
+        bin: 'resources/bin/goose',
         maintainer: 'AAIF (Agentic AI Foundation)',
         homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
@@ -111,8 +112,9 @@ module.exports = {
     {
       name: '@electron-forge/maker-rpm',
       config: {
-        name: 'Goose',
-        bin: 'Goose',
+        name: 'goose',
+        productName: 'Goose',
+        bin: 'resources/bin/goose',
         maintainer: 'AAIF (Agentic AI Foundation)',
         homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
