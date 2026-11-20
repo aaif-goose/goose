@@ -98,6 +98,8 @@ pub struct OllamaProvider {
     options: OllamaOptions,
     #[serde(skip)]
     capabilities: Mutex<HashMap<String, OllamaCapabilities>>,
+    #[serde(skip)]
+    context_limits: Mutex<HashMap<String, usize>>,
 }
 
 pub struct OllamaProviderBuilder {
@@ -173,6 +175,7 @@ impl OllamaProviderBuilder {
             skip_canonical_filtering: self.skip_canonical_filtering,
             options: self.options,
             capabilities: Mutex::new(HashMap::new()),
+            context_limits: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -217,26 +220,42 @@ impl OllamaProvider {
     }
 
     async fn model_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
-        if let Some(cached) = self
-            .capabilities
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(model).copied())
-        {
+        if let Some(cached) = cached(&self.capabilities, model) {
             return Some(cached);
         }
-
-        let capabilities = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_capabilities(model))
-            .await
-            .ok()
-            .flatten()?;
-        if let Ok(mut cache) = self.capabilities.lock() {
-            cache.insert(model.to_string(), capabilities);
-        }
-        Some(capabilities)
+        self.cache_show_info(model).await;
+        cached(&self.capabilities, model)
     }
 
-    async fn fetch_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
+    async fn model_context_limit(&self, model: &str) -> Option<usize> {
+        if let Some(cached) = cached(&self.context_limits, model) {
+            return Some(cached);
+        }
+        self.cache_show_info(model).await;
+        cached(&self.context_limits, model)
+    }
+
+    async fn cache_show_info(&self, model: &str) {
+        let Some(json) = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
+            .await
+            .ok()
+            .flatten()
+        else {
+            return;
+        };
+        if let Some(capabilities) = Self::parse_capabilities(&json) {
+            if let Ok(mut cache) = self.capabilities.lock() {
+                cache.insert(model.to_string(), capabilities);
+            }
+        }
+        if let Some(limit) = Self::parse_context_limit(&json) {
+            if let Ok(mut cache) = self.context_limits.lock() {
+                cache.insert(model.to_string(), limit);
+            }
+        }
+    }
+
+    async fn fetch_show_json(&self, model: &str) -> Option<Value> {
         let response = self
             .api_client
             .request("api/show")
@@ -246,8 +265,10 @@ impl OllamaProvider {
         if !response.status().is_success() {
             return None;
         }
+        response.json().await.ok()
+    }
 
-        let json: Value = response.json().await.ok()?;
+    fn parse_capabilities(json: &Value) -> Option<OllamaCapabilities> {
         let capabilities = json.get("capabilities")?.as_array()?;
         let has = |name| {
             capabilities
@@ -259,6 +280,20 @@ impl OllamaProvider {
             vision: has("vision"),
         })
     }
+
+    fn parse_context_limit(json: &Value) -> Option<usize> {
+        json.get("model_info")?
+            .as_object()?
+            .iter()
+            .find(|(key, _)| key.ends_with(".context_length"))?
+            .1
+            .as_u64()
+            .map(|limit| limit as usize)
+    }
+}
+
+fn cached<T: Copy>(cache: &Mutex<HashMap<String, T>>, model: &str) -> Option<T> {
+    cache.lock().ok()?.get(model).copied()
 }
 
 pub async fn fetch_ollama_model_names(
@@ -531,7 +566,15 @@ impl Provider for OllamaProvider {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async {
-                Ok(self.options.input_limit)
+                if let Some(limit) = self.options.input_limit {
+                    return Ok(Some(limit));
+                }
+                // For a local model the daemon reports its trained maximum, not
+                // the window it serves (`num_ctx`), so only trust cloud models.
+                if crate::canonical::strip_ollama_cloud_tag(model).is_some() {
+                    return Ok(self.model_context_limit(model).await);
+                }
+                Ok(None)
             })
             .await
     }
@@ -820,6 +863,36 @@ mod tests {
 
     fn show_capabilities(capabilities: &[&str]) -> ResponseTemplate {
         ResponseTemplate::new(200).set_body_json(json!({ "capabilities": capabilities }))
+    }
+
+    fn show_context_length(context_length: usize) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model_info": { "muse-spark.context_length": context_length }
+        }))
+    }
+
+    #[tokio::test]
+    async fn cloud_model_context_limit_comes_from_the_daemon() {
+        let server = mock_show_server(show_context_length(777_777), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit("muse-spark-open:cloud", None)
+                .await,
+            777_777
+        );
+    }
+
+    #[tokio::test]
+    async fn local_model_context_limit_does_not_query_the_daemon() {
+        let server = mock_show_server(show_context_length(1_048_576), 0).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("qwen3", None).await,
+            crate::model::DEFAULT_CONTEXT_LIMIT
+        );
     }
 
     #[tokio::test]

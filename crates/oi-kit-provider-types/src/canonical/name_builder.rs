@@ -71,6 +71,26 @@ pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
     (!tag.is_empty() && tag.bytes().all(|byte| byte.is_ascii_lowercase())).then_some(base)
 }
 
+/// Strips the tag an Ollama daemon puts on the Ollama Cloud models it proxies:
+/// `:cloud`, or the legacy `-cloud` after an explicit tag (`qwen3:8b-cloud`),
+/// matching Ollama's own `parseSourceSuffix`.
+pub fn strip_ollama_cloud_tag(model: &str) -> Option<&str> {
+    let (base, suffix) = model.rsplit_once(':')?;
+    let suffix_lower = suffix.to_ascii_lowercase();
+
+    if suffix_lower == "cloud" {
+        return Some(base);
+    }
+
+    // A `/` after the colon means it was a registry port, not a tag.
+    if !suffix.contains('/') && suffix_lower.ends_with("-cloud") {
+        let tag_len = suffix.len() - "-cloud".len();
+        return model.get(..base.len() + 1 + tag_len);
+    }
+
+    None
+}
+
 /// Try to map a provider/model pair to a canonical model
 pub fn map_to_canonical_model(
     provider: &str,
@@ -78,6 +98,14 @@ pub fn map_to_canonical_model(
     registry: &super::CanonicalModelRegistry,
 ) -> Option<String> {
     let registry_provider = map_provider_name(provider);
+
+    if provider == "ollama" {
+        if let Some(base) = strip_ollama_cloud_tag(model) {
+            if let Some(canonical) = registry.get("ollama-cloud", base) {
+                return Some(canonical.id.clone());
+            }
+        }
+    }
 
     if provider == "gcp_vertex_ai" {
         let normalized_model = strip_version_suffix(model);
@@ -385,6 +413,17 @@ mod tests {
             map_to_canonical_model("openrouter", "anthropic/claude-sonnet-4.5", &r),
             Some("openrouter/anthropic/claude-sonnet-4.5".to_string())
         );
+
+        // === Ollama ===
+        assert_eq!(
+            map_to_canonical_model("ollama", "muse-spark-open:cloud", &r),
+            Some("ollama-cloud/muse-spark-open".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("ollama", "gpt-oss:120b-cloud", &r),
+            Some("ollama-cloud/gpt-oss:120b".to_string())
+        );
+        assert_eq!(strip_ollama_cloud_tag("acme-cloud"), None);
 
         // === Anthropic Claude - basic ===
         assert_eq!(
