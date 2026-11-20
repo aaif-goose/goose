@@ -11,6 +11,7 @@ If a setup command fails (the script, the download, the install), post the error
 From a goose checkout, get the models.dev data:
 
 ```
+START=$(date -u '+%Y-%m-%d %H:%M UTC')
 CATALOG="$(mktemp -d)/models_dev_api.json"
 scripts/new-model-check/download_models_dev.sh "$CATALOG"
 ```
@@ -37,7 +38,7 @@ Use a new, empty folder, and give goose its own home folder, so goose has no ext
 
 ```
 W=$(mktemp -d)
-mkdir -p "$W/bin" "$W/home" "$W/work"
+mkdir -p "$W/bin" "$W/home" "$W/work" "$W/requests"
 cd "$W/work"
 curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh -o "$W/download_cli.sh"
 HOME="$W/home" GOOSE_BIN_DIR="$W/bin" CONFIGURE=false bash "$W/download_cli.sh"
@@ -90,6 +91,8 @@ After each run, find the real request in `$W/home/.local/state/goose/logs/llm_re
 - **The real request:** `model_config.request_params.thinking_effort` matches the setting you ran, and there's no `disable_prompt_cache`.
 - **goose's background request** to name the session: it has `disable_prompt_cache: true`. Ignore it.
 
+Copy the real request's file to `$W/requests/<model>-<setting>.jsonl`; the next run deletes the logs.
+
 If there's no real request, report that for this model and move on.
 
 ## 5. Where the settings are in the request
@@ -100,6 +103,7 @@ If there's no real request, report that for this model and move on.
 | Anthropic | `max_tokens` | `thinking.type` (`adaptive`, `enabled` or `disabled`), `thinking.budget_tokens` (a token budget), `output_config.effort` (a level) |
 | OpenAI (Responses API) | `max_output_tokens` | `reasoning.effort` (a level) |
 | OpenAI (Chat API) | `max_completion_tokens` or `max_tokens` | `reasoning_effort` (a level) |
+
 ## 6. The checks
 
 Compare the real requests with the model's models.dev metadata.
@@ -115,6 +119,12 @@ Compare the real requests with the model's models.dev metadata.
    If models.dev has no levels for the model, find them in the provider's launch notes or API docs. If you can't, write "levels unknown" rather than pass or fail.
 
 Quote the actual value from the request for every check (for example `thinkingLevel: "xhigh"`). Never paste whole requests or logs.
+
+Before moving on, recheck:
+- **Each FAIL:** rerun that setting once. If the rerun passes, use the rerun's result and note in `$R` that the first run failed.
+- **Each PASS:** don't rerun goose. Reopen the saved request and confirm it's the real request, it contains the quoted value, and the expected value matches `new_models.json`.
+
+Fix `$R` where anything doesn't match.
 
 ## 7. Read the provider's notes
 
@@ -132,7 +142,7 @@ Providers also introduce new rules that models.dev doesn't capture. For each new
 
 Only report changes that could affect what goose sends or receives, such as thinking settings, output limits, tool calling, streaming, headers or removed settings.
 
-For each item, give a one-line summary, what it means for goose, a short quote and the link. These don't affect PASS or FAIL. If a person should look at one, add it to "Action needed" in the report.
+For each item, give a one-line summary, what it means for goose, a short quote and the link. End each with `Action: none.` or `Action: <what to do>.` These don't affect PASS or FAIL.
 
 If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails too").
 
@@ -141,7 +151,7 @@ If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails t
 Install the canary build, which is built from main, into another fresh folder, and point the `run` helper at it:
 
 ```
-C=$(mktemp -d); mkdir -p "$C/bin" "$C/home" "$C/work"
+C=$(mktemp -d); mkdir -p "$C/bin" "$C/home" "$C/work" "$C/requests"
 HOME="$C/home" GOOSE_BIN_DIR="$C/bin" CANARY=true CONFIGURE=false bash "$W/download_cli.sh"
 W=$C
 cd "$W/work"
@@ -164,7 +174,7 @@ Copy the models.dev data into this goose's home folder as in step 2, then repeat
 Build the report only from `$R`, not from memory. Post one message per run, covering every new model you checked:
 
 ```
-New model check: 2026-11-20
+New model check: 2026-11-20 09:53 UTC
 
 **Action needed:**
 - Look at note 1 (GPT-6.2 reasoning items).
@@ -177,13 +187,15 @@ New model check: 2026-11-20
 - PASS openai/gpt-6.2-sol
 
 **Notes:**
-1. GPT-6.2 drops reasoning items when history is edited. May affect compaction. "<short quote>" <link>
-2. GPT-6.2 tool calling needs the Responses API. goose already uses it. "<short quote>" <link>
+1. GPT-6.2 drops reasoning items when history is edited. May affect compaction. "<short quote>" <link> Action: check whether compaction keeps reasoning items.
+2. GPT-6.2 tool calling needs the Responses API. goose already uses it. "<short quote>" <link> Action: none.
 
 Tested goose 1.60.1 (main 1.60.0-canary+42055e7)
 ```
 
+- The header has `$START` from step 1.
 - **Action needed** comes first. List every action, or write "None". An action is one of: a patch release, review a PR, a fix with no PR (say why), or look at a note.
-- **New models:** one PASS or FAIL line per model. End a FAIL line with its action in bold: **No action.**, **Patch release.**, **Review PR <link>.** or **Needs a fix.** List each failed check below it, with the value sent and the value expected, and the cause's file and line if main fails too.
-- **Notes** are information only. Their actions go in "Action needed".
+- **New models:** one PASS or FAIL line per model. A model with no FAIL is PASS; list any skipped or levels-unknown check below it. End a FAIL line with its action in bold: **No action.**, **Patch release.**, **Review PR <link>.** or **Needs a fix.** List each failed check below it, with the value sent and the value expected, and the cause's file and line if main fails too.
+- **Notes:** end each with its action. List every note whose action isn't "none" in "Action needed".
 - End with the goose version tested, and the canary version if you used it. If you built the models.dev data, add "models.dev data built from <sha>".
+- Before posting, check the report: every model in `new_models.json` is listed, every FAIL line and note ends with its action, and every action is in "Action needed".
