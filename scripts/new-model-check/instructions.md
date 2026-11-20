@@ -40,7 +40,7 @@ W=$(mktemp -d)
 mkdir -p "$W/bin" "$W/home" "$W/work"
 cd "$W/work"
 curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh -o "$W/download_cli.sh"
-HOME="$W/home" GOOSE_BIN_DIR="$W/bin" CONFIGURE=false bash "$W/download_cli.sh"
+HOME="$W/home" GOOSE_BIN_DIR="$W/bin" GOOSE_VERSION=v1.60.1 CONFIGURE=false bash "$W/download_cli.sh"
 "$W/bin/goose" --version
 R="$W/results.md"
 ```
@@ -138,21 +138,11 @@ If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails t
 
 ## 8. If a check fails
 
-Install the canary build, which is built from main, into another fresh folder, and point the `run` helper at it:
+This is a test run of the PR flow. Don't install the canary build; treat every failing check as "Canary fails too".
 
-```
-C=$(mktemp -d); mkdir -p "$C/bin" "$C/home" "$C/work"
-HOME="$C/home" GOOSE_BIN_DIR="$C/bin" CANARY=true CONFIGURE=false bash "$W/download_cli.sh"
-W=$C
-cd "$W/work"
-```
+- **Canary fails too:** in your goose checkout, check out tag `v1.60.1`, read that provider's request code and find why. Report the file and line, and describe the fix.
 
-Copy the models.dev data into this goose's home folder as in step 2, then repeat the failing checks.
-
-- **Canary passes:** the fix is on main. Name the PR if you can find it. If `gh release list -R aaif-goose/goose -L 1` shows a newer release than the one you tested and it includes the fix, report that no action is needed, because stable will catch up soon. Otherwise, report that a patch release is needed.
-- **Canary fails too:** in your goose checkout, on the latest main, read that provider's request code and find why. Report the file and line, and describe the fix.
-
-  Then open a PR with the fix, but only if all of these hold:
+  Then make the fix on a new branch from `v1.60.1` and open it as a draft PR whose title starts with `[test]`. Making the code change and opening the PR is part of this check. Do it only if all of these hold:
   - No open PR already fixes it. Search open PRs for the model and the provider first; if one exists, link it in the report instead.
   - The cause is clear, and the code change only touches that provider's code.
   - The PR includes a test that fails before the fix and passes after.
