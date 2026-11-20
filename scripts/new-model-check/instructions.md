@@ -148,6 +148,8 @@ If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails t
 
 ## 8. If a check fails
 
+Do this once, after every new model has been through steps 4–7, for all failing checks together.
+
 Install the canary build, which is built from main, into another fresh folder, and point the `run` helper at it:
 
 ```
