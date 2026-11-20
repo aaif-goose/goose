@@ -1,7 +1,7 @@
 ---
 title: Berd
 description: A custom desktop application with a bundled goose backend connected over ACP.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Berd

@@ -393,7 +393,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Check generated oi-kit API reference data
-        run: python3 documentation/automation/gdk-api/generate.py --check
+        run: python3 documentation/automation/oi-kit-api/generate.py --check
 
   desktop-lint:
     name: Test and Lint Electron Desktop App

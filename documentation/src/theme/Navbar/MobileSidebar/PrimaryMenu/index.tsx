@@ -3,20 +3,20 @@ import OriginalPrimaryMenu from "@theme-original/Navbar/MobileSidebar/PrimaryMen
 import NavbarItem from "@theme/NavbarItem";
 import { useNavbarMobileSidebar } from "@docusaurus/theme-common/internal";
 import {
-  gdkNavbarItems,
-  useGdkNavigation,
-} from "@site/src/components/GdkNavigation";
+  oiKitNavbarItems,
+  useOiKitNavigation,
+} from "@site/src/components/OiKitNavigation";
 
 export default function NavbarMobilePrimaryMenu(): ReactNode {
-  const isGdk = useGdkNavigation();
+  const isOiKit = useOiKitNavigation();
   const mobileSidebar = useNavbarMobileSidebar();
-  if (!isGdk) {
+  if (!isOiKit) {
     return <OriginalPrimaryMenu />;
   }
 
   return (
     <ul className="menu__list">
-      {gdkNavbarItems.map((item) => (
+      {oiKitNavbarItems.map((item) => (
         <NavbarItem
           key={item.label}
           {...item}

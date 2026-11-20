@@ -14,7 +14,7 @@ export default function DocItemMetadata(): ReactNode {
       title={metadata.title}
       description={metadata.description}
       keywords={frontMatter.keywords}
-      image={assets.image ?? frontMatter.image ?? "/img/gdk/social-preview-oi-kit.png"}
+      image={assets.image ?? frontMatter.image ?? "/img/oi-kit/social-preview-oi-kit.png"}
     />
   );
 }

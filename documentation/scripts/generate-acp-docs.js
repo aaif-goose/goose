@@ -241,7 +241,7 @@ function renderDocumentation(schemas, meta, gooseVersion = 'Preview') {
     '---',
     'title: ACP Extensions Reference',
     'sidebar_label: ACP extensions reference',
-    'displayed_sidebar: gdkSidebar',
+    'displayed_sidebar: oiKitSidebar',
     'sidebar_position: 2',
     '---',
     '',

@@ -2,20 +2,20 @@ import React, { type ReactNode } from "react";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import OriginalBlogPostPage from "@theme-original/BlogPostPage";
 import type { Props } from "@theme/BlogPostPage";
-import { GdkBlogContext } from "@site/src/components/GdkNavigation";
+import { OiKitBlogContext } from "@site/src/components/OiKitNavigation";
 
 export default function BlogPostPage(props: Props): ReactNode {
-  const gdkTag = useBaseUrl("/blog/tags/oi-kit");
-  const isGdk = props.content.metadata.tags.some(
-    (tag) => tag.permalink === gdkTag,
+  const oiKitTag = useBaseUrl("/blog/tags/oi-kit");
+  const isOiKit = props.content.metadata.tags.some(
+    (tag) => tag.permalink === oiKitTag,
   );
 
   return (
-    <GdkBlogContext.Provider value={isGdk}>
+    <OiKitBlogContext.Provider value={isOiKit}>
       <OriginalBlogPostPage
         {...props}
-        sidebar={isGdk ? { ...props.sidebar, items: [] } : props.sidebar}
+        sidebar={isOiKit ? { ...props.sidebar, items: [] } : props.sidebar}
       />
-    </GdkBlogContext.Provider>
+    </OiKitBlogContext.Provider>
   );
 }

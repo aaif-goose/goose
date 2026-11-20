@@ -12,55 +12,55 @@ export type Language = {
   errorType: (name: string) => string;
 };
 
-export type GdkParam = {
+export type OiKitParam = {
   name: string;
   type: string;
   default: string | null;
   docs: string;
 };
 
-export type GdkFunc = {
+export type OiKitFunc = {
   name: string;
   docs: string;
-  params: GdkParam[];
+  params: OiKitParam[];
   returns: string | null;
   throws: string | null;
   isAsync: boolean;
 };
 
-export type GdkItem = {
+export type OiKitItem = {
   name: string;
   kind: "object" | "callback" | "record" | "enum" | "error";
   docs: string;
-  fields: GdkParam[];
-  variants: { name: string; fields: GdkParam[] }[];
-  methods: GdkFunc[];
+  fields: OiKitParam[];
+  variants: { name: string; fields: OiKitParam[] }[];
+  methods: OiKitFunc[];
 };
 
-export type GdkApiDoc = {
+export type OiKitApiDoc = {
   version: string;
   docVersion: string;
   source: string;
-  functions: GdkFunc[];
-  items: GdkItem[];
+  functions: OiKitFunc[];
+  items: OiKitItem[];
 };
 
 export const LANGUAGES: Language[];
 export function slug(...parts: string[]): string;
-export function funcAnchor(func: GdkFunc, owner?: string): string;
-export function itemAnchor(item: GdkItem): string;
+export function funcAnchor(func: OiKitFunc, owner?: string): string;
+export function itemAnchor(item: OiKitItem): string;
 export function memberAnchor(
   ownerAnchor: string,
   kind: string,
   name: string,
 ): string;
 export function signature(
-  func: GdkFunc,
+  func: OiKitFunc,
   language: Language,
   owner?: string,
 ): string;
 export function variantName(
-  item: GdkItem,
-  variant: GdkItem["variants"][number],
+  item: OiKitItem,
+  variant: OiKitItem["variants"][number],
   language: Language,
 ): string;

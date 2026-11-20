@@ -1,10 +1,10 @@
 ---
 title: State machine
 description: Compose operations into an agent whose next action is determined by its loaded state.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
-import StateMachineDiagram from "@site/static/img/gdk/state-machine.svg";
+import StateMachineDiagram from "@site/static/img/oi-kit/state-machine.svg";
 
 # State machine
 

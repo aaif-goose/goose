@@ -1,7 +1,7 @@
 ---
 title: goose Perception
 description: A background application that turns desktop activity into a personal wiki using goose over ACP.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # goose Perception
