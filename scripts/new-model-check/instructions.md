@@ -133,7 +133,9 @@ Providers also introduce new rules that models.dev doesn't capture. For each new
 | Moonshot | No API changelog found; use https://platform.kimi.ai/blog |
 | DeepSeek | https://api-docs.deepseek.com/updates/ |
 
-Only report changes that could affect what goose sends or receives, such as thinking settings, output limits, tool calling, streaming, headers or removed settings.
+Only report changes that could affect what goose sends or receives, such as thinking settings, output limits, tool calling, streaming, prompt caching, headers or removed settings.
+
+In the provider's notes, for prompt caching, report any change to: whether the model caches automatically or needs cache breakpoints (`cache_control`), the maximum number of breakpoints (goose uses 4), the lookback window (goose assumes 20 blocks), the minimum cacheable length, or the cache lifetime (TTL). goose's caching rules start from `crates/oi-kit-provider-types/src/cache_semantics.rs`.
 
 For each item, give a one-line summary, what it means for goose, a short quote and the link. End each with a bold action: `**Action: none.**` or `**Action: <what to do>.**` These don't affect PASS or FAIL.
 
