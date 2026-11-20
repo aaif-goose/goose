@@ -38,9 +38,20 @@ fn resolve_gateway_max_turns(gateway_override: Option<u32>, global_max_turns: Op
         .unwrap_or(DEFAULT_GATEWAY_MAX_TURNS)
 }
 
-/// The mode to use, or the chat reply to send when `GOOSE_MODE` is set but invalid.
-fn goose_mode_or_reply_text(result: Result<GooseMode, ConfigError>) -> Result<GooseMode, String> {
-    result.map_err(|e| format!("⚠️ Invalid GOOSE_MODE: {e}"))
+/// What the chat is told when `GOOSE_MODE` can't be resolved. It is fixed text: the
+/// underlying error can name local paths or quote config contents, and an unpaired
+/// sender sees this reply, so the details only go to the log.
+const INVALID_GOOSE_MODE_REPLY: &str =
+    "⚠️ goose's GOOSE_MODE setting is invalid, so it won't run. Check the goose configuration on the host.";
+
+/// The mode to use, or the chat reply to send when `GOOSE_MODE` can't be resolved.
+fn goose_mode_or_reply_text(
+    result: &Result<GooseMode, ConfigError>,
+) -> Result<GooseMode, &'static str> {
+    match result {
+        Ok(goose_mode) => Ok(*goose_mode),
+        Err(_) => Err(INVALID_GOOSE_MODE_REPLY),
+    }
 }
 
 /// A pairing code in its stored form, if the text has the shape of one.
@@ -323,11 +334,20 @@ impl GatewayHandler {
     /// Resolves `GOOSE_MODE`. When it is set but invalid, tells the user in the chat and
     /// returns `None`, so the caller stops instead of falling back to `Auto`.
     async fn goose_mode_or_reply(&self, user: &PlatformUser) -> anyhow::Result<Option<GooseMode>> {
-        match goose_mode_or_reply_text(Config::global().get_goose_mode_or_default()) {
+        let result = Config::global().get_goose_mode_or_default();
+        match goose_mode_or_reply_text(&result) {
             Ok(goose_mode) => Ok(Some(goose_mode)),
             Err(body) => {
+                if let Err(error) = &result {
+                    tracing::error!(%error, "invalid GOOSE_MODE; gateway message not handled");
+                }
                 self.gateway
-                    .send_message(user, OutgoingMessage::Text { body })
+                    .send_message(
+                        user,
+                        OutgoingMessage::Text {
+                            body: body.to_string(),
+                        },
+                    )
                     .await?;
                 Ok(None)
             }
@@ -948,17 +968,19 @@ mod tests {
     }
 
     #[test]
-    fn invalid_goose_mode_becomes_a_chat_reply_not_auto() {
+    fn invalid_goose_mode_becomes_a_fixed_chat_reply_not_auto() {
         assert_eq!(
-            goose_mode_or_reply_text(Ok(GooseMode::Approve)),
+            goose_mode_or_reply_text(&Ok(GooseMode::Approve)),
             Ok(GooseMode::Approve)
         );
-        let reply = goose_mode_or_reply_text(Err(ConfigError::DeserializeError(
-            "unknown variant `Approve`".to_string(),
+        let reply = goose_mode_or_reply_text(&Err(ConfigError::DeserializeError(
+            "/home/someone/.config/goose/extra.yaml: invalid type: string \"API_KEY=secret\""
+                .to_string(),
         )))
         .unwrap_err();
-        assert!(reply.starts_with("⚠️ Invalid GOOSE_MODE:"), "{reply}");
-        assert!(reply.contains("unknown variant `Approve`"), "{reply}");
+        assert_eq!(reply, INVALID_GOOSE_MODE_REPLY);
+        assert!(!reply.contains("secret"), "{reply}");
+        assert!(!reply.contains("/home/"), "{reply}");
     }
 
     #[test]
