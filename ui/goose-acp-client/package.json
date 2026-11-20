@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose-acp-client",
-  "version": "1.60.2",
+  "version": "1.60.3",
   "description": "TypeScript client library for Goose over Agent Client Protocol (ACP)",
   "license": "Apache-2.0",
   "repository": {

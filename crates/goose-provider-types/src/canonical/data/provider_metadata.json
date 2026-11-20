@@ -603,7 +603,7 @@
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_KEY"
     ],
-    "model_count": 29
+    "model_count": 30
   },
   {
     "id": "commandcode",
@@ -647,7 +647,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 106
+    "model_count": 110
   },
   {
     "id": "crossmodel",
@@ -658,7 +658,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 73
+    "model_count": 76
   },
   {
     "id": "crusoe",
@@ -714,7 +714,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 86
+    "model_count": 88
   },
   {
     "id": "dinference",
@@ -791,7 +791,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 397
+    "model_count": 401
   },
   {
     "id": "empiriolabs",
@@ -923,7 +923,7 @@
     "env": [
       "FRIENDLI_TOKEN"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "frogbot",
@@ -956,7 +956,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 39
+    "model_count": 44
   },
   {
     "id": "gmicloud",
@@ -1077,7 +1077,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 86
+    "model_count": 92
   },
   {
     "id": "humain",
@@ -1353,7 +1353,7 @@
     "env": [
       "KENARI_API_KEY"
     ],
-    "model_count": 82
+    "model_count": 83
   },
   {
     "id": "kilo",
@@ -1364,7 +1364,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 465
+    "model_count": 467
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1496,7 +1496,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 215
+    "model_count": 216
   },
   {
     "id": "llmgateway-providers",
@@ -1507,7 +1507,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 499
+    "model_count": 502
   },
   {
     "id": "llmtech",
@@ -1870,7 +1870,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 630
+    "model_count": 612
   },
   {
     "id": "nearai",
@@ -1881,7 +1881,7 @@
     "env": [
       "NEARAI_API_KEY"
     ],
-    "model_count": 60
+    "model_count": 59
   },
   {
     "id": "nebius",
@@ -1970,7 +1970,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 94
+    "model_count": 97
   },
   {
     "id": "nvidia",
@@ -2025,7 +2025,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 154
+    "model_count": 157
   },
   {
     "id": "ollama-cloud",
@@ -2047,7 +2047,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 142
+    "model_count": 144
   },
   {
     "id": "opencode-go",
@@ -2234,7 +2234,7 @@
     "env": [
       "PRIME_API_KEY"
     ],
-    "model_count": 70
+    "model_count": 73
   },
   {
     "id": "privatemode-ai",
@@ -2333,7 +2333,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 175
+    "model_count": 182
   },
   {
     "id": "routing-run",
@@ -3016,7 +3016,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 38
+    "model_count": 42
   },
   {
     "id": "volcengine",
