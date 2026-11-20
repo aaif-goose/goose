@@ -25,7 +25,7 @@ use goose::providers::base::ConfigKey;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::thinking::ThinkingEffort;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
@@ -984,7 +984,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     {
         let supports_thinking = match temp_provider.fetch_model_info(&model).await {
             Ok(model_info) => model_info.reasoning,
-            Err(_) => goose_providers::model::ModelConfig::new(&model).is_reasoning_model(),
+            Err(_) => oi_kit_providers::model::ModelConfig::new(&model).is_reasoning_model(),
         };
 
         if supports_thinking {
@@ -1292,7 +1292,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
 
     set_extension(ExtensionEntry {
         enabled: true,
-        config: ExtensionConfig::Stdio {
+        config: ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: name.clone(),
             cmd,
             args,
@@ -1303,7 +1303,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-        },
+        }),
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
@@ -1336,21 +1336,23 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
 
     set_extension(ExtensionEntry {
         enabled: true,
-        config: ExtensionConfig::StreamableHttp {
-            name: name.clone(),
-            uri,
-            envs: Envs::new(envs),
-            env_keys,
-            headers,
-            description,
-            timeout: Some(timeout),
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: None,
-            available_tools: Vec::new(),
-        },
+        config: ExtensionConfig::External(
+            oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: name.clone(),
+                uri,
+                envs: Envs::new(envs),
+                env_keys,
+                headers,
+                description,
+                timeout: Some(timeout),
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        ),
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
@@ -1557,22 +1559,17 @@ fn select_goose_mode() -> anyhow::Result<GooseMode> {
         .item(
             GooseMode::Auto,
             "Auto Mode",
-            "Full file modification, extension usage, edit, create and delete files freely"
+            "Full file modification, extension usage, edit, create and delete files freely",
         )
         .item(
             GooseMode::Approve,
             "Approve Mode",
-            "All tools, extensions and file modifications will require human approval"
+            "All tools, extensions and file modifications will require human approval",
         )
         .item(
             GooseMode::SmartApprove,
             "Smart Approve Mode",
-            "Editing, creating, deleting files and using extensions will require human approval"
-        )
-        .item(
-            GooseMode::Chat,
-            "Chat Mode",
-            "Engage with the selected provider without using tools, extensions, or file modification"
+            "Editing, creating, deleting files and using extensions will require human approval",
         )
         .interact()?;
     Ok(mode)
@@ -1583,7 +1580,6 @@ fn goose_mode_saved_message(mode: GooseMode) -> &'static str {
         GooseMode::Auto => "Set to Auto Mode - full file modification enabled",
         GooseMode::Approve => "Set to Approve Mode - all tools and modifications require approval",
         GooseMode::SmartApprove => "Set to Smart Approve Mode - modifications require approval",
-        GooseMode::Chat => "Set to Chat Mode - no tools or modifications enabled",
     }
 }
 
@@ -1800,8 +1796,7 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
     let extension_config = get_extension_by_name(&selected_extension_name);
     if let Some(config) = extension_config.as_ref() {
         services
-            .extension_manager
-            .enable(&session.id, config.clone())
+            .enable_extension(&session.id, config.clone())
             .await
             .unwrap_or_else(|_| {
                 println!(
@@ -2302,11 +2297,11 @@ fn add_provider() -> anyhow::Result<()> {
         })
         .interact()?;
 
-    let models: Vec<goose_providers::base::ModelInfo> = models_input
+    let models: Vec<oi_kit_providers::base::ModelInfo> = models_input
         .split(',')
         .map(str::trim)
         .filter(|name| !name.is_empty())
-        .map(goose_providers::base::ModelInfo::new)
+        .map(oi_kit_providers::base::ModelInfo::new)
         .collect();
 
     let supports_streaming = cliclack::confirm("Does this provider support streaming responses?")
@@ -2461,7 +2456,7 @@ mod tests {
 
     #[test]
     fn first_time_goose_mode_skips_when_set_in_env() {
-        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("chat"))]);
+        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("smart_approve"))]);
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 

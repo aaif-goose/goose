@@ -71,8 +71,8 @@ const config: Config = {
                 ? generatedItems.map((item) =>
                     item.type === "category" &&
                     item.link?.type === "doc" &&
-                    item.link.id === "gdk/index"
-                      ? { type: "link" as const, label: "GDK", href: "/docs/gdk" }
+                    item.link.id === "oi-kit/index"
+                      ? { type: "link" as const, label: "oi-kit", href: "/docs/oi-kit" }
                       : item,
                   )
                 : generatedItems;
@@ -154,14 +154,28 @@ const config: Config = {
     [
       "@docusaurus/plugin-client-redirects",
       {
+        createRedirects(existingPath: string) {
+          if (
+            existingPath === "/docs/oi-kit" ||
+            existingPath.startsWith("/docs/oi-kit/")
+          ) {
+            return existingPath.replace("/docs/oi-kit", "/docs/gdk");
+          }
+          if (
+            existingPath === "/blog/tags/oi-kit" ||
+            existingPath.startsWith("/blog/tags/oi-kit/")
+          ) {
+            return existingPath.replace("/blog/tags/oi-kit", "/blog/tags/gdk");
+          }
+        },
         redirects: [
           {
-            from: "/docs/gdk/acp/zed",
+            from: ["/docs/gdk/acp/zed", "/docs/oi-kit/acp/zed"],
             to: "/docs/guides/zed",
           },
           {
-            from: "/docs/gdk/sdk",
-            to: "/docs/gdk/reference",
+            from: ["/docs/gdk/sdk", "/docs/oi-kit/sdk"],
+            to: "/docs/oi-kit/reference/",
           },
           {
             from: "/docs/getting-started/using-goose-free",
@@ -467,8 +481,8 @@ const config: Config = {
           position: "left",
         },
         {
-          to: "/docs/gdk/",
-          label: "GDK",
+          to: "/docs/oi-kit/",
+          label: "oi-kit",
           position: "left",
         },
         { to: "/blog", label: "Blog", position: "left" },
@@ -508,8 +522,8 @@ const config: Config = {
               to: "/extensions",
             },
             {
-              label: "GDK",
-              to: "/docs/gdk/",
+              label: "oi-kit",
+              to: "/docs/oi-kit/",
             },
           ],
         },

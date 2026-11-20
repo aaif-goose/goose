@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use anyhow::Result;
-use goose_providers::conversation::{message::Message, Conversation};
+use oi_kit_providers::conversation::{message::Message, Conversation};
 use regex::Regex;
 
 use crate::{providers::base::Provider, utils::safe_truncate};
@@ -89,7 +89,7 @@ fn get_initial_user_messages(messages: &Conversation) -> Vec<String> {
 
 pub(crate) async fn generate_session_name(
     provider: &dyn Provider,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
     session_id: &str,
     messages: &Conversation,
     working_dir: Option<&Path>,

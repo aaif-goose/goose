@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Chưa thu thập được kết quả có cấu trúc"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Kết quả có cấu trúc đã bị từ chối"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Đã trả về kết quả có cấu trúc"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Đang trả về kết quả có cấu trúc…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Không thể chuyển sang {branch}"
   },
@@ -2128,12 +2140,6 @@
   },
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Tự động"
-  },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Tương tác với nhà cung cấp đã chọn mà không sử dụng công cụ hoặc tiện ích mở rộng."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Chỉ trò chuyện"
   },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Tất cả công cụ, tiện ích mở rộng và chỉnh sửa tệp sẽ yêu cầu sự phê duyệt của con người"
@@ -3955,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Chọn ngôn ngữ hiển thị cho goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Tiếng Hà Lan"
   },
   "settings.language.english": {
     "defaultMessage": "English"

@@ -234,8 +234,8 @@ fn verify_bundle(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let identity = result
-        .identity
-        .as_deref()
+        .identity()
+        .map(|identity| identity.as_str())
         .ok_or_else(|| anyhow::anyhow!("No identity in certificate"))?;
 
     let expected = format!("/.github/workflows/{workflow}");
@@ -272,7 +272,7 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<()> {
 
     let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .context("Failed to load Sigstore trusted root")?;
-    let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
+    let policy = VerificationPolicy::any_identity().require_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
         Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;
 

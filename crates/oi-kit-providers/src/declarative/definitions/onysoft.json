@@ -1,0 +1,23 @@
+{
+  "name": "onysoft",
+  "engine": "openai",
+  "display_name": "Onysoft AI Gateway",
+  "description": "Turkish AI gateway: 780+ models from Anthropic, OpenAI, Google, xAI, DeepSeek, Qwen, GLM, Kimi and more through one OpenAI-compatible API, plus Türkiye-hosted open models (:tr) and TRY billing.",
+  "api_key_env": "ONYSOFT_API_KEY",
+  "base_url": "https://api.onysoft.com/v1",
+  "dynamic_models": true,
+  "models": [
+    { "name": "anthropic/claude-sonnet-5.5", "context_limit": 1000000 },
+    { "name": "x-ai/grok-4.20", "context_limit": 2000000 },
+    { "name": "deepseek/deepseek-v4.1-flash", "context_limit": 1048576 },
+    { "name": "moonshotai/kimi-k3.1-pro", "context_limit": 1048576 },
+    { "name": "qwen/qwen3.8-2.4t-a95b", "context_limit": 1048576 }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://api.onysoft.com/models",
+  "setup_steps": [
+    "Create an account at https://api.onysoft.com/register",
+    "Open https://api.onysoft.com/dashboard/api-keys and create an API key",
+    "Paste the key above as ONYSOFT_API_KEY"
+  ]
+}

@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terbaru"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Hasil terstruktur tidak dikumpulkan"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Hasil terstruktur ditolak"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Hasil terstruktur dikembalikan"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Mengembalikan hasil terstruktur…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Gagal beralih ke {branch}"
   },
@@ -2128,12 +2140,6 @@
   },
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Otonom"
-  },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Berinteraksi dengan penyedia yang dipilih tanpa menggunakan alat atau ekstensi."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Obrolan saja"
   },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Semua alat, ekstensi, dan modifikasi file akan memerlukan persetujuan manusia"
@@ -3955,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Pilih bahasa tampilan untuk goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Bahasa Belanda"
   },
   "settings.language.english": {
     "defaultMessage": "English"

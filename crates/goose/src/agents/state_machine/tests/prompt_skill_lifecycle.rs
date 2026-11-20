@@ -5,12 +5,6 @@ use super::calculator_extension::ADD;
 use super::pipeline::{
     test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MessageKind::User,
 };
-#[cfg(feature = "code-mode")]
-use crate::config::permission::PermissionLevel;
-#[cfg(feature = "code-mode")]
-use crate::config::GooseMode;
-#[cfg(feature = "code-mode")]
-use crate::conversation::message::MessageContent;
 
 #[tokio::test]
 async fn prompt_and_skill_lifecycle() -> Result<()> {
@@ -99,7 +93,7 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
 #[tokio::test]
 async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    for name in ["compact", "clear"] {
+    for name in ["compact", "clear", "summarize"] {
         let skill_dir = pipeline.working_dir().join(".agents/skills").join(name);
         std::fs::create_dir_all(&skill_dir)?;
         std::fs::write(
@@ -112,7 +106,11 @@ async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
         &recipe_path,
         "version: 1.0.0\ntitle: Status\ndescription: Shadowing recipe\nprompt: SHADOWING_RECIPE_PROMPT\n",
     )?;
-    let mappings = json!([{ "command": "status", "recipe_path": recipe_path }]).to_string();
+    let mappings = json!([
+        { "command": "status", "recipe_path": recipe_path },
+        { "command": "summarize", "recipe_path": recipe_path },
+    ])
+    .to_string();
     let _guard = env_lock::lock_env([("SLASH_COMMANDS", Some(mappings.as_str()))]);
 
     let status = pipeline.run(["/status"]).await?;
@@ -123,7 +121,7 @@ async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
     pipeline.run(["first turn"]).await?;
     api.on("Please summarize the conversation history")
         .reply("summary");
-    let compacted = pipeline.run(["/compact"]).await?;
+    let compacted = pipeline.run(["/summarize"]).await?;
     compacted.assert_emitted("Compaction complete");
 
     let cleared = pipeline.run(["/clear"]).await?;
@@ -139,34 +137,23 @@ async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
 
 #[cfg(feature = "code-mode")]
 #[tokio::test]
-async fn unadvertised_load_skill_is_not_confirmed_or_loaded() -> Result<()> {
+async fn load_skill_stays_a_direct_tool_in_code_mode() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let skill_dir = pipeline.working_dir().join(".agents/skills/private");
+    let skill_dir = pipeline.working_dir().join(".agents/skills/review");
     std::fs::create_dir_all(&skill_dir)?;
     std::fs::write(
         skill_dir.join("SKILL.md"),
-        "---\nname: private\ndescription: Private test skill\n---\nPRIVATE_SKILL_CONTENT",
+        "---\nname: review\ndescription: Review code\n---\nREVIEW_SKILL_CONTENT",
     )?;
-
     pipeline.add_extension("code_execution").await?;
-    pipeline.set_permission("load_skill", PermissionLevel::AlwaysAllow);
-    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
-    api.on("try the hidden skill")
-        .unadvertised_call("load_skill", json!({ "name": "private" }));
-    api.on("not available").reply("skill call blocked");
+    api.on("review this")
+        .call("load_skill", json!({ "name": "review" }));
+    api.on("REVIEW_SKILL_CONTENT").reply("following the skill");
 
-    let result = pipeline.run(["try the hidden skill"]).await?;
+    let result = pipeline.run(["review this"]).await?;
 
-    assert!(!api.calls()[0].advertises_tool("load_skill"));
-    assert!(!api.calls()[1].input_contains("PRIVATE_SKILL_CONTENT"));
-    result.assert_message(-2, ToolResponse, "Tool 'load_skill' is not available");
-    result.assert_message(-1, Agent, "skill call blocked");
-    assert!(!result.conversation().messages().iter().any(|message| {
-        message
-            .content
-            .iter()
-            .any(|content| matches!(content, MessageContent::ActionRequired(_)))
-    }));
-
+    assert!(api.calls()[0].advertises_tool("load_skill"));
+    result.assert_message(-2, ToolResponse, "REVIEW_SKILL_CONTENT");
+    result.assert_message(-1, Agent, "following the skill");
     Ok(())
 }

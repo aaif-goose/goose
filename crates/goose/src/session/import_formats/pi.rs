@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::utils::sanitize_unicode_tags;
-use goose_providers::conversation::token_usage::Usage;
+use oi_kit_providers::conversation::token_usage::Usage;
 
 pub fn convert(content: &str) -> Result<String> {
     let mut lines = content.lines().filter(|l| !l.trim().is_empty());
@@ -217,11 +217,10 @@ pub fn convert(content: &str) -> Result<String> {
         name: &name,
         created_at,
         updated_at,
-        usage: Usage::new(Some(total_input as i32), Some(total_output as i32), None)
-            .with_cache_tokens(
-                (total_cache_read > 0).then_some(total_cache_read as i32),
-                (total_cache_write > 0).then_some(total_cache_write as i32),
-            ),
+        usage: Usage::new(Some(total_input), Some(total_output), None).with_cache_tokens(
+            (total_cache_read > 0).then_some(total_cache_read),
+            (total_cache_write > 0).then_some(total_cache_write),
+        ),
         accumulated_cost: (total_cost > 0.0).then_some(total_cost),
         conversation,
     });

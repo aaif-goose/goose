@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="420" height="460" viewBox="0 0 420 460" role="img" aria-labelledby="provider-title provider-desc" style="display:block;max-width:100%;height:auto;margin:1.5rem auto">
   <title id="provider-title">One provider interface, different model backends</title>
-  <desc id="provider-desc">An application or InferenceRunner sends GDK requests through the Provider interface and receives a MessageStream. An HTTP provider connects to a hosted API or local model server. LocalInferenceProvider runs a model inside the application process.</desc>
+  <desc id="provider-desc">An application or InferenceRunner sends oi-kit requests through the Provider interface and receives a MessageStream. An HTTP provider connects to a hosted API or local model server. LocalInferenceProvider runs a model inside the application process.</desc>
   <g fill="var(--background-subtle)" stroke="var(--border-standard)" stroke-width="1.5">
     <rect x="85" y="10" width="250" height="62" rx="6"/>
     <rect x="85" y="160" width="250" height="62" rx="6"/>
@@ -27,7 +27,7 @@
     <text x="315" y="423" font-size="16">Model in your<tspan x="315" dy="22">application process</tspan></text>
   </g>
   <g fill="var(--text-subtle)" font-family="inherit" font-size="16">
-    <text x="17" y="111">GDK request</text>
+    <text x="17" y="111">oi-kit request</text>
     <text x="292" y="111">MessageStream</text>
     <text x="210" y="274" text-anchor="middle">Choose an implementation</text>
   </g>

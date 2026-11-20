@@ -13,9 +13,9 @@ use common_tests::fixtures::{
 };
 use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
@@ -1213,7 +1213,7 @@ fn test_app_tool_call_requires_auto_mode() {
     run_test(async move {
         let mcp = McpFixture::new().await;
 
-        for mode in ["approve", "smart_approve", "chat"] {
+        for mode in ["approve", "smart_approve"] {
             let (conn, session_id) = connect_with_mcp_fixture(&mcp.url, mode).await;
             let error = call_app_tool(&conn, &session_id)
                 .await

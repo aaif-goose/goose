@@ -6,3 +6,6 @@ rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]
 
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
+
+[env]
+CMAKE_DISABLE_FIND_PACKAGE_OpenSSL = "ON"

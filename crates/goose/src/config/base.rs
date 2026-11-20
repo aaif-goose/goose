@@ -2,9 +2,9 @@ use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use crate::providers::private_file::{private_file_target_path, write_private_file};
 use fs2::FileExt;
-use goose_providers::thinking::ThinkingEffort;
 #[cfg(feature = "system-keyring")]
 use keyring::Entry;
+use oi_kit_providers::thinking::ThinkingEffort;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -866,6 +866,21 @@ impl Config {
         self.save_values(&values)
     }
 
+    pub(crate) fn update_write_config(
+        &self,
+        update: impl FnOnce(&mut Mapping) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let _guard = self.guard.lock().unwrap();
+        let mut values = match std::fs::read_to_string(self.write_path()) {
+            Ok(content) => parse_yaml_content(&content)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Mapping::new(),
+            Err(error) => return Err(error.into()),
+        };
+        update(&mut values)?;
+        self.save_values(&values)?;
+        Ok(())
+    }
+
     /// Set a configuration value in the config file (non-secret).
     ///
     /// This will immediately write the value to the config file. The value
@@ -1482,6 +1497,15 @@ pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
     parse_yaml_content(&init_content)
 }
 
+impl crate::agents::extension_config::ExtensionConfigResolver for Config {
+    fn get_secret(&self, key: &str) -> anyhow::Result<String> {
+        if let Some(secret) = crate::agents::extension_config::client_secret(key) {
+            return secret;
+        }
+        Ok(self.get_secret::<String>(key)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1497,12 +1521,7 @@ mod tests {
             Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
 
         assert_eq!(config.resolve_goose_mode().unwrap(), GooseMode::Auto);
-        for mode in [
-            GooseMode::Auto,
-            GooseMode::SmartApprove,
-            GooseMode::Approve,
-            GooseMode::Chat,
-        ] {
+        for mode in [GooseMode::Auto, GooseMode::SmartApprove, GooseMode::Approve] {
             config.set_goose_mode(mode).unwrap();
             assert_eq!(config.resolve_goose_mode().unwrap(), mode);
         }

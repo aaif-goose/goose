@@ -1,14 +1,15 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::conversation::Conversation;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
-    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
-    ListToolsResult, Role, ServerCapabilities, TextContent, Tool, ToolAnnotations,
+    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, Role,
+    ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -297,19 +298,9 @@ impl ChatRecallClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ChatRecallClient {
-    async fn list_tools(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        Ok(ListToolsResult {
-            tools: Self::get_tools(),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+impl PlatformExtension for ChatRecallClient {
+    async fn list_tools(&self, _session_id: &str) -> Result<Vec<Tool>, Error> {
+        Ok(Self::get_tools())
     }
 
     async fn call_tool(
@@ -445,7 +436,6 @@ mod tests {
             .unwrap();
 
         let client = ChatRecallClient::new(PlatformExtensionContext {
-            extension_manager: None,
             providers: Default::default(),
             session_manager,
             scheduler: None,

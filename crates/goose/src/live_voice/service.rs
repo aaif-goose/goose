@@ -6,11 +6,11 @@ use crate::conversation::Conversation;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
 #[cfg(feature = "live-voice")]
-use goose_providers::live_voice_provider::append_instructions;
-use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
-pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
+use oi_kit_providers::live_voice_provider::append_instructions;
+use oi_kit_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
+pub(crate) use oi_kit_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
 #[cfg(feature = "live-voice")]
-use goose_providers::openai_live_voice_provider::OpenAiLiveVoiceProvider;
+use oi_kit_providers::openai_live_voice_provider::OpenAiLiveVoiceProvider;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

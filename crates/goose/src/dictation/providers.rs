@@ -527,7 +527,7 @@ fn resolve_model_native_config(
         let mut cfg = loaded.config;
         // Only OpenAI-compatible engines support the input_audio content type.
         // Anthropic uses a different API shape and does not accept input_audio.
-        use goose_providers::declarative::ProviderEngine;
+        use oi_kit_providers::declarative::ProviderEngine;
         match cfg.engine {
             ProviderEngine::OpenAI | ProviderEngine::Ollama => {}
             ProviderEngine::Anthropic => {

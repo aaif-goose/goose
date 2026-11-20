@@ -20,6 +20,10 @@ static TEMPLATE_REGISTRY: &[(&str, &str)] = &[
         "Renders the structured compaction output into the post-compaction context",
     ),
     (
+        "compaction_request.md",
+        "Asks the model to summarize the conversation it is in when context limits are reached",
+    ),
+    (
         "subagent_system.md",
         "System prompt for subagents spawned to handle specific tasks",
     ),
@@ -60,7 +64,7 @@ fn builtin_content(name: &str) -> Option<String> {
     CORE_PROMPTS_DIR
         .get_file(name)
         .map(|file| String::from_utf8_lossy(file.contents()).to_string())
-        .or_else(|| goose_context_management::templates::builtin_template(name))
+        .or_else(|| oi_kit_context_management::templates::builtin_template(name))
 }
 
 fn user_prompts_dir() -> PathBuf {

@@ -1,4 +1,4 @@
-use goose_sdk_types::custom_requests::{
+use goose_acp_types::custom_requests::{
     CreateScheduleRequest, CreateScheduleResponse, DeleteScheduleRequest, EmptyResponse,
     InspectRunningJobRequest, InspectRunningJobResponse, KillRunningJobRequest,
     KillRunningJobResponse, ListScheduleSessionsRequest, ListScheduleSessionsResponse,
@@ -346,7 +346,7 @@ mod tests {
     use crate::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use crate::agents::GoosePlatform;
     use crate::scheduler::get_default_scheduled_recipes_dir;
-    use goose_sdk_types::custom_requests::{ListRecipesRequest, ScheduleRecipeRequest};
+    use goose_acp_types::custom_requests::{ListRecipesRequest, ScheduleRecipeRequest};
     use serial_test::serial;
 
     fn assert_scheduler_disabled(error: agent_client_protocol::Error) {

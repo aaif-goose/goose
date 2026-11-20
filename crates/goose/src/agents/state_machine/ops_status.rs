@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_providers::base::Provider;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::base::Provider;
+use oi_kit_providers::model::ModelConfig;
 
 use crate::agents::state_machine::{
-    messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter, GooseEffect,
-    Operation, OperationResult, SlashCommand,
+    messages_since_kickoff, yielded_with, Command, ConversationEffect, Emitter, GooseEffect,
+    Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -25,24 +25,31 @@ impl StatusOperation {
             model_config,
         }
     }
-}
 
-#[async_trait]
-impl Operation<Session, GooseEffect> for StatusOperation {
-    fn name(&self) -> &'static str {
-        "status"
+    fn clear(conversation: &Conversation, emit: &Emitter) -> Result<OperationResult<GooseEffect>> {
+        let command = messages_since_kickoff(conversation)?
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow!("clear command conversation has no kickoff message"))?
+            .with_visibility(true, false);
+        let response = Message::assistant()
+            .with_text("Conversation cleared")
+            .with_visibility(true, false);
+        let command = emit.message(command);
+        let response = emit.message(response);
+        yielded_with([
+            Conversation::default().into(),
+            command.into(),
+            response.into(),
+        ])
     }
 
-    async fn run_command(
+    async fn status(
         &self,
-        command: &SlashCommand<'_>,
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if command.command != "status" {
-            return not_applicable();
-        }
         let context_limit = crate::context_limit::get_context_limit(
             self.provider.as_ref(),
             &self.model_config.model_name,
@@ -98,5 +105,28 @@ impl Operation<Session, GooseEffect> for StatusOperation {
             .into(),
             response.into(),
         ])
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for StatusOperation {
+    fn name(&self) -> &'static str {
+        "status"
+    }
+
+    async fn commands(&self, _session: &Session) -> Result<Vec<Command<'_, Session, GooseEffect>>> {
+        let mut commands = vec![Command::new(
+            "status",
+            "Show session status: session ID, model, provider, mode, and token usage",
+            move |call| Box::pin(self.status(call.session, call.conversation, call.emit)),
+        )];
+        if !self.provider.manages_own_context() {
+            commands.push(Command::new(
+                "clear",
+                "Clear the conversation history",
+                |call| Box::pin(async move { Self::clear(call.conversation, call.emit) }),
+            ));
+        }
+        Ok(commands)
     }
 }

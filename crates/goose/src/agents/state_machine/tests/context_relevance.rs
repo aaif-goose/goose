@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::decision::{
+use oi_kit_providers::decision::{
     DecisionAnswer, DecisionProvider, DecisionRequest, DecisionResponse, DecisionUsage,
 };
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations, CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, TextContent,
 };
@@ -134,7 +134,7 @@ async fn shadow_pipeline(
             .await?;
     }
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * usage_ratio) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * usage_ratio) as i64)
         .await;
     api.on("goal").reply("answered");
     api.on("Please summarize the conversation history")
@@ -204,7 +204,7 @@ async fn observations_from_earlier_turns_are_kept() -> Result<()> {
             .await?;
     }
     pipeline
-        .set_total_tokens(pipeline.context_limit() as i32)
+        .set_total_tokens(pipeline.context_limit() as i64)
         .await;
 
     let second = pipeline.run(["second goal"]).await?;
@@ -342,18 +342,15 @@ async fn steered_goal_keeps_the_original_kickoff_and_protects_the_whole_turn() -
             .await?;
     }
     pipeline
-        .steer(Message::user().with_text("first use blue"))
-        .await;
-    pipeline
-        .steer(
+        .seed([
+            Message::user().with_text("first use blue").with_steer(),
             Message::user()
                 .with_text("HIDDEN_STEER_SENTINEL")
-                .user_only(),
-        )
-        .await;
-    pipeline
-        .steer(Message::user().with_text("then make it matte"))
-        .await;
+                .user_only()
+                .with_steer(),
+            Message::user().with_text("then make it matte").with_steer(),
+        ])
+        .await?;
 
     let run = pipeline.resume().await?;
 
@@ -400,7 +397,7 @@ async fn steering_shares_one_goal_budget_and_marks_omitted_media() -> Result<()>
         let (pipeline, _api) = shadow_pipeline(decisions.clone(), 4, &old_output(), 1.0).await?;
         pipeline.seed([opening]).await?;
         pipeline.seed(tool_pair("current", "recent output")).await?;
-        pipeline.steer(steer).await;
+        pipeline.seed([steer.with_steer()]).await?;
 
         pipeline.resume().await?;
 
@@ -473,7 +470,7 @@ async fn archived_kickoff_is_not_reobserved_as_a_compaction_replay() -> Result<(
             .await?;
     }
     pipeline
-        .set_total_tokens(pipeline.context_limit() as i32)
+        .set_total_tokens(pipeline.context_limit() as i64)
         .await;
     let pipeline = pipeline.reconstruct().await?;
     pipeline

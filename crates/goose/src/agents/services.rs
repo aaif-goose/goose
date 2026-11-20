@@ -5,28 +5,35 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
+use oi_kit_agent::steer::SteerQueue;
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
-use crate::agents::provider_manager::ProviderManager;
+use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionResult};
+use crate::agents::extension_manager::{
+    client_context, ExtensionManager, ExtensionMutation, ExtensionSet,
+};
+use crate::agents::platform_extensions::{PlatformExtensionContext, PlatformExtensions};
+use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
-use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
-    Operation, StateMachine, SteerQueue,
+    Operation, StateMachine, DEFAULT_BLOCK_CAP,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::tool_execution::ToolCallResult;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionManager;
+use crate::config::{extensions::name_to_key, get_extension_by_name};
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
@@ -39,12 +46,12 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
-use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
-use goose_providers::api_client::{ApiClient, AuthMethod};
-use goose_providers::errors::ProviderError;
-use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
-use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
+use oi_kit_providers::api_client::{ApiClient, AuthMethod};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+use oi_kit_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use rmcp::model::{ElicitationAction, Tool};
+use rmcp::model::{ErrorCode, ErrorData};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -60,7 +67,7 @@ const AUTO_EFFORTS: [ThinkingEffort; 5] = [
 
 pub(super) fn available_auto_efforts(
     provider_name: &str,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
     support: ThinkingEffortSupport,
 ) -> Vec<ThinkingEffort> {
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
@@ -73,7 +80,7 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified
-            if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME
+            if provider_name == oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME
                 && model_config.is_openai_reasoning_model() =>
         {
             AUTO_EFFORTS
@@ -81,7 +88,7 @@ pub(super) fn available_auto_efforts(
                 .filter(|effort| {
                     applied_as_selected(
                         effort,
-                        goose_providers::formats::openai::openai_reasoning_effort_for_thinking(
+                        oi_kit_providers::formats::openai::openai_reasoning_effort_for_thinking(
                             &model_config.model_name,
                             *effort,
                         ),
@@ -90,15 +97,15 @@ pub(super) fn available_auto_efforts(
                 .collect()
         }
         ThinkingEffortSupport::Unspecified
-            if provider_name == goose_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
+            if provider_name == oi_kit_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
                 && model_config.is_reasoning_model() =>
         {
-            let always_on = goose_providers::canonical::maybe_get_canonical_model(
+            let always_on = oi_kit_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,
             )
             .and_then(|model| model.thinking_mode)
-                == Some(goose_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
+                == Some(oi_kit_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
             AUTO_EFFORTS
                 .into_iter()
                 .filter(|effort| !always_on || *effort != ThinkingEffort::Off)
@@ -122,16 +129,17 @@ pub struct TurnSettings {
     pub always_load_tools: Vec<String>,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
+    pub standalone_compaction: bool,
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
-    pub context_relevance: Option<Arc<dyn goose_providers::decision::DecisionProvider>>,
+    pub context_relevance: Option<Arc<dyn oi_kit_providers::decision::DecisionProvider>>,
 }
 
 impl TurnSettings {
     pub fn from_config(
         provider: &dyn Provider,
-        model_config: &goose_providers::model::ModelConfig,
+        model_config: &oi_kit_providers::model::ModelConfig,
     ) -> Self {
         let config = Config::global();
         Self {
@@ -148,7 +156,7 @@ impl TurnSettings {
             ),
             stop_hook_block_cap: config
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_DENY_LIMIT),
+                .unwrap_or(DEFAULT_BLOCK_CAP),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
             defer_tools: config
                 .get_param::<String>("GOOSE_TOOL_DEFERRAL")
@@ -167,6 +175,9 @@ impl TurnSettings {
             compaction_token_limit: config
                 .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
                 .unwrap_or(crate::context_mgmt::DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+            standalone_compaction: config
+                .get_param::<bool>("GOOSE_STANDALONE_COMPACTION")
+                .unwrap_or(false),
             tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
             auto_effort: auto_effort_from_config(provider, model_config),
             context_relevance: crate::agents::state_machine_builder::context_relevance_provider(
@@ -178,7 +189,7 @@ impl TurnSettings {
 
 fn auto_effort_from_config(
     provider: &dyn Provider,
-    model_config: &goose_providers::model::ModelConfig,
+    model_config: &oi_kit_providers::model::ModelConfig,
 ) -> Option<Arc<dyn Operation<Session, GooseEffect>>> {
     let config = Config::global();
     if !config
@@ -227,9 +238,9 @@ fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> 
 }
 
 fn normalize_legacy_provider_thinking_effort(
-    mut model_config: goose_providers::model::ModelConfig,
+    mut model_config: oi_kit_providers::model::ModelConfig,
     effort_support: &ThinkingEffortSupport,
-) -> goose_providers::model::ModelConfig {
+) -> oi_kit_providers::model::ModelConfig {
     let has_raw_effort = model_config
         .request_params
         .as_ref()
@@ -269,7 +280,7 @@ pub struct StateMachineServicesConfig {
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
+    pub elicitation_handler: Option<oi_kit_agent::mcp::client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub providers: Arc<ProviderManager>,
     /// Sessions kept loaded before the least recently used idle one is released.
@@ -331,6 +342,7 @@ pub struct StateMachineServices {
     pub runtime: SessionRuntime,
 
     pub extension_manager: Arc<ExtensionManager>,
+    pub platform_extensions: PlatformExtensions,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
@@ -356,17 +368,189 @@ fn agent_visible_message_text(message: &Message) -> String {
 }
 
 impl StateMachineServices {
+    pub(crate) async fn release_tool_session(&self, session_id: &str) {
+        self.platform_extensions.release(session_id);
+        self.extension_manager.release(session_id).await;
+    }
+
+    pub fn platform_context(&self) -> PlatformExtensionContext {
+        PlatformExtensionContext {
+            providers: Arc::clone(&self.providers),
+            session_manager: Arc::clone(&self.session_manager),
+            scheduler: self.scheduler.clone(),
+        }
+    }
+
+    pub async fn resolve_tools(&self, set: &ExtensionSet) -> ToolSnapshot {
+        let configs = set
+            .extensions()
+            .iter()
+            .filter(|config| !crate::agents::platform_extensions::is_platform(config))
+            .cloned()
+            .collect();
+        let mcp = ExtensionSet::new(set.scope_id(), set.working_dir().map(Into::into), configs)
+            .expect("selection already validated")
+            .with_container(set.container().cloned());
+        ToolSnapshot::new(
+            self.extension_manager.resolve(&mcp).await,
+            self.platform_extensions.select(
+                set.scope_id(),
+                set.working_dir().map(Into::into),
+                set.extensions(),
+                &self.platform_context(),
+            ),
+        )
+    }
+
+    pub async fn enable_extension(
+        &self,
+        session_id: &str,
+        config: ExtensionConfig,
+    ) -> ExtensionResult<()> {
+        if crate::agents::platform_extensions::is_platform(&config) {
+            self.extension_manager.select(session_id, config).await
+        } else {
+            self.extension_manager.enable(session_id, config).await
+        }
+    }
+
+    pub async fn current_tools(&self, session_id: &str) -> Result<ToolSnapshot> {
+        let session = self.session_manager.get_session(session_id, false).await?;
+        self.session_tools(&session).await
+    }
+
+    pub async fn current_session_snapshot(
+        &self,
+        session: &Session,
+    ) -> Result<(Session, ToolSnapshot)> {
+        let session = self
+            .session_manager
+            .get_session(&session.id, session.conversation.is_some())
+            .await?;
+        let lease = self.session_tools(&session).await?;
+        Ok((session, lease))
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn scope_tools(&self, scope_id: &str) -> ToolSnapshot {
+        let configs = self
+            .session_manager
+            .get_session(scope_id, false)
+            .await
+            .map(|session| selection(&session))
+            .unwrap_or_default();
+        let configs: Vec<_> = configs
+            .into_iter()
+            .filter(|config| self.platform_extensions.contains(scope_id, &config.key()))
+            .collect();
+        ToolSnapshot::new(
+            self.extension_manager.scope_lease(scope_id).await,
+            self.platform_extensions
+                .select(scope_id, None, &configs, &self.platform_context()),
+        )
+    }
+
+    async fn session_tools(&self, session: &Session) -> Result<ToolSnapshot> {
+        // A pinned provider may not be in the registry at all, so it answers
+        // for itself when there is one.
+        let provider_runs_tool_loop = match self.providers.pinned(session).await {
+            Some(provider) => provider.manages_own_context(),
+            None => match provider_name_for(session) {
+                Ok(name) => crate::providers::get_from_registry(&name)
+                    .await
+                    .is_ok_and(|entry| entry.runs_own_tool_loop()),
+                Err(_) => false,
+            },
+        };
+        let extensions = selection(session)
+            .into_iter()
+            .filter(|config| {
+                !(provider_runs_tool_loop
+                    && matches!(
+                        config,
+                        ExtensionConfig::External(
+                            oi_kit_agent::extension::ExtensionConfig::Stdio { .. }
+                        ) | ExtensionConfig::External(
+                            oi_kit_agent::extension::ExtensionConfig::StreamableHttp { .. }
+                        )
+                    ))
+            })
+            .collect();
+        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)?
+            .with_container(session.container.clone());
+        Ok(self.resolve_tools(&set).await)
+    }
+
+    pub async fn apply_extension_mutation(
+        self: &Arc<Self>,
+        mutation: ExtensionMutation,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        match mutation {
+            ExtensionMutation::Enable { name } => {
+                let config = get_extension_by_name(&name).ok_or_else(|| {
+                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
+                })?;
+                self.enable_extension(session_id, config).await
+            }
+            ExtensionMutation::Disable { name } => {
+                self.extension_manager
+                    .disable(session_id, &name_to_key(&name))
+                    .await?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn applying_mutation(
+        self: &Arc<Self>,
+        result: ToolCallResult,
+        session_id: &str,
+    ) -> ToolCallResult {
+        let services = Arc::clone(self);
+        let session_id = session_id.to_string();
+        let inner = result.result;
+        ToolCallResult {
+            result: Box::new(
+                async move {
+                    let mut result = inner.await?;
+                    if let Some(mutation) = ExtensionMutation::take(&mut result) {
+                        services
+                            .apply_extension_mutation(mutation, &session_id)
+                            .await
+                            .map_err(|e| {
+                                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                            })?;
+                    }
+                    Ok(result)
+                }
+                .boxed(),
+            ),
+            ..result
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tool_tests(data_dir: std::path::PathBuf) -> Arc<Self> {
+        Self::with_config(StateMachineServicesConfig::new(
+            Arc::new(SessionManager::new(data_dir.clone())),
+            Arc::new(PermissionManager::new(data_dir)),
+            None,
+            true,
+            GoosePlatform::GooseCli,
+        ))
+    }
+
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
-        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        let mut default_client = client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
             extension_manager: Arc::new(ExtensionManager::new(
-                config.providers.clone(),
                 config.session_manager.clone(),
-                config.scheduler_service.clone(),
                 default_client,
             )),
+            platform_extensions: PlatformExtensions::default(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
                 config.permission_manager.clone(),
                 config.providers.clone(),
@@ -394,39 +578,12 @@ impl StateMachineServices {
         services
     }
 
-    /// Emit a lifecycle hook event with no extra context. Useful for events
-    /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
-    pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
-        if !self.hook_manager.has_hooks(event) {
-            return;
-        }
-        self.hook_manager
-            .emit(event, crate::hooks::HookContext::new(event, session_id))
-            .await;
-    }
-
-    /// Fires `SessionStart` for a client opening the session and returns the hooks'
-    /// banners, which the client shows before the first prompt.
-    pub async fn emit_session_start(&self, session_id: &str) -> Result<Vec<String>> {
-        let event = crate::hooks::HookEvent::SessionStart;
-        if !self.hook_manager.has_hooks(event) {
-            return Ok(Vec::new());
-        }
-        let banners = self
-            .hook_manager
-            .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
-            .await;
-        self.session_manager
-            .add_message(
-                session_id,
-                &crate::agents::state_machine::session_start_message(&banners),
-            )
-            .await?;
-        Ok(banners)
-    }
-
-    pub async fn steer(&self, session_id: &str, message: Message) {
+    pub async fn steer(&self, session_id: &str, message: Message) -> Result<()> {
+        let session = self.session_manager.get_session(session_id, false).await?;
+        let prompt = agent_visible_message_text(&message);
         self.runtime.steer(session_id, message).await;
+        self.emit_user_prompt_submit(&session, prompt).await;
+        Ok(())
     }
 
     pub fn discard_pending_steers(&self, session_id: &str) {
@@ -556,7 +713,7 @@ impl StateMachineServices {
         self.session_manager
             .action_required()
             .forget_forwarded_from(session_id);
-        self.extension_manager.release(session_id).await;
+        self.release_tool_session(session_id).await;
         self.providers.release(session_id);
     }
 
@@ -599,7 +756,7 @@ impl StateMachineServices {
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
-    ) -> Result<goose_providers::model::ModelConfig> {
+    ) -> Result<oi_kit_providers::model::ModelConfig> {
         let session = self.session_manager.get_session(session_id, false).await?;
         crate::agents::provider_manager::model_config_for(&session)
     }
@@ -607,7 +764,7 @@ impl StateMachineServices {
     pub(super) async fn effective_model_config_for_session(
         &self,
         session_id: &str,
-    ) -> Result<goose_providers::model::ModelConfig> {
+    ) -> Result<oi_kit_providers::model::ModelConfig> {
         let model_config = self.model_config_for_session(session_id).await?;
         let provider_name = self.provider(session_id).await?.get_name().to_string();
         match crate::providers::get_from_registry(&provider_name).await {
@@ -623,25 +780,11 @@ impl StateMachineServices {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
-        let include_final_output = extension_name.is_none();
-        let lease = self.extension_manager.current_lease(session_id).await?;
-        let mut prefixed_tools = match extension_name {
+        let lease = self.current_tools(session_id).await?;
+        Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
-        };
-
-        if include_final_output {
-            let final_output_tool = self
-                .session_manager
-                .get_session(session_id, false)
-                .await
-                .and_then(|session| ops_recipe::final_output_tool(&session));
-            if let Ok(Some(final_output_tool)) = final_output_tool {
-                prefixed_tools.push(final_output_tool.tool());
-            }
-        }
-
-        Ok(prefixed_tools)
+        })
     }
 
     pub async fn submit_tool_confirmation(
@@ -736,17 +879,17 @@ impl StateMachineServices {
     pub(super) async fn create_state_machine(
         self: &Arc<Self>,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         context_limit: usize,
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-    ) -> StateMachine<'_, Session, GooseEffect> {
-        let extension_lease = self
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
+        let tool_snapshot = self
             .runtime
             .confirmations
             .session(&session_config.id)
-            .extension_lease();
+            .tool_snapshot();
         self.create_state_machine_with_lease(
             provider,
             model_config,
@@ -754,7 +897,7 @@ impl StateMachineServices {
             session_config,
             cancel,
             steer_queue,
-            extension_lease,
+            tool_snapshot,
         )
         .await
     }
@@ -763,13 +906,13 @@ impl StateMachineServices {
     pub(super) async fn create_state_machine_with_lease(
         self: &Arc<Self>,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         context_limit: usize,
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+        tool_snapshot: Arc<StdMutex<Option<Arc<ToolSnapshot>>>>,
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
@@ -789,13 +932,14 @@ impl StateMachineServices {
             model_config,
             context_limit,
             compaction_threshold,
+            standalone_compaction: settings.standalone_compaction,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
             defer_tools: settings.defer_tools,
             always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),
-            extension_manager: Arc::clone(&self.extension_manager),
-            extension_lease,
+            services: Arc::clone(self),
+            tool_snapshot,
             tool_inspection_manager: &self.tool_inspection_manager,
             hook_manager: self.hook_manager.clone(),
             steer_queue,
@@ -931,6 +1075,7 @@ impl StateMachineServices {
         session_manager
             .add_message(&session_config.id, &user_message)
             .await?;
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
 
         if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
@@ -957,7 +1102,7 @@ impl StateMachineServices {
     }
 
     /// Runs a subagent on the conversation saved for it.
-    pub(super) fn run_subagent_turn(
+    pub(super) async fn run_subagent_turn(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -968,6 +1113,7 @@ impl StateMachineServices {
             .session(&session_config.id)
             .try_start_turn()?;
         turn_guard.state().start_new_turn();
+        self.emit_hooks_for_saved_prompt(&session_config.id).await?;
         Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
@@ -1129,7 +1275,13 @@ impl StateMachineServices {
                 cancel.clone(),
                 steer_queue,
             )
-            .await;
+            .await?;
+        let hook_manager = self.hook_manager.clone();
+        let tool_snapshot = self
+            .runtime
+            .confirmations
+            .session(&session_id)
+            .tool_snapshot();
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -1142,7 +1294,8 @@ impl StateMachineServices {
                         run_goose(
                             &machine,
                             session_manager.as_ref(),
-                            &self.hook_manager,
+                            &hook_manager,
+                            &tool_snapshot,
                             &session_id,
                             &emit,
                         ),
@@ -1172,7 +1325,7 @@ impl StateMachineServices {
     pub async fn update_provider(
         &self,
         provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
         let provider_name = provider.get_name().to_string();
@@ -1185,7 +1338,7 @@ impl StateMachineServices {
         &self,
         session_id: &str,
         provider_name: &str,
-        model_config: goose_providers::model::ModelConfig,
+        model_config: oi_kit_providers::model::ModelConfig,
     ) -> Result<()> {
         let mut session = self.session_manager.get_session(session_id, false).await?;
         let registry_entry = crate::providers::get_from_registry(provider_name)
@@ -1407,6 +1560,12 @@ impl Drop for TurnEnd {
     }
 }
 
+fn selection(session: &Session) -> Vec<ExtensionConfig> {
+    crate::session::EnabledExtensionsState::from_extension_data(&session.extension_data)
+        .map(|state| state.extensions)
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1497,11 +1656,10 @@ mod tests {
             session.id
         }
 
-        async fn use_session(services: &StateMachineServices, session_id: &str) {
+        async fn use_session(services: &Arc<StateMachineServices>, session_id: &str) {
             services.touch_session(session_id).await;
             services
-                .extension_manager
-                .current_lease(session_id)
+                .current_tools(session_id)
                 .await
                 .unwrap()
                 .start()
@@ -1539,7 +1697,7 @@ mod tests {
         }
 
         fn attachment(name: &str) -> crate::agents::Attachment {
-            let mut client = crate::agents::extension_manager::ClientContext::new(
+            let mut client = crate::agents::extension_manager::client_context(
                 &GoosePlatform::GooseDesktop,
                 None,
             );
@@ -1680,7 +1838,7 @@ mod tests {
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
     use crate::providers::base::{stream_from_single_message, MessageStream, ModelInfo};
     use crate::session::session_manager::SessionType;
-    use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::Tool;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1747,7 +1905,7 @@ mod tests {
 
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -1788,7 +1946,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await
@@ -1945,7 +2103,7 @@ mod tests {
         }
         async fn stream(
             &self,
-            _: &goose_providers::model::ModelConfig,
+            _: &oi_kit_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
             _: &[rmcp::model::Tool],
@@ -1975,7 +2133,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("test-model"),
+                oi_kit_providers::model::ModelConfig::new("test-model"),
                 &session.id,
             )
             .await
@@ -2044,9 +2202,9 @@ mod tests {
         fn thinking_effort_support(&self) -> ThinkingEffortSupport {
             if self.applies_effort {
                 ThinkingEffortSupport::Options(
-                    goose_providers::thinking::ThinkingEffortCapability {
+                    oi_kit_providers::thinking::ThinkingEffortCapability {
                         option_id: "effort".to_string(),
-                        values: vec![goose_providers::thinking::ThinkingEffortOption {
+                        values: vec![oi_kit_providers::thinking::ThinkingEffortOption {
                             value: "default".to_string(),
                             label: "Default".to_string(),
                         }],
@@ -2059,7 +2217,7 @@ mod tests {
         }
         async fn stream(
             &self,
-            _: &goose_providers::model::ModelConfig,
+            _: &oi_kit_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
             _: &[rmcp::model::Tool],
@@ -2079,7 +2237,7 @@ mod tests {
         }
         async fn apply_model_selection(
             &self,
-            model_config: &goose_providers::model::ModelConfig,
+            model_config: &oi_kit_providers::model::ModelConfig,
         ) -> Result<(), ProviderError> {
             self.model_selections
                 .lock()
@@ -2102,7 +2260,7 @@ mod tests {
         services
             .update_provider(
                 provider.clone(),
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await
@@ -2165,7 +2323,7 @@ mod tests {
         services
             .update_provider(
                 provider,
-                goose_providers::model::ModelConfig::new("test-model"),
+                oi_kit_providers::model::ModelConfig::new("test-model"),
                 &session.id,
             )
             .await
@@ -2225,7 +2383,7 @@ mod tests {
         let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Unhandled));
         let model_config =
-            goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
+            oi_kit_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
@@ -2248,7 +2406,7 @@ mod tests {
         let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Applied));
         let model_config =
-            goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
+            oi_kit_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
@@ -2498,7 +2656,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for CountingTextProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2520,7 +2678,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for ChunkedTextProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2562,7 +2720,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for OutputLimitMarkerProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2597,7 +2755,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     impl crate::providers::base::Provider for RefusingProvider {
         async fn stream(
             &self,
-            _model_config: &goose_providers::model::ModelConfig,
+            _model_config: &oi_kit_providers::model::ModelConfig,
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
@@ -2696,7 +2854,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         services
             .update_provider(
                 provider,
-                goose_providers::model::ModelConfig::new("mock-model"),
+                oi_kit_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await?;
@@ -2716,7 +2874,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 stop_hook_block_cap,
                 ..TurnSettings::from_config(
                     provider.as_ref(),
-                    &goose_providers::model::ModelConfig::new("stop-hook-test"),
+                    &oi_kit_providers::model::ModelConfig::new("stop-hook-test"),
                 )
             }),
         )

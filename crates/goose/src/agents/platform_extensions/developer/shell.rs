@@ -217,7 +217,7 @@ pub struct ShellTool {
 impl ShellTool {
     pub fn new() -> std::io::Result<Self> {
         Ok(Self {
-            output_dir: tempfile::tempdir()?,
+            output_dir: crate::utils::private_tempdir_builder().tempdir()?,
             call_index: AtomicUsize::new(0),
         })
     }
@@ -613,7 +613,10 @@ async fn flatpak_shell_command(
     command
 }
 
+const AGENT_ENVIRONMENT: [(&str, &str); 2] = [("AGENT", "goose"), ("GOOSE_TERMINAL", "1")];
+
 fn apply_session_environment(command: &mut tokio::process::Command, session_id: Option<&str>) {
+    command.envs(AGENT_ENVIRONMENT);
     if let Some(session_id) = session_id.filter(|id| !id.is_empty()) {
         command.env("AGENT_SESSION_ID", session_id);
     } else {
@@ -626,6 +629,9 @@ fn apply_flatpak_session_environment(
     command: &mut tokio::process::Command,
     session_id: Option<&str>,
 ) {
+    for (key, value) in AGENT_ENVIRONMENT {
+        command.arg(format!("--env={key}={value}"));
+    }
     if let Some(session_id) = session_id.filter(|id| !id.is_empty()) {
         command.arg(format!("--env=AGENT_SESSION_ID={session_id}"));
     } else {
@@ -845,6 +851,20 @@ mod tests {
         assert!(extract_text(&result).contains("hello"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn output_directory_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tool = ShellTool::new().unwrap();
+        let mode = std::fs::metadata(tool.output_dir.path())
+            .unwrap()
+            .permissions()
+            .mode();
+
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
     #[cfg(not(windows))]
     #[tokio::test]
     async fn full_live_notification_channel_does_not_change_final_output() {
@@ -922,13 +942,14 @@ mod tests {
 
             apply_session_environment(&mut command, session_id);
 
-            assert_eq!(
-                command
-                    .as_std()
-                    .get_envs()
-                    .find_map(|(key, value)| (key == "AGENT_SESSION_ID").then_some(value)),
-                expected
-            );
+            let envs: Vec<_> = command.as_std().get_envs().collect();
+            let env = |name: &str| {
+                envs.iter()
+                    .find_map(|(key, value)| (*key == name).then_some(*value))
+            };
+            assert_eq!(env("AGENT_SESSION_ID"), expected);
+            assert_eq!(env("AGENT"), Some(Some(std::ffi::OsStr::new("goose"))));
+            assert_eq!(env("GOOSE_TERMINAL"), Some(Some(std::ffi::OsStr::new("1"))));
         }
     }
 
@@ -949,7 +970,7 @@ mod tests {
                     .get_args()
                     .map(|arg| arg.to_string_lossy().into_owned())
                     .collect::<Vec<_>>(),
-                vec![expected]
+                vec!["--env=AGENT=goose", "--env=GOOSE_TERMINAL=1", expected]
             );
         }
     }

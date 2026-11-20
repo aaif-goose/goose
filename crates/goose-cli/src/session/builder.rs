@@ -5,13 +5,12 @@ use super::{
     derive_extension_name_from_command, session_provider, split_extension_name_prefix, CliSession,
 };
 use console::style;
-use goose::agents::final_output_tool::FinalOutputTool;
 use goose::agents::{Container, ExtensionError, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::model_config::model_config_from_user_config;
-use goose::recipe::Recipe;
+use goose::recipe::{Recipe, Response};
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, SessionManager};
 use rustyline::EditMode;
@@ -64,9 +63,12 @@ fn disambiguate_stdio_extension_names(
         if !renameable.contains(&idx) || counts.get(&config.key()).copied().unwrap_or(0) < 2 {
             continue;
         }
-        let ExtensionConfig::Stdio {
-            name, cmd, args, ..
-        } = config
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+            name,
+            cmd,
+            args,
+            ..
+        }) = config
         else {
             continue;
         };
@@ -239,8 +241,7 @@ async fn load_extensions(
     session_id: &str,
 ) -> anyhow::Result<Vec<ExtensionFailure>> {
     Ok(services
-        .extension_manager
-        .current_lease(session_id)
+        .current_tools(session_id)
         .await?
         .start()
         .await
@@ -257,7 +258,7 @@ async fn load_extensions(
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
 }
 
 fn validate_provider_override_context(
@@ -290,7 +291,7 @@ async fn resolve_provider_and_model(
     session_config: &SessionBuilderConfig,
     config: &Config,
     saved_provider: Option<String>,
-    saved_model_config: Option<goose_providers::model::ModelConfig>,
+    saved_model_config: Option<oi_kit_providers::model::ModelConfig>,
 ) -> ResolvedProviderConfig {
     let recipe_settings = session_config
         .recipe
@@ -693,8 +694,8 @@ pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::
     let recipe = session_config.recipe.as_ref();
 
     if let Some(Err(error)) = recipe
-        .and_then(|r| r.response.clone())
-        .map(FinalOutputTool::try_new)
+        .and_then(|r| r.response.as_ref())
+        .map(Response::validate)
     {
         output::render_error(&format!("Invalid recipe response: {error}"));
         process::exit(1);
@@ -1098,8 +1099,8 @@ mod tests {
         ])
     }
 
-    fn saved_model_config(model_name: &str) -> goose_providers::model::ModelConfig {
-        goose_providers::model::ModelConfig::new(model_name).with_merged_request_params(
+    fn saved_model_config(model_name: &str) -> oi_kit_providers::model::ModelConfig {
+        oi_kit_providers::model::ModelConfig::new(model_name).with_merged_request_params(
             std::collections::HashMap::from([(
                 "anthropic_beta".to_string(),
                 serde_json::json!(["prompt-caching-2024-07-31"]),
@@ -1193,7 +1194,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1255,7 +1256,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1289,7 +1290,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1401,7 +1402,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1474,7 +1475,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1501,7 +1502,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1527,7 +1528,7 @@ mod tests {
         ]);
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
-        let saved = goose_providers::model::ModelConfig::new("claude-sonnet-4-6");
+        let saved = oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {

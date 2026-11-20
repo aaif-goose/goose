@@ -339,6 +339,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_llmman_provider_registry_wiring() {
+        let llmman = get_from_registry("llmman")
+            .await
+            .expect("llmman provider should be registered");
+        let meta = llmman.metadata();
+
+        assert_eq!(meta.name, "llmman");
+        assert_eq!(meta.display_name, "llmman");
+        assert!(meta.config_keys.iter().all(|key| !key.secret));
+        assert!(meta.config_keys.iter().any(|key| {
+            key.name == "LLMMAN_HOST" && key.default.as_deref() == Some("http://127.0.0.1:17434")
+        }));
+    }
+
+    #[tokio::test]
     async fn test_gondola_provider_registry_wiring() {
         let gondola = get_from_registry("gondola")
             .await
@@ -488,7 +503,7 @@ mod tests {
             .expect("custom_zero provider should be created");
         assert_eq!(
             zero_provider.get_context_limit("zero-model", None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
 
         std::env::remove_var("GOOSE_PATH_ROOT");

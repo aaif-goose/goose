@@ -428,7 +428,7 @@ export default function GdkApiReference() {
 
         <p className={styles.meta}>
           Generated from <code>{doc.source}</code> at{" "}
-          <code>goose-sdk {doc.version}</code>.
+          <code>oi-kit-bindings {doc.version}</code>.
         </p>
 
         <Anchored as="h2" anchor="functions" label="Functions">

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 use regex::Regex;
 use std::sync::Arc;
 
@@ -19,8 +19,8 @@ use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
     modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
-use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage};
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::conversation::token_usage::{ProviderStats, ProviderUsage};
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use tracing::warn;
 
@@ -189,10 +189,11 @@ pub(crate) fn prepare_inference_tools(
     if code_execution_active {
         tools.retain(|tool| {
             let owner = crate::agents::extension_manager::get_tool_owner(tool);
-            (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
-                && owner.is_none())
+            (owner.is_none()
+                && (tool.name == oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME
+                    || tool.name == oi_kit_agent::skills::LOAD_SKILL_TOOL_NAME))
                 || owner.is_some_and(|owner| {
-                    crate::agents::extension_manager::is_first_class_extension(&owner)
+                    crate::agents::platform_extensions::is_unprefixed_extension(&owner)
                 })
                 || crate::agents::extension_manager::get_tool_resource_uri(tool).is_some()
         });
@@ -333,7 +334,7 @@ pub(crate) async fn stream_response_from_provider(
                         break;
                     }
                     Some(Err(error))
-                        if goose_providers::retry::should_retry(&error, &retry_config)
+                        if oi_kit_providers::retry::should_retry(&error, &retry_config)
                             && attempts < retry_config.max_retries =>
                     {
                         attempts += 1;
@@ -490,47 +491,7 @@ pub(crate) async fn stream_response_from_provider(
     }))
 }
 
-/// Check whether a tool should be callable by an app based on MCP Apps visibility metadata.
-///
-/// Per the MCP Apps spec (2026-01-26), if `_meta.ui.visibility` is present and does not
-/// include `"app"`, the tool is model-only and must not be callable by app UIs.
-/// If the field is absent, the tool defaults to visible to both model and app.
-pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
-    let Some(meta) = &tool.meta else {
-        return true;
-    };
-    let Some(ui) = meta.0.get("ui") else {
-        return true;
-    };
-    let Some(visibility) = ui.get("visibility") else {
-        return true;
-    };
-    let Some(arr) = visibility.as_array() else {
-        return false;
-    };
-    arr.iter().any(|v| v.as_str() == Some("app"))
-}
-
-/// Check whether a tool should be visible to the model based on MCP Apps visibility metadata.
-///
-/// Per the MCP Apps spec (2026-01-26), tools may declare `_meta.ui.visibility` as an array
-/// of `"model"` and/or `"app"`. If the field is absent, the tool defaults to visible to both.
-/// If present and does not include `"model"`, the tool is app-only and must not be sent to the LLM.
-pub fn is_tool_visible_to_model(tool: &Tool) -> bool {
-    let Some(meta) = &tool.meta else {
-        return true;
-    };
-    let Some(ui) = meta.0.get("ui") else {
-        return true;
-    };
-    let Some(visibility) = ui.get("visibility") else {
-        return true;
-    };
-    let Some(arr) = visibility.as_array() else {
-        return false;
-    };
-    arr.iter().any(|v| v.as_str() == Some("model"))
-}
+pub use oi_kit_agent::tool_visibility::{is_tool_visible_to_app, is_tool_visible_to_model};
 
 #[cfg(test)]
 mod tests {
@@ -539,8 +500,8 @@ mod tests {
     use crate::conversation::message::{Message, SystemNotificationType};
     use crate::providers::base::Provider;
     use async_trait::async_trait;
-    use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
-    use goose_providers::model::ModelConfig;
+    use oi_kit_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
+    use oi_kit_providers::model::ModelConfig;
     use rmcp::model::{Annotations, Role, TextContent};
     use rmcp::object;
     use std::sync::Mutex;
@@ -1272,8 +1233,8 @@ mod tests {
             "sequenced"
         }
 
-        fn retry_config(&self) -> goose_providers::retry::RetryConfig {
-            goose_providers::retry::RetryConfig::new(2, 0, 1.0, 0)
+        fn retry_config(&self) -> oi_kit_providers::retry::RetryConfig {
+            oi_kit_providers::retry::RetryConfig::new(2, 0, 1.0, 0)
         }
 
         fn manages_own_context(&self) -> bool {
@@ -1460,7 +1421,7 @@ mod tests {
     #[cfg(feature = "code-mode")]
     #[test]
     fn code_mode_keeps_first_class_resource_and_final_output_tools() {
-        use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+        use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
         let mut final_output = make_tool_with_meta(None);
         final_output.name = FINAL_OUTPUT_TOOL_NAME.into();
         let mut extension_final_output =

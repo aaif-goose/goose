@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Недавние каталоги"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Структурированный результат не получен"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Структурированный результат отклонён"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Структурированный результат возвращён"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Возвращается структурированный результат…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Не удалось переключиться на {branch}"
   },
@@ -2128,12 +2140,6 @@
   },
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Автономный"
-  },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Работать с выбранным провайдером без использования инструментов или расширений."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Только чат"
   },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Все инструменты, расширения и изменения файлов будут требовать подтверждения человеком"
@@ -3955,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Выберите язык интерфейса goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Нидерландский"
   },
   "settings.language.english": {
     "defaultMessage": "Английский"

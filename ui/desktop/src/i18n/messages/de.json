@@ -932,6 +932,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Zuletzt verwendete Verzeichnisse"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Strukturiertes Ergebnis wurde nicht erfasst"
+  },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Strukturiertes Ergebnis wurde abgelehnt"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Strukturiertes Ergebnis zurückgegeben"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Strukturiertes Ergebnis wird zurückgegeben…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Wechsel zu {branch} fehlgeschlagen"
   },
@@ -2128,12 +2140,6 @@
   },
   "modeSelectionItem.autonomousLabel": {
     "defaultMessage": "Autonom"
-  },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "Mit dem ausgewählten Anbieter interagieren, ohne Tools oder Erweiterungen zu verwenden."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "Nur Chat"
   },
   "modeSelectionItem.manualDescription": {
     "defaultMessage": "Alle Tools, Erweiterungen und Dateiänderungen erfordern eine manuelle Genehmigung"
@@ -3955,6 +3961,9 @@
   },
   "settings.language.description": {
     "defaultMessage": "Wählen Sie die Anzeigesprache für goose"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Niederländisch"
   },
   "settings.language.english": {
     "defaultMessage": "English"
