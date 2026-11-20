@@ -46,6 +46,7 @@ pub struct SummaryText {
 }
 
 fn reasoning_from_output(
+    id: Option<String>,
     summary: &[SummaryText],
     encrypted_content: Option<&str>,
 ) -> Option<MessageContentBlock> {
@@ -58,7 +59,12 @@ fn reasoning_from_output(
     if text.is_empty() && encrypted_content.is_empty() {
         None
     } else {
-        Some(MessageContentBlock::thinking(text, encrypted_content))
+        let id = id.filter(|s| !s.is_empty());
+        Some(MessageContentBlock::thinking_with_id(
+            text,
+            encrypted_content,
+            id,
+        ))
     }
 }
 
@@ -81,11 +87,15 @@ pub fn reasoning_input_item(
     } else {
         vec![json!({ "type": "summary_text", "text": thinking.thinking })]
     };
-    Some(json!({
+    let mut item = json!({
         "type": "reasoning",
         "summary": summary,
         "encrypted_content": thinking.signature
-    }))
+    });
+    if let Some(id) = thinking.id.as_deref().filter(|s| !s.is_empty()) {
+        item["id"] = json!(id);
+    }
+    Some(item)
 }
 
 pub fn is_encrypted_reasoning_error(message: &str) -> bool {
@@ -1005,11 +1015,15 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
     for item in &response.output {
         match item {
             ResponseOutputItem::Reasoning {
+                id,
                 summary,
                 encrypted_content,
-                ..
             } => {
-                content.extend(reasoning_from_output(summary, encrypted_content.as_deref()));
+                content.extend(reasoning_from_output(
+                    id.clone(),
+                    summary,
+                    encrypted_content.as_deref(),
+                ));
             }
             ResponseOutputItem::Message {
                 content: msg_content,
@@ -1094,11 +1108,12 @@ fn process_streaming_output_items(
     for item in output_items {
         match item {
             ResponseOutputItemInfo::Reasoning {
+                id,
                 summary,
                 encrypted_content,
-                ..
             } => {
                 content.extend(reasoning_from_output(
+                    id,
                     &summary,
                     encrypted_content.as_deref(),
                 ));
@@ -3624,7 +3639,7 @@ mod tests {
         let input = same["input"].as_array().unwrap();
         assert_eq!(
             input[1],
-            json!({ "type": "reasoning", "summary": [], "encrypted_content": "enc-1" })
+            json!({ "type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "enc-1" })
         );
         assert_eq!(input[2]["type"], "function_call");
 
@@ -3634,6 +3649,66 @@ mod tests {
             .unwrap()
             .iter()
             .any(|item| item["type"] == "reasoning"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_responses_api_to_message_preserves_reasoning_id_and_omits_when_absent(
+    ) -> anyhow::Result<()> {
+        use crate::conversation::message::InferenceMetadata;
+
+        let response: ResponsesApiResponse = serde_json::from_value(json!({
+            "id": "resp_2",
+            "object": "response",
+            "status": "completed",
+            "model": "gpt-5.6",
+            "output": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_abc",
+                    "summary": [{"type": "summary_text", "text": "thought"}],
+                    "encrypted_content": "enc-abc"
+                }
+            ]
+        }))?;
+        let assistant = responses_api_to_message(&response)?.with_inference(InferenceMetadata {
+            provider: "azure_foundry".to_string(),
+            requested_model: "gpt-5.6".to_string(),
+            resolved_model: None,
+            provider_session_id: None,
+        });
+        let thinking = assistant.content[0].as_thinking().expect("thinking block");
+        assert_eq!(thinking.id.as_deref(), Some("rs_abc"));
+        assert_eq!(
+            reasoning_input_item(&assistant, thinking, "gpt-5.6"),
+            Some(json!({
+                "type": "reasoning",
+                "id": "rs_abc",
+                "summary": [{"type": "summary_text", "text": "thought"}],
+                "encrypted_content": "enc-abc"
+            }))
+        );
+
+        let legacy_assistant = Message::assistant()
+            .with_content(MessageContentBlock::thinking("thought", "enc-legacy"))
+            .with_inference(InferenceMetadata {
+                provider: "openai".to_string(),
+                requested_model: "gpt-5.6".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            });
+        let legacy_thinking = legacy_assistant.content[0]
+            .as_thinking()
+            .expect("thinking block");
+        assert_eq!(legacy_thinking.id, None);
+        assert_eq!(
+            reasoning_input_item(&legacy_assistant, legacy_thinking, "gpt-5.6"),
+            Some(json!({
+                "type": "reasoning",
+                "summary": [{"type": "summary_text", "text": "thought"}],
+                "encrypted_content": "enc-legacy"
+            }))
+        );
         Ok(())
     }
 }
