@@ -66,7 +66,7 @@ jobs:
           fi
           git add \
             crates/oi-kit-bindings/python/pyproject.toml \
-            documentation/src/data/gdk-api.json
+            documentation/src/data/oi-kit-api.json
           git commit -m "chore: synchronize oi-kit release artifacts"
           git push origin HEAD:"$branch"
 

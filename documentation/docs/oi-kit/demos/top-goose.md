@@ -1,7 +1,7 @@
 ---
 title: Top Goose
 description: GitHub issues and pull requests with persistent private goose conversations over ACP.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Top Goose

@@ -2,7 +2,7 @@
 title: Build an app over ACP
 sidebar_label: Build an app over ACP
 description: Launch goose from your application, send prompts, and stream responses over ACP.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Build an app over ACP

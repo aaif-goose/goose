@@ -503,20 +503,20 @@ main {
   background-color: var(--dark-grey-60);
 }
 
-html:has(.gdk-navigation) {
-  --gdk-accent: #6d28d9;
-  --ifm-link-color: var(--gdk-accent);
-  --ifm-breadcrumb-color-active: var(--gdk-accent);
-  --ifm-menu-color-active: var(--gdk-accent);
+html:has(.oi-kit-navigation) {
+  --oi-kit-accent: #6d28d9;
+  --ifm-link-color: var(--oi-kit-accent);
+  --ifm-breadcrumb-color-active: var(--oi-kit-accent);
+  --ifm-menu-color-active: var(--oi-kit-accent);
   --ifm-menu-color-background-active: rgba(109, 40, 217, 0.08);
-  --ifm-navbar-link-hover-color: var(--gdk-accent);
+  --ifm-navbar-link-hover-color: var(--oi-kit-accent);
 }
 
-html[data-theme="dark"]:has(.gdk-navigation) {
-  --gdk-accent: #c4b5fd;
+html[data-theme="dark"]:has(.oi-kit-navigation) {
+  --oi-kit-accent: #c4b5fd;
   --ifm-menu-color-background-active: rgba(196, 181, 253, 0.1);
 }
 
-html:has(.gdk-navigation) .table-of-contents {
-  --ifm-color-primary: var(--gdk-accent);
+html:has(.oi-kit-navigation) .table-of-contents {
+  --ifm-color-primary: var(--oi-kit-accent);
 }

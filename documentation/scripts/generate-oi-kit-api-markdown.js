@@ -7,7 +7,7 @@ const {
   memberAnchor,
   signature,
   variantName,
-} = require("../src/components/GdkApiReference/api");
+} = require("../src/components/OiKitApiReference/api");
 
 const cell = (value) =>
   String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br />");
@@ -122,11 +122,11 @@ function generateReferences(data, outputDir) {
 }
 
 if (require.main === module) {
-  const data = require("../src/data/gdk-api.json");
+  const data = require("../src/data/oi-kit-api.json");
   const outputDir = path.join(__dirname, "../static/docs/oi-kit/sdk");
   generateReferences(data, outputDir);
   console.log(
-    `[generate-gdk-api-markdown] Generated Python and Kotlin references in ${outputDir}`,
+    `[generate-oi-kit-api-markdown] Generated Python and Kotlin references in ${outputDir}`,
   );
 }
 

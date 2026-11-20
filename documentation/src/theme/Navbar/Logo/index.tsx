@@ -2,12 +2,12 @@ import React, { type ReactNode } from "react";
 import Link from "@docusaurus/Link";
 import GooseLogo from "@site/static/img/goose.svg";
 import OriginalNavbarLogo from "@theme-original/Navbar/Logo";
-import { useGdkNavigation } from "@site/src/components/GdkNavigation";
+import { useOiKitNavigation } from "@site/src/components/OiKitNavigation";
 import styles from "./styles.module.css";
 
 export default function NavbarLogo(): ReactNode {
-  const isGdk = useGdkNavigation();
-  return isGdk ? (
+  const isOiKit = useOiKitNavigation();
+  return isOiKit ? (
     <Link className="navbar__brand margin-right--md" to="/docs/oi-kit">
       <GooseLogo
         aria-hidden="true"

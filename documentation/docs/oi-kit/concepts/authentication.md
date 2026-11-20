@@ -1,7 +1,7 @@
 ---
 title: Authentication
 description: Supply credentials to model providers without coupling the agent runtime to a login flow or secret store.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Authentication

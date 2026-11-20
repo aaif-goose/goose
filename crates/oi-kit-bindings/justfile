@@ -129,7 +129,7 @@ crates-publish dry_run="true":
     done < <(python3 crates/oi-kit-bindings/scripts/oi-kit-release.py crates)
 
 sync-release-artifacts: sync-package-versions
-    python3 documentation/automation/gdk-api/generate.py
+    python3 documentation/automation/oi-kit-api/generate.py
 
 sync-package-versions:
     #!/usr/bin/env bash
