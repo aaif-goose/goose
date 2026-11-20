@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-context-management"
-version = "0.1.0-alpha.15"
+version = "0.1.0-alpha.16"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -17,7 +17,7 @@ rustls-tls = []
 native-tls = []
 
 [dependencies]
-oi-kit-provider-types = { version = "0.1.0-alpha.15", path = "../oi-kit-provider-types", default-features = false }
+oi-kit-provider-types = { version = "0.1.0-alpha.16", path = "../oi-kit-provider-types", default-features = false }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 include_dir = { workspace = true }

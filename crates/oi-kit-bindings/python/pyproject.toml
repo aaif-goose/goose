@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oi-kit"
-version = "0.1.0a15"
+version = "0.1.0a16"
 description = "Python bindings for the Open Intelligence Kit (oi-kit)"
 readme = "README.md"
 requires-python = ">=3.9"

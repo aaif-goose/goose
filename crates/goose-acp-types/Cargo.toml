@@ -1,6 +1,6 @@
 [package]
 name = "goose-acp-types"
-version = "0.1.0-alpha.15"
+version = "0.1.0-alpha.16"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

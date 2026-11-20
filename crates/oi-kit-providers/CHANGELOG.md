@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.16](https://github.com/aaif-goose/goose/compare/oi-kit-v0.1.0-alpha.15...oi-kit-v0.1.0-alpha.16) - 2026-11-20
+
+### Fixed
+
+- *(providers)* resolve Ollama Cloud model context window from the daemon ([#13152](https://github.com/aaif-goose/goose/pull/13152))
+- *(providers)* update FriendliAI provider name, description, and docs link ([#13412](https://github.com/aaif-goose/goose/pull/13412))
+
+### Other
+
+- Fix Gemini API-key model discovery pagination ([#13670](https://github.com/aaif-goose/goose/pull/13670))
+
 ## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
 
 ### Added
