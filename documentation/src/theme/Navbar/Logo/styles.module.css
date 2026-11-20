@@ -1,0 +1,7 @@
+.mark {
+  flex-shrink: 0;
+}
+
+.mark path {
+  fill: var(--gdk-accent);
+}

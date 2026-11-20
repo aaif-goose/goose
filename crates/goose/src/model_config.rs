@@ -4,10 +4,10 @@ use crate::providers::base::Provider;
 use crate::providers::get_from_registry;
 use crate::recipe::Settings;
 use anyhow::{anyhow, Result};
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -81,7 +81,7 @@ pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Resu
 }
 
 fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfig {
-    if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if provider_name == oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model
     } else {
         model
@@ -117,7 +117,7 @@ fn materialize_model_config_inner(
         }
     }
 
-    if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME {
+    if provider_name == oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME {
         model = apply_openai_request_params(model);
     }
 
@@ -178,7 +178,7 @@ fn base_model_config_from_user_config(
         supports_vision: None,
         request_headers: None,
     };
-    if provider_name != goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if provider_name != oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model.normalize_effort_suffix();
     }
     Ok(model)

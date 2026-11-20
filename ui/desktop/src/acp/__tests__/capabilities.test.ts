@@ -1,4 +1,4 @@
-import type { InitializeResponse } from '@agentclientprotocol/sdk';
+import type { InitializeResponse } from '@agentclientprotocol/sdk/unstable';
 import { describe, expect, it } from 'vitest';
 import { hasLocalInferenceCapability, hasRecipeParameterScopesCapability } from '../capabilities';
 

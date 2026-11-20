@@ -1,4 +1,7 @@
-import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
+import type {
+  RequestPermissionRequest,
+  SessionNotification,
+} from '@agentclientprotocol/sdk/unstable';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';
@@ -540,6 +543,28 @@ describe('acpChatSessionStore', () => {
 
     expect(finishedSnapshot.messages).toHaveLength(1);
     expect(finishedSnapshot.messages[0].content).toEqual([{ type: 'text', text: 'Hello' }]);
+  });
+
+  it('keeps only the late notification when one arrives after a failed session load', () => {
+    const currentSessionId = sessionId('session-1');
+
+    acpChatSessionActions.startSessionLoad(currentSessionId);
+    acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(currentSessionId, 'message-1', 'Hello')
+    );
+
+    const failedSnapshot = acpChatSessionActions.failSessionLoad(currentSessionId, 'boom');
+    expect(failedSnapshot.sessionLoadError).toBe('boom');
+    expect(failedSnapshot.messages).toEqual([]);
+
+    const lateSnapshot = acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(currentSessionId, 'message-2', 'World')
+    );
+
+    expect(lateSnapshot.messages.map((item) => item.id)).toEqual(['message-2']);
+    expect(
+      acpChatSessionStore.getSnapshot(currentSessionId)?.messages.map((item) => item.id)
+    ).toEqual(['message-2']);
   });
 
   it('applies permission requests as waiting action-required messages', () => {

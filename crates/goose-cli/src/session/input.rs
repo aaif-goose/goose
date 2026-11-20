@@ -432,7 +432,7 @@ fn help_text() -> String {
 /model [name] - Show the current model, or switch models for this session while keeping the same provider
 /model --provider <name> [model] - Switch to a different provider (optionally specifying a model)
 /compact - Compact the current conversation to reduce context length while preserving key information.
-{additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
+{additional_builtin_help}/status - Show session status: session ID, model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
 /skills - List available skills or enable skills by name (usage: /skills [<name>...])

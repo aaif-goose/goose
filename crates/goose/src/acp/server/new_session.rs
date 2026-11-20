@@ -1,5 +1,5 @@
 use crate::acp::custom_requests::GooseExtension;
-use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
+use crate::acp::server::{meta_string, meta_tags, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GooseMode};
 use crate::model_config::resolve_provider_and_model_config;
@@ -7,11 +7,11 @@ use crate::providers::get_from_registry;
 use crate::recipe::Recipe;
 use crate::session::{ExtensionData, Session, SessionType};
 
-use super::GooseAcpAgent;
+use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffortSupport;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::warn;
@@ -32,9 +32,11 @@ struct NewSessionMetaFields {
     /// Client-supplied title, recorded as user-set so goose's own name
     /// generation leaves it alone. `None` when a recipe title took precedence.
     client_title: Option<String>,
+    /// Client-owned labels that `session/list` can filter on via an index.
+    tags: Vec<(String, String)>,
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
@@ -58,6 +60,7 @@ impl GooseAcpAgent {
             .unwrap_or_else(|| "New Chat".to_string());
 
         let session = self
+            .services
             .session_manager
             .create_session(args.cwd.clone(), session_name, session_type, current_mode)
             .await
@@ -87,39 +90,33 @@ impl GooseAcpAgent {
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
+        let extension_results = self.activate_acp_session(cx, &reloaded_session).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent, &reloaded_session.id).await,
+                &super::agent_thinking_effort_support(&self.services, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)
     }
 
     async fn cleanup_failed_new_session(&self, session_id: &str) {
-        if let Err(error) = self.session_manager.delete_session(session_id).await {
+        if let Err(error) = self
+            .services
+            .session_manager
+            .delete_session(session_id)
+            .await
+        {
             warn!(
                 session_id,
                 %error,
                 "Failed to delete session during new-session cleanup"
             );
         }
-        self.sessions.lock().await.remove(session_id);
-        if let Err(error) = self
-            .agent_manager
-            .remove_session_if_loaded(session_id)
-            .await
-        {
-            warn!(
-                session_id,
-                %error,
-                "Failed to remove in-memory agent during new-session cleanup"
-            );
-        }
+        self.services.release_session(session_id).await;
     }
 
     async fn configure_new_session(
@@ -182,7 +179,8 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
     ) -> Result<Session, agent_client_protocol::Error> {
-        self.session_manager
+        self.services
+            .session_manager
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")
@@ -194,6 +192,7 @@ impl GooseAcpAgent {
         config: InitialSessionConfig,
     ) -> Result<(), agent_client_protocol::Error> {
         let mut builder = self
+            .services
             .session_manager
             .update(session_id)
             .provider_name(config.provider)
@@ -215,6 +214,13 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err_ctx("Failed to update session")?;
+        if !config.meta.tags.is_empty() {
+            self.services
+                .session_manager
+                .set_session_tags(session_id, &config.meta.tags)
+                .await
+                .internal_err_ctx("Failed to save session tags")?;
+        }
         Ok(())
     }
 
@@ -281,6 +287,7 @@ fn new_session_meta_fields(
         // precedence it has today and a client title only replaces the
         // "New Chat" fallback.
         client_title: session_title.filter(|_| recipe_title(recipe).is_none()),
+        tags: meta_tags(meta)?,
     })
 }
 

@@ -191,6 +191,7 @@ const validLanguageSettings = new Set<Settings['language']>([
   'de',
   'it',
   'pt',
+  'nl',
   'id',
   'ms',
   'vi',
@@ -1938,6 +1939,7 @@ const validSettingKeys: Set<string> = new Set([
   'seenAnnouncementIds',
   'disableAutoDownload',
   'recentModels',
+  'showThinking',
 ]);
 
 ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {

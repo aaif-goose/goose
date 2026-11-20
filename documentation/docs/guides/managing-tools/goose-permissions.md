@@ -29,7 +29,6 @@ goose’s permissions determine how much autonomy it has when modifying files, u
 | **Completely Autonomous** | goose can modify files, use extensions, and delete files **without requiring approval** | Users who want **full automation** and seamless integration into their workflow |
 | **Manual Approval** | goose **asks for confirmation** before using any tools or extensions (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions)) | Users who want to **review and approve** every change and tool usage |
 | **Smart Approval** | goose uses a risk-based approach to **automatically approve low-risk actions** and **flag others** for approval (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions))  | Users who want a **balanced mix of autonomy and oversight** based on the action’s impact |
-| **Chat Only** | goose **only engages in chat**, with no extension use or file modifications | Users who prefer a **conversational AI experience** for analysis, writing, and reasoning tasks without automation |
 
 :::warning
 `Autonomous Mode` is applied by default.
@@ -58,7 +57,6 @@ Here's how to configure:
         * Autonomous: `/mode auto`
         * Smart Approve: `/mode smart_approve`
         * Approve: `/mode approve`
-        * Chat: `/mode chat`     
       </TabItem>
       <TabItem value="settings" label="From Settings">
         1. Run the following command:
@@ -122,7 +120,6 @@ Here's how to configure:
         // highlight-end
         |  ○ Approve Mode
         |  ○ Smart Approve Mode    
-        |  ○ Chat Mode
         |
         └  Set to Auto Mode - full file modification enabled
         ```     

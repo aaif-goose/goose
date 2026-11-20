@@ -1,5 +1,9 @@
 import { DEFAULT_GOOSE_MCP_HOST_CAPABILITIES } from '@aaif/goose-acp-client';
-import { methods, PROTOCOL_VERSION, type InitializeResponse } from '@agentclientprotocol/sdk';
+import {
+  methods,
+  PROTOCOL_VERSION,
+  type InitializeResponse,
+} from '@agentclientprotocol/sdk/unstable';
 import { createWebSocketStream } from '@agentclientprotocol/sdk/experimental/ws-client';
 import packageJson from '../../package.json';
 import { GOOSE_SERVE_EXITED_USER_MESSAGE } from '../gooseServeLeaseRegistry';

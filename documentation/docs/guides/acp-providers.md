@@ -252,7 +252,6 @@ GOOSE_PROVIDER=codex-acp goose run \
 | `auto`          | `bypassPermissions` | Skips all permission checks                           |
 | `smart-approve` | `acceptEdits`       | Auto-accepts file edits, prompts for risky operations |
 | `approve`       | `default`           | Prompts for all permission-required operations        |
-| `chat`          | `plan`              | Planning only, no tool execution                      |
 
 See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) for session mode details.
 
@@ -273,7 +272,6 @@ Codex ACP reports its available models dynamically. Keep `current` to use Codex'
 | `auto`          | `agent-full-access` |
 | `smart-approve` | `agent`             |
 | `approve`       | `read-only`         |
-| `chat`          | `read-only`         |
 
 See [codex-acp](https://github.com/agentclientprotocol/codex-acp) for session mode details.
 

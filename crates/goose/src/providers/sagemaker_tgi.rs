@@ -14,13 +14,13 @@ use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetad
 use super::retry::ProviderRetry;
 use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::errors::ProviderError;
 
 use chrono::Utc;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Role;
 
 const SAGEMAKER_TGI_PROVIDER_NAME: &str = "sagemaker_tgi";
@@ -280,7 +280,7 @@ impl SageMakerTgiProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for SageMakerTgiProvider {
+impl oi_kit_providers::base::ProviderDescriptor for SageMakerTgiProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             SAGEMAKER_TGI_PROVIDER_NAME,

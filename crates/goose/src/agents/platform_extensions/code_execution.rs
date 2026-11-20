@@ -1,16 +1,17 @@
 use super::javascript::{self, ToolCallback, ToolFuture};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
-    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
+    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest,
 };
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
-    JsonObject, ListToolsResult, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
+    JsonObject, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,6 @@ const INSTRUCTIONS: &str = "Discover exact Goose tool names with list_functions 
 
 pub struct CodeExecutionClient {
     info: InitializeResult,
-    context: PlatformExtensionContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -90,11 +90,11 @@ fn unknown_tool(name: &str) -> String {
 }
 
 impl CodeExecutionClient {
-    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+    pub fn new(_context: PlatformExtensionContext) -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Code Mode"))
             .with_instructions(INSTRUCTIONS);
-        Ok(Self { info, context })
+        Ok(Self { info })
     }
 
     async fn handle_execute_javascript(
@@ -104,14 +104,7 @@ impl CodeExecutionClient {
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, String> {
         let input: ExecuteWithToolGraph = parse_arguments(arguments)?;
-        let catalog =
-            callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
-        let manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|w| w.upgrade())
-            .ok_or("Extension manager not available")?;
+        let catalog = callable_catalog(ctx.tools().tools().await);
         let dispatch = cancellation_token.child_token();
         let callback: ToolCallback = Arc::new({
             let ctx = ctx.clone();
@@ -124,14 +117,7 @@ impl CodeExecutionClient {
                 if dispatch.is_cancelled() {
                     return Box::pin(async { Err("Execution cancelled".into()) });
                 }
-                dispatch_tool(
-                    ctx.clone(),
-                    name,
-                    manager.clone(),
-                    dispatch.clone(),
-                    rt.clone(),
-                    args,
-                )
+                dispatch_tool(ctx.clone(), name, dispatch.clone(), rt.clone(), args)
             }
         });
         let output = javascript::execute(
@@ -164,15 +150,9 @@ fn execution_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
-    ctx.extension_lease()
-        .expect("platform tool calls are dispatched through a lease")
-}
-
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
     args: Value,
@@ -185,7 +165,8 @@ fn dispatch_tool(
         let tool_call = CallToolRequestParams::new(full_name).with_arguments(arguments);
         let handle = rt.spawn(async move {
             let execution = async {
-                let dispatch_result = dispatching_lease(&ctx)
+                let dispatch_result = ctx
+                    .tools()
                     .call(
                         tool_call,
                         CallRequest::from(&ctx),
@@ -193,11 +174,7 @@ fn dispatch_tool(
                     )
                     .await;
                 match dispatch_result {
-                    Ok(dispatch_result) => match manager
-                        .applying_mutation(dispatch_result, &ctx.session_id)
-                        .result
-                        .await
-                    {
+                    Ok(dispatch_result) => match dispatch_result.result.await {
                         Ok(result) if result.is_error == Some(true) => {
                             Err(callback_result_to_value(&result).to_string())
                         }
@@ -256,13 +233,8 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 }
 
 #[async_trait]
-impl McpClientTrait for CodeExecutionClient {
-    async fn list_tools(
-        &self,
-        _: &str,
-        _: Option<String>,
-        _: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+impl PlatformExtension for CodeExecutionClient {
+    async fn list_tools(&self, _: &str) -> Result<Vec<McpTool>, Error> {
         fn schema<T: JsonSchema>() -> JsonObject {
             serde_json::to_value(schema_for!(T))
                 .expect("valid schema")
@@ -272,14 +244,11 @@ impl McpClientTrait for CodeExecutionClient {
         }
         let read_only =
             ToolAnnotations::from_raw(None, Some(true), Some(false), Some(true), Some(false));
-        Ok(ListToolsResult {
-            tools: vec![
+        Ok(vec![
                 McpTool::new("list_functions", "List callable tools with their exact Goose names and short descriptions. Inspect unfamiliar parameters with get_function_details before calling tools.", json!({"type":"object","properties":{}}).as_object().unwrap().clone()).annotate(read_only.clone()),
                 McpTool::new("get_function_details", "Get descriptions and original JSON input/output schemas for exact tool names returned by list_functions. Schemas are data, including recursive references.", schema::<GetFunctionDetailsInput>()).annotate(read_only),
                 McpTool::new("execute_javascript", format!("Execute JavaScript and return captured console output, the JSON result, or an error. {INSTRUCTIONS}"), schema::<ExecuteWithToolGraph>()).annotate(ToolAnnotations::from_raw(Some("Execute JavaScript".into()), Some(false), Some(true), Some(false), Some(true))),
-            ],
-            ..Default::default()
-        })
+            ])
     }
 
     async fn call_tool(
@@ -291,8 +260,7 @@ impl McpClientTrait for CodeExecutionClient {
     ) -> Result<CallToolResult, Error> {
         let result = match name {
             "list_functions" => {
-                let catalog =
-                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                let catalog = callable_catalog(ctx.tools().tools().await);
                 let functions: Vec<_> = catalog.iter().map(|tool| json!({
                     "name": tool.name,
                     "description": tool.description.as_deref().unwrap_or("").lines().next().unwrap_or("").chars().take(240).collect::<String>()
@@ -300,8 +268,7 @@ impl McpClientTrait for CodeExecutionClient {
                 Ok(vec![ContentBlock::text(json!(functions).to_string())])
             }
             "get_function_details" => {
-                let catalog =
-                    callable_catalog(dispatching_lease(ctx).tools_excluding(EXTENSION_NAME).await);
+                let catalog = callable_catalog(ctx.tools().tools().await);
                 parse_arguments::<GetFunctionDetailsInput>(arguments)
                     .and_then(|input| function_details(&catalog, &input.functions))
                     .map(|details| vec![ContentBlock::text(details.to_string())])
@@ -324,8 +291,8 @@ impl McpClientTrait for CodeExecutionClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, _: &str, tools: &[McpTool]) -> Option<String> {
-        Some(format!("{} callable tools are available through execute_javascript in this snapshot. {INSTRUCTIONS}", callable_catalog(tools.to_vec()).len()))
+    async fn get_moim(&self, _: &str) -> Option<String> {
+        Some(INSTRUCTIONS.to_string())
     }
 }
 
@@ -333,8 +300,10 @@ impl McpClientTrait for CodeExecutionClient {
 mod tests {
     use super::*;
     use crate::agents::extension::ExtensionConfig;
-    use crate::agents::extension_manager::ExtensionManager;
-    use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
+    use crate::agents::StateMachineServices;
+    use rmcp::model::{
+        Annotations, EmbeddedResource, ListToolsResult, MetaObject, ResourceContents, TextContent,
+    };
 
     #[test]
     fn callback_result_ignores_hidden_structured_content_and_meta() {
@@ -388,7 +357,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for PendingClient {
+    impl oi_kit_agent::mcp::client::McpClientTrait for PendingClient {
         async fn list_tools(
             &self,
             session_id: &str,
@@ -402,7 +371,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _: &ToolCallContext,
+            _: &oi_kit_agent::mcp::client::McpCallContext,
             _: &str,
             _: Option<JsonObject>,
             _: CancellationToken,
@@ -428,9 +397,9 @@ mod tests {
         use futures::FutureExt;
 
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -443,7 +412,8 @@ mod tests {
         let started = Arc::new(tokio::sync::Notify::new());
         let released = Arc::new(tokio::sync::Notify::new());
         manager
-            .add_client(
+            .extension_manager
+            .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
                     name: "pending".into(),
@@ -460,13 +430,14 @@ mod tests {
                 None,
             )
             .await;
-        let lease = Arc::new(manager.scope_lease(&session.id).await);
-        let ctx = ToolCallContext::new(session.id, None, None).with_extension_lease(lease);
+        let lease = Arc::new(manager.scope_tools(&session.id).await);
+        let ctx = ToolCallContext::new(session.id, None, None)
+            .with_tool_snapshot(lease)
+            .with_services(Arc::clone(&manager));
         let dispatch = CancellationToken::new();
         let mut callback = dispatch_tool(
             ctx,
             "pending__ordinary".into(),
-            manager,
             dispatch.clone(),
             tokio::runtime::Handle::current(),
             json!({}),
@@ -484,7 +455,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for VisibilityClient {
+    impl oi_kit_agent::mcp::client::McpClientTrait for VisibilityClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -528,7 +499,7 @@ mod tests {
 
         async fn call_tool(
             &self,
-            _ctx: &ToolCallContext,
+            _ctx: &oi_kit_agent::mcp::client::McpCallContext,
             _name: &str,
             arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,
@@ -562,9 +533,10 @@ mod tests {
     #[tokio::test]
     async fn catalog_excludes_tools_hidden_from_model() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         manager
-            .add_client(
+            .extension_manager
+            .install_test_client(
                 "test-session",
                 ExtensionConfig::Builtin {
                     name: "visibility".to_string(),
@@ -579,7 +551,7 @@ mod tests {
             )
             .await;
 
-        let lease = manager.scope_lease("test-session").await;
+        let lease = manager.scope_tools("test-session").await;
         let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
@@ -595,9 +567,9 @@ mod tests {
     #[tokio::test]
     async fn catalog_leaves_delegate_to_direct_tool_calls() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -608,7 +580,7 @@ mod tests {
             .await
             .unwrap();
         manager
-            .enable(
+            .enable_extension(
                 &session.id,
                 ExtensionConfig::Platform {
                     name: super::super::summon::EXTENSION_NAME.to_string(),
@@ -621,7 +593,7 @@ mod tests {
             .await
             .unwrap();
 
-        let lease = manager.current_lease(&session.id).await.unwrap();
+        let lease = manager.current_tools(&session.id).await.unwrap();
         let configs = callable_catalog(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
@@ -635,9 +607,9 @@ mod tests {
     #[tokio::test]
     async fn callback_uses_lease_and_applies_extension_mutation() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -648,7 +620,7 @@ mod tests {
             .await
             .unwrap();
         manager
-            .enable(
+            .enable_extension(
                 &session.id,
                 ExtensionConfig::Platform {
                     name: "extensionmanager".to_string(),
@@ -660,8 +632,9 @@ mod tests {
             )
             .await
             .unwrap();
-        let lease = Arc::new(manager.current_lease(&session.id).await.unwrap());
+        let lease = Arc::new(manager.current_tools(&session.id).await.unwrap());
         manager
+            .extension_manager
             .disable(&session.id, "extensionmanager")
             .await
             .unwrap();
@@ -678,9 +651,9 @@ mod tests {
             Some(session.working_dir.clone()),
             Some("manage".into()),
         )
-        .with_extension_lease(lease);
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        .with_tool_snapshot(lease)
+        .with_services(Arc::clone(&manager));
+        let context = manager.platform_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
         let result = client
@@ -695,12 +668,13 @@ mod tests {
         assert_ne!(result.is_error, Some(true), "{result:?}");
 
         assert!(manager
+            .extension_manager
             .list_extensions(&session.id)
             .await
             .unwrap()
             .contains(&"todo".to_string()));
         let stored_session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .get_session(&session.id, false)
             .await
@@ -717,9 +691,9 @@ mod tests {
     #[tokio::test]
     async fn discovery_and_execution_share_the_lease_snapshot() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
         let session = manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 temp.path().to_path_buf(),
@@ -730,7 +704,8 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_client(
+            .extension_manager
+            .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
                     name: "visibility".into(),
@@ -744,11 +719,11 @@ mod tests {
                 None,
             )
             .await;
-        let lease = Arc::new(manager.scope_lease(&session.id).await);
+        let lease = Arc::new(manager.scope_tools(&session.id).await);
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
-            .with_extension_lease(lease.clone());
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+            .with_tool_snapshot(lease.clone())
+            .with_services(Arc::clone(&manager));
+        let context = manager.platform_context().clone();
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
             .call_tool(&ctx, "list_functions", None, CancellationToken::new())
@@ -761,7 +736,11 @@ mod tests {
             .iter()
             .any(|tool| tool["name"] == "visibility__ordinary"));
         assert!(!listed.to_string().contains("app_only"));
-        manager.disable(&session.id, "visibility").await.unwrap();
+        manager
+            .extension_manager
+            .disable(&session.id, "visibility")
+            .await
+            .unwrap();
         let details = client
             .call_tool(
                 &ctx,
@@ -793,7 +772,7 @@ mod tests {
         assert!(!output.contains("secret"));
         assert!(callable_catalog(
             manager
-                .current_lease(&session.id)
+                .current_tools(&session.id)
                 .await
                 .unwrap()
                 .tools()
@@ -818,26 +797,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moim_uses_supplied_snapshot_and_advertises_only_three_tools() {
+    async fn moim_provides_guidance_and_advertises_only_three_tools() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = ExtensionManager::with_data_dir(temp.path().join("manager"));
-        let client = CodeExecutionClient::new(manager.get_context().clone()).unwrap();
-        let tool = McpTool::new("leased__tool", "Leased tool", JsonObject::new());
-        assert!(client
-            .get_moim("session", &[tool])
-            .await
-            .unwrap()
-            .contains("1 callable tools"));
-        assert!(client
-            .get_moim("session", &[])
-            .await
-            .unwrap()
-            .contains("0 callable tools"));
+        let manager = StateMachineServices::for_tool_tests(temp.path().join("manager"));
+        let client = CodeExecutionClient::new(manager.platform_context().clone()).unwrap();
+        assert_eq!(
+            client.get_moim("session").await.as_deref(),
+            Some(INSTRUCTIONS)
+        );
         let names = client
-            .list_tools("session", None, CancellationToken::new())
+            .list_tools("session")
             .await
             .unwrap()
-            .tools
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect::<Vec<_>>();

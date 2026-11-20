@@ -139,7 +139,7 @@ Use `${PLUGIN_ROOT}` in a command to reference the plugin directory. goose also 
 | `PreToolUse` | Before goose runs a tool | Tool name |
 | `PreToolUseResult` | After the `PreToolUse` chain resolves, for allowed and denied calls alike, before the tool runs or the denial is returned. Observation only | Tool name |
 | `PostToolUse` | After a tool succeeds | Tool name |
-| `PostToolUseFailure` | After a tool fails | Tool name |
+| `PostToolUseFailure` | After a tool fails or a tool call is denied by approval policy | Tool name |
 | `BeforeReadFile` | Before goose reads a file | File path |
 | `AfterFileEdit` | After goose successfully edits a file | File path |
 | `BeforeShellExecution` | Before goose runs a shell command | Shell command |

@@ -10,9 +10,9 @@ use goose::config::{Config, ConfigError};
 use goose::providers::base::{MessageStream, Provider};
 use goose::providers::inventory::ProviderInventoryService;
 use goose::session::session_manager::SessionStorage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
 use goose_test_support::EnforceSessionId;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
 use serial_test::serial;
 use std::sync::Arc;
 

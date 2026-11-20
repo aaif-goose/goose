@@ -24,7 +24,7 @@ pub const GONDOLA_DOC_URL: &str = "https://gondola-ai.com/guides";
 
 pub struct GondolaProvider;
 
-impl goose_providers::base::ProviderDescriptor for GondolaProvider {
+impl oi_kit_providers::base::ProviderDescriptor for GondolaProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             GONDOLA_PROVIDER_NAME,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { GooseSessionNotification_unstable } from '@aaif/goose-acp-client';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import type { TokenState } from '../types/chat';
 import { ChatState } from '../types/chatState';
 import type { Message, NotificationEvent } from '../types/message';
@@ -237,6 +237,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     sessionLoadError
   ) => {
     const entry = getOrCreateEntry(sessionId);
+    resetReplayState(entry);
     entry.sessionLoadError = sessionLoadError;
     entry.progressMessage = undefined;
     entry.chatState = ChatState.Idle;

@@ -102,6 +102,16 @@ pub(super) fn content_chunk_for_message(message: &Message, content: ContentBlock
     chunk
 }
 
+pub(super) fn live_transcript_chunk(message: &Message, content: ContentBlock) -> ContentChunk {
+    let mut chunk = content_chunk_for_message(message, content);
+    if let Some(serde_json::Value::Object(goose)) =
+        chunk.meta.as_mut().and_then(|meta| meta.get_mut("goose"))
+    {
+        goose.insert("liveTranscript".into(), true.into());
+    }
+    chunk
+}
+
 pub(super) fn populate_output_token_limit_content(message: &mut Message) {
     if message.role != rmcp::model::Role::Assistant
         || !message.content.is_empty()
@@ -130,6 +140,27 @@ mod tests {
     use crate::conversation::message::InferenceMetadata;
     use agent_client_protocol::schema::v1::TextContent;
     use rmcp::model::Role;
+
+    #[test]
+    fn live_transcript_chunks_are_marked() {
+        let message = Message::new(Role::User, 1_700_000_000, vec![]).with_id("msg_live_1");
+        let content = || ContentBlock::Text(TextContent::new("hi"));
+
+        assert_eq!(
+            live_transcript_chunk(&message, content())
+                .meta
+                .and_then(|meta| meta.get("goose").cloned()),
+            Some(serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_live_1",
+                "liveTranscript": true,
+            })),
+        );
+        assert!(content_chunk_for_message(&message, content())
+            .meta
+            .and_then(|meta| meta.get("goose").cloned())
+            .is_some_and(|goose| goose.get("liveTranscript").is_none()));
+    }
 
     #[test]
     fn message_meta_serializes_message_fields() {

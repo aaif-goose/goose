@@ -157,7 +157,6 @@ impl ToolInspector for PermissionInspector {
                 let tool_name = &tool_call.name;
 
                 let action = match goose_mode {
-                    GooseMode::Chat => continue,
                     GooseMode::Auto => InspectionAction::Allow,
                     GooseMode::Approve | GooseMode::SmartApprove => {
                         // 1. Check user-defined permission first

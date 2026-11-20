@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
-use goose_providers::live_voice_provider::{
+use oi_kit_providers::live_voice_provider::{
     DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
     ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
 };
@@ -25,11 +25,13 @@ impl LiveVoiceProvider for FakeLiveVoiceProvider {
         &self,
         _offer: WebRtcOffer,
         input_messages: Vec<LiveVoiceInputMessage>,
+        instructions: Option<String>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         let (response_tx, response_rx) = oneshot::channel();
         self.start_tx
             .send(FakeStartRequest {
                 input_messages,
+                instructions,
                 response_tx,
             })
             .map_err(|_| anyhow!("fake provider driver dropped"))?;
@@ -41,6 +43,7 @@ impl LiveVoiceProvider for FakeLiveVoiceProvider {
 
 pub(super) struct FakeStartRequest {
     pub(super) input_messages: Vec<LiveVoiceInputMessage>,
+    pub(super) instructions: Option<String>,
     response_tx: oneshot::Sender<Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>>,
 }
 

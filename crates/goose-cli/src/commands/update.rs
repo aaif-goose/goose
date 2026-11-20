@@ -234,8 +234,8 @@ fn verify_bundle(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let identity = result
-        .identity
-        .as_deref()
+        .identity()
+        .map(|identity| identity.as_str())
         .ok_or_else(|| anyhow::anyhow!("No identity in certificate"))?;
 
     let expected = format!("/.github/workflows/{workflow}");
@@ -272,7 +272,7 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<()> {
 
     let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .context("Failed to load Sigstore trusted root")?;
-    let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
+    let policy = VerificationPolicy::any_identity().require_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
         Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;
 
@@ -1002,6 +1002,32 @@ mod tests {
             result.is_err(),
             "verify_provenance must fail closed when provenance cannot be verified"
         );
+    }
+
+    // Attestation bundle that GitHub serves for the v1.60.1
+    // goose-x86_64-unknown-linux-gnu.tar.bz2 release asset.
+    const RELEASE_BUNDLE: &str =
+        include_str!("update_test_data/goose-x86_64-unknown-linux-gnu-v1.60.1.sigstore.json");
+    const RELEASE_ARCHIVE_SHA256: &str =
+        "f1b477e531c11e74b82761367e0284c7817908efe30a842889959713820584d8";
+
+    fn verify_release_bundle(archive_sha256: &str) -> Result<()> {
+        let bundle: serde_json::Value = serde_json::from_str(RELEASE_BUNDLE)?;
+        let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)?;
+        let policy = VerificationPolicy::any_identity().require_issuer(GITHUB_ACTIONS_ISSUER);
+        let digest = Sha256Hash::from_hex(archive_sha256)?;
+        verify_bundle(&bundle, digest, &policy, &trusted_root, "release.yml")
+    }
+
+    #[test]
+    fn test_verify_bundle_accepts_release_attestation() {
+        verify_release_bundle(RELEASE_ARCHIVE_SHA256).unwrap();
+    }
+
+    #[test]
+    fn test_verify_bundle_rejects_other_archive() {
+        let other = sha256_hex(b"not the release archive");
+        assert!(verify_release_bundle(&other).is_err());
     }
 
     #[cfg(not(target_os = "windows"))]

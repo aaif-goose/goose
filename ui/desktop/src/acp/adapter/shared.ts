@@ -1,4 +1,4 @@
-import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import type { TokenState } from '../../types/chat';
 import type { InferenceMetadata, Message, NotificationEvent } from '../../types/message';
 

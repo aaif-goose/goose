@@ -80,7 +80,7 @@ For a managed distribution, bake the docs tree into your image and set
 ## Notes
 
 - Documentation links in goose's answers always render as canonical
-  `https://goose-docs.ai/...` URLs, even when read locally.
+  `https://goose-docs.ai/...` URLs, even when read locally or from a mirror.
 - A custom HTTP(S) mirror also works: set `GOOSE_DOCS_ROOT` to its root URL.
 - For MCP extension runtime issues offline, see
   [Airgapped/Offline Environment Issues](/docs/troubleshooting/known-issues#airgappedoffline-environment-issues).

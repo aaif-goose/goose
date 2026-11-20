@@ -1,4 +1,4 @@
-import type { InitializeResponse } from '@agentclientprotocol/sdk';
+import type { InitializeResponse } from '@agentclientprotocol/sdk/unstable';
 import { getAcpInitializeResponse } from './acpConnection';
 
 export interface AcpFeatureCapabilities {

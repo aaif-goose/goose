@@ -59,10 +59,10 @@ impl AcpStreamServer for FullAcpBridge {
         let session_cwd = self.session_cwd.clone();
         Box::pin(async move {
             tracing::info!(%client, "roaming: serving full ACP surface");
-            let agent = server
-                .create_agent_with_session_cwd(Some(session_cwd))
+            let connection = server
+                .create_connection_with_session_cwd(Some(session_cwd))
                 .await?;
-            serve(agent, recv, send).await
+            serve(connection, recv, send).await
         })
     }
 

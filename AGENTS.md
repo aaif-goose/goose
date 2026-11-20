@@ -80,7 +80,7 @@ ui/desktop/   # Electron app
 ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
-Some workspace crates, including those that make up the GDK, are published to crates.io and expose public APIs. The authoritative list of GDK crates is the `release = true`, `version_group = "gdk"` package set in `release-plz.toml`, which drives the GDK release; run `python3 crates/goose-sdk/scripts/gdk-release.py crates` to print it. Other crates, such as `goose` and `goose-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
+Some workspace crates, including those that make up oi-kit, are published to crates.io and expose public APIs. The authoritative list of oi-kit crates is the `release = true`, `version_group = "oi-kit"` package set in `release-plz.toml`, which drives oi-kit release; run `python3 crates/oi-kit-bindings/scripts/oi-kit-release.py crates` to print it. Other crates, such as `goose` and `goose-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
 
 ## Development Loop
 ```bash
@@ -99,7 +99,6 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ## Rules
 
 - Test: Prefer tests/ folder, e.g. crates/goose/tests/
-- Test: When adding features, update goose-self-test.yaml, rebuild, then run `goose run --recipe goose-self-test.yaml` to validate
 - Error: Use anyhow::Result
 - Provider: Implement Provider trait see providers/base.rs
 - MCP: Extensions in crates/goose-mcp/
@@ -129,4 +128,5 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ## Entry Points
 - CLI: crates/goose-cli/src/main.rs
 - UI: ui/desktop/src/main.ts
-- Agent: crates/goose/src/agents/agent.rs
+- Agent: crates/goose/src/agents/services.rs (`reply`)
+- Agent loop: crates/goose/src/agents/state_machine_builder.rs (the ordered operations), run by crates/goose/src/agents/state_machine/

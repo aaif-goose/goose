@@ -65,7 +65,17 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           async sidebarItemsGenerator(args) {
-            const items = await args.defaultSidebarItemsGenerator(args);
+            const generatedItems = await args.defaultSidebarItemsGenerator(args);
+            const items =
+              args.item.dirName === "."
+                ? generatedItems.map((item) =>
+                    item.type === "category" &&
+                    item.link?.type === "doc" &&
+                    item.link.id === "oi-kit/index"
+                      ? { type: "link" as const, label: "oi-kit", href: "/docs/oi-kit" }
+                      : item,
+                  )
+                : generatedItems;
 
             const contextEngineeringItems = [
               {
@@ -144,7 +154,29 @@ const config: Config = {
     [
       "@docusaurus/plugin-client-redirects",
       {
+        createRedirects(existingPath: string) {
+          if (
+            existingPath === "/docs/oi-kit" ||
+            existingPath.startsWith("/docs/oi-kit/")
+          ) {
+            return existingPath.replace("/docs/oi-kit", "/docs/gdk");
+          }
+          if (
+            existingPath === "/blog/tags/oi-kit" ||
+            existingPath.startsWith("/blog/tags/oi-kit/")
+          ) {
+            return existingPath.replace("/blog/tags/oi-kit", "/blog/tags/gdk");
+          }
+        },
         redirects: [
+          {
+            from: ["/docs/gdk/acp/zed", "/docs/oi-kit/acp/zed"],
+            to: "/docs/guides/zed",
+          },
+          {
+            from: ["/docs/gdk/sdk", "/docs/oi-kit/sdk"],
+            to: "/docs/oi-kit/reference/",
+          },
           {
             from: "/docs/getting-started/using-goose-free",
             to: "/docs/getting-started/providers#using-goose-for-free",
@@ -449,6 +481,12 @@ const config: Config = {
           position: "left",
         },
         {
+          to: "/docs/oi-kit/",
+          label: "oi-kit",
+          position: "left",
+        },
+        { to: "/blog", label: "Blog", position: "left" },
+        {
           to: "/docs/category/guides",
           position: "left",
           label: "Docs",
@@ -458,27 +496,6 @@ const config: Config = {
           position: "left",
           label: "Tutorials",
         },
-        { to: "/blog", label: "Blog", position: "left" },
-        {
-          type: "dropdown",
-          label: "Resources",
-          position: "left",
-          items: [
-            {
-              to: "/extensions",
-              label: "Extensions",
-            },
-            {
-              to: "/recipes",
-              label: "Recipe Cookbook",
-            },
-            {
-              to: "deeplink-generator",
-              label: "Deeplink Generator",
-            },
-          ],
-        },
-
         {
           href: "https://discord.gg/n8R5VaWDAn",
           label: "Discord",
@@ -503,6 +520,10 @@ const config: Config = {
             {
               label: "Extensions",
               to: "/extensions",
+            },
+            {
+              label: "oi-kit",
+              to: "/docs/oi-kit/",
             },
           ],
         },
@@ -558,14 +579,6 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.nightOwl,
-    },
-    announcementBar: {
-      id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
-      content:
-        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
-      backgroundColor: '#20232a',
-      textColor: '#fff',
-      isCloseable: true,
     },
   } satisfies Preset.ThemeConfig,
 };

@@ -1,0 +1,4 @@
+Generated with the built-in image-generation tool.
+Edit target: documentation/static/img/gdk/social-preview.png
+
+Use case: text-localization. Asset type: developer-runtime social-preview card. Image 1 is the edit target. Rename the product on this card to "oi-kit" (all lowercase, spelled o-i-hyphen-k-i-t). Replace the large "GDK" headline with a large "oi-kit" headline in the same off-white bold sans-serif style. Remove the "goose Development Kit" subtitle entirely, leaving clean negative space. Keep the exact tagline "Build agents that run anywhere." unchanged. Preserve the violet flying-goose silhouette, its scale and position, the near-black background, generous margins, landscape proportions, and the restrained visual style. Adjust headline sizing only as needed so the whole word fits comfortably. No GDK text, no new words or icons, no redesign, no watermark.

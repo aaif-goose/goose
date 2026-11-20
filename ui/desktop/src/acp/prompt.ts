@@ -1,4 +1,4 @@
-import { methods, type ContentBlock, type PromptResponse } from '@agentclientprotocol/sdk';
+import { methods, type ContentBlock, type PromptResponse } from '@agentclientprotocol/sdk/unstable';
 import type {
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
