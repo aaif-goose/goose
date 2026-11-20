@@ -52,6 +52,7 @@ function findNewModels(catalog, now) {
       continue;
     }
     for (const [id, model] of Object.entries(models)) {
+      if ((model.type ?? "chat") !== "chat") continue;
       const entry = summarize(provider, id, model);
       const released = parseDate(entry.release_date);
       if (released === null) noReleaseDate.push(entry);
