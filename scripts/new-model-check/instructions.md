@@ -42,7 +42,7 @@ W=$(mktemp -d)
 mkdir -p "$W/bin" "$W/home" "$W/work" "$W/requests"
 cd "$W/work"
 curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh -o "$W/download_cli.sh"
-HOME="$W/home" GOOSE_BIN_DIR="$W/bin" CONFIGURE=false bash "$W/download_cli.sh"
+HOME="$W/home" GOOSE_BIN_DIR="$W/bin" GOOSE_VERSION= CANARY=false CONFIGURE=false bash "$W/download_cli.sh"
 "$W/bin/goose" --version
 R="$W/results.md"
 ```
@@ -147,7 +147,7 @@ Install the canary build, which is built from main, into another fresh folder, a
 
 ```
 C=$(mktemp -d); mkdir -p "$C/bin" "$C/home" "$C/work" "$C/requests"
-HOME="$C/home" GOOSE_BIN_DIR="$C/bin" CANARY=true CONFIGURE=false bash "$W/download_cli.sh"
+HOME="$C/home" GOOSE_BIN_DIR="$C/bin" GOOSE_VERSION= CANARY=true CONFIGURE=false bash "$W/download_cli.sh"
 W=$C
 ```
 
