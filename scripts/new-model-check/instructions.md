@@ -102,7 +102,7 @@ If there's no real request, that setting is a FAIL: record "no request sent" and
 Compare the real requests with the model's models.dev metadata.
 
 1. **Output limit.** The max-setting request asks for `output_limit` from models.dev. A request for 4096 when models.dev says otherwise is a fail. If models.dev has no output limit, or it equals the context limit, goose ignores it by design: write "skipped".
-2. **Thinking is on.** If models.dev says `reasoning: true`, the max-setting request includes thinking settings. No thinking fields at all is a fail.
+2. **Thinking is on.** If models.dev says `reasoning: true`, the max-setting request includes thinking settings; none at all is a fail. Exception: if `reasoning_options` is `[]`, the model always reasons and takes no settings, so the request must have none.
 3. **Thinking levels.** If models.dev's `reasoning_options` has an entry with `"type": "effort"`, its `values` are the model's levels, lowest to highest. Then:
    - For `low`, `medium`, `high` and `max`, the request must use one of those levels, not a token budget (`thinkingBudget`, `budget_tokens`). A token budget is a fail, even though thinking is on.
    - Every level goose sends must be on the list.
