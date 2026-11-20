@@ -7,6 +7,7 @@ pub mod anthropic_def;
 pub mod api_client {
     pub use oi_kit_providers::api_client::*;
 }
+pub mod agy_acp;
 pub mod avian;
 pub mod azure;
 pub mod azure_foundry_def;

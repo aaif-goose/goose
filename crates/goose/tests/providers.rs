@@ -590,6 +590,7 @@ impl ProviderFixture {
 
         let mut stream = self.services.reply(message, session_config, None).await?;
         let mut saw_action_required = false;
+        let mut answered_ids = std::collections::HashSet::new();
 
         while let Some(event) = stream.next().await {
             let event = event?;
@@ -598,9 +599,15 @@ impl ProviderFixture {
                     if let MessageContent::ActionRequired(ar) = content {
                         if let ActionRequiredData::ToolConfirmation { ref id, .. } = ar.data {
                             saw_action_required = true;
-                            self.services
-                                .submit_tool_confirmation(&self.session_id, id, permission.clone())
-                                .await?;
+                            if answered_ids.insert(id.clone()) {
+                                self.services
+                                    .submit_tool_confirmation(
+                                        &self.session_id,
+                                        id,
+                                        permission.clone(),
+                                    )
+                                    .await?;
+                            }
                         }
                     }
                 }
@@ -962,6 +969,16 @@ async fn test_copilot_acp_provider() -> Result<()> {
         // Copilot ignores mcpServers passed via session/new
         // https://github.com/github/copilot-cli/issues/1040
         .test_mcp_tools(false)
+        .run()
+        .await
+}
+
+// Requires: curl -fsSL https://antigravity.google/cli/install.sh | bash
+#[tokio::test]
+async fn test_agy_acp_provider() -> Result<()> {
+    ProviderTestConfig::with_agentic_provider("agy-acp", ACP_CURRENT_MODEL, "agy")
+        .model_switch_name("gemini-3.8-flash")
+        .test_thinking_effort(true)
         .run()
         .await
 }
