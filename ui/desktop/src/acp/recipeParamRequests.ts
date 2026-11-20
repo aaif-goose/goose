@@ -15,18 +15,13 @@ export interface AcpRecipeParamRequest {
 interface PendingRecipeParamRequest {
   request: AcpRecipeParamRequest;
   resolve: (response: RecipeParamsResponse_unstable) => void;
-  usesConfiguredParameters: boolean;
+  scopeId?: string;
 }
 
-type ConfiguredParameterState =
-  | { status: 'uninitialized' }
-  | {
-      status: 'active';
-      scopeId: string;
-      values: Record<string, string>;
-      sessionId?: string;
-    }
-  | { status: 'consumed' };
+interface ConfiguredParameterValues {
+  values: Record<string, string>;
+  sessionId?: string;
+}
 
 export interface ConfiguredRecipeParameterScope {
   id: string;
@@ -34,9 +29,10 @@ export interface ConfiguredRecipeParameterScope {
 }
 
 const pendingRequests = new Map<string, PendingRecipeParamRequest>();
+const configuredParameterScopes = new Map<string, ConfiguredParameterValues>();
 const listeners = new Set<() => void>();
 let snapshot: AcpRecipeParamRequest[] = [];
-let configuredParameterState: ConfiguredParameterState = { status: 'uninitialized' };
+let startupParametersRead = false;
 
 function emit(): void {
   snapshot = Array.from(pendingRequests.values(), (pending) => pending.request);
@@ -56,57 +52,39 @@ export function getAcpRecipeParamRequestsSnapshot(): AcpRecipeParamRequest[] {
   return snapshot;
 }
 
-function consumeConfiguredParameters(): boolean {
-  if (configuredParameterState.status !== 'active') {
+function consumeConfiguredParameters(scopeId: string): boolean {
+  if (!configuredParameterScopes.delete(scopeId)) {
     return false;
   }
 
-  const sessionId = configuredParameterState.sessionId;
-  configuredParameterState = { status: 'consumed' };
   let scrubbedPendingRequest = false;
-  if (sessionId) {
-    for (const pending of pendingRequests.values()) {
-      if (pending.usesConfiguredParameters && pending.request.sessionId === sessionId) {
-        pending.request.initialValues = {};
-        scrubbedPendingRequest = true;
-      }
+  for (const pending of pendingRequests.values()) {
+    if (pending.scopeId === scopeId) {
+      pending.request.initialValues = {};
+      scrubbedPendingRequest = true;
     }
   }
   return scrubbedPendingRequest;
 }
 
-export function resetConfiguredRecipeParameters(): void {
-  configuredParameterState = { status: 'uninitialized' };
-}
-
 export function beginConfiguredRecipeParameterScope(
   values?: Record<string, string>
 ): ConfiguredRecipeParameterScope | undefined {
-  if (configuredParameterState.status !== 'uninitialized') {
-    return undefined;
+  if (values === undefined) {
+    if (startupParametersRead) return undefined;
+    startupParametersRead = true;
+    values = window.appConfig?.get('recipeParameters') as Record<string, string> | undefined;
   }
-
-  const configured = values ?? (window.appConfig?.get('recipeParameters') as
-    Record<string, string> | undefined);
-  if (!configured || Object.keys(configured).length === 0) {
-    configuredParameterState = { status: 'consumed' };
+  if (!values || Object.keys(values).length === 0) {
     return undefined;
   }
 
   const scopeId = `configured_recipe_parameters_${uuidv7()}`;
-  configuredParameterState = {
-    status: 'active',
-    scopeId,
-    values: { ...configured },
-  };
+  configuredParameterScopes.set(scopeId, { values: { ...values } });
   return {
     id: scopeId,
     finish: () => {
-      if (
-        configuredParameterState.status === 'active' &&
-        configuredParameterState.scopeId === scopeId &&
-        consumeConfiguredParameters()
-      ) {
+      if (consumeConfiguredParameters(scopeId)) {
         emit();
       }
     },
@@ -115,18 +93,14 @@ export function beginConfiguredRecipeParameterScope(
 
 function configuredParameterValues(request: RequestRecipeParams_unstable): {
   values: Record<string, string>;
-  usesConfiguredParameters: boolean;
+  scopeId?: string;
 } {
-  if (
-    configuredParameterState.status !== 'active' ||
-    request.parameterScopeId !== configuredParameterState.scopeId
-  ) {
-    return { values: {}, usesConfiguredParameters: false };
+  const scopeId = request.parameterScopeId ?? undefined;
+  const scope = scopeId ? configuredParameterScopes.get(scopeId) : undefined;
+  if (!scope || (scope.sessionId !== undefined && scope.sessionId !== request.sessionId)) {
+    return { values: {} };
   }
-  configuredParameterState.sessionId ??= request.sessionId;
-  if (configuredParameterState.sessionId !== request.sessionId) {
-    return { values: {}, usesConfiguredParameters: false };
-  }
+  scope.sessionId = request.sessionId;
   const fileParameterKeys = new Set(
     request.parameters
       .filter((parameter) => parameter.input_type === 'file')
@@ -134,16 +108,16 @@ function configuredParameterValues(request: RequestRecipeParams_unstable): {
   );
   return {
     values: Object.fromEntries(
-      Object.entries(configuredParameterState.values).filter(([key]) => !fileParameterKeys.has(key))
+      Object.entries(scope.values).filter(([key]) => !fileParameterKeys.has(key))
     ),
-    usesConfiguredParameters: true,
+    scopeId,
   };
 }
 
 export async function requestAcpRecipeParams(
   request: RequestRecipeParams_unstable
 ): Promise<RecipeParamsResponse_unstable> {
-  const { values: initialValues, usesConfiguredParameters } = configuredParameterValues(request);
+  const { values: initialValues, scopeId } = configuredParameterValues(request);
   const paramRequest: AcpRecipeParamRequest = {
     id: `acp_recipe_params_${uuidv7()}`,
     sessionId: request.sessionId,
@@ -155,7 +129,7 @@ export async function requestAcpRecipeParams(
     pendingRequests.set(paramRequest.id, {
       request: paramRequest,
       resolve,
-      usesConfiguredParameters,
+      scopeId,
     });
     emit();
   });
@@ -167,8 +141,8 @@ export function resolveAcpRecipeParamRequest(id: string, values: Record<string, 
     return false;
   }
   pendingRequests.delete(id);
-  if (pending.usesConfiguredParameters) {
-    consumeConfiguredParameters();
+  if (pending.scopeId) {
+    consumeConfiguredParameters(pending.scopeId);
   }
   emit();
   pending.resolve({ action: 'submit', values });
@@ -181,8 +155,8 @@ export function cancelAcpRecipeParamRequest(id: string): void {
     return;
   }
   pendingRequests.delete(id);
-  if (pending.usesConfiguredParameters) {
-    consumeConfiguredParameters();
+  if (pending.scopeId) {
+    consumeConfiguredParameters(pending.scopeId);
   }
   emit();
   pending.resolve({ action: 'cancel' });

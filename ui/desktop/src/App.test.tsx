@@ -168,6 +168,7 @@ const mockElectron = {
   logInfo: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
+  onStartRecipe: vi.fn(() => () => {}),
   reactReady: vi.fn(),
   getAllowedExtensions: vi.fn().mockResolvedValue(null),
   platform: 'darwin',

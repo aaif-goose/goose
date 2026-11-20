@@ -28,6 +28,7 @@ interface CreateSessionOptions {
   recipeDeeplink?: string;
   recipeId?: string;
   recipeParameters?: Record<string, string>;
+  scheduledJobId?: string;
   extensionConfigs?: ExtensionConfig[];
   allExtensions?: FixedExtensionEntry[];
 }
@@ -126,6 +127,7 @@ async function createAcpSession(
       recipeId: options?.recipeId,
       recipeDeeplink: options?.recipeDeeplink,
       recipeParameterScopeId: configuredParameterScope?.id,
+      scheduledJobId: options?.scheduledJobId,
     });
   } finally {
     configuredParameterScope?.finish();

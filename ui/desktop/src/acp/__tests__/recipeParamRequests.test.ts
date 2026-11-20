@@ -237,24 +237,31 @@ describe('ACP recipe param requests', () => {
     await laterResponse;
   });
 
-  it('reset allows a new scope to begin after consumption', async () => {
+  it('keeps concurrent recipe launches isolated when one scope finishes', async () => {
     setRecipeParameters({ topic: 'first run' });
     const firstScope = requests.beginConfiguredRecipeParameterScope()!;
-    firstScope.finish();
-
-    expect(requests.beginConfiguredRecipeParameterScope()).toBeUndefined();
-
-    requests.resetConfiguredRecipeParameters();
-
     const secondScope = requests.beginConfiguredRecipeParameterScope({ topic: 'second run' })!;
-    expect(secondScope).toBeDefined();
+    const firstResponse = requests.requestAcpRecipeParams(
+      recipeParamRequest('first', firstScope.id)
+    );
+    const secondResponse = requests.requestAcpRecipeParams(
+      recipeParamRequest('second', secondScope.id)
+    );
+    const [first, second] = requests.getAcpRecipeParamRequestsSnapshot();
+    expect(first.initialValues).toEqual({ topic: 'first run' });
+    expect(second.initialValues).toEqual({ topic: 'second run' });
 
-    const response = requests.requestAcpRecipeParams(recipeParamRequest('session-1', secondScope.id));
-    const [pending] = requests.getAcpRecipeParamRequestsSnapshot();
-    expect(pending.initialValues).toEqual({ topic: 'second run' });
-
-    requests.cancelAcpRecipeParamRequest(pending.id);
-    await response;
+    firstScope.finish();
+    expect(
+      requests.getAcpRecipeParamRequestsSnapshot().map((request) => request.initialValues)
+    ).toEqual([{}, { topic: 'second run' }]);
+    requests.cancelAcpRecipeParamRequest(first.id);
+    requests.resolveAcpRecipeParamRequest(second.id, { topic: 'second run' });
+    await expect(firstResponse).resolves.toEqual({ action: 'cancel' });
+    await expect(secondResponse).resolves.toEqual({
+      action: 'submit',
+      values: { topic: 'second run' },
+    });
     secondScope.finish();
   });
 
@@ -273,8 +280,14 @@ describe('ACP recipe param requests', () => {
     scope.finish();
   });
 
-  it('returns undefined when provided values are empty', async () => {
-    const scope = requests.beginConfiguredRecipeParameterScope({});
-    expect(scope).toBeUndefined();
+  it('never falls back to startup values for a parameterless warm link', () => {
+    const get = setRecipeParameters({ topic: 'startup' });
+    expect(requests.beginConfiguredRecipeParameterScope({})).toBeUndefined();
+    expect(get).not.toHaveBeenCalled();
+
+    const startupScope = requests.beginConfiguredRecipeParameterScope()!;
+    startupScope.finish();
+    expect(requests.beginConfiguredRecipeParameterScope({})).toBeUndefined();
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

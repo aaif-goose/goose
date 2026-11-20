@@ -56,6 +56,7 @@ import { UPDATES_ENABLED } from './updates';
 import './utils/gitBranchIpc';
 import './utils/recipeHash';
 import type { GooseApp } from './types/apps';
+import type { StartRecipePayload } from './types/recipeDeepLink';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { openExternalUrl } from './utils/openExternalUrl';
 import { buildCSP, leaseBackendOrigin, shouldApplyRendererCsp } from './utils/csp';
@@ -455,31 +456,9 @@ if (process.platform !== 'darwin') {
         const parsedUrl = new URL(protocolUrl);
         // If it's a bot/recipe URL, reuse an existing window or open a new one
         if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-          app.whenReady().then(async () => {
-            const deeplinkData = parseRecipeDeeplink(protocolUrl);
-            const regularWindows = getRegularWindows();
-            if (regularWindows.length > 0) {
-              const targetWindow = regularWindows[0];
-              if (targetWindow.isMinimized()) targetWindow.restore();
-              targetWindow.focus();
-              if (deeplinkData?.config) {
-                deliverRecipeDeepLink(
-                  { recipeDeeplink: deeplinkData.config, recipeParameters: deeplinkData.parameters },
-                  targetWindow
-                );
-              }
-              return;
-            }
-            const recentDirs = loadRecentDirs();
-            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-            const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-            await createChat(app, {
-              dir: openDir || undefined,
-              recipeDeeplink: deeplinkData?.config,
-              scheduledJobId: scheduledJobId || undefined,
-              recipeParameters: deeplinkData?.parameters,
-            });
-          });
+          app.whenReady()
+            .then(() => handleRecipeDeepLink(protocolUrl, parsedUrl))
+            .catch((error) => log.error('[Main] Failed to open recipe link:', errorMessage(error)));
           return; // Skip the rest of the handler
         }
 
@@ -564,12 +543,7 @@ function queuePendingDeepLink(windowId: number, url: string): void {
   pendingDeepLinks.set(windowId, url);
 }
 
-interface StartRecipePayload {
-  recipeDeeplink: string;
-  recipeParameters?: Record<string, string>;
-}
-
-const pendingRecipeDeepLinks = new Map<number, StartRecipePayload>();
+const pendingRecipeDeepLinks = new Map<number, StartRecipePayload[]>();
 
 const reactReadyWindows = new Set<number>();
 
@@ -583,8 +557,10 @@ function deliverExtensionDeepLink(url: string, targetWindow: BrowserWindow): voi
 }
 
 function deliverRecipeDeepLink(payload: StartRecipePayload, targetWindow: BrowserWindow): void {
-  if (!reactReadyWindows.has(targetWindow.id) || targetWindow.webContents.isLoadingMainFrame()) {
-    pendingRecipeDeepLinks.set(targetWindow.id, payload);
+  if (!reactReadyWindows.has(targetWindow.id)) {
+    const pending = pendingRecipeDeepLinks.get(targetWindow.id) ?? [];
+    pending.push(payload);
+    pendingRecipeDeepLinks.set(targetWindow.id, pending);
     return;
   }
 
@@ -629,13 +605,7 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
     await createResumeChatWindow(parsedUrl, openDir || undefined);
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const existingWindows = BrowserWindow.getAllWindows();
-    const targetWindow =
-      existingWindows.length > 0
-        ? existingWindows[0]
-        : await createChat(app, { dir: openDir || undefined });
-    if (!targetWindow) return;
-    await processProtocolUrl(url, parsedUrl, targetWindow);
+    await handleRecipeDeepLink(url, parsedUrl);
   } else {
     const regularWindows = getRegularWindows();
     let targetWindow: BrowserWindow | undefined;
@@ -653,32 +623,42 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
 
     if (targetWindow.webContents.isLoadingMainFrame()) {
       queuePendingDeepLink(targetWindow.id, url);
-    } else {
-      await processProtocolUrl(url, parsedUrl, targetWindow);
+    } else if (parsedUrl.hostname === 'extension') {
+      targetWindow.webContents.send('add-extension', url);
     }
   }
 }
 
-async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
-  const recentDirs = loadRecentDirs();
-  const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+let coldRecipeLaunch: StartRecipePayload | undefined;
 
-  if (parsedUrl.hostname === 'extension') {
-    window.webContents.send('add-extension', url);
-  } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const deeplinkData = parseRecipeDeeplink(url);
-    const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
+async function handleRecipeDeepLink(url: string, parsedUrl: URL): Promise<void> {
+  const recipe = parseRecipeDeeplink(url);
+  const payload: StartRecipePayload | undefined = recipe && {
+    recipeDeeplink: recipe.config,
+    recipeParameters: recipe.parameters ?? {},
+    scheduledJobId: parsedUrl.searchParams.get('scheduledJob') || undefined,
+  };
+  const regularWindows = getRegularWindows();
+  const focused = BrowserWindow.getFocusedWindow();
+  const targetWindow = focused && regularWindows.includes(focused) ? focused : regularWindows[0];
+  if (targetWindow) {
+    if (targetWindow.isMinimized()) targetWindow.restore();
+    targetWindow.focus();
+    if (payload) deliverRecipeDeepLink(payload, targetWindow);
+    return;
+  }
 
+  openUrlHandledLaunch = true;
+  coldRecipeLaunch = payload;
+  try {
     await createChat(app, {
-      dir: openDir || undefined,
-      recipeDeeplink: deeplinkData?.config,
-      scheduledJobId: scheduledJobId || undefined,
-      recipeParameters: deeplinkData?.parameters,
+      dir: loadRecentDirs()[0] || undefined,
+      ...payload,
     });
+  } finally {
+    coldRecipeLaunch = undefined;
   }
 }
-
-let windowDeeplinkURL: string | null = null;
 
 app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
@@ -715,33 +695,7 @@ app.on('open-url', async (_event, url) => {
 
     // Handle bot/recipe URLs by reusing an existing window or creating a new one
     if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-      const deeplinkData = parseRecipeDeeplink(url);
-      const regularWindows = getRegularWindows();
-      if (regularWindows.length > 0) {
-        const targetWindow = regularWindows[0];
-        if (targetWindow.isMinimized()) targetWindow.restore();
-        targetWindow.focus();
-        if (deeplinkData?.config) {
-          deliverRecipeDeepLink(
-            { recipeDeeplink: deeplinkData.config, recipeParameters: deeplinkData.parameters },
-            targetWindow
-          );
-        }
-        return;
-      }
-      log.info('[Main] Detected bot/recipe URL, creating new chat window');
-      openUrlHandledLaunch = true;
-      if (deeplinkData) {
-        windowDeeplinkURL = url;
-      }
-      const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-      await createChat(app, {
-        dir: openDir || undefined,
-        recipeDeeplink: deeplinkData?.config,
-        scheduledJobId: scheduledJobId || undefined,
-        recipeParameters: deeplinkData?.parameters,
-      });
-      windowDeeplinkURL = null;
+      await handleRecipeDeepLink(url, parsedUrl);
       return;
     }
 
@@ -1482,6 +1436,9 @@ const createChat = async (
     return;
   }
   windowMap.set(windowId, mainWindow);
+  mainWindow.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+    if (isMainFrame && !isSameDocument) reactReadyWindows.delete(windowId);
+  });
 
   // Handle window closure
   mainWindow.on('closed', () => {
@@ -1810,14 +1767,9 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
 
     addRecentDir(dirToAdd);
 
-    let deeplinkData: RecipeDeeplinkData | undefined = undefined;
-    if (windowDeeplinkURL) {
-      deeplinkData = parseRecipeDeeplink(windowDeeplinkURL);
-    }
     await createChat(app, {
       dir: dirToAdd,
-      recipeDeeplink: deeplinkData?.config,
-      recipeParameters: deeplinkData?.parameters,
+      ...coldRecipeLaunch,
     });
   }
   return result;
@@ -1929,10 +1881,12 @@ ipcMain.on('react-ready', (event) => {
     }
   }
 
-  if (windowId && pendingRecipeDeepLinks.has(windowId) && window) {
-    const payload = pendingRecipeDeepLinks.get(windowId)!;
+  if (windowId && window) {
+    const pending = pendingRecipeDeepLinks.get(windowId) ?? [];
     pendingRecipeDeepLinks.delete(windowId);
-    window.webContents.send('start-recipe', payload);
+    for (const payload of pending) {
+      window.webContents.send('start-recipe', payload);
+    }
   }
 });
 

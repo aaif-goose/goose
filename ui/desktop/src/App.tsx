@@ -15,7 +15,6 @@ import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
-import { resetConfiguredRecipeParameters } from './acp/recipeParamRequests';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
 import { acpChatSessionStore } from './acp/chatSessionStore';
 
@@ -110,6 +109,7 @@ export const PairRouteWrapper = ({
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const recipeDeeplinkFromConfig = window.appConfig?.get('recipeDeeplink') as string | undefined;
   const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | undefined;
+  const scheduledJobId = window.appConfig?.get('scheduledJobId') as string | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
 
@@ -127,6 +127,7 @@ export const PairRouteWrapper = ({
           const newSession = await createSession(getInitialWorkingDir(), {
             recipeDeeplink: recipeDeeplinkFromConfig,
             recipeId: recipeIdFromConfig,
+            scheduledJobId,
             allExtensions: extensionsList,
           });
           const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
@@ -171,6 +172,7 @@ export const PairRouteWrapper = ({
     initialMessage,
     recipeDeeplinkFromConfig,
     recipeIdFromConfig,
+    scheduledJobId,
     resumeSessionId,
     setSearchParams,
     extensionsList,
@@ -424,16 +426,7 @@ export function AppInner() {
     };
   }, []);
 
-  const { addExtension } = useConfig();
-
-  useEffect(() => {
-    try {
-      window.electron.reactReady();
-    } catch (error) {
-      console.error('Error sending reactReady:', error);
-      setFatalError(`React ready notification failed: ${errorMessage(error, 'Unknown error')}`);
-    }
-  }, []);
+  const { addExtension, extensionsList } = useConfig();
 
   useEffect(() => {
     const handleSystemResume = () => reconnectAcpAfterSystemResume();
@@ -604,19 +597,21 @@ export function AppInner() {
   }, [navigate]);
 
   useEffect(() => {
-    const handleStartRecipe = async (_event: IpcRendererEvent, ...args: unknown[]) => {
-      const payload = args[0] as { recipeDeeplink: string; recipeParameters?: Record<string, string> };
-      resetConfiguredRecipeParameters();
+    return window.electron.onStartRecipe(async (payload) => {
       try {
         const newSession = await createSession(getInitialWorkingDir(), {
-          recipeDeeplink: payload.recipeDeeplink,
-          recipeParameters: payload.recipeParameters,
+          ...payload,
+          allExtensions: extensionsList,
         });
         window.dispatchEvent(
           new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-            detail: { sessionId: newSession.id },
+            detail: {
+              sessionId: newSession.id,
+              initialMessage: resolveSessionInitialMessage(newSession),
+            },
           })
         );
+        navigate(`/pair?${new URLSearchParams({ resumeSessionId: newSession.id })}`);
       } catch (error) {
         if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) return;
         if (isRecipeParameterScopesUnsupported(error)) {
@@ -625,11 +620,16 @@ export function AppInner() {
         }
         console.error('Failed to start recipe from deep link:', error);
       }
-    };
-    window.electron.on('start-recipe', handleStartRecipe);
-    return () => {
-      window.electron.off('start-recipe', handleStartRecipe);
-    };
+    });
+  }, [extensionsList, navigate]);
+
+  useEffect(() => {
+    try {
+      window.electron.reactReady();
+    } catch (error) {
+      console.error('Error sending reactReady:', error);
+      setFatalError(`React ready notification failed: ${errorMessage(error, 'Unknown error')}`);
+    }
   }, []);
 
   // Register platform event handlers for app lifecycle management
