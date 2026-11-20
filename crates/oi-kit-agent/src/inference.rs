@@ -7,7 +7,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use oi_kit_provider_types::base::Provider;
-use oi_kit_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
+use oi_kit_provider_types::conversation::message::{
+    InferenceMetadata, Message, MessageContent, MessageUsage,
+};
 use oi_kit_provider_types::conversation::token_usage::ProviderUsage;
 use oi_kit_provider_types::conversation::{
     effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
@@ -15,6 +17,7 @@ use oi_kit_provider_types::conversation::{
 };
 use oi_kit_provider_types::errors::ProviderError;
 use oi_kit_provider_types::model::ModelConfig;
+use oi_kit_provider_types::pricing::{CatalogPrices, Prices};
 use tracing_futures::Instrument;
 
 use crate::machine::MachineSession;
@@ -261,6 +264,18 @@ fn unadvertised_tool_responses(
     (!tool_responses.content.is_empty()).then_some(tool_responses)
 }
 
+/// A hidden reply answers an operation's own request, such as compaction's, so its
+/// usage is recorded but not shown as the cost of a reply.
+fn attach_usage(replies: &mut Conversation, usage: &ProviderUsage) {
+    if let Some(reply) = replies.messages_mut().iter_mut().rev().find(|message| {
+        message.role == rmcp::model::Role::Assistant
+            && message.error_kind().is_none()
+            && message.is_user_visible()
+    }) {
+        reply.metadata.usage = Some(Box::new(MessageUsage::from_provider_usage(usage, false)));
+    }
+}
+
 #[derive(Default)]
 struct InferenceOutput {
     accumulator: Conversation,
@@ -272,6 +287,7 @@ pub struct InferenceRunner<'a, S, E> {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
+    prices: Arc<dyn Prices>,
     output: Mutex<InferenceOutput>,
     effect: std::marker::PhantomData<fn() -> E>,
 }
@@ -388,6 +404,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
             provider,
             model_config,
             request_preparer: Arc::new(IdentityInferenceRequestPreparer),
+            prices: Arc::new(CatalogPrices),
             output: Mutex::new(InferenceOutput::default()),
             effect: std::marker::PhantomData,
         }
@@ -401,12 +418,21 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         self
     }
 
+    /// Usage the provider reports without a cost is priced from `prices`.
+    pub fn with_prices(mut self, prices: Arc<dyn Prices>) -> Self {
+        self.prices = prices;
+        self
+    }
+
     fn output(&self) -> MutexGuard<'_, InferenceOutput> {
         self.output.lock().unwrap()
     }
 
     fn take_output(&self) -> Vec<E> {
-        let output = std::mem::take(&mut *self.output());
+        let mut output = std::mem::take(&mut *self.output());
+        if let Some(usage) = output.usage.last() {
+            attach_usage(&mut output.accumulator, usage);
+        }
         let mut effects: Vec<E> = output
             .additional_messages
             .into_iter()
@@ -605,6 +631,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     }
                 };
                 if let Some(usage) = usage_opt {
+                    let usage = usage.priced(self.provider.get_name(), self.prices.as_ref());
                     record_chat_usage(&tracing::Span::current(), &usage);
                     let mut output = self.output();
                     output.usage.truncate(attempt_start);

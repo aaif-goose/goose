@@ -24,11 +24,6 @@ pub trait MachineSession: MaybeSend + MaybeSync {
     fn thinking_effort(&self) -> Option<ThinkingEffort> {
         None
     }
-    /// The context size the provider reported for the latest request, when the
-    /// host tracks it. Compaction estimates the size itself otherwise.
-    fn reported_context_tokens(&self) -> Option<i64> {
-        None
-    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]

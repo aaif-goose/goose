@@ -13,6 +13,7 @@ pub mod maybe_send;
 pub(crate) mod mcp_utils;
 pub mod model;
 pub mod permission;
+pub mod pricing;
 pub mod request_log;
 pub mod retry;
 pub mod thinking;

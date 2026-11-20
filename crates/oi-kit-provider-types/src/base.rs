@@ -10,7 +10,7 @@ use tokio::sync::watch;
 use crate::{
     canonical::{
         catalog::ProviderSetupMetadata, map_to_canonical_model, recommended_models_from_registry,
-        CanonicalModelRegistry,
+        CanonicalModelRegistry, Pricing,
     },
     conversation::{
         message::{Message, MessageContentBlock},
@@ -283,6 +283,19 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// The declared per-token costs as per-million-token pricing. Both an input
+    /// and an output price are required: pricing one direction at zero would
+    /// underestimate silently.
+    pub fn pricing(&self) -> Option<Pricing> {
+        Some(Pricing {
+            input: Some(self.input_token_cost? * 1_000_000.0),
+            output: Some(self.output_token_cost? * 1_000_000.0),
+            cache_read: self.cache_read_token_cost.map(|cost| cost * 1_000_000.0),
+            cache_write: self.cache_write_token_cost.map(|cost| cost * 1_000_000.0),
+            tiers: Vec::new(),
+        })
+    }
+
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),

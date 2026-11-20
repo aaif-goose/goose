@@ -237,7 +237,8 @@ pub(crate) fn build_state_machine(
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
-            .with_request_preparer(Arc::new(request_preparer)),
+            .with_request_preparer(Arc::new(request_preparer))
+            .with_prices(crate::providers::canonical_cost::prices()),
     );
     let mut steps = Vec::new();
     if crate::agents::execute_commands::slash_commands_enabled() {

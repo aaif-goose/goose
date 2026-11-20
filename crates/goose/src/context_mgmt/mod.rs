@@ -180,7 +180,14 @@ impl oi_kit_context_management::CompactionModel for GooseCompactionModel {
             &[],
         )
         .instrument(span.clone())
-        .await;
+        .await
+        .map(|(message, usage)| {
+            let prices = crate::providers::canonical_cost::prices();
+            (
+                message,
+                usage.priced(self.provider.get_name(), prices.as_ref()),
+            )
+        });
         match &result {
             Ok((_, usage)) => oi_kit_agent::inference::record_chat_usage(&span, usage),
             Err(error) => {

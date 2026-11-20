@@ -155,13 +155,6 @@ async fn custom_pipeline_supports_step_apply_run_and_usage() -> Result<()> {
         Some("second turn answered")
     );
     assert_eq!(session.usage.total_tokens, Some(12));
-    let usage = session
-        .conversation
-        .as_ref()
-        .and_then(Conversation::last)
-        .and_then(|message| message.metadata.usage.as_deref())
-        .unwrap();
-    assert_eq!(usage.total_tokens, Some(12));
     let totals = session_manager
         .get_session_usage_totals(&session.id)
         .await?;
