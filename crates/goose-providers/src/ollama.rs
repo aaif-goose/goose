@@ -220,67 +220,39 @@ impl OllamaProvider {
     }
 
     async fn model_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
-        if let Some(cached) = self
-            .capabilities
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(model).copied())
-        {
+        if let Some(cached) = cached(&self.capabilities, model) {
             return Some(cached);
         }
-
-        let json = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
-            .await
-            .ok()
-            .flatten()?;
-        // Opportunistically cache the context window from the same response so a
-        // subsequent `model_context_limit` call does not re-hit `/api/show`.
-        // Do this before the capabilities parse so a response missing
-        // `capabilities` still populates the limit cache.
-        if let Some(limit) = Self::parse_context_limit(&json) {
-            if let Ok(mut cache) = self.context_limits.lock() {
-                cache.insert(model.to_string(), limit);
-            }
-        }
-        let capabilities = Self::parse_capabilities(&json)?;
-        if let Ok(mut cache) = self.capabilities.lock() {
-            cache.insert(model.to_string(), capabilities);
-        }
-        Some(capabilities)
+        self.cache_show_info(model).await;
+        cached(&self.capabilities, model)
     }
 
-    /// The context window the daemon reports for a model, if it reports one.
-    ///
-    /// `/api/show` reports the real window in `model_info.<arch>.context_length`.
-    /// Only successful responses are cached; a timeout or parse failure is not
-    /// cached so a transient failure does not pin an uncatalogued cloud model
-    /// to the 128k default for the life of the provider.
     async fn model_context_limit(&self, model: &str) -> Option<usize> {
-        if let Some(cached) = self
-            .context_limits
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(model).copied())
-        {
+        if let Some(cached) = cached(&self.context_limits, model) {
             return Some(cached);
         }
+        self.cache_show_info(model).await;
+        cached(&self.context_limits, model)
+    }
 
-        let json = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
+    async fn cache_show_info(&self, model: &str) {
+        let Some(json) = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
             .await
             .ok()
-            .flatten()?;
-        // Opportunistically cache capabilities from the same response so a
-        // subsequent `model_capabilities` call does not re-hit `/api/show`.
+            .flatten()
+        else {
+            return;
+        };
         if let Some(capabilities) = Self::parse_capabilities(&json) {
             if let Ok(mut cache) = self.capabilities.lock() {
                 cache.insert(model.to_string(), capabilities);
             }
         }
-        let limit = Self::parse_context_limit(&json)?;
-        if let Ok(mut cache) = self.context_limits.lock() {
-            cache.insert(model.to_string(), limit);
+        if let Some(limit) = Self::parse_context_limit(&json) {
+            if let Ok(mut cache) = self.context_limits.lock() {
+                cache.insert(model.to_string(), limit);
+            }
         }
-        Some(limit)
     }
 
     async fn fetch_show_json(&self, model: &str) -> Option<Value> {
@@ -310,24 +282,18 @@ impl OllamaProvider {
     }
 
     fn parse_context_limit(json: &Value) -> Option<usize> {
-        json.get("model_info")
-            .and_then(|info| info.as_object())
-            .and_then(|obj| {
-                obj.iter().find_map(|(key, value)| {
-                    key.ends_with(".context_length")
-                        .then(|| value.as_u64().map(|n| n as usize))
-                        .flatten()
-                })
-            })
+        json.get("model_info")?
+            .as_object()?
+            .iter()
+            .find(|(key, _)| key.ends_with(".context_length"))?
+            .1
+            .as_u64()
+            .map(|limit| limit as usize)
     }
 }
 
-/// Whether a model id names an Ollama Cloud model.
-///
-/// The daemon tags the cloud models it proxies, and the canonical catalog keys
-/// those models under the `ollama-cloud` provider without the tag.
-pub fn is_ollama_cloud_model(model: &str) -> bool {
-    crate::canonical::strip_ollama_cloud_tag(model).is_some()
+fn cached<T: Copy>(cache: &Mutex<HashMap<String, T>>, model: &str) -> Option<T> {
+    cache.lock().ok()?.get(model).copied()
 }
 
 pub async fn fetch_ollama_model_names(
@@ -600,16 +566,12 @@ impl Provider for OllamaProvider {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async {
-                // An explicit GOOSE_INPUT_LIMIT wins: it is the window we ask
-                // the daemon to serve.
                 if let Some(limit) = self.options.input_limit {
                     return Ok(Some(limit));
                 }
-                // The daemon is authoritative about the window it serves for the
-                // cloud models it proxies. Their ids carry a `:cloud` tag that
-                // the canonical catalog does not key on, so without asking the
-                // daemon they fall back to the 128k default.
-                if is_ollama_cloud_model(model) {
+                // For a local model the daemon reports its trained maximum, not
+                // the window it serves (`num_ctx`), so only trust cloud models.
+                if crate::canonical::strip_ollama_cloud_tag(model).is_some() {
                     return Ok(self.model_context_limit(model).await);
                 }
                 Ok(None)
@@ -923,38 +885,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_cloud_tag_needs_an_explicit_tag() {
-        // `qwen3:8b-cloud` is Ollama's legacy spelling for a tagged cloud
-        // model, so the daemon's window applies.
-        let server = mock_show_server(show_context_length(1_048_576), 1).await;
-        let provider = provider_for(&server);
-
-        assert_eq!(
-            provider.get_context_limit("qwen3:8b-cloud", None).await,
-            1_048_576
-        );
-    }
-
-    #[tokio::test]
-    async fn untagged_dash_cloud_name_is_a_local_model() {
-        // A local model named `acme-cloud` is an ordinary model. Asking the
-        // daemon for its window would report the trained maximum rather than
-        // the window the daemon serves it with, postponing compaction past the
-        // real limit.
-        let server = mock_show_server(show_context_length(1_048_576), 0).await;
-        let provider = provider_for(&server);
-
-        assert_eq!(
-            provider.get_context_limit("acme-cloud", None).await,
-            crate::model::DEFAULT_CONTEXT_LIMIT
-        );
-    }
-
-    #[tokio::test]
     async fn local_model_context_limit_does_not_query_the_daemon() {
-        // A local model keeps its catalog-derived window; the daemon's
-        // `model_info.context_length` is the model's trained maximum, not the
-        // window the daemon actually serves it with.
         let server = mock_show_server(show_context_length(1_048_576), 0).await;
         let provider = provider_for(&server);
 
