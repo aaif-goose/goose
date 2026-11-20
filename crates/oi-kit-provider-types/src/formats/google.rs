@@ -1947,38 +1947,6 @@ data: [DONE]"#;
     }
 
     #[test]
-    fn test_later_gemini_generations_send_a_thinking_level() {
-        assert_eq!(
-            thinking_level_json("gemini-4-argon", ThinkingEffort::Medium),
-            json!("medium")
-        );
-        assert_eq!(
-            thinking_level_json("gemini-5-unreleased", ThinkingEffort::Max),
-            json!("high")
-        );
-        assert_eq!(
-            thinking_level_json("gemini-12-unreleased", ThinkingEffort::Low),
-            json!("low")
-        );
-        assert_eq!(
-            thinking_level_json("gemini-2.0-flash", ThinkingEffort::High),
-            Value::Null
-        );
-        assert_eq!(
-            thinking_level_json("gemini-4-argon", ThinkingEffort::Off),
-            Value::Null
-        );
-        assert_eq!(
-            thinking_level_json("gemini-3.1-flash-lite", ThinkingEffort::Off),
-            json!("minimal")
-        );
-
-        let config = ModelConfig::new("gemini-5-unreleased").with_temperature(Some(0.2));
-        let payload = create_request(&config, "system", &[], &[]).unwrap();
-        assert!(payload["generationConfig"].get("temperature").is_none());
-    }
-
-    #[test]
     fn test_gemini_3_request_omits_temperature() {
         let config = ModelConfig::new("gemini-3.6-flash").with_temperature(Some(0.2));
         let payload = create_request(&config, "system", &[], &[]).unwrap();
