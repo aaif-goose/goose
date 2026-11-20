@@ -573,8 +573,18 @@ impl Config {
                 }
                 Err(error) => return Err(error.into()),
             }
-            let content = std::fs::read_to_string(path)?;
-            let layer = parse_yaml_content(&content)?;
+            let content = std::fs::read_to_string(path).map_err(|error| {
+                ConfigError::FileError(std::io::Error::new(
+                    error.kind(),
+                    format!("{}: {}", path.display(), error),
+                ))
+            })?;
+            let layer = parse_yaml_content(&content).map_err(|error| match error {
+                ConfigError::DeserializeError(message) => {
+                    ConfigError::DeserializeError(format!("{}: {}", path.display(), message))
+                }
+                other => other,
+            })?;
             merge_config_values(&mut merged, layer);
         }
 
@@ -1330,15 +1340,7 @@ config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
 impl Config {
     pub fn get_goose_mode_or_default(&self) -> Result<GooseMode, ConfigError> {
-        if let Err(env::VarError::NotUnicode(_)) = env::var("GOOSE_MODE") {
-            return Err(ConfigError::DeserializeError(
-                "GOOSE_MODE contains non-Unicode data".to_string(),
-            ));
-        }
-        match self.get_goose_mode() {
-            Err(ConfigError::NotFound(_)) => Ok(GooseMode::Auto),
-            result => result,
-        }
+        self.resolve_goose_mode()
     }
 
     pub(crate) fn resolve_goose_mode(&self) -> Result<GooseMode, ConfigError> {
@@ -1572,6 +1574,53 @@ mod tests {
             config.get_goose_mode_or_default(),
             Err(ConfigError::DeserializeError(_))
         ));
+    }
+
+    #[test]
+    fn goose_mode_or_default_rejects_unparseable_layer_over_valid_lower_layer() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let lower = NamedTempFile::new().unwrap();
+        let upper = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        std::fs::write(lower.path(), "GOOSE_MODE: approve\n").unwrap();
+        std::fs::write(upper.path(), "GOOSE_MODE: [unclosed\n").unwrap();
+        let config = Config::new_with_config_paths(
+            vec![lower.path().to_path_buf(), upper.path().to_path_buf()],
+            secrets_file.path(),
+        )
+        .unwrap();
+
+        match config.get_goose_mode_or_default() {
+            Err(ConfigError::DeserializeError(message)) => assert!(
+                message.contains(&upper.path().display().to_string()),
+                "{message}"
+            ),
+            other => panic!("expected the broken layer's parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn goose_mode_or_default_rejects_unreadable_lower_layer_and_names_it() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let unreadable = TempDir::new().unwrap();
+        let upper = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        std::fs::write(upper.path(), "GOOSE_MODE: approve\n").unwrap();
+        let config = Config::new_with_config_paths(
+            vec![unreadable.path().to_path_buf(), upper.path().to_path_buf()],
+            secrets_file.path(),
+        )
+        .unwrap();
+
+        match config.get_goose_mode_or_default() {
+            Err(ConfigError::FileError(error)) => assert!(
+                error
+                    .to_string()
+                    .contains(&unreadable.path().display().to_string()),
+                "{error}"
+            ),
+            other => panic!("expected the unreadable layer's read error, got {other:?}"),
+        }
     }
 
     #[test]
