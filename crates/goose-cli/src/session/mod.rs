@@ -667,6 +667,8 @@ impl CliSession {
                 })
                 .collect();
 
+            self.refresh_thinking_effort_values().await;
+
             output::run_status_hook("waiting");
             program_status::report_idle();
             let input = input::get_input(&mut editor, Some(&conversation_strings))?;
@@ -2008,6 +2010,20 @@ impl CliSession {
 
         cache.last_updated = Instant::now();
         Ok(())
+    }
+
+    /// ACP agents can rebuild their effort selector mid-turn, so re-read the
+    /// provider's effort support before each prompt instead of waiting for a
+    /// full completion refresh.
+    async fn refresh_thinking_effort_values(&self) {
+        let Ok(provider) = self.services.provider(&self.session_id).await else {
+            return;
+        };
+        let values = thinking_effort_values(provider.as_ref());
+        self.completion_cache
+            .write()
+            .unwrap()
+            .thinking_effort_values = values;
     }
 
     /// Invalidate the completion cache
@@ -3688,6 +3704,43 @@ mod tests {
                     }
                 ),
             ),
+            ["minimal"]
+        );
+    }
+
+    #[tokio::test]
+    async fn effort_completions_follow_provider_support_before_each_prompt() {
+        let session = session_with_loader(None, false).await;
+        session
+            .services
+            .update_provider(
+                Arc::new(EffortSupportProvider {
+                    manages_own_context: true,
+                    support: ThinkingEffortSupport::Options(
+                        oi_kit_providers::thinking::ThinkingEffortCapability {
+                            option_id: "effort".to_string(),
+                            values: vec![oi_kit_providers::thinking::ThinkingEffortOption {
+                                value: "minimal".to_string(),
+                                label: "Minimal".to_string(),
+                            }],
+                            current: None,
+                        },
+                    ),
+                }),
+                oi_kit_providers::model::ModelConfig::new("harness-model"),
+                &session.session_id,
+            )
+            .await
+            .unwrap();
+
+        session.refresh_thinking_effort_values().await;
+
+        assert_eq!(
+            session
+                .completion_cache
+                .read()
+                .unwrap()
+                .thinking_effort_values,
             ["minimal"]
         );
     }
