@@ -10,11 +10,16 @@ fi
 
 rm -f "$w/root/state/logs/"llm_request.*.jsonl
 
-while read -r name; do
-  case $name in GOOSE_*) unset "$name" ;; esac
-done < <(compgen -e)
+keep=()
+for name in PATH TMPDIR SSL_CERT_FILE SSL_CERT_DIR \
+  HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY http_proxy https_proxy no_proxy all_proxy; do
+  if [ -n "${!name:-}" ]; then
+    keep+=("$name=${!name}")
+  fi
+done
 
-export HOME="$w/home" GOOSE_PATH_ROOT="$w/root" GOOSE_DISABLE_KEYRING=1
 mkdir -p "$w/home" "$w/root" "$w/work"
 cd "$w/work"
-timeout 120 env "$@" "$w/bin/goose" run --text "hi" --no-session > "$w/last_run.txt" 2>&1
+timeout 120 env -i "${keep[@]}" \
+  HOME="$w/home" GOOSE_PATH_ROOT="$w/root" GOOSE_DISABLE_KEYRING=1 "$@" \
+  "$w/bin/goose" run --text "hi" --no-session > "$w/last_run.txt" 2>&1

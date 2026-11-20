@@ -78,7 +78,7 @@ For each new model, run once per thinking setting: `off`, `low`, `medium`, `high
 "$S/run_goose.sh" "$W" GOOSE_PROVIDER=<provider> GOOSE_MODEL=<model> <KEY_VARIABLE>=fake-key GOOSE_THINKING_EFFORT=<setting>
 ```
 
-The script clears any `GOOSE_*` settings from your environment, keeps all of goose's files under `$W/root`, and writes goose's output to `$W/last_run.txt`. Let every run finish.
+The script starts goose without your environment, except `PATH`, temp and proxy settings, keeps all of goose's files under `$W/root`, and writes goose's output to `$W/last_run.txt`. Let every run finish.
 
 After each run, find the real request in `$W/root/state/logs/llm_request.*.jsonl`. Each file's first line is a JSON object with `model_config` and `input`; `input` is the exact request goose sent. Each run usually logs two requests:
 - **The real request:** `model_config.request_params.thinking_effort` matches the setting you ran, and there's no `disable_prompt_cache`.
