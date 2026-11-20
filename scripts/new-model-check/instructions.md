@@ -93,7 +93,7 @@ After each run, find the real request in `$W/home/.local/state/goose/logs/llm_re
 
 Copy the real request's file to `$W/requests/<model>-<setting>.jsonl`; the next run deletes the logs.
 
-If there's no real request, report that for this model and move on.
+If there's no real request, that setting is a FAIL: record "no request sent" and the error line from `$W/last_run.txt`.
 
 ## 5. Where the settings are in the request
 
