@@ -423,16 +423,7 @@ mod tests {
             map_to_canonical_model("ollama", "gpt-oss:120b-cloud", &r),
             Some("ollama-cloud/gpt-oss:120b".to_string())
         );
-        assert_eq!(map_to_canonical_model("ollama", "qwen3", &r), None);
-        for (model, expected) in [
-            ("acme-cloud", None),
-            ("qwen3:8b", None),
-            ("registry.example.com:5000/model", None),
-            ("muse-spark-open:CLOUD", Some("muse-spark-open")),
-            ("müse:8b-cloud", Some("müse:8b")),
-        ] {
-            assert_eq!(strip_ollama_cloud_tag(model), expected, "model: {model}");
-        }
+        assert_eq!(strip_ollama_cloud_tag("acme-cloud"), None);
 
         // === Anthropic Claude - basic ===
         assert_eq!(

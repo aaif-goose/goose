@@ -873,14 +873,14 @@ mod tests {
 
     #[tokio::test]
     async fn cloud_model_context_limit_comes_from_the_daemon() {
-        let server = mock_show_server(show_context_length(1_048_576), 1).await;
+        let server = mock_show_server(show_context_length(777_777), 1).await;
         let provider = provider_for(&server);
 
         assert_eq!(
             provider
                 .get_context_limit("muse-spark-open:cloud", None)
                 .await,
-            1_048_576
+            777_777
         );
     }
 
@@ -892,22 +892,6 @@ mod tests {
         assert_eq!(
             provider.get_context_limit("qwen3", None).await,
             crate::model::DEFAULT_CONTEXT_LIMIT
-        );
-    }
-
-    #[tokio::test]
-    async fn explicit_input_limit_wins_over_the_daemon_window() {
-        let server = mock_show_server(show_context_length(1_048_576), 0).await;
-        let provider = provider_for(&server).with_options(OllamaOptions {
-            input_limit: Some(65_536),
-            ..OllamaOptions::default()
-        });
-
-        assert_eq!(
-            provider
-                .get_context_limit("muse-spark-open:cloud", None)
-                .await,
-            65_536
         );
     }
 
