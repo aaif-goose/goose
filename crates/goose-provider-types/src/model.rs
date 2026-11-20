@@ -887,6 +887,18 @@ mod tests {
         }
 
         #[test]
+        fn resolves_gemini_4_neon_on_databricks() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config =
+                ModelConfig::new("system.ai.gemini-4-neon").with_canonical_limits("databricks");
+            assert_eq!(config.max_tokens, Some(65_536));
+            assert_eq!(config.reasoning, Some(true));
+        }
+
+        #[test]
         fn unknown_model_leaves_fields_none() {
             let _guard = env_lock::lock_env([
                 ("GOOSE_MAX_TOKENS", None::<&str>),

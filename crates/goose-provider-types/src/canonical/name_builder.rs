@@ -484,6 +484,11 @@ mod tests {
             Some("google/gemini-2.5-flash".to_string())
         );
 
+        assert_eq!(
+            map_to_canonical_model("databricks", "system.ai.gemini-4-neon", &r),
+            Some("google/gemini-4-neon".to_string())
+        );
+
         // === Mistral variants ===
         assert_eq!(
             map_to_canonical_model("databricks", "codestral", &r),

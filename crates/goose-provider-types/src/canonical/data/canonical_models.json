@@ -63622,6 +63622,45 @@
     }
   },
   {
+    "id": "cortecs/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.412,
+      "output": 17.061,
+      "cache_read": 0.17
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "cortecs/gemma-3-27b-it",
     "name": "Gemma 3 27B IT",
     "family": "gemma",
@@ -67060,6 +67099,45 @@
       "output": 7.5,
       "cache_read": 0.075,
       "cache_write": 1.5
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "crossmodel/gemini/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
+      "cache_write": 3.0
     },
     "limit": {
       "context": 1048576,
@@ -83587,6 +83665,47 @@
     }
   },
   {
+    "id": "edenai/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
+      "cache_write": 0.083333
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "edenai/google/gemini-flash",
     "name": "Gemini Flash Latest (Gemini 3.8 Flash)",
     "family": "gemini-flash",
@@ -90521,6 +90640,129 @@
       "input": 1.65,
       "output": 8.25,
       "cache_read": 0.0825,
+      "cache_write": 0.091667
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "edenai/vertex/gemini-4-neon",
+    "name": "Gemini 4 Neon (Vertex AI)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
+      "cache_write": 0.083333
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "edenai/vertex/gemini-4-neon@eu",
+    "name": "Gemini 4 Neon (Vertex AI, EU)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.3,
+      "output": 16.5,
+      "cache_read": 0.165,
+      "cache_write": 0.091667
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "edenai/vertex/gemini-4-neon@us",
+    "name": "Gemini 4 Neon (Vertex AI, US)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.3,
+      "output": 16.5,
+      "cache_read": 0.165,
       "cache_write": 0.091667
     },
     "limit": {
@@ -101452,6 +101694,44 @@
     }
   },
   {
+    "id": "github-copilot/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "github-copilot/gpt-5-mini",
     "name": "GPT-5 Mini",
     "family": "gpt-mini",
@@ -106341,6 +106621,46 @@
     }
   },
   {
+    "id": "google-vertex/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "google-vertex/gemini-embedding-001",
     "name": "Gemini Embedding 001",
     "family": "gemini",
@@ -108098,6 +108418,46 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
     },
     "limit": {
       "context": 1048576,
@@ -135198,6 +135558,47 @@
     }
   },
   {
+    "id": "kilo/google/gemini-4-neon",
+    "name": "Google: Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
+      "cache_write": 0.041667
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
+    }
+  },
+  {
     "id": "kilo/google/gemini-nano-banana-2.1",
     "name": "Nano Banana 2.1",
     "family": "gemini-flash",
@@ -158443,6 +158844,46 @@
     }
   },
   {
+    "id": "llmgateway-providers/google-ai-studio/gemini-4-neon",
+    "name": "Gemini 4 Neon (Google AI Studio)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "llmgateway-providers/google-ai-studio/gemini-pro",
     "name": "Gemini Pro Latest (Google AI Studio)",
     "family": "gemini-pro",
@@ -158919,6 +159360,46 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway-providers/google-vertex/gemini-4-neon",
+    "name": "Gemini 4 Neon (Google Vertex AI)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
     },
     "limit": {
       "context": 1048576,
@@ -169198,6 +169679,46 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
     },
     "limit": {
       "context": 1048576,
@@ -181176,6 +181697,39 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "merge-gateway/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
     },
     "limit": {
       "context": 1048576,
@@ -225641,6 +226195,46 @@
     }
   },
   {
+    "id": "ofox/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "ofox/minimax/m2-her",
     "name": "MiniMax-M2 Her",
     "family": "minimax",
@@ -234709,6 +235303,46 @@
     }
   },
   {
+    "id": "opencode/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "opencode/glm-4.6",
     "name": "GLM-4.6",
     "family": "glm",
@@ -241157,6 +241791,47 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075,
+      "cache_write": 0.083333
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
+    }
+  },
+  {
+    "id": "openrouter/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
       "cache_write": 0.083333
     },
     "limit": {
@@ -267664,6 +268339,44 @@
     }
   },
   {
+    "id": "prime/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "audio",
+        "image",
+        "text",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
+    }
+  },
+  {
     "id": "prime/google/gemma-3-27b-it",
     "name": "Gemma 3 27B",
     "family": "gemma",
@@ -276294,6 +277007,132 @@
       "output": 8.25,
       "cache_read": 0.0825,
       "cache_write": 1.65
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "requesty/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15,
+      "cache_write": 3.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "requesty/gemini-4-neon@eu",
+    "name": "Gemini 4 Neon (EU)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.3,
+      "output": 16.5,
+      "cache_read": 0.165,
+      "cache_write": 3.3
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "requesty/gemini-4-neon@us",
+    "name": "Gemini 4 Neon (US)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.3,
+      "output": 16.5,
+      "cache_read": 0.165,
+      "cache_write": 3.3
     },
     "limit": {
       "context": 1048576,
@@ -306458,6 +307297,45 @@
     }
   },
   {
+    "id": "venice/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.75,
+      "output": 18.75,
+      "cache_read": 0.1875
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 65536
+    }
+  },
+  {
     "id": "venice/glm-5.3-flash-uncensored",
     "name": "GLM 5.3 Flash Uncensored",
     "family": "glm",
@@ -314254,6 +315132,44 @@
       "input": 1.5,
       "output": 7.5,
       "cache_read": 0.075
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 1000000
+    }
+  },
+  {
+    "id": "vercel/google/gemini-4-neon",
+    "name": "Gemini 4 Neon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-03",
+    "release_date": "2026-11-18",
+    "last_updated": "2026-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
     },
     "limit": {
       "context": 1000000,

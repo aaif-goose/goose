@@ -1937,6 +1937,10 @@ data: [DONE]"#;
             json!("xhigh")
         );
         assert_eq!(
+            thinking_level_json("gemini-4-neon", ThinkingEffort::Max),
+            json!("xhigh")
+        );
+        assert_eq!(
             thinking_level_json("gemini-4-argon", ThinkingEffort::Max),
             json!("high")
         );
