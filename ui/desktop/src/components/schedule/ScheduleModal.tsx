@@ -198,6 +198,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
     async (value: string) => {
       const requestId = bumpSourceRequest();
       setDeepLinkInput(value);
+      setParsedRecipe(null);
       setInternalValidationError(null);
 
       if (value.trim()) {
@@ -293,6 +294,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
       if (fileResponse.filePath.endsWith('.yaml') || fileResponse.filePath.endsWith('.yml')) {
         const requestId = bumpSourceRequest();
         setRecipeSourcePath(fileResponse.filePath);
+        setParsedRecipe(null);
         setInternalValidationError(null);
 
         try {
