@@ -9014,6 +9014,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c6164a3fe384de936dbf73c7141f56c017a3fe02ec7107e67297e61b235fdd9"
 dependencies = [
+ "aws-lc-rs",
  "const-oid 0.9.6",
  "der 0.7.10",
  "futures-io",
