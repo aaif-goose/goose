@@ -30,7 +30,7 @@ pub struct AcpServerConnection {
     permission: Arc<Mutex<PermissionDecision>>,
     notify: Arc<Notify>,
     permission_manager: Arc<PermissionManager>,
-    _openai: super::OpenAiFixture,
+    _openai: Arc<super::OpenAiFixture>,
     _temp_dir: Option<tempfile::TempDir>,
 }
 
@@ -183,121 +183,28 @@ impl Connection for AcpServerConnection {
     }
 
     async fn new(config: TestConnectionConfig, openai: super::OpenAiFixture) -> Self {
-        let (data_root, temp_dir) = match config.data_root.as_os_str().is_empty() {
-            true => {
-                let temp_dir = tempfile::tempdir().unwrap();
-                (temp_dir.path().to_path_buf(), Some(temp_dir))
-            }
-            false => (config.data_root.clone(), None),
-        };
+        let (data_root, temp_dir) = Self::resolve_data_root(&config);
 
         let (transport, _handle, permission_manager) = spawn_acp_server_in_process(
             openai.uri(),
             &config.builtins,
             data_root.as_path(),
             config.goose_mode,
-            config.provider_factory,
+            config.provider_factory.clone(),
             &config.current_model,
             config.disable_session_naming,
         )
         .await;
 
-        let updates = Arc::new(Mutex::new(Vec::new()));
-        let notify = Arc::new(Notify::new());
-        let permission = Arc::new(Mutex::new(PermissionDecision::Cancel));
-
-        let cx = {
-            let updates_clone = updates.clone();
-            let notify_clone = notify.clone();
-            let permission_clone = permission.clone();
-
-            let cx_holder: Arc<Mutex<Option<ConnectionTo<Agent>>>> = Arc::new(Mutex::new(None));
-            let cx_holder_clone = cx_holder.clone();
-
-            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-
-            tokio::spawn(async move {
-                let result = Client
-                    .builder()
-                    .on_receive_notification(
-                        {
-                            let updates = updates_clone.clone();
-                            let notify = notify_clone.clone();
-                            async move |notification: SessionNotification, _cx| {
-                                updates.lock().unwrap().push(notification);
-                                notify.notify_waiters();
-                                Ok(())
-                            }
-                        },
-                        agent_client_protocol::on_receive_notification!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let permission = permission_clone.clone();
-                            async move |req: RequestPermissionRequest, responder, _connection_cx| {
-                                let decision = *permission.lock().unwrap();
-                                responder.respond(map_permission_response(&req, decision))
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .connect_with(transport.into_byte_streams(), {
-                        let cx_holder = cx_holder_clone;
-                        async move |cx: ConnectionTo<Agent>| {
-                            let resp = cx
-                                .send_request(InitializeRequest::new(ProtocolVersion::V1))
-                                .block_task()
-                                .await
-                                .unwrap();
-                            assert_eq!(
-                                resp.protocol_version,
-                                ProtocolVersion::V1,
-                                "initialize response must negotiate ACP V1"
-                            );
-                            assert_eq!(
-                                resp.agent_info.as_ref().map(|info| info.name.as_str()),
-                                Some("goose"),
-                                "initialize response must identify the agent"
-                            );
-                            assert!(
-                                resp.agent_capabilities
-                                    .session_capabilities
-                                    .delete
-                                    .as_ref()
-                                    .is_some(),
-                                "initialize response must advertise session/delete"
-                            );
-
-                            *cx_holder.lock().unwrap() = Some(cx.clone());
-                            let _ = ready_tx.send(());
-
-                            std::future::pending::<Result<(), agent_client_protocol::Error>>().await
-                        }
-                    })
-                    .await;
-
-                if let Err(e) = result {
-                    tracing::error!("SACP client error: {e}");
-                }
-            });
-
-            ready_rx.await.unwrap();
-            let cx = cx_holder.lock().unwrap().take().unwrap();
-            cx
-        };
-
-        Self {
-            cx,
-            pending_mcp_servers: config.mcp_servers,
-            cwd: config.cwd,
+        Self::with_transport(
+            config,
             data_root,
-            updates,
-            permission,
-            notify,
+            temp_dir,
+            transport,
             permission_manager,
-            _openai: openai,
-            _temp_dir: temp_dir,
-        }
+            Arc::new(openai),
+        )
+        .await
     }
 
     async fn new_session(&mut self) -> anyhow::Result<SessionData<AcpServerSession>> {
@@ -550,4 +457,184 @@ fn extract_tool_status(updates: &Arc<Mutex<Vec<SessionNotification>>>) -> Option
         }
         None
     })
+}
+
+impl AcpServerConnection {
+    fn resolve_data_root(
+        config: &TestConnectionConfig,
+    ) -> (std::path::PathBuf, Option<tempfile::TempDir>) {
+        match config.data_root.as_os_str().is_empty() {
+            true => {
+                let temp_dir = tempfile::tempdir().unwrap();
+                (temp_dir.path().to_path_buf(), Some(temp_dir))
+            }
+            false => (config.data_root.clone(), None),
+        }
+    }
+
+    /// Two clients on ONE server, started from `config`: each gets its own ACP
+    /// connection, and both share one set of services (one session store, one
+    /// active-run registry) the way `AcpServer` serves two real clients.
+    pub async fn new_pair(
+        mut config: TestConnectionConfig,
+        openai: super::OpenAiFixture,
+    ) -> (Self, Self) {
+        let (data_root, temp_dir) = Self::resolve_data_root(&config);
+        config.data_root = data_root.clone();
+        let server = super::start_test_acp_server(
+            openai.uri(),
+            &config.builtins,
+            data_root.as_path(),
+            config.goose_mode,
+            config.provider_factory.clone(),
+            &config.current_model,
+            config.disable_session_naming,
+        )
+        .await;
+        let openai = Arc::new(openai);
+
+        // The second client is a spectator: no MCP servers, no work dir of its
+        // own, pointed at the same store.
+        let watcher_config = TestConnectionConfig {
+            mcp_servers: Vec::new(),
+            builtins: config.builtins.clone(),
+            goose_mode: config.goose_mode,
+            cwd: None,
+            data_root: data_root.clone(),
+            provider_factory: config.provider_factory.clone(),
+            current_model: config.current_model.clone(),
+            disable_session_naming: config.disable_session_naming,
+        };
+
+        let first =
+            Self::on_server_with(config, &openai, &server, data_root.clone(), temp_dir).await;
+        let second = Self::on_server_with(watcher_config, &openai, &server, data_root, None).await;
+
+        (first, second)
+    }
+
+    async fn on_server_with(
+        config: TestConnectionConfig,
+        openai: &Arc<super::OpenAiFixture>,
+        server: &super::TestAcpServer,
+        data_root: std::path::PathBuf,
+        temp_dir: Option<tempfile::TempDir>,
+    ) -> Self {
+        let (transport, _handle) = server.serve_client().await;
+        Self::with_transport(
+            config,
+            data_root,
+            temp_dir,
+            transport,
+            server.permission_manager(),
+            Arc::clone(openai),
+        )
+        .await
+    }
+
+    async fn with_transport(
+        config: TestConnectionConfig,
+        data_root: std::path::PathBuf,
+        temp_dir: Option<tempfile::TempDir>,
+        transport: super::DuplexTransport,
+        permission_manager: Arc<PermissionManager>,
+        openai: Arc<super::OpenAiFixture>,
+    ) -> Self {
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        let notify = Arc::new(Notify::new());
+        let permission = Arc::new(Mutex::new(PermissionDecision::Cancel));
+
+        let cx = {
+            let updates_clone = updates.clone();
+            let notify_clone = notify.clone();
+            let permission_clone = permission.clone();
+
+            let cx_holder: Arc<Mutex<Option<ConnectionTo<Agent>>>> = Arc::new(Mutex::new(None));
+            let cx_holder_clone = cx_holder.clone();
+
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+
+            tokio::spawn(async move {
+                let result = Client
+                    .builder()
+                    .on_receive_notification(
+                        {
+                            let updates = updates_clone.clone();
+                            let notify = notify_clone.clone();
+                            async move |notification: SessionNotification, _cx| {
+                                updates.lock().unwrap().push(notification);
+                                notify.notify_waiters();
+                                Ok(())
+                            }
+                        },
+                        agent_client_protocol::on_receive_notification!(),
+                    )
+                    .on_receive_request(
+                        {
+                            let permission = permission_clone.clone();
+                            async move |req: RequestPermissionRequest, responder, _connection_cx| {
+                                let decision = *permission.lock().unwrap();
+                                responder.respond(map_permission_response(&req, decision))
+                            }
+                        },
+                        agent_client_protocol::on_receive_request!(),
+                    )
+                    .connect_with(transport.into_byte_streams(), {
+                        let cx_holder = cx_holder_clone;
+                        async move |cx: ConnectionTo<Agent>| {
+                            let resp = cx
+                                .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                                .block_task()
+                                .await
+                                .unwrap();
+                            assert_eq!(
+                                resp.protocol_version,
+                                ProtocolVersion::V1,
+                                "initialize response must negotiate ACP V1"
+                            );
+                            assert_eq!(
+                                resp.agent_info.as_ref().map(|info| info.name.as_str()),
+                                Some("goose"),
+                                "initialize response must identify the agent"
+                            );
+                            assert!(
+                                resp.agent_capabilities
+                                    .session_capabilities
+                                    .delete
+                                    .as_ref()
+                                    .is_some(),
+                                "initialize response must advertise session/delete"
+                            );
+
+                            *cx_holder.lock().unwrap() = Some(cx.clone());
+                            let _ = ready_tx.send(());
+
+                            std::future::pending::<Result<(), agent_client_protocol::Error>>().await
+                        }
+                    })
+                    .await;
+
+                if let Err(e) = result {
+                    tracing::error!("SACP client error: {e}");
+                }
+            });
+
+            ready_rx.await.unwrap();
+            let cx = cx_holder.lock().unwrap().take().unwrap();
+            cx
+        };
+
+        Self {
+            cx,
+            pending_mcp_servers: config.mcp_servers,
+            cwd: config.cwd,
+            data_root,
+            updates,
+            permission,
+            notify,
+            permission_manager,
+            _openai: openai,
+            _temp_dir: temp_dir,
+        }
+    }
 }
