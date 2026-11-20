@@ -11,12 +11,18 @@ if [ -z "$sha" ]; then
   exit 1
 fi
 
+if command -v bun >/dev/null; then
+  bun=(bun)
+else
+  bun=(npx --yes bun)
+fi
+
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 
 git clone --quiet "https://github.com/$repo" "$dir"
 git -C "$dir" checkout --quiet "$sha"
-(cd "$dir" && bun install --frozen-lockfile) >&2
-(cd "$dir/packages/web" && bun ./script/build.ts) >&2
+(cd "$dir" && "${bun[@]}" install --frozen-lockfile) >&2
+(cd "$dir/packages/web" && "${bun[@]}" ./script/build.ts) >&2
 cp "$dir/packages/web/dist/_api.json" "$out"
 echo "$sha"
