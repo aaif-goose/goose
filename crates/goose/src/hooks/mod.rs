@@ -237,6 +237,9 @@ pub struct HookContext {
     pub tool_input: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_output: Option<Value>,
+    /// `PostToolUseFailure` only: why the call failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,6 +271,7 @@ impl HookContext {
             tool_name: None,
             tool_input: None,
             tool_output: None,
+            error: None,
             message: None,
             last_assistant_message: None,
             working_dir: None,
@@ -288,6 +292,11 @@ impl HookContext {
 
     pub fn with_tool_output(mut self, output: Value) -> Self {
         self.tool_output = Some(output);
+        self
+    }
+
+    pub fn with_error(mut self, error: impl Into<String>) -> Self {
+        self.error = Some(error.into());
         self
     }
 
@@ -1064,21 +1073,26 @@ async fn run_command_hook_inner(
         .spawn()
         .with_context(|| format!("spawning hook `{command}`"))?;
 
-    let mut stdin_delivered = true;
-    if let Some(mut stdin) = child.stdin.take() {
+    // The payload is written while the output is read. A hook that prints as it
+    // reads would otherwise fill its stdout pipe and stop reading stdin, and both
+    // sides would wait on each other until the timeout.
+    let stdin = child.stdin.take();
+    let deliver = async {
+        let Some(mut stdin) = stdin else {
+            return true;
+        };
         if let Err(err) = stdin.write_all(payload.as_bytes()).await {
-            stdin_delivered = false;
             warn!(command = %command, error = %err, "Could not deliver the hook payload");
-        } else if let Err(err) = stdin.shutdown().await {
-            stdin_delivered = false;
-            warn!(command = %command, error = %err, "Could not close the hook stdin pipe");
+            return false;
         }
-    }
-
-    let output = child
-        .wait_with_output()
-        .await
-        .with_context(|| format!("waiting on hook `{command}`"))?;
+        if let Err(err) = stdin.shutdown().await {
+            warn!(command = %command, error = %err, "Could not close the hook stdin pipe");
+            return false;
+        }
+        true
+    };
+    let (stdin_delivered, output) = tokio::join!(deliver, child.wait_with_output());
+    let output = output.with_context(|| format!("waiting on hook `{command}`"))?;
     Ok(HookRun {
         output,
         stdin_delivered,
@@ -1118,6 +1132,20 @@ fn expand_plugin_root(command: &str, plugin_root: &Path) -> String {
 mod tests {
     use super::*;
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_hook_that_echoes_a_large_payload_does_not_stall() {
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = "x".repeat(1024 * 1024);
+
+        let hook = run_command_hook("cat", tmp.path(), &payload, Duration::from_secs(10))
+            .await
+            .unwrap();
+
+        assert!(hook.stdin_delivered);
+        assert_eq!(hook.output.stdout.len(), payload.len());
+    }
 
     fn write_plugin(root: &Path, name: &str, hooks_json: &str) -> PathBuf {
         let plugin = root.join(name);
