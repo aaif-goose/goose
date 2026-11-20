@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.16](https://github.com/aaif-goose/goose/compare/oi-kit-v0.1.0-alpha.15...oi-kit-v0.1.0-alpha.16) - 2026-11-20
+
+### Added
+
+- *(providers)* add Gemini 4 Neon to the model catalog ([#13684](https://github.com/aaif-goose/goose/pull/13684))
+
+### Fixed
+
+- *(providers)* resolve Ollama Cloud model context window from the daemon ([#13152](https://github.com/aaif-goose/goose/pull/13152))
+- *(google)* send thinking levels to Gemini 4 and later, including xhigh ([#13673](https://github.com/aaif-goose/goose/pull/13673))
+
 ## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
 
 ### Added
