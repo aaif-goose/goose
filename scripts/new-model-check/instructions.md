@@ -8,10 +8,23 @@ If a setup command fails (the script, the download, the install), post the error
 
 ## 1. Find new models
 
-From a goose checkout, run:
+From a goose checkout, get the models.dev data:
 
 ```
-node scripts/new-model-check/check_new_models.mjs > new_models.json
+CATALOG="$(mktemp -d)/models_dev_api.json"
+scripts/new-model-check/download_models_dev.sh "$CATALOG"
+```
+
+If the download fails (some sandboxes block models.dev), build the same file from the models.dev repository instead. The script prints the models.dev commit it built from; keep it for the report.
+
+```
+scripts/new-model-check/build_models_dev.sh "$CATALOG"
+```
+
+If both fail, post both errors and stop. Once you have the file, run:
+
+```
+node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 ```
 
 - Exit code 0: nothing new. Stop; post nothing.
@@ -32,7 +45,7 @@ HOME="$W/home" GOOSE_BIN_DIR="$W/bin" CONFIGURE=false bash "$W/download_cli.sh"
 R="$W/results.md"
 ```
 
-Record results in `$R` as you go, never at the end. Write the goose version as its first line. After every check, write one line: model, release or canary, setting, check, value sent, value expected, result. Write notes and the canary version there too.
+Record results in `$R` as you go, never at the end. Write the goose version as its first line, and where the models.dev data came from as the second: downloaded, or built from commit `<sha>`. After every check, write one line: model, release or canary, setting, check, value sent, value expected, result. Write notes and the canary version there too.
 
 Define this helper. Let goose finish every run: don't pipe its output into anything that stops reading early, like `head`, or goose is cut off before it sends the real request.
 
@@ -44,7 +57,12 @@ run() {
 }
 ```
 
-Then do one warm-up run with any new model (settings in step 3) and ignore the result. On its first run, goose hasn't downloaded models.dev yet and falls back to a 4096 output limit.
+Then give goose the models.dev data from step 1. Without it, goose has only its built-in model list, which doesn't know the new models, so it uses a 4096 output limit for them. goose still tries to download models.dev itself; where that's blocked, it keeps this copy.
+
+```
+mkdir -p "$W/home/.local/share/goose/model_catalog"
+cp "$CATALOG" "$W/home/.local/share/goose/model_catalog/models_dev_api.json"
+```
 
 ## 3. Provider settings
 
@@ -129,7 +147,7 @@ W=$C
 cd "$W/work"
 ```
 
-Do the warm-up run, then repeat the failing checks.
+Copy the models.dev data into this goose's home folder as in step 2, then repeat the failing checks.
 
 - **Canary passes:** the fix is on main. Name the PR if you can find it. If `gh release list -R aaif-goose/goose -L 1` shows a newer release than the one you tested and it includes the fix, report that no action is needed, because stable will catch up soon. Otherwise, report that a patch release is needed.
 - **Canary fails too:** in your goose checkout, on the latest main, read that provider's request code and find why. Report the file and line, and describe the fix.
@@ -168,4 +186,4 @@ Tested goose 1.60.1 (main 1.60.0-canary+42055e7)
 - **Action needed** comes first. List every action, or write "None". An action is one of: a patch release, review a PR, a fix with no PR (say why), or look at a note.
 - **New models:** one PASS or FAIL line per model. End a FAIL line with its action in bold: **No action.**, **Patch release.**, **Review PR <link>.** or **Needs a fix.** List each failed check below it, with the value sent and the value expected, and the cause's file and line if main fails too.
 - **Notes** are information only. Their actions go in "Action needed".
-- End with the goose version tested, and the canary version if you used it.
+- End with the goose version tested, and the canary version if you used it. If you built the models.dev data, add "models.dev data built from <sha>".

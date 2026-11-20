@@ -3,9 +3,11 @@
 // providers goose aims to support on launch day. Prints JSON for an agent to
 // triage. It makes no judgment about whether goose handles the models.
 //
+// Usage: check_new_models.mjs <models.dev api.json file>
 // Exit codes: 0 = nothing new, 10 = new models found, 1 = error.
 
-const SOURCE = "https://models.dev/api.json";
+import { readFile } from "node:fs/promises";
+
 const DAYS = 7;
 const PROVIDERS = ["anthropic", "openai", "google", "xai", "zai", "moonshotai", "deepseek"];
 
@@ -73,9 +75,9 @@ function findNewModels(catalog, now) {
 
 async function main() {
   try {
-    const response = await fetch(SOURCE, { signal: AbortSignal.timeout(60_000) });
-    if (!response.ok) throw new Error(`fetching ${SOURCE} failed: HTTP ${response.status}`);
-    const result = findNewModels(await response.json(), new Date());
+    const file = process.argv[2];
+    if (!file) throw new Error("usage: check_new_models.mjs <models.dev api.json file>");
+    const result = findNewModels(JSON.parse(await readFile(file, "utf8")), new Date());
     console.log(JSON.stringify(result, null, 2));
     return result.new_models.length > 0 ? 10 : 0;
   } catch (error) {
