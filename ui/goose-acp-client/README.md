@@ -28,7 +28,7 @@ import {
   methods,
   PROTOCOL_VERSION,
   type Stream,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import { GooseExtClient } from "@aaif/goose-acp-client";
 
 async function connectToGoose(stream: Stream) {

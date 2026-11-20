@@ -1,6 +1,6 @@
 // This file is auto-generated — do not edit manually.
 
-import type { ClientContext } from "@agentclientprotocol/sdk";
+import type { ClientContext } from "@agentclientprotocol/sdk/unstable";
 import type {
   AddConfigExtensionRequest_unstable,
   AddSessionExtensionRequest_unstable,

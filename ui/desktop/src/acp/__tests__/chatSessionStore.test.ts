@@ -1,4 +1,7 @@
-import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
+import type {
+  RequestPermissionRequest,
+  SessionNotification,
+} from '@agentclientprotocol/sdk/unstable';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';

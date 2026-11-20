@@ -3,7 +3,7 @@ import type {
   CreateElicitationResponse,
   ElicitationContentValue,
   ElicitationSchema,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import { v7 as uuidv7 } from 'uuid';
 import { acpChatSessionActions, acpElicitationUserInputRequestId } from './chatSessionStore';
 

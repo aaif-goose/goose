@@ -1,4 +1,7 @@
-import type { CreateElicitationRequest, CreateElicitationResponse } from '@agentclientprotocol/sdk';
+import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
+} from '@agentclientprotocol/sdk/unstable';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACP_ELICITATION_TIMEOUT_SECONDS,

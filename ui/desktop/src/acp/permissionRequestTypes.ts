@@ -1,4 +1,4 @@
-import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
+import type { RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable';
 
 export interface AcpPermissionRequest {
   generation: string;

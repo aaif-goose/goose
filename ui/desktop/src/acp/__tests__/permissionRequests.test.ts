@@ -1,4 +1,7 @@
-import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
+import type {
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from '@agentclientprotocol/sdk/unstable';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelAcpPermissionRequestsForSession,
