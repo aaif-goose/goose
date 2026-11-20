@@ -1484,7 +1484,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
             std::env::current_dir()?,
             "MCP Probe".to_string(),
             goose::session::session_manager::SessionType::Hidden,
-            config.get_goose_mode().unwrap_or_default(),
+            config.get_goose_mode_or_default()?,
         )
         .await?;
     let session_id = session.id.as_str();
@@ -1987,7 +1987,7 @@ async fn handle_interactive_session(args: InteractiveSessionArgs) -> Result<()> 
         }
     }
 
-    let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
+    let goose_mode = Config::global().get_goose_mode_or_default()?;
     let mut session_id = get_or_create_session_id(identifier, resume, false, goose_mode).await?;
 
     if edit || fork {
@@ -2224,7 +2224,7 @@ async fn handle_run_command(
         }
     }
 
-    let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
+    let goose_mode = Config::global().get_goose_mode_or_default()?;
     let session_id = get_or_create_session_id(
         identifier,
         run_behavior.resume,
@@ -2769,7 +2769,7 @@ async fn handle_default_session() -> Result<()> {
         configure_telemetry_consent_dialog()?;
     }
 
-    let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
+    let goose_mode = Config::global().get_goose_mode_or_default()?;
     let session_id = get_or_create_session_id(None, false, false, goose_mode).await?;
 
     let mut session = match try_build_session(SessionBuilderConfig {

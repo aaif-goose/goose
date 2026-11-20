@@ -227,7 +227,7 @@ pub async fn handle_term_init(
                     working_dir,
                     "Goose Term Session".to_string(),
                     SessionType::Terminal,
-                    Config::global().get_goose_mode().unwrap_or_default(),
+                    Config::global().get_goose_mode_or_default()?,
                 )
                 .await?;
 
@@ -312,6 +312,9 @@ pub async fn handle_term_run(prompt: Vec<String>) -> Result<()> {
              then restart or reload that shell."
         )
     })?;
+
+    // Check the mode before the pending shell history below is moved out of the session.
+    Config::global().get_goose_mode_or_default()?;
 
     let working_dir = std::env::current_dir()?;
     let session_manager = SessionManager::instance();

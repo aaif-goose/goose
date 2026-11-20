@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::agents::{AgentEvent, ExtensionConfig, SessionConfig, StateMachineServices};
 use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
-use crate::config::Config;
+use crate::config::{Config, ConfigError, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::session::SessionType;
@@ -36,6 +36,32 @@ fn resolve_gateway_max_turns(gateway_override: Option<u32>, global_max_turns: Op
     gateway_override
         .or(global_max_turns)
         .unwrap_or(DEFAULT_GATEWAY_MAX_TURNS)
+}
+
+/// What the chat is told when `GOOSE_MODE` can't be resolved. It is fixed text: the
+/// underlying error can name local paths or quote config contents, and an unpaired
+/// sender sees this reply, so the details only go to the log.
+const INVALID_GOOSE_MODE_REPLY: &str =
+    "⚠️ goose's GOOSE_MODE setting is invalid, so it won't run. Check the goose configuration on the host.";
+
+/// The mode to use, or the chat reply to send when `GOOSE_MODE` can't be resolved.
+fn goose_mode_or_reply_text(
+    result: &Result<GooseMode, ConfigError>,
+) -> Result<GooseMode, &'static str> {
+    match result {
+        Ok(goose_mode) => Ok(*goose_mode),
+        Err(_) => Err(INVALID_GOOSE_MODE_REPLY),
+    }
+}
+
+/// A pairing code in its stored form, if the text has the shape of one.
+fn normalize_pairing_code(text: &str) -> Option<String> {
+    let normalized = text.to_uppercase().replace(['-', ' '], "");
+    (normalized.len() == 6
+        && normalized
+            .chars()
+            .all(|c| "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(c)))
+    .then_some(normalized)
 }
 
 struct PendingConfirmation {
@@ -137,9 +163,23 @@ impl GatewayHandler {
 
         match pairing {
             PairingState::Unpaired => {
-                if let Some(gateway_type) = self.try_consume_code(message.text.trim()).await? {
+                let code = normalize_pairing_code(message.text.trim());
+                // Check the mode before a code is consumed, so a bad mode does not use it up.
+                let goose_mode = if code.is_some() {
+                    let Some(goose_mode) = self.goose_mode_or_reply(&message.user).await? else {
+                        return Ok(());
+                    };
+                    Some(goose_mode)
+                } else {
+                    None
+                };
+                let consumed = match &code {
+                    Some(code) => self.pairing_store.consume_pending_code(code).await?,
+                    None => None,
+                };
+                if let (Some(gateway_type), Some(goose_mode)) = (consumed, goose_mode) {
                     if gateway_type == self.config.gateway_type {
-                        self.complete_pairing(&message.user).await?;
+                        self.complete_pairing(&message.user, goose_mode).await?;
                     } else {
                         self.gateway
                             .send_message(
@@ -177,7 +217,10 @@ impl GatewayHandler {
                         )
                         .await?;
                 } else if message.text.trim().eq_ignore_ascii_case(&code) {
-                    self.complete_pairing(&message.user).await?;
+                    let Some(goose_mode) = self.goose_mode_or_reply(&message.user).await? else {
+                        return Ok(());
+                    };
+                    self.complete_pairing(&message.user, goose_mode).await?;
                 } else {
                     self.gateway
                         .send_message(
@@ -288,19 +331,34 @@ impl GatewayHandler {
         Ok(())
     }
 
-    async fn try_consume_code(&self, text: &str) -> anyhow::Result<Option<String>> {
-        let normalized = text.to_uppercase().replace(['-', ' '], "");
-        if normalized.len() == 6
-            && normalized
-                .chars()
-                .all(|c| "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(c))
-        {
-            return self.pairing_store.consume_pending_code(&normalized).await;
+    /// Resolves `GOOSE_MODE`. When it is set but invalid, tells the user in the chat and
+    /// returns `None`, so the caller stops instead of falling back to `Auto`.
+    async fn goose_mode_or_reply(&self, user: &PlatformUser) -> anyhow::Result<Option<GooseMode>> {
+        let result = Config::global().get_goose_mode_or_default();
+        match goose_mode_or_reply_text(&result) {
+            Ok(goose_mode) => Ok(Some(goose_mode)),
+            Err(body) => {
+                if let Err(error) = &result {
+                    tracing::error!(%error, "invalid GOOSE_MODE; gateway message not handled");
+                }
+                self.gateway
+                    .send_message(
+                        user,
+                        OutgoingMessage::Text {
+                            body: body.to_string(),
+                        },
+                    )
+                    .await?;
+                Ok(None)
+            }
         }
-        Ok(None)
     }
 
-    async fn complete_pairing(&self, user: &PlatformUser) -> anyhow::Result<()> {
+    async fn complete_pairing(
+        &self,
+        user: &PlatformUser,
+        goose_mode: GooseMode,
+    ) -> anyhow::Result<()> {
         let working_dir = gateway_working_dir(&user.platform, &user.user_id);
         std::fs::create_dir_all(&working_dir)?;
 
@@ -314,12 +372,7 @@ impl GatewayHandler {
         let session = self
             .services
             .session_manager
-            .create_session(
-                working_dir,
-                session_name,
-                SessionType::Gateway,
-                config.get_goose_mode().unwrap_or_default(),
-            )
+            .create_session(working_dir, session_name, SessionType::Gateway, goose_mode)
             .await?;
 
         let manager = &self.services.session_manager;
@@ -377,7 +430,11 @@ impl GatewayHandler {
     /// Sync the session's provider, model, and extensions with the current
     /// global config so gateway sessions always reflect what the user has
     /// configured in the desktop app.
-    async fn sync_session_config(&self, session: &Session) -> anyhow::Result<()> {
+    async fn sync_session_config(
+        &self,
+        session: &Session,
+        current_mode: GooseMode,
+    ) -> anyhow::Result<()> {
         let config = Config::global();
         let manager = &self.services.session_manager;
 
@@ -388,7 +445,6 @@ impl GatewayHandler {
         current_extensions.extend(crate::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&session.working_dir),
         ));
-        let current_mode = config.get_goose_mode().unwrap_or_default();
 
         // --- what the session has ---
         let session_extensions: Vec<ExtensionConfig> =
@@ -457,13 +513,18 @@ impl GatewayHandler {
             .send_message(&message.user, OutgoingMessage::Typing)
             .await?;
 
+        // Check the mode before the sync below can write it to the session.
+        let Some(current_mode) = self.goose_mode_or_reply(&message.user).await? else {
+            return Ok(());
+        };
+
         let session = self
             .services
             .session_manager
             .get_session(session_id, false)
             .await?;
 
-        self.sync_session_config(&session).await?;
+        self.sync_session_config(&session, current_mode).await?;
 
         self.services.touch_session(session_id).await;
         let services = Arc::clone(&self.services);
@@ -904,6 +965,40 @@ mod tests {
 
         let allowed = allowed_user_ids_from_config(&config).expect("allowlist should be set");
         assert!(!is_user_allowed(&Some(allowed), &platform_user("333")));
+    }
+
+    #[test]
+    fn invalid_goose_mode_becomes_a_fixed_chat_reply_not_auto() {
+        assert_eq!(
+            goose_mode_or_reply_text(&Ok(GooseMode::Approve)),
+            Ok(GooseMode::Approve)
+        );
+        let reply = goose_mode_or_reply_text(&Err(ConfigError::DeserializeError(
+            "/home/someone/.config/goose/extra.yaml: invalid type: string \"API_KEY=secret\""
+                .to_string(),
+        )))
+        .unwrap_err();
+        assert_eq!(reply, INVALID_GOOSE_MODE_REPLY);
+        assert!(!reply.contains("secret"), "{reply}");
+        assert!(!reply.contains("/home/"), "{reply}");
+    }
+
+    #[test]
+    fn pairing_code_shape_is_unchanged() {
+        assert_eq!(
+            normalize_pairing_code("abc-234"),
+            Some("ABC234".to_string())
+        );
+        assert_eq!(
+            normalize_pairing_code("ABC 234"),
+            Some("ABC234".to_string())
+        );
+        assert_eq!(normalize_pairing_code("hello there"), None);
+        assert_eq!(
+            normalize_pairing_code("ABC23I"),
+            None,
+            "I is not in the code alphabet"
+        );
     }
 
     #[test]
