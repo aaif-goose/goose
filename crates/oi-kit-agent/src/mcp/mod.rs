@@ -44,7 +44,8 @@ pub mod tool_schema_normalize;
 pub use batch::{ResultNotification, ToolCallBatch};
 pub use call::{ToolCallNotificationEmitter, ToolCallResult, ToolResult};
 pub use host::{
-    ExtensionAuth, ExtensionHost, ExtensionSpec, StaticOAuthClientConfig, TraceContextInjector,
+    ExtensionAuth, ExtensionAuthorization, ExtensionHost, ExtensionSpec, PresentedToken,
+    RejectedRequest, StaticOAuthClientConfig, TraceContextInjector,
 };
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
 pub use operation::{ExtensionOperation, ExtensionSource};
