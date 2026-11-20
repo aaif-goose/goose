@@ -99,3 +99,4 @@ gooseselftest/
 /crates/oi-kit-bindings/examples/uniffi/kotlin/build/
 
 live-in-desktop-design
+stress-results/
