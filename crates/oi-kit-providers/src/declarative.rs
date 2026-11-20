@@ -33,6 +33,7 @@ pub(crate) mod declarative_providers {
         iflytek_astron,
         inception,
         ionet,
+        lazu,
         lemonade,
         llama_swap,
         llmman,

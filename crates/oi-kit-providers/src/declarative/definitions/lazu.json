@@ -1,0 +1,29 @@
+{
+  "name": "lazu",
+  "engine": "openai",
+  "display_name": "Lazu",
+  "description": "The model account for coding agents and pipelines: one API key for Claude, GPT, Gemini, DeepSeek, Kimi, Qwen and GLM, with per-key budgets and usage records.",
+  "api_key_env": "LAZU_API_KEY",
+  "base_url": "https://api.lazu.ai/v1",
+  "dynamic_models": true,
+  "models": [
+    { "name": "claude-sonnet-5-5", "context_limit": 1000000, "supports_vision": true },
+    { "name": "claude-opus-5-5", "context_limit": 1000000, "supports_vision": true },
+    { "name": "claude-haiku-5-5", "context_limit": 1000000, "supports_vision": true },
+    { "name": "gpt-6.1-sol", "context_limit": 1050000, "supports_vision": true },
+    { "name": "gpt-6-luna", "context_limit": 1050000, "supports_vision": true },
+    { "name": "gemini-3.8-flash", "context_limit": 1048576, "supports_vision": true },
+    { "name": "deepseek-flash", "context_limit": 1000000, "supports_vision": true },
+    { "name": "deepseek-v4-pro", "context_limit": 1000000 },
+    { "name": "kimi-k3", "context_limit": 1048576, "supports_vision": true },
+    { "name": "qwen3.8-max", "context_limit": 1000000, "supports_vision": true },
+    { "name": "glm-5.3", "context_limit": 1000000 }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://lazu.ai/models",
+  "setup_steps": [
+    "Sign in to https://lazu.ai",
+    "Create an API key in your Lazu console",
+    "Copy the key and paste it above"
+  ]
+}
