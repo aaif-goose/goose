@@ -21,7 +21,7 @@ use serial_test::serial;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use common_tests::fixtures::OpenAiFixture;
@@ -201,6 +201,28 @@ async fn wait_for_session_info_run(
         assert!(
             tokio::time::Instant::now() < deadline,
             "session info never reported run {run_id}, last: {}",
+            info["session"]["_meta"]["goose"]
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Polls session info until it reports no active run. The clear can trail the
+/// prompt's response by a notification, so this is a bounded poll rather than a
+/// single probe.
+async fn wait_for_session_info_cleared(
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>,
+    session_id: &str,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let info = request_session_info(cx, session_id).await;
+        if active_run_id_from_session_info(&info).is_none() {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "session info never cleared the run, last: {}",
             info["session"]["_meta"]["goose"]
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -846,7 +868,7 @@ fn test_cancel_clears_the_active_run_from_session_info() {
 fn test_completed_turn_clears_the_active_run_from_session_info() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
-        let openai = OpenAiFixture::new_with_response_delay(
+        let openai = OpenAiFixture::with_response_delay(
             vec![(
                 "start work".to_string(),
                 include_str!("acp_test_data/openai_steer_first.txt"),
@@ -876,6 +898,55 @@ fn test_completed_turn_clears_the_active_run_from_session_info() {
         assert_eq!(response.stop_reason, StopReason::EndTurn);
 
         assert_active_run_cleared(&request_session_info(cx, &id).await);
+    });
+}
+
+/// Two ACP clients on ONE server, which is what a reviewer asked for: one client
+/// starts a turn and the other polls session info from its own connection, so
+/// the run has to be visible across connections rather than merely across
+/// agents that happen to share a registry.
+#[test]
+#[serial]
+fn test_second_client_sees_the_active_run_in_session_info() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::with_response_delay(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+            DELAYED_REPLY,
+        )
+        .await;
+        let (mut starter, watcher) =
+            AcpServerConnection::new_pair(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = starter.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+
+        // Idle, as reported by the other client.
+        assert_active_run_cleared(&request_session_info(watcher.cx(), &session_id).await);
+
+        let mut prompt = Box::pin(
+            starter
+                .cx()
+                .send_request(PromptRequest::new(
+                    session.session_id().clone(),
+                    vec![ContentBlock::Text(TextContent::new("start work"))],
+                ))
+                .block_task(),
+        );
+        let run_id = wait_for_announced_run(&mut prompt, &session).await;
+
+        // The turn is in flight on the starter's connection.
+        wait_for_session_info_run(watcher.cx(), &session_id, &run_id).await;
+
+        let response = prompt.await.unwrap();
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+
+        // Its completion clears on the watcher's connection too.
+        wait_for_session_info_cleared(watcher.cx(), &session_id).await;
     });
 }
 
