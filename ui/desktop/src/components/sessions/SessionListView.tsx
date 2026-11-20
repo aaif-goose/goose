@@ -300,7 +300,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
   const [sessionToDelete, setSessionToDelete] = useState<SessionListItem | null>(null);
 
   const [includeAcpSessions, setIncludeAcpSessions] = useState(
-    () => localStorage.getItem(INCLUDE_ACP_SESSIONS_KEY) === 'true'
+    () => window.electron.getRendererStorage(INCLUDE_ACP_SESSIONS_KEY) === 'true'
   );
   const includeAcpSessionsRef = useRef(includeAcpSessions);
   includeAcpSessionsRef.current = includeAcpSessions;
@@ -494,7 +494,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
   }, []);
 
   const handleIncludeAcpSessionsChange = useCallback((checked: boolean) => {
-    localStorage.setItem(INCLUDE_ACP_SESSIONS_KEY, String(checked));
+    window.electron.setRendererStorage(INCLUDE_ACP_SESSIONS_KEY, String(checked));
     setIncludeAcpSessions(checked);
   }, []);
 

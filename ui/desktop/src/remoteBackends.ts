@@ -1,4 +1,4 @@
-import { net } from 'electron';
+import { net, type Session } from 'electron';
 import {
   acpHttpUrlFromHttpBase,
   normalizeAcpHttpBaseUrl,
@@ -26,13 +26,12 @@ export interface RemoteBackendConnection {
   acpUrl: string | null;
 }
 
-export interface RemoteBackendParams {
+export type RemoteBackendParams = {
   baseUrl: string;
   serverSecret: string;
-  pinnedHostname?: string | null;
+  hasCertificatePin: boolean;
   errorLog?: string[];
-  request?: HopRequest;
-}
+} & ({ session: Session; request?: never } | { request: HopRequest; session?: never });
 
 interface HopInit {
   headers?: Record<string, string>;
@@ -56,69 +55,76 @@ const headerValue = (headers: Record<string, string | string[]>, name: string): 
   return Array.isArray(value) ? (value[0] ?? null) : value;
 };
 
-// net.fetch reports an incorrect Response.url, so each hop is issued separately
-// with net.request and this module decides whether to follow it.
-const netHopRequest: HopRequest = (url, init) =>
-  new Promise<Hop>((resolve, reject) => {
-    const request = net.request({ method: 'GET', url, redirect: 'manual', credentials: 'omit' });
-    let settled = false;
+function makeNetHopRequest(session: Session): HopRequest {
+  return (url, init) =>
+    new Promise<Hop>((resolve, reject) => {
+      init.signal?.throwIfAborted();
+      const request = net.request({
+        method: 'GET',
+        url,
+        redirect: 'manual',
+        credentials: 'omit',
+        session,
+      });
+      let settled = false;
 
-    const abort = () => request.abort();
-    init.signal?.addEventListener('abort', abort, { once: true });
+      const abort = () => request.abort();
+      init.signal?.addEventListener('abort', abort, { once: true });
 
-    const settle = (finish: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      init.signal?.removeEventListener('abort', abort);
-      finish();
-    };
+      const settle = (finish: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        init.signal?.removeEventListener('abort', abort);
+        finish();
+      };
 
-    // A manual redirect is not followed, so the request is cancelled after this
-    // event and only the 'abort' event follows.
-    request.on('redirect', (statusCode, _method, redirectUrl, responseHeaders) => {
-      settle(() =>
-        resolve({
-          status: statusCode,
-          statusText: '',
-          header: (name) => headerValue(responseHeaders, name),
-          location: redirectUrl,
-        })
-      );
-      request.abort();
-    });
-
-    request.on('response', (response) => {
-      response.on('data', () => undefined);
-      response.on('end', () =>
+      // A manual redirect is not followed, so the request is cancelled after this
+      // event and only the 'abort' event follows.
+      request.on('redirect', (statusCode, _method, redirectUrl, responseHeaders) => {
         settle(() =>
           resolve({
-            status: response.statusCode,
-            statusText: response.statusMessage,
-            header: (name) => headerValue(response.headers, name),
-            location: null,
+            status: statusCode,
+            statusText: '',
+            header: (name) => headerValue(responseHeaders, name),
+            location: redirectUrl,
           })
-        )
-      );
-      response.on('error', (error: Error) => settle(() => reject(error)));
+        );
+        request.abort();
+      });
+
+      request.on('response', (response) => {
+        response.on('data', () => undefined);
+        response.on('end', () =>
+          settle(() =>
+            resolve({
+              status: response.statusCode,
+              statusText: response.statusMessage,
+              header: (name) => headerValue(response.headers, name),
+              location: null,
+            })
+          )
+        );
+        response.on('error', (error: Error) => settle(() => reject(error)));
+      });
+
+      request.on('error', (error) => settle(() => reject(error)));
+      request.on('abort', () => settle(() => reject(new Error('Request aborted'))));
+
+      for (const [name, value] of Object.entries(init.headers ?? {})) {
+        request.setHeader(name, value);
+      }
+      request.end();
     });
-
-    request.on('error', (error) => settle(() => reject(error)));
-    request.on('abort', () => settle(() => reject(new Error('Request aborted'))));
-
-    for (const [name, value] of Object.entries(init.headers ?? {})) {
-      request.setHeader(name, value);
-    }
-    request.end();
-  });
+}
 
 class RedirectError extends Error {}
 
 const isRedirect = (status: number): boolean =>
   status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 
-const checkHop = (from: URL, to: URL, pinnedHostname: string | null): void => {
+const checkHop = (from: URL, to: URL, allowedOrigin: string | null): void => {
   if (to.protocol !== 'http:' && to.protocol !== 'https:') {
     throw new RedirectError(`Redirect to ${to.protocol} is not allowed, only http: and https:.`);
   }
@@ -127,9 +133,9 @@ const checkHop = (from: URL, to: URL, pinnedHostname: string | null): void => {
       `Redirect from HTTPS to HTTP is not allowed (${from.origin} to ${to.origin}).`
     );
   }
-  if (pinnedHostname && to.hostname.toLowerCase() !== pinnedHostname) {
+  if (allowedOrigin && to.origin !== allowedOrigin) {
     throw new RedirectError(
-      `Redirect to ${to.hostname} is not allowed because a certificate fingerprint is configured for ${pinnedHostname}.`
+      `Redirect to ${to.origin} is outside the allowed backend origin ${allowedOrigin}.`
     );
   }
 };
@@ -137,7 +143,7 @@ const checkHop = (from: URL, to: URL, pinnedHostname: string | null): void => {
 const resolveRedirects = async (
   request: HopRequest,
   startUrl: string,
-  pinnedHostname: string | null,
+  allowedOrigin: string | null,
   init: HopInit
 ): Promise<{ url: string; hop: Hop }> => {
   let url = new URL(startUrl);
@@ -156,7 +162,7 @@ const resolveRedirects = async (
     }
 
     const next = new URL(hop.location, url);
-    checkHop(url, next, pinnedHostname);
+    checkHop(url, next, allowedOrigin);
     url = next;
   }
 };
@@ -186,14 +192,14 @@ const proxyNote = (hop: Hop): string => {
 const probe = async (
   request: HopRequest,
   url: string,
-  pinnedHostname: string | null,
+  allowedOrigin: string | null,
   credentials: Record<string, string> | null,
   expect: (hop: Hop, resolvedUrl: string) => Probe
 ): Promise<Probe> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const { url: resolvedUrl, hop } = await resolveRedirects(request, url, pinnedHostname, {
+    const { url: resolvedUrl, hop } = await resolveRedirects(request, url, allowedOrigin, {
       signal: controller.signal,
     });
     const finalHop = credentials
@@ -215,9 +221,9 @@ const probe = async (
 const probeStatus = (
   request: HopRequest,
   baseUrl: string,
-  pinnedHostname: string | null
+  allowedOrigin: string | null
 ): Promise<Probe> =>
-  probe(request, statusHttpUrlFromHttpBase(baseUrl), pinnedHostname, null, (hop, resolvedUrl) =>
+  probe(request, statusHttpUrlFromHttpBase(baseUrl), allowedOrigin, null, (hop, resolvedUrl) =>
     hop.status >= 200 && hop.status < 300
       ? {
           ok: true,
@@ -232,16 +238,11 @@ const probeStatus = (
         }
   );
 
-const probeAcp = (
-  request: HopRequest,
-  baseUrl: string,
-  secret: string,
-  pinnedHostname: string | null
-): Promise<Probe> =>
+const probeAcp = (request: HopRequest, baseUrl: string, secret: string): Promise<Probe> =>
   probe(
     request,
     acpHttpUrlFromHttpBase(baseUrl),
-    pinnedHostname,
+    new URL(baseUrl).origin,
     { 'X-Secret-Key': secret },
     (hop, resolvedUrl) => {
       if (hop.status === 406) {
@@ -290,12 +291,13 @@ const isFatalError = (line: string): boolean => FATAL_ERROR_PATTERN.test(line);
 export const connectRemoteBackend = async ({
   baseUrl,
   serverSecret,
-  pinnedHostname = null,
+  hasCertificatePin,
   errorLog = [],
-  request = netHopRequest,
+  request,
+  session,
 }: RemoteBackendParams): Promise<RemoteBackendConnection> => {
   const steps: RemoteBackendStep[] = [];
-  const pin = pinnedHostname?.toLowerCase() ?? null;
+  const hopRequest = request ?? makeNetHopRequest(session);
 
   const run = async (name: string, attempt: () => Promise<Probe>): Promise<Probe> => {
     const deadline = Date.now() + RETRY_BUDGET_MS;
@@ -326,7 +328,10 @@ export const connectRemoteBackend = async ({
       return null;
     }
 
-    const reachable = await run('Reachable', () => probeStatus(request, normalizedBaseUrl, pin));
+    const pinnedOrigin = hasCertificatePin ? new URL(normalizedBaseUrl).origin : null;
+    const reachable = await run('Reachable', () =>
+      probeStatus(hopRequest, normalizedBaseUrl, pinnedOrigin)
+    );
     if (!reachable.ok || !reachable.resolvedUrl) {
       return null;
     }
@@ -345,20 +350,9 @@ export const connectRemoteBackend = async ({
     }
 
     const accepted = await run('Secret key', () =>
-      probeAcp(request, resolvedBaseUrl, serverSecret, pin)
+      probeAcp(hopRequest, resolvedBaseUrl, serverSecret)
     );
     if (!accepted.ok || !accepted.resolvedUrl) {
-      return null;
-    }
-
-    const statusOrigin = new URL(resolvedBaseUrl).origin;
-    const acpOrigin = new URL(accepted.resolvedUrl).origin;
-    if (statusOrigin !== acpOrigin) {
-      steps.push({
-        name: 'Redirect',
-        ok: false,
-        detail: `/status and /acp resolved to different origins (${statusOrigin} and ${acpOrigin}).`,
-      });
       return null;
     }
 
