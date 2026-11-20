@@ -9,6 +9,7 @@ use oi_kit_agent::{
     exit_on_error::ExitOnErrorOperation,
     max_turns::MaxTurnsOperation,
     steer::{SteerOperation, SteerQueue},
+    tool_pair_compaction::ToolPairCompactionOperation,
 };
 use oi_kit_providers::api_client::{ApiClient, AuthMethod};
 use oi_kit_providers::decision::DecisionProvider;
@@ -24,8 +25,8 @@ use crate::agents::state_machine::{
     PlatformExtensionOperation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
     SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
     SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
-    ToolDeferral, ToolDeferralOperation, ToolPairCompactionOperation, UnavailableDecisions,
-    UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    ToolDeferral, ToolDeferralOperation, UnavailableDecisions, UnhandledToolCallsOperation,
+    NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -211,13 +212,18 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
-        Arc::new(ToolPairCompactionOperation::new(
-            provider.clone(),
-            model_config.clone(),
+    ]);
+    if tool_pair_summarization && !manages_own_context {
+        operations.push(Arc::new(ToolPairCompactionOperation::new(
+            Arc::new(
+                GooseCompactionModel::new(provider.clone(), model_config.clone())
+                    .with_operation_name("tool_pair_compaction"),
+            ),
             tool_call_cutoff,
-            tool_pair_summarization && !manages_own_context,
-        )),
-        Arc::new(DoctorOperation::new(session_manager)),
+        )));
+    }
+    operations.extend([
+        Arc::new(DoctorOperation::new(session_manager)) as Arc<dyn Operation<_, _>>,
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
