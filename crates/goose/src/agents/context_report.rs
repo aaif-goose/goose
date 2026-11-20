@@ -101,14 +101,6 @@ impl StateMachineServices {
             .conversation
             .clone()
             .unwrap_or_else(Conversation::empty);
-        let auto_compaction_pending = crate::context_mgmt::check_if_compaction_needed(
-            provider.as_ref(),
-            &persisted,
-            None,
-            &session,
-        )
-        .await?;
-
         let (session, lease) = self.current_session_snapshot(&session).await?;
         let code_execution_active = {
             #[cfg(feature = "code-mode")]
@@ -130,6 +122,14 @@ impl StateMachineServices {
             .collect::<Vec<_>>();
         next_messages.push(Message::user().with_text(NEXT_PROMPT_STAND_IN));
         let next_conversation = Conversation::new_unvalidated(next_messages);
+        let auto_compaction_pending = oi_kit_agent::compaction::proactive_compaction_tokens(
+            &next_conversation,
+            &crate::context_mgmt::GooseTokenEstimator,
+            context_limit,
+            crate::context_mgmt::auto_compact_threshold(context_limit),
+        )
+        .await?
+        .is_some();
         let machine = self
             .create_state_machine_with_lease(
                 provider.clone(),
