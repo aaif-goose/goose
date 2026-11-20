@@ -12,6 +12,7 @@ From a goose checkout, get the models.dev data:
 
 ```
 START=$(date -u '+%Y-%m-%d %H:%M UTC')
+S="$PWD/scripts/new-model-check"
 CATALOG="$(mktemp -d)/models_dev_api.json"
 scripts/new-model-check/download_models_dev.sh "$CATALOG"
 ```
@@ -34,7 +35,7 @@ node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 
 ## 2. Set up
 
-Use a new, empty folder, and give goose its own home folder, so goose has no extensions or settings and nothing from this machine ends up in the requests.
+Use a new, empty folder, and give goose its own folders, so goose has no extensions or settings and nothing from this machine ends up in the requests.
 
 ```
 W=$(mktemp -d)
@@ -48,21 +49,11 @@ R="$W/results.md"
 
 Record results in `$R` as you go, never at the end. Write the goose version as its first line, and where the models.dev data came from as the second: downloaded, or built from commit `<sha>`. After every check, write one line: model, release or canary, setting, check, value sent, value expected, result. Write notes and the canary version there too.
 
-Define this helper. Let goose finish every run: don't pipe its output into anything that stops reading early, like `head`, or goose is cut off before it sends the real request.
-
-```
-run() {
-  rm -f "$W/home/.local/state/goose/logs/"llm_request.*.jsonl
-  env HOME="$W/home" GOOSE_DISABLE_KEYRING=1 "$@" \
-    timeout 120 "$W/bin/goose" run --text "hi" --no-session > "$W/last_run.txt" 2>&1
-}
-```
-
 Then give goose the models.dev data from step 1. Without it, goose has only its built-in model list, which doesn't know the new models, so it uses a 4096 output limit for them. goose still tries to download models.dev itself; where that's blocked, it keeps this copy.
 
 ```
-mkdir -p "$W/home/.local/share/goose/model_catalog"
-cp "$CATALOG" "$W/home/.local/share/goose/model_catalog/models_dev_api.json"
+mkdir -p "$W/root/data/model_catalog"
+cp "$CATALOG" "$W/root/data/model_catalog/models_dev_api.json"
 ```
 
 ## 3. Provider settings
@@ -84,10 +75,12 @@ Set the fake key to `fake-key`.
 For each new model, run once per thinking setting: `off`, `low`, `medium`, `high` and `max`.
 
 ```
-run GOOSE_PROVIDER=<provider> GOOSE_MODEL=<model> <KEY_VARIABLE>=fake-key GOOSE_THINKING_EFFORT=<setting>
+"$S/run_goose.sh" "$W" GOOSE_PROVIDER=<provider> GOOSE_MODEL=<model> <KEY_VARIABLE>=fake-key GOOSE_THINKING_EFFORT=<setting>
 ```
 
-After each run, find the real request in `$W/home/.local/state/goose/logs/llm_request.*.jsonl`. Each file's first line is a JSON object with `model_config` and `input`; `input` is the exact request goose sent. Each run usually logs two requests:
+The script clears any `GOOSE_*` settings from your environment, keeps all of goose's files under `$W/root`, and writes goose's output to `$W/last_run.txt`. Let every run finish.
+
+After each run, find the real request in `$W/root/state/logs/llm_request.*.jsonl`. Each file's first line is a JSON object with `model_config` and `input`; `input` is the exact request goose sent. Each run usually logs two requests:
 - **The real request:** `model_config.request_params.thinking_effort` matches the setting you ran, and there's no `disable_prompt_cache`.
 - **goose's background request** to name the session: it has `disable_prompt_cache: true`. Ignore it.
 
@@ -150,16 +143,15 @@ If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails t
 
 Do this once, after every new model has been through steps 4–7, for all failing checks together.
 
-Install the canary build, which is built from main, into another fresh folder, and point the `run` helper at it:
+Install the canary build, which is built from main, into another fresh folder, and use it for the reruns:
 
 ```
 C=$(mktemp -d); mkdir -p "$C/bin" "$C/home" "$C/work" "$C/requests"
 HOME="$C/home" GOOSE_BIN_DIR="$C/bin" CANARY=true CONFIGURE=false bash "$W/download_cli.sh"
 W=$C
-cd "$W/work"
 ```
 
-Copy the models.dev data into this goose's home folder as in step 2, then repeat the failing checks.
+Copy the models.dev data into this folder as in step 2, then repeat the failing checks.
 
 - **Canary passes:** the fix is on main. Name the PR if you can find it. If `gh release list -R aaif-goose/goose -L 1` shows a newer release than the one you tested and it includes the fix, report that no action is needed, because stable will catch up soon. Otherwise, report that a patch release is needed.
 - **Canary fails too:** in your goose checkout, on the latest main, read that provider's request code and find why. Report the file and line, and describe the fix.
