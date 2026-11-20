@@ -1,5 +1,14 @@
 import { useCallback, useState, useRef, useEffect } from 'react';
 import { compressImageDataUrl, errorMessage } from '../utils/conversionUtils';
+import { defineMessages, useIntl } from '../i18n';
+import { toastError } from '../toasts';
+
+const i18n = defineMessages({
+  remoteAttachmentUnsupported: {
+    id: 'fileDrop.remoteAttachmentUnsupported',
+    defaultMessage: 'Only images can be attached when connected to an external backend',
+  },
+});
 
 export interface DroppedFile {
   id: string;
@@ -13,6 +22,7 @@ export interface DroppedFile {
 }
 
 export const useFileDrop = () => {
+  const intl = useIntl();
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const activeReadersRef = useRef<Set<FileReader>>(new Set());
 
@@ -33,9 +43,26 @@ export const useFileDrop = () => {
     };
   }, []);
 
-  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const files = e.dataTransfer.files;
+  // Non-image attachments are sent as a client-local path, which an external
+  // backend cannot open. Drop them with a notice and return the files to keep.
+  const rejectUnsupportedFiles = useCallback(
+    (files: File[]): File[] => {
+      if (window.appConfig?.get('GOOSE_EXTERNAL_BACKEND') !== true) {
+        return files;
+      }
+      const rejected = files.filter((file) => !file.type.startsWith('image/'));
+      if (rejected.length > 0) {
+        toastError({
+          title: intl.formatMessage(i18n.remoteAttachmentUnsupported),
+          msg: rejected.map((file) => file.name).join(', '),
+        });
+      }
+      return files.filter((file) => file.type.startsWith('image/'));
+    },
+    [intl]
+  );
+
+  const addDroppedFiles = useCallback(async (files: File[]) => {
     if (files.length > 0) {
       const droppedFileObjects: DroppedFile[] = [];
 
@@ -125,6 +152,14 @@ export const useFileDrop = () => {
     }
   }, []);
 
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      return addDroppedFiles(rejectUnsupportedFiles(Array.from(e.dataTransfer.files)));
+    },
+    [addDroppedFiles, rejectUnsupportedFiles]
+  );
+
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   }, []);
@@ -134,5 +169,6 @@ export const useFileDrop = () => {
     setDroppedFiles,
     handleDrop,
     handleDragOver,
+    rejectUnsupportedFiles,
   };
 };

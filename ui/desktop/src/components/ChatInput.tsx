@@ -591,6 +591,7 @@ export default function ChatInput({
     setDroppedFiles: setLocalDroppedFiles,
     handleDrop: handleLocalDrop,
     handleDragOver: handleLocalDragOver,
+    rejectUnsupportedFiles,
   } = useFileDrop();
 
   // Merge local dropped files with parent dropped files
@@ -1298,7 +1299,7 @@ export default function ChatInput({
         );
       };
       reader.readAsDataURL(file);
-    } else {
+    } else if (rejectUnsupportedFiles([file]).length > 0) {
       trackFileAttached('file');
       const path = window.electron.getPathForFile(file);
       applyInputValue(displayValue.trim() ? `${displayValue.trim()} ${path}` : path);
