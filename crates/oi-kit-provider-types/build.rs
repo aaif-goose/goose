@@ -1,8 +1,15 @@
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
-
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    #[cfg(feature = "bundled-catalog")]
+    compress_bundled_catalog();
+}
+
+#[cfg(feature = "bundled-catalog")]
+fn compress_bundled_catalog() {
+    use std::fs::File;
+    use std::io::{BufReader, BufWriter};
+    use std::path::PathBuf;
+
     const CATALOG: &str = "src/canonical/data/canonical_models.json";
     println!("cargo:rerun-if-changed={CATALOG}");
 
