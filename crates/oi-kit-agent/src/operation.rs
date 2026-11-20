@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use futures::Stream;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -44,6 +45,18 @@ pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]>
 
 pub fn trailing_error(conversation: &Conversation) -> Option<MessageErrorKind> {
     conversation.last().and_then(Message::error_kind)
+}
+
+/// Text of the error that is ending this turn, if the last message is one.
+///
+/// This is the payload for the completion operation that stops on that error.
+/// It is not a later guess about whether the turn failed.
+pub fn trailing_error_message(conversation: &Conversation) -> Option<String> {
+    let message = conversation.last()?;
+    if let Some(error) = message.error() {
+        return Some(error.message.clone());
+    }
+    message.error_kind().map(|kind| format!("{kind:?}"))
 }
 
 pub fn last_effective_role(messages: &[Message]) -> Result<EffectiveRole> {
@@ -273,11 +286,35 @@ impl From<Conversation> for ConversationEffect {
 pub struct Emitter {
     tx: mpsc::UnboundedSender<AgentEvent>,
     cancel: CancellationToken,
+    /// Set by the operation that stops the turn because it failed. Read once,
+    /// after retries and stop hooks, to build [`crate::events::ReplyOutcome`].
+    failure: Arc<Mutex<Option<String>>>,
 }
 
 impl Emitter {
     pub fn new(tx: mpsc::UnboundedSender<AgentEvent>, cancel: CancellationToken) -> Self {
-        Self { tx, cancel }
+        Self::with_failure(tx, cancel, Arc::new(Mutex::new(None)))
+    }
+
+    pub fn with_failure(
+        tx: mpsc::UnboundedSender<AgentEvent>,
+        cancel: CancellationToken,
+        failure: Arc<Mutex<Option<String>>>,
+    ) -> Self {
+        Self {
+            tx,
+            cancel,
+            failure,
+        }
+    }
+
+    /// Records why this turn is stopping as a failure. The first reason wins;
+    /// later steps must not overwrite a provider or compaction failure.
+    pub fn record_failure(&self, message: impl Into<String>) {
+        let mut slot = self.failure.lock().unwrap();
+        if slot.is_none() {
+            *slot = Some(message.into());
+        }
     }
 
     pub fn emit(&self, event: AgentEvent) {

@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use super::{EmptyResponse, RecipeDto};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleRunStatusDto {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledJobDto {
@@ -13,6 +21,8 @@ pub struct ScheduledJobDto {
     pub cron: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_status: Option<ScheduleRunStatusDto>,
     pub currently_running: bool,
     pub paused: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
