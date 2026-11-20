@@ -27,6 +27,8 @@ export function getSessionDisplayName(session: Session): string {
 interface CreateSessionOptions {
   recipeDeeplink?: string;
   recipeId?: string;
+  recipeParameters?: Record<string, string>;
+  scheduledJobId?: string;
   extensionConfigs?: ExtensionConfig[];
   allExtensions?: FixedExtensionEntry[];
 }
@@ -111,7 +113,7 @@ async function createAcpSession(
   await ensureRecipeConsent(options);
 
   const configuredParameterScope = options?.recipeDeeplink
-    ? beginConfiguredRecipeParameterScope()
+    ? beginConfiguredRecipeParameterScope(options?.recipeParameters)
     : undefined;
   try {
     if (configuredParameterScope) {
@@ -125,6 +127,7 @@ async function createAcpSession(
       recipeId: options?.recipeId,
       recipeDeeplink: options?.recipeDeeplink,
       recipeParameterScopeId: configuredParameterScope?.id,
+      scheduledJobId: options?.scheduledJobId,
     });
   } finally {
     configuredParameterScope?.finish();

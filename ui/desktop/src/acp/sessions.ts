@@ -233,6 +233,7 @@ export interface AcpRecipeOptions {
   recipeId?: string;
   recipeDeeplink?: string;
   recipeParameterScopeId?: string;
+  scheduledJobId?: string;
 }
 
 /**
@@ -257,6 +258,9 @@ export async function acpNewSession(
   }
   if (recipe?.recipeParameterScopeId) {
     meta.recipeParameterScopeId = recipe.recipeParameterScopeId;
+  }
+  if (recipe?.scheduledJobId) {
+    meta.scheduledJobId = recipe.scheduledJobId;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.connection.agent.request(methods.agent.session.new, request);

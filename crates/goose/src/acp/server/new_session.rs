@@ -29,6 +29,7 @@ struct InitialSessionConfig {
 /// session row after it is created.
 struct NewSessionMetaFields {
     project_id: Option<String>,
+    scheduled_job_id: Option<String>,
     /// Client-supplied title, recorded as user-set so goose's own name
     /// generation leaves it alone. `None` when a recipe title took precedence.
     client_title: Option<String>,
@@ -207,6 +208,9 @@ impl AcpConnection {
         if let Some(project_id) = config.meta.project_id {
             builder = builder.project_id(Some(project_id));
         }
+        if let Some(scheduled_job_id) = config.meta.scheduled_job_id {
+            builder = builder.schedule_id(Some(scheduled_job_id));
+        }
         if let Some(client_title) = config.meta.client_title {
             builder = builder.user_provided_name(client_title);
         }
@@ -283,6 +287,7 @@ fn new_session_meta_fields(
         .filter(|title| !title.is_empty());
     Ok(NewSessionMetaFields {
         project_id: meta_string(meta, "projectId")?,
+        scheduled_job_id: meta_string(meta, "scheduledJobId")?,
         // A recipe title is a server-side declaration, so it keeps the
         // precedence it has today and a client title only replaces the
         // "New Chat" fallback.

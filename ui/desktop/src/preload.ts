@@ -1,6 +1,7 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { Recipe } from './recipe';
 import type { GooseApp } from './types/apps';
+import type { StartRecipePayload } from './types/recipeDeepLink';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
 import type { OpenExternalUrlResult } from './utils/urlSecurity';
@@ -170,6 +171,7 @@ type ElectronAPI = {
   isUsingGitHubFallback: () => Promise<boolean>;
   getAutoDownloadDisabled: () => Promise<boolean>;
   // Recipe warning functions
+  onStartRecipe: (callback: (payload: StartRecipePayload) => void) => () => void;
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
   recordRecipeHash: (recipe: Recipe) => Promise<boolean>;
@@ -328,6 +330,15 @@ const electronAPI: ElectronAPI = {
   },
   getAutoDownloadDisabled: (): Promise<boolean> => {
     return ipcRenderer.invoke('get-auto-download-disabled');
+  },
+  onStartRecipe: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: StartRecipePayload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('start-recipe', listener);
+    return () => {
+      ipcRenderer.off('start-recipe', listener);
+    };
   },
   closeWindow: () => ipcRenderer.send('close-window'),
   hasAcceptedRecipeBefore: (recipe: Recipe) =>

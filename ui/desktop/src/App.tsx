@@ -15,7 +15,7 @@ import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
-import { acpListSessions, acpDeleteSession } from './acp/sessions';
+import { acpListSessions, acpDeleteSession, acpGetSessionListItem } from './acp/sessions';
 import { acpChatSessionStore } from './acp/chatSessionStore';
 
 import { ChatType } from './types/chat';
@@ -51,7 +51,7 @@ import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
-import { getInitialWorkingDir } from './utils/workingDir';
+import { getEffectiveWorkingDir, getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
@@ -109,6 +109,7 @@ export const PairRouteWrapper = ({
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const recipeDeeplinkFromConfig = window.appConfig?.get('recipeDeeplink') as string | undefined;
   const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | undefined;
+  const scheduledJobId = window.appConfig?.get('scheduledJobId') as string | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
 
@@ -126,6 +127,7 @@ export const PairRouteWrapper = ({
           const newSession = await createSession(getInitialWorkingDir(), {
             recipeDeeplink: recipeDeeplinkFromConfig,
             recipeId: recipeIdFromConfig,
+            scheduledJobId,
             allExtensions: extensionsList,
           });
           const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
@@ -170,6 +172,7 @@ export const PairRouteWrapper = ({
     initialMessage,
     recipeDeeplinkFromConfig,
     recipeIdFromConfig,
+    scheduledJobId,
     resumeSessionId,
     setSearchParams,
     extensionsList,
@@ -423,16 +426,7 @@ export function AppInner() {
     };
   }, []);
 
-  const { addExtension } = useConfig();
-
-  useEffect(() => {
-    try {
-      window.electron.reactReady();
-    } catch (error) {
-      console.error('Error sending reactReady:', error);
-      setFatalError(`React ready notification failed: ${errorMessage(error, 'Unknown error')}`);
-    }
-  }, []);
+  const { addExtension, extensionsList } = useConfig();
 
   useEffect(() => {
     const handleSystemResume = () => reconnectAcpAfterSystemResume();
@@ -601,6 +595,50 @@ export function AppInner() {
       window.electron.off('set-initial-message', handleSetInitialMessage);
     };
   }, [navigate]);
+
+  useEffect(() => {
+    return window.electron.onStartRecipe(async (payload) => {
+      try {
+        const sessionId =
+          location.pathname === '/pair'
+            ? new URLSearchParams(location.search).get('resumeSessionId')
+            : null;
+        const workingDir = sessionId
+          ? (acpChatSessionStore.getSnapshot(sessionId)?.session?.working_dir ??
+            (await acpGetSessionListItem(sessionId)).workingDir)
+          : await getEffectiveWorkingDir();
+        const newSession = await createSession(workingDir, {
+          ...payload,
+          allExtensions: extensionsList,
+        });
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+            detail: {
+              sessionId: newSession.id,
+              initialMessage: resolveSessionInitialMessage(newSession),
+            },
+          })
+        );
+        navigate(`/pair?${new URLSearchParams({ resumeSessionId: newSession.id })}`);
+      } catch (error) {
+        if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) return;
+        if (isRecipeParameterScopesUnsupported(error)) {
+          toast.error(errorMessage(error));
+          return;
+        }
+        console.error('Failed to start recipe from deep link:', error);
+      }
+    });
+  }, [extensionsList, location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    try {
+      window.electron.reactReady();
+    } catch (error) {
+      console.error('Error sending reactReady:', error);
+      setFatalError(`React ready notification failed: ${errorMessage(error, 'Unknown error')}`);
+    }
+  }, []);
 
   // Register platform event handlers for app lifecycle management
   useEffect(() => {
