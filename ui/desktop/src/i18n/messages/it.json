@@ -4529,6 +4529,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Dettagli dello strumento"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Identificatore dello strumento"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Risultato dello strumento"
   },
