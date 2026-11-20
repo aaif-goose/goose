@@ -1004,6 +1004,32 @@ mod tests {
         );
     }
 
+    // Attestation bundle that GitHub serves for the v1.60.1
+    // goose-x86_64-unknown-linux-gnu.tar.bz2 release asset.
+    const RELEASE_BUNDLE: &str =
+        include_str!("update_test_data/goose-x86_64-unknown-linux-gnu-v1.60.1.sigstore.json");
+    const RELEASE_ARCHIVE_SHA256: &str =
+        "f1b477e531c11e74b82761367e0284c7817908efe30a842889959713820584d8";
+
+    fn verify_release_bundle(archive_sha256: &str) -> Result<()> {
+        let bundle: serde_json::Value = serde_json::from_str(RELEASE_BUNDLE)?;
+        let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)?;
+        let policy = VerificationPolicy::any_identity().require_issuer(GITHUB_ACTIONS_ISSUER);
+        let digest = Sha256Hash::from_hex(archive_sha256)?;
+        verify_bundle(&bundle, digest, &policy, &trusted_root, "release.yml")
+    }
+
+    #[test]
+    fn test_verify_bundle_accepts_release_attestation() {
+        verify_release_bundle(RELEASE_ARCHIVE_SHA256).unwrap();
+    }
+
+    #[test]
+    fn test_verify_bundle_rejects_other_archive() {
+        let other = sha256_hex(b"not the release archive");
+        assert!(verify_release_bundle(&other).is_err());
+    }
+
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_extract_tar_bz2_blocks_symlink_escape() {
