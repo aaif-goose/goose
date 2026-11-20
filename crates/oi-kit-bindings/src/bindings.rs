@@ -1465,7 +1465,7 @@ pub fn groq_default_model() -> String {
         .models
         .first()
         .map(|model| model.name.clone())
-        .unwrap_or_else(|| "moonshotai/kimi-k2-instruct-0905".to_string())
+        .unwrap_or_else(|| "openai/gpt-oss-120b".to_string())
 }
 
 #[uniffi::export]
