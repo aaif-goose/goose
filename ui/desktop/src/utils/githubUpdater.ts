@@ -41,9 +41,19 @@ interface SwapCommand {
   args: string[];
 }
 
+function envWithoutPSModulePath() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath')
+  );
+}
+
 function runCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore', windowsHide: true });
+    const child = spawn(command, args, {
+      stdio: 'ignore',
+      windowsHide: true,
+      env: envWithoutPSModulePath(),
+    });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) {

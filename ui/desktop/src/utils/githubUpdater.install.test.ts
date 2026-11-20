@@ -152,7 +152,11 @@ async function diagnostics(stagingDir: string, installRoot: string): Promise<str
 }
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs
+      .splice(0)
+      .map((dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }))
+  );
 });
 
 describe('prepareUpdateInstall', () => {
