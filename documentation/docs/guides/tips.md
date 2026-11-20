@@ -42,8 +42,8 @@ Use [permission modes](/docs/guides/managing-tools/goose-permissions) and [tool 
 ### Version Control
 Commit your code changes early and often. This allows you to rollback any unexpected changes.
 
-### Control which extensions goose can use
-Administrators can use an [allowlist](/docs/guides/allowlist) to restrict goose to approved extensions only. This helps prevent risky installs from unknown MCP servers.
+### Review extension installation links
+Desktop users can use an [allowlist](/docs/guides/allowlist) to restrict extension installation requests opened from links. This setting does not control extensions loaded by the CLI, recipes, or configuration files.
 
 ### Set up starter templates
 Create a reusable [recipe](/docs/guides/recipes/session-recipes) for workflows you want to share or run again later.
