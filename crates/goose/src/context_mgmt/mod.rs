@@ -81,8 +81,6 @@ pub fn is_compaction_summary(message: &Message) -> bool {
             }))
 }
 
-/// Estimate the tokens of the agent-visible messages, counted the same way
-/// as the fallback estimation in `check_if_compaction_needed`.
 pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i64> {
     let counter = create_token_counter()
         .await
@@ -93,54 +91,6 @@ pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i64> {
         .map(|message| counter.count_message_tokens(message))
         .sum();
     Ok(total.try_into()?)
-}
-
-/// Check if messages exceed the auto-compaction threshold
-pub async fn check_if_compaction_needed(
-    provider: &dyn Provider,
-    conversation: &Conversation,
-    threshold_override: Option<f64>,
-    session: &crate::session::Session,
-) -> Result<bool> {
-    if provider.manages_own_context() {
-        return Ok(false);
-    }
-
-    let messages = conversation.messages();
-
-    let model_config = session
-        .model_config
-        .clone()
-        .unwrap_or_else(|| ModelConfig::new("unknown"));
-    let context_limit =
-        crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
-    let threshold = threshold_override.unwrap_or_else(|| auto_compact_threshold(context_limit));
-
-    let (current_tokens, _token_source) = match session.usage.total_tokens {
-        Some(tokens) => (tokens as usize, "session metadata"),
-        None => {
-            let token_counter = create_token_counter()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
-
-            let estimated: usize = messages
-                .iter()
-                .filter(|message| message.is_agent_visible())
-                .map(|message| token_counter.count_message_tokens(message))
-                .sum();
-
-            (estimated, "estimated")
-        }
-    };
-
-    let usage_ratio = current_tokens as f64 / context_limit as f64;
-
-    let needs_compaction = if threshold <= 0.0 || threshold >= 1.0 {
-        false // Auto-compact is disabled.
-    } else {
-        usage_ratio > threshold
-    };
-    Ok(needs_compaction)
 }
 
 pub(crate) struct GooseCompactionModel {
@@ -180,7 +130,14 @@ impl oi_kit_context_management::CompactionModel for GooseCompactionModel {
             &[],
         )
         .instrument(span.clone())
-        .await;
+        .await
+        .map(|(message, usage)| {
+            let prices = crate::providers::canonical_cost::prices();
+            (
+                message,
+                usage.priced(self.provider.get_name(), prices.as_ref()),
+            )
+        });
         match &result {
             Ok((_, usage)) => oi_kit_agent::inference::record_chat_usage(&span, usage),
             Err(error) => {
