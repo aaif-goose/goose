@@ -118,7 +118,7 @@ Quote the actual value from the request for every check (for example `thinkingLe
 
 ## 7. Read the provider's notes
 
-Providers also introduce new rules that models.dev doesn't capture. For each new model, read the provider's launch post for the model, and the provider's changelog entries from the last 7 days:
+Providers also introduce new rules that models.dev doesn't capture. For each new model, read the provider's launch post for the model, and the provider's changelog entries from the last 3 days:
 
 | Provider | Changelog |
 |---|---|

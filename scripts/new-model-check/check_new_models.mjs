@@ -8,7 +8,7 @@
 
 import { readFile } from "node:fs/promises";
 
-const DAYS = 7;
+const DAYS = 3;
 const PROVIDERS = ["anthropic", "openai", "google", "xai", "zai", "moonshotai", "deepseek"];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
