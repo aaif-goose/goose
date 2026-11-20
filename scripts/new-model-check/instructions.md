@@ -142,7 +142,7 @@ Providers also introduce new rules that models.dev doesn't capture. For each new
 
 Only report changes that could affect what goose sends or receives, such as thinking settings, output limits, tool calling, streaming, headers or removed settings.
 
-For each item, give a one-line summary, what it means for goose, a short quote and the link. End each with `Action: none.` or `Action: <what to do>.` These don't affect PASS or FAIL.
+For each item, give a one-line summary, what it means for goose, a short quote and the link. End each with a bold action: `**Action: none.**` or `**Action: <what to do>.**` These don't affect PASS or FAIL.
 
 If a change clearly breaks goose, follow the PR rules in step 8 ("Canary fails too").
 
@@ -187,8 +187,8 @@ New model check: 2026-11-20 09:53 UTC
 - PASS openai/gpt-6.2-sol
 
 **Notes:**
-1. GPT-6.2 drops reasoning items when history is edited. May affect compaction. "<short quote>" <link> Action: check whether compaction keeps reasoning items.
-2. GPT-6.2 tool calling needs the Responses API. goose already uses it. "<short quote>" <link> Action: none.
+1. GPT-6.2 drops reasoning items when history is edited. May affect compaction. "<short quote>" <link> **Action: check whether compaction keeps reasoning items.**
+2. GPT-6.2 tool calling needs the Responses API. goose already uses it. "<short quote>" <link> **Action: none.**
 
 Tested goose 1.60.1 (main 1.60.0-canary+42055e7)
 ```
