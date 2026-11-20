@@ -245,6 +245,18 @@
     "type": "streamable-http"
   },
   {
+    "id": "eachlabs",
+    "name": "each::labs",
+    "description": "Generate and edit images, video, music and voice with each::labs models, and run your each::labs workflows",
+    "url": "https://mcp.eachlabs.ai/mcp",
+    "link": "https://docs.eachlabs.ai/mcp-server",
+    "installation_notes": "Hosted remote server. Sign in with your each::labs account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "elevenlabs-mcp",
     "name": "ElevenLabs",
     "description": "Text-to-speech and voice synthesis",
