@@ -6,6 +6,7 @@ import { ShowThinkingSetting } from '../response_styles/ShowThinkingSetting';
 import { GoosehintsSection } from './GoosehintsSection';
 import { LiveVoiceSettings } from './LiveVoiceSettings';
 import { SpellcheckToggle } from './SpellcheckToggle';
+import { ImageSettings } from './ImageSettings';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -55,6 +56,12 @@ export default function ChatSettingsSection() {
           <LiveVoiceSettings />
           <DictationSettings />
           <SpellcheckToggle />
+        </CardContent>
+      </Card>
+
+      <Card className="pb-2 rounded-lg">
+        <CardContent className="px-2">
+          <ImageSettings />
         </CardContent>
       </Card>
 
