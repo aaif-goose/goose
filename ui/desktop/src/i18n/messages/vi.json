@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose muốn gọi {toolName}. Cho phép?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Hoạt động"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Đã hoàn thành"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count} lượt gọi công cụ"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Thất bại"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Chưa hoàn thành"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Bước cuối: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Đang chạy"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "Đang chạy {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Đang chờ phê duyệt"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose sẽ tải bản cập nhật ở chế độ nền và cài đặt vào lần tiếp theo khi bạn thoát hoặc khởi động lại."
   },

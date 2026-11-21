@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose möchte {toolName} aufrufen. Erlauben?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Aktivität"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Abgeschlossen"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Fehlgeschlagen"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Unvollständig"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Letzter Schritt: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Wird ausgeführt"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} wird ausgeführt…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Warten auf Genehmigung"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose lädt das Update im Hintergrund herunter und installiert es beim nächsten Beenden oder Neustart."
   },

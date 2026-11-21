@@ -24,7 +24,7 @@ function messageElement(content: MessageContent[], isStreaming: boolean) {
     <GooseMessage
       sessionId="session-1"
       message={message}
-      hideTimestamp={false}
+      presentation={{ kind: 'standalone', hideTimestamp: false }}
       toolStates={[]}
       toolNotifications={[]}
       toolConfirmationShownInline={false}

@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose, {toolName}'yi aramak istiyor. İzin vermek?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Etkinlik"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Tamamlandı"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count} araç çağrısı"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Başarısız"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Tamamlanmadı"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Son adım: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Çalışıyor"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} çalışıyor…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Onay bekleniyor"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Güncelleme arka planda otomatik olarak indirilecektir."
   },

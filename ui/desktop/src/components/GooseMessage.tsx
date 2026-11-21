@@ -30,10 +30,14 @@ import {
 const MAX_STREAMING_MARKDOWN_LENGTH = 16_000;
 const LARGE_STREAMING_RENDER_COOLDOWN_MS = 250;
 
+export type MessagePresentation =
+  | { kind: 'standalone'; hideTimestamp: boolean }
+  | { kind: 'activity' | 'turnInline' | 'turnFooter'; isTurnActive: boolean };
+
 interface GooseMessageProps {
   sessionId: string;
   message: Message;
-  hideTimestamp: boolean;
+  presentation: MessagePresentation;
   toolStates: readonly ToolRenderState[];
   toolNotifications: readonly (NotificationEvent[] | undefined)[];
   toolConfirmationShownInline: boolean;
@@ -48,7 +52,7 @@ interface GooseMessageProps {
 function GooseMessage({
   sessionId,
   message,
-  hideTimestamp,
+  presentation,
   toolStates,
   toolNotifications,
   toolConfirmationShownInline,
@@ -86,6 +90,16 @@ function GooseMessage({
   const hasElicitation = elicitationContent !== undefined;
   const hasMessageDetails =
     message.metadata.usage != null || (message.metadata.operationLogs?.length ?? 0) > 0;
+  const hasTextOrImages = Boolean(displayText.trim() || imagePaths.length > 0);
+  const isStandalone = presentation.kind === 'standalone';
+  const isTurnFooter = presentation.kind === 'turnFooter';
+  const hideTimestamp = isStandalone && presentation.hideTimestamp;
+  const isToolStreaming = isStandalone ? isStreaming : presentation.isTurnActive;
+  const renderFooter =
+    !isStreaming &&
+    (isTurnFooter ||
+      (isStandalone && Boolean(thinkingContent || hasTextOrImages || toolRequests.length)));
+  const canCopy = Boolean(displayText.trim()) && (isTurnFooter || toolRequests.length === 0);
   const outputTokenLimitNotice = isOutputTokenLimitFallback
     ? "Response reached the model's output-token limit before returning content."
     : "Response reached the model's output-token limit and may be incomplete.";
@@ -99,36 +113,11 @@ function GooseMessage({
 
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
-      <div className="flex flex-col w-full min-w-0">
-        {thinkingContent && (
-          <div className="group">
-            <ThinkingContent content={thinkingContent} />
-            {!displayText.trim() && imagePaths.length === 0 && toolRequests.length === 0 && (
-              <div className="relative flex items-center justify-between">
-                <div
-                  className={cn(
-                    'text-xs text-text-secondary pt-1',
-                    hasMessageDetails &&
-                      'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
-                  )}
-                >
-                  {!isStreaming && !hideTimestamp && timestamp}
-                </div>
-                {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats
-                      usage={message.metadata.usage}
-                      operationLogs={message.metadata.operationLogs}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+      <div className="group relative flex flex-col w-full min-w-0">
+        {thinkingContent && <ThinkingContent content={thinkingContent} />}
 
-        {(displayText.trim() || imagePaths.length > 0) && (
-          <div className="flex flex-col group">
+        {hasTextOrImages && (
+          <div className="flex flex-col">
             {displayText.trim() && (
               <div ref={contentRef} className="agent-message-bubble w-full" dir={messageDir}>
                 <MarkdownContent content={markdownText} />
@@ -140,29 +129,6 @@ function GooseMessage({
                 {imagePaths.map((imagePath, index) => (
                   <ImagePreview key={index} src={imagePath} />
                 ))}
-              </div>
-            )}
-
-            {toolRequests.length === 0 && (
-              <div className="relative flex items-center justify-between">
-                {!isStreaming && (
-                  <div className="text-xs font-mono text-text-secondary pt-1 transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0">
-                    {timestamp}
-                  </div>
-                )}
-                {displayText.trim() && !isStreaming && (
-                  <div className="absolute left-0 pt-1">
-                    <MessageCopyLink text={displayText} contentRef={contentRef} />
-                  </div>
-                )}
-                {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats
-                      usage={message.metadata.usage}
-                      operationLogs={message.metadata.operationLogs}
-                    />
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -183,7 +149,7 @@ function GooseMessage({
                       {isFinalOutputToolRequest(toolRequest) ? (
                         <FinalOutputLine
                           toolResponse={toolState.response}
-                          isStreaming={isStreaming}
+                          isStreaming={isToolStreaming}
                         />
                       ) : (
                         <ToolCallWithResponse
@@ -192,37 +158,53 @@ function GooseMessage({
                           toolRequest={toolRequest}
                           toolResponse={toolState.response}
                           notifications={toolNotifications[toolIndex]}
-                          isStreamingMessage={isStreaming}
+                          isStreamingMessage={isToolStreaming}
                           isPendingApproval={toolState.isPending}
                           append={append}
                           confirmationContent={toolState.confirmation}
                           isApprovalClicked={isApprovalClicked}
+                          presentation={
+                            presentation.kind === 'activity'
+                              ? 'tool'
+                              : !isStandalone && !toolState.isPending
+                                ? 'app'
+                                : undefined
+                          }
                         />
                       )}
                     </div>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-between">
-                <div
-                  className={cn(
-                    'text-xs text-text-secondary pt-1',
-                    hasMessageDetails &&
-                      'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
-                  )}
-                >
-                  {!isStreaming && !hideTimestamp && timestamp}
-                </div>
-                {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats
-                      usage={message.metadata.usage}
-                      operationLogs={message.metadata.operationLogs}
-                    />
-                  </div>
-                )}
-              </div>
             </div>
+          </div>
+        )}
+
+        {renderFooter && (
+          <div className="relative flex items-center justify-between">
+            <div
+              className={cn(
+                'text-xs text-text-secondary pt-1',
+                hasTextOrImages && 'font-mono',
+                (canCopy || hasMessageDetails) &&
+                  'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
+              )}
+            >
+              {(!hideTimestamp || (hasTextOrImages && toolRequests.length === 0)) && timestamp}
+            </div>
+            {canCopy && (
+              <div className="absolute start-0 pt-1">
+                <MessageCopyLink text={displayText} contentRef={contentRef} />
+              </div>
+            )}
+            {hasMessageDetails && (
+              <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                <MessageUsageStats
+                  usage={message.metadata.usage}
+                  operationLogs={message.metadata.operationLogs}
+                />
+              </div>
+            )}
           </div>
         )}
 
