@@ -393,8 +393,9 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:
     GOOSE_BIN_DIR_SH=$(printf '%s' "$GOOSE_BIN_DIR_POSIX" | sed "s/'/'\\\\''/g")
     GOOSE_BIN_DIR_PS=$(printf '%s' "$GOOSE_BIN_DIR_WIN" | sed "s/'/''/g")
     WINDOWS_EXPORT_LINE="export PATH='$GOOSE_BIN_DIR_SH':\"\$PATH\""
-    # The printed command passes that line to echo in double quotes.
-    WINDOWS_EXPORT_ARG=$(printf '%s' "$WINDOWS_EXPORT_LINE" | sed 's/[\\$`"]/\\&/g')
+    # The printed command passes that line to echo in double quotes. A "!" is
+    # moved out of them ("'!'") so a pasted command skips history expansion.
+    WINDOWS_EXPORT_ARG=$(printf '%s' "$WINDOWS_EXPORT_LINE" | sed -e 's/[\\$`"]/\\&/g' -e "s/!/\"'!'\"/g")
     PS_PROFILE_LINE="\$env:PATH = '$GOOSE_BIN_DIR_PS;' + \$env:PATH"
     PS_PROFILE_ARG=$(printf '%s' "$PS_PROFILE_LINE" | sed "s/'/''/g")
 
@@ -405,7 +406,8 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:
     # ~/.bash_profile that loads ~/.bashrc only when none of them exists.
     for login_file in .bash_profile .bash_login .profile; do
       if [ -f "$HOME/$login_file" ]; then
-        if ! grep -q "bashrc" "$HOME/$login_file"; then
+        # Only an active line that sources ~/.bashrc counts, not a comment.
+        if ! grep -v '^[[:space:]]*#' "$HOME/$login_file" | grep -Eq '(^|[;&|{[:space:]])(source|\.)[[:space:]]+[^#]*bashrc'; then
           printf '    echo "%s" >> ~/%s\n' "$WINDOWS_EXPORT_ARG" "$login_file"
         fi
         break
