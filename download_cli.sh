@@ -388,22 +388,37 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:
   echo "Warning: goose installed, but $GOOSE_BIN_DIR is not in your PATH."
 
   if [ "$OS" = "windows" ]; then
+    # The snippets below wrap the directory in single quotes; escape any it contains.
+    GOOSE_BIN_DIR_SH=$(printf '%s' "$GOOSE_BIN_DIR_POSIX" | sed "s/'/'\\\\''/g")
+    GOOSE_BIN_DIR_PS=$(printf '%s' "$GOOSE_BIN_DIR_WIN" | sed "s/'/''/g")
+    WINDOWS_EXPORT_LINE="export PATH=\"$GOOSE_BIN_DIR_SH:\$PATH\""
+
     echo "To add goose to your PATH in Git Bash or MSYS2:"
     echo ""
-    echo "    echo 'export PATH=\"$GOOSE_BIN_DIR_POSIX:\$PATH\"' >> ~/.bashrc"
+    echo "    echo '$WINDOWS_EXPORT_LINE' >> ~/.bashrc"
+    # Login shells read the first of these files; Git for Windows creates a
+    # ~/.bash_profile that loads ~/.bashrc only when none of them exists.
+    for login_file in .bash_profile .bash_login .profile; do
+      if [ -f "$HOME/$login_file" ]; then
+        if ! grep -q "bashrc" "$HOME/$login_file"; then
+          echo "    echo '$WINDOWS_EXPORT_LINE' >> ~/$login_file"
+        fi
+        break
+      fi
+    done
     echo "    source ~/.bashrc"
     echo ""
     echo "To add goose to your PATH in PowerShell:"
     echo ""
     echo "    if (!(Test-Path \$PROFILE)) { New-Item -Path \$PROFILE -ItemType File -Force }"
-    echo "    Add-Content -Path \$PROFILE -Value '\$env:PATH = \"$GOOSE_BIN_DIR_WIN;\$env:PATH\"'"
+    echo "    Add-Content -Path \$PROFILE -Value '\$env:PATH = \"$GOOSE_BIN_DIR_PS;\$env:PATH\"'"
     echo "    . \$PROFILE"
     echo ""
     echo "Shell profiles only affect that shell. To make goose available in every new"
     echo "terminal and in apps started outside of it, add it to your Windows user PATH"
     echo "from PowerShell, then open a new terminal:"
     echo ""
-    echo "    [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$GOOSE_BIN_DIR_WIN', 'User')"
+    echo "    [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$GOOSE_BIN_DIR_PS', 'User')"
     echo ""
     echo "Alternatively, you can run:"
     echo "    goose configure"
