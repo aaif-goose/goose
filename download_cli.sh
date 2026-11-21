@@ -14,7 +14,8 @@ set -eu
 #   curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
 #
 # Environment variables:
-#   GOOSE_BIN_DIR  - Directory to which goose will be installed (default: $HOME/.local/bin)
+#   GOOSE_BIN_DIR  - Directory to which goose will be installed (default: $HOME/.local/bin,
+#                    or $USERPROFILE/goose on native Windows: Git Bash, MSYS2, Cygwin)
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
@@ -372,19 +373,37 @@ fi
 
 
 # --- 7) Check PATH and give instructions if needed ---
-if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
+# On native Windows the install directory can be a Windows path (the default is
+# built from $USERPROFILE), while PATH in Git Bash/MSYS2/Cygwin holds POSIX
+# paths. Compare against, and print, the form each shell expects.
+GOOSE_BIN_DIR_POSIX="$GOOSE_BIN_DIR"
+GOOSE_BIN_DIR_WIN="$GOOSE_BIN_DIR"
+if [ "$OS" = "windows" ] && command -v cygpath >/dev/null 2>&1; then
+  GOOSE_BIN_DIR_POSIX=$(cygpath -u "$GOOSE_BIN_DIR")
+  GOOSE_BIN_DIR_WIN=$(cygpath -w "$GOOSE_BIN_DIR")
+fi
+
+if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:"* ]]; then
   echo ""
   echo "Warning: goose installed, but $GOOSE_BIN_DIR is not in your PATH."
 
   if [ "$OS" = "windows" ]; then
+    echo "To add goose to your PATH in Git Bash or MSYS2:"
+    echo ""
+    echo "    echo 'export PATH=\"$GOOSE_BIN_DIR_POSIX:\$PATH\"' >> ~/.bashrc"
+    echo "    source ~/.bashrc"
+    echo ""
     echo "To add goose to your PATH in PowerShell:"
     echo ""
-    echo "# Add to your PowerShell profile"
-    echo '$profilePath = $PROFILE'
-    echo 'if (!(Test-Path $profilePath)) { New-Item -Path $profilePath -ItemType File -Force }'
-    echo 'Add-Content -Path $profilePath -Value ''$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"'''
-    echo "# Reload profile or restart PowerShell"
-    echo '. $PROFILE'
+    echo "    if (!(Test-Path \$PROFILE)) { New-Item -Path \$PROFILE -ItemType File -Force }"
+    echo "    Add-Content -Path \$PROFILE -Value '\$env:PATH = \"$GOOSE_BIN_DIR_WIN;\$env:PATH\"'"
+    echo "    . \$PROFILE"
+    echo ""
+    echo "Shell profiles only affect that shell. To make goose available in every new"
+    echo "terminal and in apps started outside of it, add it to your Windows user PATH"
+    echo "from PowerShell, then open a new terminal:"
+    echo ""
+    echo "    [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$GOOSE_BIN_DIR_WIN', 'User')"
     echo ""
     echo "Alternatively, you can run:"
     echo "    goose configure"

@@ -207,18 +207,18 @@ import { PanelLeft } from 'lucide-react';
         ```
 
         :::info Windows PATH Setup
-        If you see a warning that goose is not in your PATH, you need to add goose to your PATH:
+        If you see a warning that goose is not in your PATH, add the directory goose was installed to. The installer prints the exact commands for that directory, including a custom `GOOSE_BIN_DIR`.
 
         <details>
-          <summary>For Git Bash/MSYS2</summary>
+          <summary>Installed from Git Bash/MSYS2 (default: `%USERPROFILE%\goose`)</summary>
           ```bash
-          echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+          echo 'export PATH="$(cygpath -u "$USERPROFILE")/goose:$PATH"' >> ~/.bashrc
           source ~/.bashrc
           ```
         </details>
 
         <details>
-          <summary>For PowerShell</summary>
+          <summary>Installed from PowerShell (default: `%USERPROFILE%\.local\bin`)</summary>
           ```powershell
           # Add to your PowerShell profile
           $profilePath = $PROFILE
@@ -228,6 +228,14 @@ import { PanelLeft } from 'lucide-react';
           . $PROFILE
           ```
         </details>
+
+        Shell profiles only affect that shell. To make goose available in every new terminal and in apps started outside of it, add the install directory to your Windows user PATH from PowerShell, then open a new terminal. For a Git Bash/MSYS2 install:
+
+        ```powershell
+        [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:USERPROFILE\goose", 'User')
+        ```
+
+        For a PowerShell install, use `$env:USERPROFILE\.local\bin` instead.
 
         After updating your PATH, you can run `goose` commands from any directory.
         :::
