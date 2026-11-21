@@ -42,6 +42,7 @@ export interface TurnActivity {
 function isTurnBoundary(message: Message, isUserMessage: (message: Message) => boolean) {
   return (
     isUserMessage(message) &&
+    !message.metadata.steer &&
     !message.content.some((content) => content.type === 'toolResponse') &&
     message.content.some((content) => content.type === 'text' || content.type === 'image')
   );
@@ -90,7 +91,6 @@ function describeTurn(
 ): TurnActivity {
   const tools = new Map<string, ActivityTool>();
   let lastTextIndex: number | undefined;
-  let firstMediaIndex: number | undefined;
   let lastToolIndex: number | undefined;
   let lastAssistantIndex: number | undefined;
   let awaitingConfirmation = false;
@@ -123,7 +123,6 @@ function describeTurn(
       if (!isFinalOutputToolRequest(request)) {
         tools.set(request.id, { request, state: rowContext.toolStates[toolIndex] });
         lastToolIndex = index;
-        firstMediaIndex = undefined;
       }
     });
     if (!message.metadata.fallbackContent) {
@@ -134,7 +133,6 @@ function describeTurn(
         content: content.filter((block) => block.type === 'text'),
       });
       if (textContent) lastTextIndex = index;
-      if (content.some((block) => block.type === 'image')) firstMediaIndex ??= index;
     }
   }
 
@@ -160,8 +158,7 @@ function describeTurn(
     lastTextIndex !== undefined && lastTextIndex >= (lastToolIndex ?? -1)
       ? lastTextIndex
       : undefined;
-  const finalAnswerStart = finalTextIndex ?? firstMediaIndex;
-  let footerIndex = finalAnswerStart;
+  let footerIndex = finalTextIndex;
   const steps: ActivityMessage[] = [];
   const inline = new Map<number, Message>();
 
@@ -195,9 +192,9 @@ function describeTurn(
       const tool = content.type === 'toolRequest' ? tools.get(content.id) : undefined;
       const hasMcpApp = tool && getMcpAppMetadata(tool.state.response);
       const finalContent =
-        finalAnswerStart !== undefined &&
-        index >= finalAnswerStart &&
-        contentIndex > lastToolContentIndex;
+        index >= (lastToolIndex ?? -1) &&
+        contentIndex > lastToolContentIndex &&
+        (content.type === 'image' || (finalTextIndex !== undefined && index >= finalTextIndex));
       const group =
         (tool && !tool.state.isPending) ||
         isThinking(content) ||

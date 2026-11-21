@@ -26,6 +26,7 @@ import {
   type MessageRowContext,
 } from './messageRowContext';
 import TurnActivityRow from './TurnActivityRow';
+import { useSearchVisibility } from './conversation/SearchView';
 import type { useTurnActivity } from './useTurnActivity';
 
 const i18n = defineMessages({
@@ -181,7 +182,7 @@ interface MessageListProps {
 
 export default function MessageList({
   messages,
-  activity: { visibleMessages, rowContexts, turns },
+  activity: { visibleMessages, rowContexts, turns, showThinking },
   sessionId,
   toolCallNotifications = emptyToolCallNotifications,
   append = emptyAppend,
@@ -192,6 +193,7 @@ export default function MessageList({
   submitElicitationResponse,
 }: MessageListProps) {
   const intl = useIntl();
+  const isSearching = useSearchVisibility();
   const [showAllMessages, setShowAllMessages] = useState(false);
   const latestTurn = turns.at(-1);
   const latestTurnStart =
@@ -347,6 +349,8 @@ export default function MessageList({
         <TurnActivityRow
           key={`turn-${turnStart.id ?? `${turn.start}-${turnStart.created}`}`}
           turn={turn}
+          showThinking={showThinking}
+          isSearching={isSearching}
           renderSteps={() =>
             turn.steps.map((step) =>
               renderRow(step.message, step.index, `${step.message.id ?? step.index}-${step.key}`, {

@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppEvents } from '../constants/events';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Message, MessageContent } from '../types/message';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import MessageList from './MessageList';
+import { SearchView } from './conversation/SearchView';
 import { deriveMessageRowContexts } from './messageRowContext';
 import { deriveTurnActivity } from './turnActivity';
 import { useTurnActivity } from './useTurnActivity';
@@ -78,6 +80,111 @@ function Transcript({ messages, active = false }: { messages: Message[]; active?
 const prompt = message('user', 'user', text('Run the checks'));
 
 describe('turn activity disclosure', () => {
+  afterEach(() => window.electron.setSetting('showThinking', 'collapsed'));
+
+  it('opens a thought-only turn when Show Thinking is set to Always initially and after a change', async () => {
+    await window.electron.setSetting('showThinking', 'always');
+    render(
+      <Transcript
+        messages={[
+          prompt,
+          message('thought', 'assistant', {
+            type: 'thinking',
+            thinking: 'Plan the next check',
+            signature: '',
+          }),
+        ]}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const trigger = await screen.findByRole('button', { name: /Activity.*Completed/ });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByText('Plan the next check')).toBeVisible();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    for (const mode of ['collapsed', 'always'] as const) {
+      await act(async () => {
+        await window.electron.setSetting('showThinking', mode);
+        window.dispatchEvent(new CustomEvent(AppEvents.SHOW_THINKING_CHANGED));
+      });
+      expect(trigger).toHaveAttribute('aria-expanded', String(mode === 'always'));
+    }
+    expect(await screen.findByText('Plan the next check')).toBeVisible();
+  });
+
+  it('finds text in collapsed activity and restores expansion after closing search', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    );
+    const createRange = document.createRange.bind(document);
+    const rangeSpy = vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = createRange();
+      Object.defineProperty(range, 'getClientRects', { value: () => [] });
+      return range;
+    });
+    try {
+      render(
+        <SearchView>
+          <Transcript
+            messages={[
+              prompt,
+              message(
+                'check',
+                'assistant',
+                text('Reading the hidden report.'),
+                request('read', 'read_file')
+              ),
+              message('result', 'user', response('read')),
+              message('answer', 'assistant', text('The report passed.')),
+            ]}
+          />
+        </SearchView>,
+        { wrapper: IntlTestWrapper }
+      );
+
+      const trigger = screen.getByRole('button', { name: /1 tool call.*Completed/ });
+      expect(screen.queryByText('Reading the hidden report.')).toBeNull();
+      fireEvent.keyDown(window, { key: 'f', metaKey: true });
+      const search = screen.getByPlaceholderText('Search conversation...');
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.change(search, { target: { value: 'hidden report' } });
+      expect(await screen.findByText('1/1')).toBeVisible();
+      fireEvent.keyDown(search, { key: 'Escape' });
+      await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+      expect(screen.queryByText('Reading the hidden report.')).toBeNull();
+    } finally {
+      rangeSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps an answer image visible when it arrives before its caption', () => {
+    render(
+      <Transcript
+        messages={[
+          prompt,
+          message('tool', 'assistant', request('render', 'render_chart')),
+          message('result', 'user', response('render')),
+          message('image', 'assistant', { type: 'image', data: 'AQID', mimeType: 'image/png' }),
+          message('caption', 'assistant', text('The chart shows the results.')),
+        ]}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    expect(screen.getByRole('button', { name: /1 tool call.*Completed/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.getByRole('img', { name: /uploaded|preview|image/i })).toBeVisible();
+    expect(screen.getByText('The chart shows the results.')).toBeVisible();
+  });
+
   it('keeps the final answer, media, and notification inline and expands steps in order', async () => {
     const final = message('final', 'assistant', text('The checks passed.'), {
       type: 'systemNotification',
@@ -239,6 +346,16 @@ describe('turn activity state', () => {
       showThinking
     );
   }
+
+  it('keeps the original turn and running tool when the user steers an active run', () => {
+    const call = message('read', 'assistant', request('read', 'read_file'));
+    const steer = message('steer', 'user', text('Read the contents first.'));
+    steer.metadata.steer = true;
+
+    expect(turns([prompt, call, steer], true)).toMatchObject([
+      { start: 0, end: 2, status: 'running', runningTool: 'read file' },
+    ]);
+  });
 
   it('tracks running and last tools within the current turn and starts over at a user prompt', () => {
     const call = message('read', 'assistant', request('read', 'developer__read_file'));

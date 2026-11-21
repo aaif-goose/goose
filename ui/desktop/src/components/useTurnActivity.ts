@@ -29,5 +29,5 @@ export function useTurnActivity(
       ),
     [visibleMessages, rowContexts, isUserMessage, isActive, showThinking]
   );
-  return { visibleMessages, rowContexts, turns };
+  return { visibleMessages, rowContexts, turns, showThinking };
 }

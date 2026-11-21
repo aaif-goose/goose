@@ -3,6 +3,7 @@ import { defineMessages, useIntl } from '../i18n';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import Expand from './ui/Expand';
 import type { TurnActivity } from './turnActivity';
+import type { ShowThinking } from '../utils/settings';
 
 const i18n = defineMessages({
   count: {
@@ -19,13 +20,29 @@ const i18n = defineMessages({
 
 export default function TurnActivityRow({
   turn,
+  showThinking,
+  isSearching,
   renderSteps,
 }: {
   turn: TurnActivity;
+  showThinking: ShowThinking | null;
+  isSearching: boolean;
   renderSteps: () => ReactNode;
 }) {
   const intl = useIntl();
-  const [expanded, setExpanded] = useState(false);
+  const thinkingSetting = showThinking ?? 'collapsed';
+  const [previousSetting, setPreviousSetting] = useState(thinkingSetting);
+  const [manualExpansion, setManualExpansion] = useState<boolean | null>(null);
+  if (previousSetting !== thinkingSetting) {
+    setPreviousSetting(thinkingSetting);
+    setManualExpansion(null);
+  }
+  const openForThinking =
+    thinkingSetting === 'always' &&
+    turn.steps.some(({ message }) =>
+      message.content.some((content) => content.type === 'thinking')
+    );
+  const expanded = isSearching || (manualExpansion ?? openForThinking);
   const label = (
     <>
       <span>
@@ -39,10 +56,13 @@ export default function TurnActivityRow({
   );
 
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded} className="mt-3">
+    <Collapsible open={expanded} onOpenChange={setManualExpansion} className="mt-3">
       {turn.steps.length > 0 ? (
         <>
-          <CollapsibleTrigger className="flex min-h-7 max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 rounded-sm text-start text-xs text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-active">
+          <CollapsibleTrigger
+            disabled={isSearching}
+            className="flex min-h-7 max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 rounded-sm text-start text-xs text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-active disabled:cursor-default"
+          >
             <span className="rtl:scale-x-[-1]" aria-hidden="true">
               <Expand size={3} isExpanded={expanded} />
             </span>
