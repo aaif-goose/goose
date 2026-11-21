@@ -388,20 +388,25 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:
   echo "Warning: goose installed, but $GOOSE_BIN_DIR is not in your PATH."
 
   if [ "$OS" = "windows" ]; then
-    # The snippets below wrap the directory in single quotes; escape any it contains.
+    # Keep the directory literal in the lines written to shell profiles: it goes
+    # inside single quotes there, so $, backticks and $() are not expanded later.
     GOOSE_BIN_DIR_SH=$(printf '%s' "$GOOSE_BIN_DIR_POSIX" | sed "s/'/'\\\\''/g")
     GOOSE_BIN_DIR_PS=$(printf '%s' "$GOOSE_BIN_DIR_WIN" | sed "s/'/''/g")
-    WINDOWS_EXPORT_LINE="export PATH=\"$GOOSE_BIN_DIR_SH:\$PATH\""
+    WINDOWS_EXPORT_LINE="export PATH='$GOOSE_BIN_DIR_SH':\"\$PATH\""
+    # The printed command passes that line to echo in double quotes.
+    WINDOWS_EXPORT_ARG=$(printf '%s' "$WINDOWS_EXPORT_LINE" | sed 's/[\\$`"]/\\&/g')
+    PS_PROFILE_LINE="\$env:PATH = '$GOOSE_BIN_DIR_PS;' + \$env:PATH"
+    PS_PROFILE_ARG=$(printf '%s' "$PS_PROFILE_LINE" | sed "s/'/''/g")
 
     echo "To add goose to your PATH in Git Bash or MSYS2:"
     echo ""
-    echo "    echo '$WINDOWS_EXPORT_LINE' >> ~/.bashrc"
+    printf '    echo "%s" >> ~/.bashrc\n' "$WINDOWS_EXPORT_ARG"
     # Login shells read the first of these files; Git for Windows creates a
     # ~/.bash_profile that loads ~/.bashrc only when none of them exists.
     for login_file in .bash_profile .bash_login .profile; do
       if [ -f "$HOME/$login_file" ]; then
         if ! grep -q "bashrc" "$HOME/$login_file"; then
-          echo "    echo '$WINDOWS_EXPORT_LINE' >> ~/$login_file"
+          printf '    echo "%s" >> ~/%s\n' "$WINDOWS_EXPORT_ARG" "$login_file"
         fi
         break
       fi
@@ -411,7 +416,7 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:
     echo "To add goose to your PATH in PowerShell:"
     echo ""
     echo "    if (!(Test-Path \$PROFILE)) { New-Item -Path \$PROFILE -ItemType File -Force }"
-    echo "    Add-Content -Path \$PROFILE -Value '\$env:PATH = \"$GOOSE_BIN_DIR_PS;\$env:PATH\"'"
+    printf "    Add-Content -Path \$PROFILE -Value '%s'\n" "$PS_PROFILE_ARG"
     echo "    . \$PROFILE"
     echo ""
     echo "Shell profiles only affect that shell. To make goose available in every new"
