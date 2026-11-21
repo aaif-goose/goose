@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose desidera richiamare {toolName}. Consentire?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Attività"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Completato"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count, plural, one {# chiamata a uno strumento} other {# chiamate a strumenti}}"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Non riuscito"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Incompleto"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Ultimo passaggio: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "In esecuzione"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "Esecuzione di {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "In attesa di approvazione"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose scaricherà l'aggiornamento in background e lo installerà al prossimo arresto o riavvio."
   },

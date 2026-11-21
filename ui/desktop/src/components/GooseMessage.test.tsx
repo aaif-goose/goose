@@ -22,7 +22,7 @@ describe('GooseMessage', () => {
       <GooseMessage
         sessionId="session"
         message={message}
-        hideTimestamp={false}
+        presentation={{ kind: 'standalone', hideTimestamp: false }}
         toolStates={[]}
         toolNotifications={[]}
         toolConfirmationShownInline={false}
@@ -74,7 +74,7 @@ describe('GooseMessage', () => {
       <GooseMessage
         sessionId="session"
         message={message}
-        hideTimestamp={false}
+        presentation={{ kind: 'standalone', hideTimestamp: false }}
         toolStates={[{ requestId: 'final-1', response, confirmation: undefined, isPending: false }]}
         toolNotifications={[undefined]}
         toolConfirmationShownInline={false}

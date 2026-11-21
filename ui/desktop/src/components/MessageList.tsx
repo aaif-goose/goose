@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { isEqual } from 'lodash';
 import { defineMessages, useIntl } from '../i18n';
-import GooseMessage from './GooseMessage';
+import GooseMessage, { type MessagePresentation } from './GooseMessage';
 import UserMessage from './UserMessage';
 import {
   SystemNotificationInline,
@@ -11,20 +11,22 @@ import {
   CreditsExhaustedNotification,
   getCreditsExhaustedNotification,
 } from './context_management/CreditsExhaustedNotification';
-import type {
-  ImageData,
-  Message,
-  NotificationEvent,
-  SystemNotificationContent,
+import {
+  getToolRequests,
+  type ImageData,
+  type Message,
+  type NotificationEvent,
+  type SystemNotificationContent,
 } from '../types/message';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
 import {
-  deriveMessageRowContexts,
   type InferenceModel,
   inferenceModel,
   isModelChange,
   type MessageRowContext,
 } from './messageRowContext';
+import TurnActivityRow from './TurnActivityRow';
+import type { useTurnActivity } from './useTurnActivity';
 
 const i18n = defineMessages({
   modelChanged: {
@@ -49,7 +51,6 @@ const emptyToolCallNotifications = new Map<string, NotificationEvent[]>();
 const emptyAppend = () => {};
 const HEAD_MESSAGE_COUNT = 20;
 const TAIL_MESSAGE_COUNT = 200;
-const MESSAGE_DISPLAY_LIMIT = HEAD_MESSAGE_COUNT + TAIL_MESSAGE_COUNT;
 
 function getSystemNotification(message: Message): SystemNotificationContent | undefined {
   return getCreditsExhaustedNotification(message) ?? getInlineSystemNotification(message);
@@ -70,6 +71,7 @@ interface MessageRowProps {
   append: (value: string) => void;
   index: number;
   isStreaming: boolean;
+  presentation: MessagePresentation;
   isUser: boolean;
   message: Message;
   modelChangeMessage: string | null;
@@ -92,6 +94,7 @@ function MessageRowComponent({
   append,
   index,
   isStreaming,
+  presentation,
   isUser,
   message,
   modelChangeMessage,
@@ -103,7 +106,7 @@ function MessageRowComponent({
 }: MessageRowProps) {
   const notification = getSystemNotification(message);
 
-  if (notification) {
+  if (notification && message.content.every((content) => content.type === 'systemNotification')) {
     return (
       <div
         className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} assistant`}
@@ -130,6 +133,7 @@ function MessageRowComponent({
         className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} ${isUser ? 'user' : 'assistant'} ${rowContext.isInToolCallChain ? 'in-chain' : ''}`}
         data-testid="message-container"
       >
+        {notification && renderSystemNotification(notification)}
         {isUser ? (
           !hasOnlyToolResponses && (
             <UserMessage message={message} onMessageUpdate={onMessageUpdate} />
@@ -138,7 +142,7 @@ function MessageRowComponent({
           <GooseMessage
             sessionId={sessionId}
             message={message}
-            hideTimestamp={rowContext.hideTimestamp}
+            presentation={presentation}
             toolStates={rowContext.toolStates}
             toolNotifications={toolNotifications}
             toolConfirmationShownInline={rowContext.toolConfirmationShownInline}
@@ -156,6 +160,7 @@ const MessageRow = memo(MessageRowComponent, isEqual);
 
 interface MessageListProps {
   messages: Message[];
+  activity: ReturnType<typeof useTurnActivity>;
   sessionId: string;
   toolCallNotifications?: Map<string, NotificationEvent[]>;
   append?: (value: string) => void;
@@ -176,6 +181,7 @@ interface MessageListProps {
 
 export default function MessageList({
   messages,
+  activity: { visibleMessages, rowContexts, turns },
   sessionId,
   toolCallNotifications = emptyToolCallNotifications,
   append = emptyAppend,
@@ -187,25 +193,21 @@ export default function MessageList({
 }: MessageListProps) {
   const intl = useIntl();
   const [showAllMessages, setShowAllMessages] = useState(false);
-  const visibleMessages = useMemo(
-    () =>
-      messages.flatMap((message, index) =>
-        message.metadata.userVisible ? [{ message, index }] : []
-      ),
-    [messages]
-  );
-  const hiddenMessageCount = showAllMessages
-    ? 0
-    : Math.max(0, visibleMessages.length - MESSAGE_DISPLAY_LIMIT);
+  const latestTurn = turns.at(-1);
+  const latestTurnStart =
+    latestTurn && (latestTurn.toolCount > 0 || latestTurn.active)
+      ? visibleMessages.findIndex(({ index }) => index === latestTurn.start)
+      : visibleMessages.length;
+  const tailStart = Math.min(visibleMessages.length - TAIL_MESSAGE_COUNT, latestTurnStart);
+  const hiddenMessageCount = showAllMessages ? 0 : Math.max(0, tailStart - HEAD_MESSAGE_COUNT);
   const hasHiddenMessages = hiddenMessageCount > 0;
   const displayedMessages = useMemo(() => {
     if (!hasHiddenMessages) {
       return visibleMessages;
     }
 
-    const tailStart = visibleMessages.length - TAIL_MESSAGE_COUNT;
     return [...visibleMessages.slice(0, HEAD_MESSAGE_COUNT), ...visibleMessages.slice(tailStart)];
-  }, [hasHiddenMessages, visibleMessages]);
+  }, [hasHiddenMessages, tailStart, visibleMessages]);
 
   useEffect(() => {
     onRenderingComplete?.();
@@ -233,12 +235,66 @@ export default function MessageList({
     };
   }, [hasHiddenMessages]);
 
-  const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
   const modelLabel = (model: InferenceModel) =>
     model.confirmed
       ? getModelDisplayName(model.id)
       : intl.formatMessage(i18n.requestedModel, { model: getModelDisplayName(model.id) });
   const messageRows: React.ReactNode[] = [];
+  let turnIndex = 0;
+  const shownSummaries = new Set<number>();
+
+  const renderRow = (
+    message: Message,
+    index: number,
+    key: string,
+    turnPresentation?: Exclude<MessagePresentation, { kind: 'standalone' }>
+  ) => {
+    const isUser = isUserMessage(message);
+    const context = rowContexts[index];
+    const presentation: MessagePresentation = turnPresentation ?? {
+      kind: 'standalone',
+      hideTimestamp: context.hideTimestamp,
+    };
+    const requestIds = new Set(getToolRequests(message).map((request) => request.id));
+    const rowContext = {
+      ...context,
+      isInToolCallChain: presentation.kind === 'standalone' && context.isInToolCallChain,
+      toolStates: context.toolStates.filter((state) => requestIds.has(state.requestId)),
+    };
+    const currentModel = presentation.kind === 'activity' ? null : inferenceModel(message);
+    const previousModel = rowContext.previousModel;
+    const modelChangeMessage =
+      currentModel && previousModel && isModelChange(previousModel, currentModel)
+        ? intl.formatMessage(i18n.modelChanged, {
+            previousModel: modelLabel(previousModel),
+            currentModel: modelLabel(currentModel),
+          })
+        : null;
+    return (
+      <MessageRow
+        key={key}
+        append={append}
+        index={presentation.kind === 'activity' ? 0 : index}
+        isStreaming={
+          !isUser &&
+          (presentation.kind === 'turnFooter'
+            ? presentation.isTurnActive
+            : isStreamingMessage && index === messages.length - 1 && message.role === 'assistant')
+        }
+        isUser={isUser}
+        message={message}
+        modelChangeMessage={modelChangeMessage}
+        onMessageUpdate={onMessageUpdate}
+        rowContext={rowContext}
+        sessionId={sessionId}
+        submitElicitationResponse={submitElicitationResponse}
+        toolNotifications={rowContext.toolStates.map((toolState) =>
+          toolCallNotifications.get(toolState.requestId)
+        )}
+        presentation={presentation}
+      />
+    );
+  };
 
   displayedMessages.forEach(({ message, index }, displayedIndex) => {
     if (hiddenMessageCount > 0 && displayedIndex === HEAD_MESSAGE_COUNT) {
@@ -259,46 +315,61 @@ export default function MessageList({
       );
     }
 
-    const isUser = isUserMessage(message);
     const messageIdentifier = message.id ?? `msg-${index}-${message.created}`;
-    const messageKey = getSystemNotification(message)
-      ? `notification-${messageIdentifier}`
-      : messageIdentifier;
-    const rowContext = rowContexts[index];
-    const currentModel = inferenceModel(message);
-    const previousModel = rowContext.previousModel;
-    const modelChangeMessage =
-      currentModel && previousModel && isModelChange(previousModel, currentModel)
-        ? intl.formatMessage(i18n.modelChanged, {
-            previousModel: modelLabel(previousModel),
-            currentModel: modelLabel(currentModel),
-          })
-        : null;
-    const toolNotifications = rowContext.toolStates.map((toolState) =>
-      toolCallNotifications.get(toolState.requestId)
-    );
+    const notification = getSystemNotification(message);
+    const notificationOnly =
+      notification && message.content.every((content) => content.type === 'systemNotification');
+    while (turns[turnIndex].end < index) turnIndex++;
+    const turn = turns[turnIndex];
+    const hasActivity = turn.steps.length > 0 || turn.toolCount > 0;
+    if (
+      hasActivity &&
+      !notification &&
+      message.content.every((content) => content.type === 'toolResponse')
+    ) {
+      return;
+    }
+    if (notificationOnly || message.role !== 'assistant' || !hasActivity) {
+      messageRows.push(
+        renderRow(
+          message,
+          index,
+          notification ? `notification-${messageIdentifier}` : messageIdentifier
+        )
+      );
+      return;
+    }
 
-    messageRows.push(
-      <MessageRow
-        key={messageKey}
-        append={append}
-        index={index}
-        isStreaming={
-          isStreamingMessage &&
-          !isUser &&
-          index === messages.length - 1 &&
-          message.role === 'assistant'
-        }
-        isUser={isUser}
-        message={message}
-        modelChangeMessage={modelChangeMessage}
-        onMessageUpdate={onMessageUpdate}
-        rowContext={rowContext}
-        sessionId={sessionId}
-        submitElicitationResponse={submitElicitationResponse}
-        toolNotifications={toolNotifications}
-      />
-    );
+    if (!shownSummaries.has(turn.start)) {
+      shownSummaries.add(turn.start);
+      const turnStart = messages[turn.start];
+      messageRows.push(
+        <TurnActivityRow
+          key={`turn-${turnStart.id ?? `${turn.start}-${turnStart.created}`}`}
+          turn={turn}
+          renderSteps={() =>
+            turn.steps.map((step) =>
+              renderRow(step.message, step.index, `${step.message.id ?? step.index}-${step.key}`, {
+                kind: 'activity',
+                isTurnActive: turn.active,
+              })
+            )
+          }
+        />
+      );
+    }
+
+    const inline = turn.inline.get(index);
+    const previousModel = rowContexts[index].previousModel;
+    const currentModel = inferenceModel(message);
+    if (inline || (currentModel && previousModel && isModelChange(previousModel, currentModel))) {
+      messageRows.push(
+        renderRow(inline ?? { ...message, content: [] }, index, messageIdentifier, {
+          kind: turn.footerIndex === index ? 'turnFooter' : 'turnInline',
+          isTurnActive: turn.active,
+        })
+      );
+    }
   });
 
   return <>{messageRows}</>;

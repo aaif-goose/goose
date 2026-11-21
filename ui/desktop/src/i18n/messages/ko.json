@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "goose가 {toolName}을 호출하려고 합니다. 허용하시겠습니까?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "활동"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "완료"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "도구 호출 {count}회"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "실패"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "미완료"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "마지막 단계: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "실행 중"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} 실행 중…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "승인 대기 중"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "goose가 백그라운드에서 업데이트를 다운로드하며, 종료하거나 다시 시작할 때 설치합니다."
   },

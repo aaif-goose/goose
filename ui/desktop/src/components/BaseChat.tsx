@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
 import MessageList from './MessageList';
+import { useTurnActivity } from './useTurnActivity';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
@@ -57,6 +58,8 @@ const i18n = defineMessages({
     id: 'baseChat.reconnecting',
     defaultMessage: 'Connection lost. Reconnecting…',
   },
+  runningTool: { id: 'turnActivity.runningTool', defaultMessage: 'Running {tool}…' },
+  lastTool: { id: 'turnActivity.lastTool', defaultMessage: 'Last step: {tool}' },
 });
 
 const isUserMessage = (message: Message) => message.role === 'user';
@@ -165,6 +168,19 @@ export default function BaseChat({
     sessionId,
     onStreamFinish,
   });
+  const isTurnActive =
+    chatState === ChatState.Thinking ||
+    chatState === ChatState.Streaming ||
+    chatState === ChatState.WaitingForUserInput;
+  const activity = useTurnActivity(messages, isUserMessage, isTurnActive);
+  const currentTurn = isTurnActive ? activity.turns.at(-1) : undefined;
+  const activeTool = currentTurn?.runningTool;
+  const lastTool = currentTurn?.lastTool;
+  const liveProgressMessage = activeTool
+    ? intl.formatMessage(i18n.runningTool, { tool: activeTool })
+    : lastTool
+      ? intl.formatMessage(i18n.lastTool, { tool: lastTool })
+      : progressMessage;
   const appendToChat = useCallback(
     (text: string) => handleSubmit({ msg: text, images: [] }),
     [handleSubmit]
@@ -510,6 +526,7 @@ export default function BaseChat({
                   <div ref={conversationRef}>
                     <MessageList
                       messages={messages}
+                      activity={activity}
                       sessionId={sessionId}
                       toolCallNotifications={toolCallNotifications}
                       append={isSubagentSession ? undefined : appendToChat}
@@ -529,7 +546,7 @@ export default function BaseChat({
 
           {chatState !== ChatState.Idle && (
             <div className="absolute bottom-1 left-4 z-20 pointer-events-none">
-              <LoadingGoose chatState={chatState} message={progressMessage} />
+              <LoadingGoose chatState={chatState} message={liveProgressMessage} />
             </div>
           )}
         </div>

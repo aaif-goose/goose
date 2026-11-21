@@ -1,9 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import type { IpcRendererEvent } from 'electron';
 import type { ImageData, InferenceMetadata, Message, MessageContent } from '../types/message';
 import { IntlTestWrapper } from '../i18n/test-utils';
-import MessageList from './MessageList';
+import MessageListView from './MessageList';
+import { useTurnActivity } from './useTurnActivity';
+
+function MessageList(props: Omit<ComponentProps<typeof MessageListView>, 'activity'>) {
+  const activity = useTurnActivity(
+    props.messages,
+    props.isUserMessage,
+    props.isStreamingMessage ?? false
+  );
+  return <MessageListView {...props} activity={activity} />;
+}
 
 const renderCounts = vi.hoisted(() => new Map<string, number>());
 const messageUpdateCallbacks = vi.hoisted(
@@ -162,6 +173,7 @@ describe('MessageList render isolation', () => {
       message('tool-response', 'user', []),
     ];
     const { rerender } = renderList(messages);
+    fireEvent.click(screen.getByRole('button', { name: /1 tool call/ }));
     const updatedMessages = cloneMessages(messages);
     updatedMessages[2].content = [toolResponse('tool-1')];
 

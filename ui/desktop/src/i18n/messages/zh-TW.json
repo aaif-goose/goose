@@ -4541,6 +4541,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose 想要呼叫 {toolName}。要允許嗎？"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "活動"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "已完成"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count} 次工具呼叫"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "失敗"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "未完成"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "上一步：{tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "執行中"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "正在執行 {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "等待核准"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose 會在背景下載更新，並於您下次結束或重新啟動時安裝。"
   },

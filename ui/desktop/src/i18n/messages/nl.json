@@ -4736,6 +4736,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose wil {toolName} aanroepen. Toestaan?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Activiteit"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Voltooid"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count, plural, one {# toolaanroep} other {# toolaanroepen}}"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Mislukt"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Onvolledig"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Laatste stap: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Bezig"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} wordt uitgevoerd…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Wacht op goedkeuring"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose downloadt de update op de achtergrond en installeert hem zodra je afsluit of herstart."
   },

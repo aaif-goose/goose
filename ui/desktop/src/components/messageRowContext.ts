@@ -29,6 +29,7 @@ export interface MessageRowContext {
   isInToolCallChain: boolean;
   previousModel: InferenceModel | null;
   toolStates: readonly ToolRenderState[];
+  hasPendingConfirmation: boolean;
   toolConfirmationShownInline: boolean;
 }
 
@@ -136,6 +137,9 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
       isInToolCallChain: chainedMessageIndices.has(messageIndex),
       previousModel: rowPreviousModel,
       toolStates: toolStatesByMessageIndex[messageIndex],
+      hasPendingConfirmation: Boolean(
+        confirmationData && pendingConfirmationIds.has(confirmationData.id)
+      ),
       toolConfirmationShownInline: Boolean(
         toolConfirmation && confirmationData && toolRequestIds.has(confirmationData.id)
       ),
