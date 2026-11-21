@@ -189,5 +189,20 @@ describe.skipIf(process.platform === 'win32').each(['npx', 'uvx', 'jbang'] as co
       expect(result.stdout).toMatch(childOutput);
       expect(`${result.stdout}${result.stderr}`).toContain('Log file: /dev/null');
     });
+
+    it('keeps logging to the same file when TMPDIR is relative', () => {
+      const harness = makeSetupLauncherHarness(launcherName);
+
+      const result = runSetupLauncher(harness, path.relative(harness.rootDir, harness.tmpDir));
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(childOutput);
+      const logs = fs.readdirSync(harness.tmpDir).filter((name) => name.startsWith('goose-mcp-'));
+      expect(logs).toHaveLength(1);
+      const logName = logs[0].replace('.', '\\.');
+      expect(fs.readFileSync(path.join(harness.tmpDir, logs[0]), 'utf8')).toMatch(
+        new RegExp(`Log file: /.*/tmp/${logName}`)
+      );
+    });
   }
 );

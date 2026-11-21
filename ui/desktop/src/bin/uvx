@@ -6,6 +6,8 @@ set -euo pipefail
 # Give each launch its own log file. A shared path lets one user's file block
 # another user's launcher and lets concurrent launches truncate each other's log.
 LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/goose-mcp-uvx.XXXXXX" 2>/dev/null) || LOG_FILE=/dev/null
+# A relative TMPDIR gives a relative path, which breaks after the cd calls below.
+[[ "${LOG_FILE}" == /* ]] || LOG_FILE="${PWD}/${LOG_FILE}"
 
 # Function for logging
 log() {
