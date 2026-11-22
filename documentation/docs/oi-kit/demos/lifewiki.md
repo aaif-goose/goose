@@ -1,7 +1,7 @@
 ---
 title: lifewiki
 description: A personal wiki that reconciles changing facts while preserving the original notes.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # lifewiki

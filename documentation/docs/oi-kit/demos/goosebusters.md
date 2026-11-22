@@ -1,7 +1,7 @@
 ---
 title: GooseBusters
 description: A phone-call assistant with custom operations for approval, supervision, and structured outcomes.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # GooseBusters

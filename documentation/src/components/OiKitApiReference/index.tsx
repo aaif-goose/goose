@@ -5,7 +5,7 @@ import useBrokenLinks from "@docusaurus/useBrokenLinks";
 import { useHistory, useLocation } from "@docusaurus/router";
 import { useAnchorTargetClassName } from "@docusaurus/theme-common";
 import CodeBlock from "@theme/CodeBlock";
-import apiData from "@site/src/data/gdk-api.json";
+import apiData from "@site/src/data/oi-kit-api.json";
 import {
   LANGUAGES,
   slug,
@@ -16,14 +16,14 @@ import {
   variantName,
   type Language,
   type LanguageId,
-  type GdkParam,
-  type GdkFunc,
-  type GdkItem,
-  type GdkApiDoc,
+  type OiKitParam,
+  type OiKitFunc,
+  type OiKitItem,
+  type OiKitApiDoc,
 } from "./api";
 import styles from "./styles.module.css";
 
-const VERSIONS = (apiData as { versions: GdkApiDoc[] }).versions;
+const VERSIONS = (apiData as { versions: OiKitApiDoc[] }).versions;
 
 const DEFAULT_VERSION = VERSIONS[0].docVersion;
 const DEFAULT_LANGUAGE = LANGUAGES[0].id;
@@ -65,7 +65,7 @@ const SelectionSearchContext = React.createContext(
   `?${VERSION_PARAM}=${DEFAULT_VERSION}&${LANGUAGE_PARAM}=${DEFAULT_LANGUAGE}`,
 );
 
-const KIND_LABELS: Record<GdkItem["kind"], string> = {
+const KIND_LABELS: Record<OiKitItem["kind"], string> = {
   object: "Class",
   callback: "Interface",
   record: "Data type",
@@ -73,7 +73,7 @@ const KIND_LABELS: Record<GdkItem["kind"], string> = {
   error: "Error",
 };
 
-const KIND_HEADINGS: Record<GdkItem["kind"], string> = {
+const KIND_HEADINGS: Record<OiKitItem["kind"], string> = {
   object: "Classes",
   callback: "Interfaces",
   record: "Data types",
@@ -81,7 +81,7 @@ const KIND_HEADINGS: Record<GdkItem["kind"], string> = {
   error: "Errors",
 };
 
-function anchorsForFunc(func: GdkFunc, owner?: string): string[] {
+function anchorsForFunc(func: OiKitFunc, owner?: string): string[] {
   const anchor = funcAnchor(func, owner);
   return [
     anchor,
@@ -89,7 +89,7 @@ function anchorsForFunc(func: GdkFunc, owner?: string): string[] {
   ];
 }
 
-function anchorsForDoc(doc: GdkApiDoc): string[] {
+function anchorsForDoc(doc: OiKitApiDoc): string[] {
   const anchors = ["functions"];
   doc.functions.forEach((func) => anchors.push(...anchorsForFunc(func)));
 
@@ -158,7 +158,7 @@ function ParamTable({
   ownerAnchor,
   rowKind,
 }: {
-  rows: GdkParam[];
+  rows: OiKitParam[];
   language: Language;
   caption: string;
   ownerAnchor: string;
@@ -215,7 +215,7 @@ function FuncEntry({
   language,
   owner,
 }: {
-  func: GdkFunc;
+  func: OiKitFunc;
   language: Language;
   owner?: string;
 }) {
@@ -251,7 +251,7 @@ function FuncEntry({
   );
 }
 
-function ItemEntry({ item, language }: { item: GdkItem; language: Language }) {
+function ItemEntry({ item, language }: { item: OiKitItem; language: Language }) {
   const anchor = itemAnchor(item);
   const name =
     item.kind === "error" ? language.errorType(item.name) : item.name;
@@ -328,7 +328,7 @@ function ItemEntry({ item, language }: { item: GdkItem; language: Language }) {
   );
 }
 
-export default function GdkApiReference() {
+export default function OiKitApiReference() {
   const [selection, setSelection] = useState<Selection>({
     docVersion: DEFAULT_VERSION,
     languageId: DEFAULT_LANGUAGE,
@@ -372,7 +372,7 @@ export default function GdkApiReference() {
   }, [docVersion, languageId, location.hash]);
 
   const grouped = useMemo(() => {
-    const order: GdkItem["kind"][] = [
+    const order: OiKitItem["kind"][] = [
       "object",
       "callback",
       "record",

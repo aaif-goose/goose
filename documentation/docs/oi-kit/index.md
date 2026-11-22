@@ -1,6 +1,6 @@
 ---
 title: Open Intelligence Kit (oi-kit)
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 hide_table_of_contents: true
 description: Build agents with the Open Intelligence Kit (oi-kit).
 ---

@@ -26,18 +26,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Regenerate oi-kit API reference data
-        run: python3 documentation/automation/gdk-api/generate.py
+        run: python3 documentation/automation/oi-kit-api/generate.py
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
           branch: docs/auto-oi-kit-api-reference
           delete-branch: true
-          add-paths: documentation/src/data/gdk-api.json
+          add-paths: documentation/src/data/oi-kit-api.json
           commit-message: "docs: update oi-kit API reference data"
           title: "docs: update oi-kit API reference"
           body: |
-            Regenerated `documentation/src/data/gdk-api.json` from
+            Regenerated `documentation/src/data/oi-kit-api.json` from
             `crates/oi-kit-bindings/src/bindings.rs`.
 
             - **Triggered by**: ${{ github.event_name }}

@@ -4,7 +4,7 @@ description: "We gave five agents the same model. They solved the same number of
 image: /img/blog/harness-benchmark-tb4.png
 authors:
   - filip
-tags: [gdk]
+tags: [oi-kit]
 ---
 
 Coding benchmarks are mostly about which frontier model solves the most tasks.

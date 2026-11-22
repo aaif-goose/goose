@@ -6,12 +6,12 @@ const path = require("node:path");
 const {
   generateReferences,
   renderMarkdown,
-} = require("./generate-gdk-api-markdown");
-const { LANGUAGES } = require("../src/components/GdkApiReference/api");
-const data = require("../src/data/gdk-api.json");
+} = require("./generate-oi-kit-api-markdown");
+const { LANGUAGES } = require("../src/components/OiKitApiReference/api");
+const data = require("../src/data/oi-kit-api.json");
 
 test("publishes the linked APIs and preserves versioned snapshots", (t) => {
-  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "gdk-api-markdown-"));
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "oi-kit-api-markdown-"));
   t.after(() => fs.rmSync(outputDir, { recursive: true, force: true }));
   const previous = { ...data.versions[0], version: "0.0.1", docVersion: "0.0" };
   const versions = [...data.versions, previous];
@@ -109,7 +109,7 @@ test("renders binding signatures, defaults, error payloads, and field documentat
     python.includes('id="oikiterror-variant-ratelimited-field-retry-after-ms"'),
   );
   assert.ok(python.includes("Raises `OiKitError`."));
-  assert.ok(!python.includes("<GdkApiReference"));
+  assert.ok(!python.includes("<OiKitApiReference"));
 
   const kotlin = renderMarkdown(
     data.versions[0],
@@ -132,7 +132,7 @@ test("renders binding signatures, defaults, error payloads, and field documentat
 
 test("Markdown exports keep canonical and legacy API URLs readable without JavaScript", async (t) => {
   const siteDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "gdk-markdown-export-"),
+    path.join(os.tmpdir(), "oi-kit-markdown-export-"),
   );
   t.after(() => fs.rmSync(siteDir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(siteDir, "docs/oi-kit"), { recursive: true });

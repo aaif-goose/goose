@@ -1,10 +1,10 @@
 ---
 title: Providers
 description: Choose a model backend, use declarative definitions, or implement the provider contract yourself.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
-import ProvidersDiagram from "@site/static/img/gdk/providers.svg";
+import ProvidersDiagram from "@site/static/img/oi-kit/providers.svg";
 
 # Providers
 

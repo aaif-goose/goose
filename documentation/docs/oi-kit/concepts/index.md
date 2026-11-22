@@ -1,7 +1,7 @@
 ---
 title: Concepts
 description: How oi-kit's state machine, operations, providers, and authentication fit together.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Concepts

@@ -1,7 +1,7 @@
 ---
 title: Huddle
 description: A voice interface that delegates longer tasks to an ACP agent through oi-kit live provider events.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Huddle

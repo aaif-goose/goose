@@ -1,7 +1,7 @@
 ---
 title: Operations
 description: Compose agent behavior from operations, with a worked example and an inventory of existing implementations.
-displayed_sidebar: gdkSidebar
+displayed_sidebar: oiKitSidebar
 ---
 
 # Operations

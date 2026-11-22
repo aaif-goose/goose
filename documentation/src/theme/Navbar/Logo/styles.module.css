@@ -3,5 +3,5 @@
 }
 
 .mark path {
-  fill: var(--gdk-accent);
+  fill: var(--oi-kit-accent);
 }
