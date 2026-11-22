@@ -804,6 +804,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "powerplayers",
+    "name": "Power Players",
+    "description": "US elected officials by address or place, crowdsourced citizen ratings, races and voter-registration links",
+    "url": "https://powerplayers.app/api/mcp/v1",
+    "link": "https://powerplayers.app/connect-ai",
+    "installation_notes": "Remote server. No sign-in needed for the public tools.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
