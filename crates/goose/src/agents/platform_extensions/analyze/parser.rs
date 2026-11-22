@@ -89,8 +89,7 @@ fn extract_functions(
     while let Some(m) = matches.next() {
         for cap in m.captures {
             if query.capture_names()[cap.index as usize] == "name" {
-                // `Foo x(a, b);` inside a body parses as a function declarator
-                if is_c_family(info.name) && has_ancestor_of_kind(cap.node, "compound_statement") {
+                if is_c_family(info.name) && is_block_scope_declarator(cap.node) {
                     continue;
                 }
                 let name_node = leaf_name_node(cap.node);
@@ -827,8 +826,12 @@ fn is_c_family(lang_name: &str) -> bool {
     matches!(lang_name, "c" | "cpp")
 }
 
-fn has_ancestor_of_kind(node: tree_sitter::Node, kind: &str) -> bool {
-    std::iter::successors(node.parent(), |n| n.parent()).any(|n| n.kind() == kind)
+/// `Foo x(a, b);` inside a body parses as a function declarator. Methods defined in a
+/// local class are kept: their own `function_definition` is reached before the body.
+fn is_block_scope_declarator(node: tree_sitter::Node) -> bool {
+    std::iter::successors(node.parent(), |n| n.parent())
+        .find(|n| matches!(n.kind(), "function_definition" | "compound_statement"))
+        .is_some_and(|n| n.kind() == "compound_statement")
 }
 
 /// For `a::b::Foo::out`, the innermost `qualified_identifier` is the one holding `Foo` and `out`.
@@ -840,14 +843,14 @@ fn innermost_qualified(node: tree_sitter::Node) -> Option<tree_sitter::Node> {
     innermost_qualified(name).or(Some(node))
 }
 
-/// Calls and definitions are matched by bare name, so `Foo::out` resolves to `out`
-/// and `ns::foo<int>` to `foo`.
+/// Calls and definitions are matched by bare name, so `Foo::out` resolves to `out`,
+/// `ns::foo<int>` to `foo` and `new ns::Widget<int>` to `Widget`.
 fn leaf_name_node(node: tree_sitter::Node) -> tree_sitter::Node {
     let leaf = innermost_qualified(node)
         .and_then(|q| q.child_by_field_name("name"))
         .unwrap_or(node);
     match leaf.kind() {
-        "template_function" => leaf.child_by_field_name("name").unwrap_or(leaf),
+        "template_function" | "template_type" => leaf.child_by_field_name("name").unwrap_or(leaf),
         _ => leaf,
     }
 }

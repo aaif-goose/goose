@@ -498,6 +498,65 @@ void run() { Foo f(a, b); f.get(1); helper(2); }
     }
 
     #[tokio::test]
+    async fn cpp_local_class_methods_are_kept() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("t.cpp"),
+            "int helper() { return 1; }\nvoid outer() {\n  struct Local { void run() { helper(); } };\n}\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("helper"));
+        let out = text(&result);
+
+        assert!(out.contains("t.cpp:helper:1 → t.cpp:run:3"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_template_specialization_and_member_template_calls() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("t.cpp"),
+            r#"template <typename T> int foo(T x);
+template <> int foo<int>(int x) { return x; }
+struct S { template <typename T> void bar() {} };
+void run(S obj, S *ptr) { foo<int>(1); obj.bar<int>(); ptr->template bar<long>(); }
+"#,
+        )
+        .unwrap();
+
+        let foo = analyze_path(tmp.path(), Some("foo"));
+        let out = text(&foo);
+        assert!(out.contains("t.cpp:foo:2 → t.cpp:run:4"), "{out}");
+
+        let bar = analyze_path(tmp.path(), Some("bar"));
+        let out = text(&bar);
+        assert!(out.contains("t.cpp:bar:3 → t.cpp:run:4"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_qualified_and_template_new_expressions() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("t.cpp"),
+            r#"namespace ns { struct Widget { Widget() {} }; }
+template <typename T> struct Box { Box() {} };
+void make() { new ns::Widget; }
+void build() { new Box<int>(); }
+"#,
+        )
+        .unwrap();
+
+        let widget = analyze_path(tmp.path(), Some("Widget"));
+        let out = text(&widget);
+        assert!(out.contains("→ t.cpp:make:3"), "{out}");
+
+        let boxed = analyze_path(tmp.path(), Some("Box"));
+        let out = text(&boxed);
+        assert!(out.contains("→ t.cpp:build:4"), "{out}");
+    }
+
+    #[tokio::test]
     async fn cpp_multi_field_declarations_and_trailing_return() {
         let tmp = tempdir().unwrap();
         let file = tmp.path().join("t.cpp");

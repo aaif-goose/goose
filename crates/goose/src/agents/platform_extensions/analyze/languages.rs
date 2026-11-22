@@ -371,6 +371,7 @@ static LANGUAGES: &[LangInfo] = &[
                     (identifier)
                     (field_identifier)
                     (qualified_identifier)
+                    (template_function)
                     (destructor_name)
                     (operator_name)
                   ] @name)
@@ -398,7 +399,9 @@ static LANGUAGES: &[LangInfo] = &[
                 (call_expression function: (field_expression field: (field_identifier) @name))
                 (call_expression function: (qualified_identifier) @name)
                 (call_expression function: (template_function name: (identifier) @name))
-                (new_expression type: (type_identifier) @name)
+                (call_expression
+                  function: (field_expression field: (template_method name: (field_identifier) @name)))
+                (new_expression type: [(type_identifier) (qualified_identifier) (template_type)] @name)
             "#,
         },
     },
