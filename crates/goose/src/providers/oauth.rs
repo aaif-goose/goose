@@ -35,6 +35,11 @@ static FORCED_REFRESHES: AtomicU64 = AtomicU64::new(0);
 // server issued the token, so refresh early rather than send a token the server already rejects.
 const TOKEN_EXPIRY_MARGIN: chrono::TimeDelta = chrono::TimeDelta::minutes(5);
 
+// Token requests run while `OAUTH_MUTEX` is held, and every provider request waits on that lock.
+// Without a limit, one stalled OIDC or token request blocks every model call in the process.
+const OAUTH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const OAUTH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Clone, Copy)]
 enum EndpointTransport {
     Https,
@@ -61,7 +66,9 @@ fn endpoint_transport(url: &Url) -> Result<EndpointTransport> {
 }
 
 fn secure_client_for_endpoint(endpoint: &Url) -> Result<Client> {
-    let builder = Client::builder();
+    let builder = Client::builder()
+        .connect_timeout(OAUTH_CONNECT_TIMEOUT)
+        .timeout(OAUTH_REQUEST_TIMEOUT);
     match endpoint_transport(endpoint)? {
         EndpointTransport::Https => Ok(builder.https_only(true).build()?),
         EndpointTransport::LoopbackHttp => Ok(builder
