@@ -29,9 +29,9 @@ If both fail, post both errors and stop. Once you have the file, run:
 node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 ```
 
-- Exit code 0: nothing new. Stop; post nothing.
-- Exit code 10: `new_models` lists the new models with their models.dev metadata.
-- Exit code 1: the script failed.
+- Exit code 0: nothing new. Post `New model check: $START. No new models in the last 3 days.` and stop.
+- Exit code 10: new models found. `new_models` in `new_models.json` lists them with their models.dev metadata. Continue with step 2.
+- Exit code 1: the script failed. Post the error and stop.
 
 ## 2. Set up
 
