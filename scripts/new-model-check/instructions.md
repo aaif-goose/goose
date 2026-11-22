@@ -33,6 +33,8 @@ node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 - Exit code 10: new models found. `new_models` in `new_models.json` lists them with their models.dev metadata. Continue with step 2.
 - Exit code 1: the script failed. Post the error and stop.
 
+If `missing_providers` in `new_models.json` isn't empty, add "Not checked: <providers> (missing from models.dev)." to what you post. In a full report, put it under "Action needed".
+
 ## 2. Set up
 
 Use a new, empty folder, and give goose its own folders, so goose has no extensions or settings and nothing from this machine ends up in the requests.

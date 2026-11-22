@@ -56,7 +56,7 @@ function findNewModels(catalog, now) {
       const entry = summarize(provider, id, model);
       const released = parseDate(entry.release_date);
       if (released === null) noReleaseDate.push(entry);
-      else if (released >= parseDate(since)) newModels.push(entry);
+      else if (released >= parseDate(since) && released <= now.getTime()) newModels.push(entry);
     }
   }
   if (missingProviders.length === PROVIDERS.length) {
