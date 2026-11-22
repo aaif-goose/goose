@@ -565,10 +565,21 @@ mod tests {
             let Some(client) = (def.client_factory)(context.clone()) else {
                 continue;
             };
+            // The developer extension's instructions depend on whether `rg` is on
+            // PATH, which varies by test host. Normalize to a fixed phrase so the
+            // snapshot doesn't depend on that.
             let instructions = client
                 .get_instructions(&session.id, &session.working_dir)
                 .await
-                .unwrap_or_default();
+                .unwrap_or_default()
+                .replace(
+                    "prefer rg which correctly respects gitignored content",
+                    "prefer rg or grep, depending on availability",
+                )
+                .replace(
+                    "prefer grep -rn, since rg is not installed",
+                    "prefer rg or grep, depending on availability",
+                );
             let has_resources = client
                 .get_info()
                 .and_then(|i| i.capabilities.resources.as_ref())
