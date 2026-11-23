@@ -1830,7 +1830,7 @@ pub struct RefreshProviderInventoryRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryResponse {
     /// Providers that were refreshed, successfully or not.
-    pub started: Vec<String>,
+    pub refreshed: Vec<String>,
     /// Providers that were not refreshed, with the reason.
     #[serde(default)]
     pub skipped: Vec<RefreshProviderInventorySkipDto>,

@@ -1295,7 +1295,7 @@ export type RefreshProviderInventoryResponse_unstable = {
     /**
      * Providers that were refreshed, successfully or not.
      */
-    started: Array<string>;
+    refreshed: Array<string>;
     /**
      * Providers that were not refreshed, with the reason.
      */

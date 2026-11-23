@@ -2881,7 +2881,7 @@
     "RefreshProviderInventoryResponse_unstable": {
       "type": "object",
       "properties": {
-        "started": {
+        "refreshed": {
           "type": "array",
           "items": {
             "type": "string"
@@ -2898,7 +2898,7 @@
         }
       },
       "required": [
-        "started"
+        "refreshed"
       ],
       "description": "The providers refreshed, and the ones skipped.",
       "x-side": "agent",

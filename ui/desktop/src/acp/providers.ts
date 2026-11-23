@@ -127,7 +127,7 @@ async function waitForProviderInventoryRefresh(
   signal?: globalThis.AbortSignal
 ): Promise<ProviderDetails> {
   const shouldWait =
-    refresh.started.includes(providerId) ||
+    refresh.refreshed.includes(providerId) ||
     refresh.skipped?.some(
       (skip) => skip.providerId === providerId && skip.reason === 'already_refreshing'
     );

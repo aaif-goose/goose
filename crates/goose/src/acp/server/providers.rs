@@ -474,7 +474,7 @@ fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInven
 
 fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInventoryResponse {
     RefreshProviderInventoryResponse {
-        started: refresh_plan.started,
+        refreshed: refresh_plan.started,
         skipped: refresh_plan
             .skipped
             .into_iter()

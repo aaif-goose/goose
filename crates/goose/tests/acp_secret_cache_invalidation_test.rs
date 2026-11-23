@@ -199,7 +199,7 @@ fn provider_secret_mutations_and_inventory_refresh_invalidate_global_secret_cach
         .expect("inventory refresh should succeed");
 
         assert_eq!(
-            refresh.get("started"),
+            refresh.get("refreshed"),
             Some(&serde_json::json!(["anthropic"])),
             "inventory refresh should invalidate the global secrets cache before planning"
         );

@@ -52,7 +52,7 @@ describe('ACP providers', () => {
         providersReadinessCheck_unstable: vi.fn().mockResolvedValue({ ready: true }),
         providersInventoryRefresh_unstable: vi
           .fn()
-          .mockResolvedValue({ started: ['zai_coding_plan'], skipped: [] }),
+          .mockResolvedValue({ refreshed: ['zai_coding_plan'], skipped: [] }),
       },
     };
     vi.mocked(getAcpClient).mockResolvedValue(
@@ -248,7 +248,7 @@ describe('ACP providers', () => {
           ready: true,
         }),
         providersInventoryRefresh_unstable: vi.fn().mockResolvedValue({
-          started: ['claude-acp'],
+          refreshed: ['claude-acp'],
           skipped: [],
         }),
       },
@@ -286,10 +286,10 @@ describe('ACP providers', () => {
         providersInventoryRefresh_unstable: vi
           .fn()
           .mockResolvedValueOnce({
-            started: [],
+            refreshed: [],
             skipped: [{ providerId: 'claude-acp', reason: 'not_configured' }],
           })
-          .mockResolvedValueOnce({ started: ['claude-acp'], skipped: [] }),
+          .mockResolvedValueOnce({ refreshed: ['claude-acp'], skipped: [] }),
       },
     };
     vi.mocked(getAcpClient).mockResolvedValue(
@@ -355,7 +355,7 @@ describe('ACP providers', () => {
           ready: true,
         }),
         providersInventoryRefresh_unstable: vi.fn().mockResolvedValue({
-          started: ['claude-acp'],
+          refreshed: ['claude-acp'],
           skipped: [],
         }),
       },

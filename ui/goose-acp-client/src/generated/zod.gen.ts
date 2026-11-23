@@ -936,7 +936,7 @@ export const zRefreshProviderInventorySkipDto = z.object({
  * The providers refreshed, and the ones skipped.
  */
 export const zRefreshProviderInventoryResponse_unstable = z.object({
-    started: z.array(z.string()),
+    refreshed: z.array(z.string()),
     skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
 });
 
