@@ -5,7 +5,7 @@
   "version": "1.60.0",
   "description": "Goose App",
   "engines": {
-    "node": "^24.10.0",
+    "node": "^24.22.3",
     "pnpm": ">=10.30.0"
   },
   "main": ".vite/build/main.cjs",
