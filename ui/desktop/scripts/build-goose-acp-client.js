@@ -13,11 +13,9 @@ const desktopRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopRoot, '..', '..');
 const acpClientRoot = path.join(repoRoot, 'ui', 'goose-acp-client');
 const builtEntry = path.join(acpClientRoot, 'dist', 'index.js');
-const stampPath = path.join(
-  desktopRoot,
-  'node_modules',
-  '.cache',
-  'goose-acp-client-build-stamp.json'
+// The stamp and the build lock live with the ACP client package, whose own `build` also honours them.
+const { acquireLock, stampPath, HELD_ENV } = require(
+  path.join(acpClientRoot, 'scripts', 'build-guard.cjs')
 );
 
 const force = process.argv.includes('--force') || process.env.GOOSE_ACP_CLIENT_FORCE_BUILD === '1';
@@ -30,6 +28,8 @@ const inputFiles = [
   path.join(acpClientRoot, 'generate-schema.ts'),
   path.join(acpClientRoot, 'tsconfig.json'),
   path.join(acpClientRoot, 'package.json'),
+  path.join(acpClientRoot, 'scripts', 'build.cjs'),
+  path.join(acpClientRoot, 'scripts', 'build-guard.cjs'),
   path.join(repoRoot, 'ui', 'pnpm-lock.yaml'),
 ];
 
@@ -85,6 +85,11 @@ function hashInputs() {
   return hash.digest('hex');
 }
 
+// Held from the freshness check until the stamp is written, so an overlapping launch (postinstall
+// alongside start-gui) waits here and then sees the finished build instead of racing it.
+acquireLock();
+process.env[HELD_ENV] = '1';
+
 // Taken once, before the build, and used twice: to decide whether to build at all, and as the
 // baseline the post-build hash is compared against.
 const inputsBefore = hashInputs();
@@ -98,7 +103,8 @@ function stalenessReason() {
   } catch {
     return 'no usable build stamp';
   }
-  return stamp.hash === inputsBefore ? null : 'inputs changed';
+  // JSON `null` (or any non-object) parses fine but has no hash: treat it as a miss.
+  return stamp?.hash === inputsBefore ? null : 'inputs changed';
 }
 
 function buildAcpClient() {
@@ -141,9 +147,8 @@ console.log(`Building goose ACP client (${reason}) ...`);
 // inputs it describes skip the rebuild indefinitely.
 fs.rmSync(stampPath, { force: true });
 
-// A concurrent build (postinstall alongside start-gui) can stamp while this one is still writing
-// dist. Any exit short of our own stamp below removes the stamp again, so theirs never vouches for
-// our output.
+// The lock keeps other builds out while this one writes dist, so no other stamp can appear here.
+// Any exit short of our own stamp below still removes the stamp, so a partial build never has one.
 let stamped = false;
 process.on('exit', () => {
   if (!stamped) fs.rmSync(stampPath, { force: true });

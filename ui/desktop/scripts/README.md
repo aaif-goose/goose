@@ -30,8 +30,13 @@ ACP schemas, generator, handwritten sources, TypeScript configuration, package
 manifest, and workspace lockfile. Generated sources are build outputs and are excluded.
 
 A failed build or an input change during the build leaves no stamp, so the next
-launch rebuilds. The stamp lives in `node_modules/.cache`; a missing `dist/index.js`
-also triggers a build.
+launch rebuilds. An unreadable or non-object stamp counts as a miss. The stamp lives in
+`ui/goose-acp-client/node_modules/.cache`; a missing `dist/index.js` also triggers a build.
+
+Builds are serialized with a lock in the same directory, held from the freshness check
+until the stamp is written. The ACP package's own `build` (and so `prepack`) takes the
+same lock and removes the stamp before writing `dist`, so building it directly cannot
+leave an old stamp vouching for new output.
 
 `package`, `make`, and `scripts/build-windows.ps1` always force a rebuild. The input
 list is maintained manually, so packaging must not rely on it to detect every change.

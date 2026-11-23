@@ -27,7 +27,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "npm run generate && npm run build:ts",
+    "build": "node scripts/build.cjs",
     "build:ts": "tsc",
     "generate": "tsx generate-schema.ts",
     "lint": "tsc --noEmit",
