@@ -4,9 +4,9 @@
 mod common_tests;
 use agent_client_protocol::schema::v1::{
     CloseSessionRequest, ContentBlock, HttpHeader, ListSessionsRequest, ListSessionsResponse,
-    LoadSessionRequest, McpServer, McpServerHttp, NewSessionRequest, PromptRequest, SessionConfigKind,
-    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo, SessionUpdate,
-    SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallStatus,
+    LoadSessionRequest, McpServer, McpServerHttp, NewSessionRequest, PromptRequest,
+    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallStatus,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::{

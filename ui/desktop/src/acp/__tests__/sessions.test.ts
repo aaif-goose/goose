@@ -1,4 +1,8 @@
-import { methods, type InitializeResponse, type SessionInfo } from '@agentclientprotocol/sdk/unstable';
+import {
+  methods,
+  type InitializeResponse,
+  type SessionInfo,
+} from '@agentclientprotocol/sdk/unstable';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient, getAcpConnection } from '../acpConnection';
 import {
