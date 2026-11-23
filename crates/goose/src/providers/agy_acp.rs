@@ -26,7 +26,7 @@ const MODE_AUTO: &str = "auto";
 /// Provider wrapping the Google Antigravity CLI (`agy acp --stdio`) over ACP.
 pub struct AgyAcpProvider;
 
-impl goose_providers::base::ProviderDescriptor for AgyAcpProvider {
+impl ProviderDescriptor for AgyAcpProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             AGY_ACP_PROVIDER_NAME,
