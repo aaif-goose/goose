@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntlTestWrapper } from '../../i18n/test-utils';
@@ -418,6 +418,100 @@ describe('a rejected cutoff shown as Auto', () => {
 
     expect(remove).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('typing before the initial read finishes', () => {
+  const key = 'GOOSE_MAX_TURNS';
+
+  const defaultRead = read.getMockImplementation();
+  afterEach(() => {
+    if (defaultRead) read.mockImplementation(defaultRead);
+  });
+
+  // Holds every read's result until released, so inputs can be used while the page is still loading.
+  function holdReads() {
+    const gate = deferred();
+    read.mockImplementation(
+      async (k: string, _s: boolean, options?: { throwOnError?: boolean }) => {
+        // The value is read now but delivered when the gate opens, like a slow round trip.
+        const value = k in userConfig ? userConfig[k] : k in lowerConfig ? lowerConfig[k] : null;
+        if (!options?.throwOnError) await gate.promise;
+        return value;
+      }
+    );
+    return gate;
+  }
+
+  function renderPage() {
+    render(
+      <IntlTestWrapper>
+        <AgentLoopSettings />
+      </IntlTestWrapper>
+    );
+  }
+
+  it('keeps the typed value and still saves it on blur', async () => {
+    userConfig[key] = 50;
+    userConfig.GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS = 900;
+    const gate = holdReads();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.clear(input('Turns'));
+    await user.type(input('Turns'), '60');
+    gate.resolve();
+
+    await waitFor(() => expect(input('Retry timeout')).toHaveValue(900));
+    expect(input('Turns')).toHaveValue(60);
+
+    await user.tab();
+    await waitFor(() => expect(userConfig[key]).toBe(60));
+    expect(upsert).toHaveBeenCalledWith(key, 60, false);
+  });
+
+  it('keeps a value saved before the read finished', async () => {
+    userConfig[key] = 50;
+    const gate = holdReads();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.clear(input('Turns'));
+    await user.type(input('Turns'), '60');
+    await user.tab();
+    await waitFor(() => expect(userConfig[key]).toBe(60));
+    gate.resolve();
+    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
+
+    expect(input('Turns')).toHaveValue(60);
+    await user.click(input('Turns'));
+    await user.tab();
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a value typed and blurred before the read finished even if it equals the default', async () => {
+    userConfig[key] = 50;
+    const gate = holdReads();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.clear(input('Turns'));
+    await user.type(input('Turns'), '1000');
+    await user.tab();
+    gate.resolve();
+
+    await waitFor(() => expect(userConfig[key]).toBe(1000));
+    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
+    expect(input('Turns')).toHaveValue(1000);
+  });
+
+  it('populates fields the user did not touch', async () => {
+    userConfig[key] = 50;
+    const gate = holdReads();
+    renderPage();
+    gate.resolve();
+
+    await waitFor(() => expect(input('Turns')).toHaveValue(50));
   });
 });
 

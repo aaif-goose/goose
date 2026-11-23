@@ -343,6 +343,8 @@ export default function AgentLoopSettings() {
   const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
   // Per field, a counter bumped by every write so a finished write can tell whether it is still
   // the latest one; comparing values cannot, since two writes may request the same value.
+  // False until the first config read lands; until then snapshots are only the page defaults.
+  const configLoaded = useRef(false);
   const numberGenerations = useRef<Partial<Record<NumberSetting, number>>>({});
 
   useEffect(() => {
@@ -368,19 +370,45 @@ export default function AgentLoopSettings() {
       setToolPairCompactionEnabled(
         typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
       );
-      const loaded = Object.fromEntries(
-        loadedNumbers.map(([setting, shown]) => [setting, shown])
+      // A field the user edited or saved while this read was in flight keeps its input text; a
+      // field that was saved also keeps its save snapshot, since that is newer than the read.
+      const shown = Object.fromEntries(
+        loadedNumbers.map(([setting, value]) => [setting, value])
       ) as NumberSettings;
       // A rejected stored value displays as blank, so snapshot it as something no input can
       // equal: clearing the field after editing it must still remove the stored value.
-      editedNumbers.current = {};
-      requestedNumbers.current = Object.fromEntries(
-        loadedNumbers.map(([setting, shown, stored]) => [
+      const snapshots = Object.fromEntries(
+        loadedNumbers.map(([setting, value, stored]) => [
           setting,
-          shown === '' && stored ? hiddenOverride : shown,
+          value === '' && stored ? hiddenOverride : value,
         ])
       ) as NumberSettings;
-      setNumbers(loaded);
+      configLoaded.current = true;
+      const touched = new Set(
+        numberFieldEntries
+          .map(([setting]) => setting)
+          .filter(
+            (setting) =>
+              editedNumbers.current[setting] || numberGenerations.current[setting] !== undefined
+          )
+      );
+      requestedNumbers.current = Object.fromEntries(
+        numberFieldEntries.map(([setting]) => [
+          setting,
+          numberGenerations.current[setting] !== undefined
+            ? requestedNumbers.current[setting]
+            : snapshots[setting],
+        ])
+      ) as Record<NumberSetting, string | null>;
+      setNumbers(
+        (current) =>
+          Object.fromEntries(
+            numberFieldEntries.map(([setting]) => [
+              setting,
+              touched.has(setting) ? current[setting] : shown[setting],
+            ])
+          ) as NumberSettings
+      );
     });
 
     return () => {
@@ -438,6 +466,12 @@ export default function AgentLoopSettings() {
     });
   };
 
+  // Before the config has loaded the snapshot is only a default, so an edited field is not
+  // unchanged just because it matches it.
+  const isUnchanged = (setting: NumberSetting, input: string) =>
+    input === requestedNumbers.current[setting] &&
+    (configLoaded.current || !editedNumbers.current[setting]);
+
   const saveNumber = async (setting: NumberSetting) => {
     const input = numbers[setting].trim();
     if (input === '') {
@@ -446,13 +480,13 @@ export default function AgentLoopSettings() {
     }
     // Compare before clamping: an out-of-range value from config (e.g. a threshold of 0, which
     // disables compaction) must survive an unchanged blur.
-    if (input === requestedNumbers.current[setting]) return;
+    if (isUnchanged(setting, input)) return;
     const { configKey, min, max, integer, toConfig } = numberFields[setting];
     const parsed = Number(input);
     const clamped = Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : min));
     const value = integer ? Math.round(clamped) : clamped;
     setNumber(setting, String(value));
-    if (String(value) === requestedNumbers.current[setting]) return;
+    if (isUnchanged(setting, String(value))) return;
     await writeNumber(setting, String(value), () => upsert(configKey, toConfig(value), false));
   };
 
