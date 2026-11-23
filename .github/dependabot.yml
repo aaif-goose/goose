@@ -12,8 +12,10 @@ updates:
       # rehype-katex only accepts katex ^0.16; remove once remarkjs/remark-math#121 ships.
       - dependency-name: "katex"
         versions: [">=0.17"]
+      # @hey-api/openapi-ts doesn't support typescript 7 yet; remove once it does.
       - dependency-name: "typescript"
         versions: [">=7"]
+      # @mcp-ui/client still requires ext-apps 1.x; remove once it supports 2.x.
       - dependency-name: "@modelcontextprotocol/ext-apps"
         versions: [">=2"]
     groups:
