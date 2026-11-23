@@ -1200,37 +1200,12 @@ export type CustomProviderCreateRequest_unstable = {
 export type CustomProviderCreateResponse_unstable = {
     providerId: string;
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 export type ProviderConfigStatusDto = {
     providerId: string;
     isConfigured: boolean;
 };
-
-/**
- * The providers whose refresh started, and the ones skipped.
- * `_goose/unstable/providers/inventory/refresh` responds after the started
- * refreshes finish. The provider config and custom provider requests respond
- * while they are still running.
- */
-export type RefreshProviderInventoryResponse_unstable = {
-    /**
-     * Providers whose refresh started.
-     */
-    started: Array<string>;
-    /**
-     * Providers that were not refreshed, with the reason.
-     */
-    skipped?: Array<RefreshProviderInventorySkipDto>;
-};
-
-export type RefreshProviderInventorySkipDto = {
-    providerId: string;
-    reason: RefreshProviderInventorySkipReasonDto;
-};
-
-export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
 
 /**
  * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
@@ -1288,7 +1263,6 @@ export type CustomProviderUpdateRequest_unstable = {
 export type CustomProviderUpdateResponse_unstable = {
     providerId: string;
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**
@@ -1300,7 +1274,6 @@ export type CustomProviderDeleteRequest_unstable = {
 
 export type CustomProviderDeleteResponse_unstable = {
     providerId: string;
-    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**
@@ -1314,6 +1287,27 @@ export type RefreshProviderInventoryRequest_unstable = {
      */
     providerIds?: Array<string>;
 };
+
+/**
+ * The providers refreshed, and the ones skipped.
+ */
+export type RefreshProviderInventoryResponse_unstable = {
+    /**
+     * Providers that were refreshed, successfully or not.
+     */
+    started: Array<string>;
+    /**
+     * Providers that were not refreshed, with the reason.
+     */
+    skipped?: Array<RefreshProviderInventorySkipDto>;
+};
+
+export type RefreshProviderInventorySkipDto = {
+    providerId: string;
+    reason: RefreshProviderInventorySkipReasonDto;
+};
+
+export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
 
 /**
  * Check whether an ACP provider can initialize and create a session.
@@ -1373,7 +1367,6 @@ export type ProviderConfigFieldUpdate = {
 
 export type ProviderConfigChangeResponse_unstable = {
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**

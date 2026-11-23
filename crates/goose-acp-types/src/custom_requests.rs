@@ -1045,7 +1045,6 @@ pub struct ProviderConfigAuthenticateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigChangeResponse {
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1379,7 +1378,6 @@ pub struct CustomProviderCreateRequest {
 pub struct CustomProviderCreateResponse {
     pub provider_id: String,
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
@@ -1420,7 +1418,6 @@ pub struct CustomProviderUpdateRequest {
 pub struct CustomProviderUpdateResponse {
     pub provider_id: String,
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// Delete a custom provider from goose's declarative provider store.
@@ -1438,7 +1435,6 @@ pub struct CustomProviderDeleteRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CustomProviderDeleteResponse {
     pub provider_id: String,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// The type of source entity.
@@ -1829,14 +1825,11 @@ pub struct RefreshProviderInventoryRequest {
     pub provider_ids: Vec<String>,
 }
 
-/// The providers whose refresh started, and the ones skipped.
-/// `_goose/unstable/providers/inventory/refresh` responds after the started
-/// refreshes finish. The provider config and custom provider requests respond
-/// while they are still running.
+/// The providers refreshed, and the ones skipped.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryResponse {
-    /// Providers whose refresh started.
+    /// Providers that were refreshed, successfully or not.
     pub started: Vec<String>,
     /// Providers that were not refreshed, with the reason.
     #[serde(default)]

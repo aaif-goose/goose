@@ -667,11 +667,10 @@ impl AcpConnection {
         let provider_id = config.name;
         let provider_ids = [provider_id.clone()];
         let status = Self::provider_config_status(provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(CustomProviderCreateResponse {
             provider_id,
             status,
-            refresh,
         })
     }
 
@@ -753,11 +752,10 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(CustomProviderUpdateResponse {
             provider_id: req.provider_id,
             status,
-            refresh,
         })
     }
 
@@ -788,10 +786,6 @@ impl AcpConnection {
 
         Ok(CustomProviderDeleteResponse {
             provider_id: req.provider_id,
-            refresh: RefreshProviderInventoryResponse {
-                started: Vec::new(),
-                skipped: Vec::new(),
-            },
         })
     }
 
@@ -935,16 +929,14 @@ impl AcpConnection {
     pub(super) async fn start_provider_inventory_refresh(
         &self,
         provider_ids: &[String],
-    ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let refresh_job_plan = self
             .provider_inventory
             .plan_refresh_jobs(provider_ids)
             .await
             .internal_err()?;
         self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan);
-        Ok(refresh_plan_to_response(
-            refresh_job_plan.into_public_plan(),
-        ))
+        Ok(())
     }
 
     pub(super) async fn on_refresh_provider_inventory(
@@ -1062,8 +1054,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_delete_provider_config(
@@ -1105,8 +1097,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_authenticate_provider_config(
@@ -1175,8 +1167,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_list_provider_secrets(

@@ -2604,15 +2604,11 @@
         },
         "status": {
           "$ref": "#/$defs/ProviderConfigStatusDto"
-        },
-        "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
         "providerId",
-        "status",
-        "refresh"
+        "status"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/custom/create"
@@ -2630,56 +2626,6 @@
       "required": [
         "providerId",
         "isConfigured"
-      ]
-    },
-    "RefreshProviderInventoryResponse_unstable": {
-      "type": "object",
-      "properties": {
-        "started": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Providers whose refresh started."
-        },
-        "skipped": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RefreshProviderInventorySkipDto"
-          },
-          "description": "Providers that were not refreshed, with the reason.",
-          "default": []
-        }
-      },
-      "required": [
-        "started"
-      ],
-      "description": "The providers whose refresh started, and the ones skipped.\n`_goose/unstable/providers/inventory/refresh` responds after the started\nrefreshes finish. The provider config and custom provider requests respond\nwhile they are still running.",
-      "x-side": "agent",
-      "x-method": "_goose/unstable/providers/inventory/refresh"
-    },
-    "RefreshProviderInventorySkipDto": {
-      "type": "object",
-      "properties": {
-        "providerId": {
-          "type": "string"
-        },
-        "reason": {
-          "$ref": "#/$defs/RefreshProviderInventorySkipReasonDto"
-        }
-      },
-      "required": [
-        "providerId",
-        "reason"
-      ]
-    },
-    "RefreshProviderInventorySkipReasonDto": {
-      "type": "string",
-      "enum": [
-        "unknown_provider",
-        "not_configured",
-        "does_not_support_refresh",
-        "already_refreshing"
       ]
     },
     "CustomProviderReadRequest_unstable": {
@@ -2880,15 +2826,11 @@
         },
         "status": {
           "$ref": "#/$defs/ProviderConfigStatusDto"
-        },
-        "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
         "providerId",
-        "status",
-        "refresh"
+        "status"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/custom/update"
@@ -2912,14 +2854,10 @@
       "properties": {
         "providerId": {
           "type": "string"
-        },
-        "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
-        "providerId",
-        "refresh"
+        "providerId"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/custom/delete"
@@ -2939,6 +2877,56 @@
       "description": "Ask providers for their current models and save them. Responds after the\nrefreshes finish. A provider that is already refreshing is skipped, not\nwaited for.",
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/inventory/refresh"
+    },
+    "RefreshProviderInventoryResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "started": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Providers that were refreshed, successfully or not."
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefreshProviderInventorySkipDto"
+          },
+          "description": "Providers that were not refreshed, with the reason.",
+          "default": []
+        }
+      },
+      "required": [
+        "started"
+      ],
+      "description": "The providers refreshed, and the ones skipped.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/providers/inventory/refresh"
+    },
+    "RefreshProviderInventorySkipDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/RefreshProviderInventorySkipReasonDto"
+        }
+      },
+      "required": [
+        "providerId",
+        "reason"
+      ]
+    },
+    "RefreshProviderInventorySkipReasonDto": {
+      "type": "string",
+      "enum": [
+        "unknown_provider",
+        "not_configured",
+        "does_not_support_refresh",
+        "already_refreshing"
+      ]
     },
     "ProviderReadinessCheckRequest_unstable": {
       "type": "object",
@@ -3109,14 +3097,10 @@
       "properties": {
         "status": {
           "$ref": "#/$defs/ProviderConfigStatusDto"
-        },
-        "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
-        "status",
-        "refresh"
+        "status"
       ],
       "x-side": "agent"
     },
