@@ -1814,7 +1814,9 @@ pub struct ProviderSupportedModelsListResponse {
     pub models: Vec<String>,
 }
 
-/// Trigger a background refresh of provider inventories.
+/// Ask providers for their current models and save them. Responds after the
+/// refreshes finish. A provider that is already refreshing is skipped, not
+/// waited for.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/providers/inventory/refresh",
@@ -1822,18 +1824,21 @@ pub struct ProviderSupportedModelsListResponse {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryRequest {
-    /// Which providers to refresh. Empty means all known providers.
+    /// Providers to refresh. Empty means all known providers.
     #[serde(default)]
     pub provider_ids: Vec<String>,
 }
 
-/// Refresh acknowledgement.
+/// The providers whose refresh started, and the ones skipped.
+/// `_goose/unstable/providers/inventory/refresh` responds after the started
+/// refreshes finish. The provider config and custom provider requests respond
+/// while they are still running.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryResponse {
-    /// Which providers will be refreshed.
+    /// Providers whose refresh started.
     pub started: Vec<String>,
-    /// Which providers were skipped and why.
+    /// Providers that were not refreshed, with the reason.
     #[serde(default)]
     pub skipped: Vec<RefreshProviderInventorySkipDto>,
 }

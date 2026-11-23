@@ -2640,21 +2640,21 @@
           "items": {
             "type": "string"
           },
-          "description": "Which providers will be refreshed."
+          "description": "Providers whose refresh started."
         },
         "skipped": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/RefreshProviderInventorySkipDto"
           },
-          "description": "Which providers were skipped and why.",
+          "description": "Providers that were not refreshed, with the reason.",
           "default": []
         }
       },
       "required": [
         "started"
       ],
-      "description": "Refresh acknowledgement.",
+      "description": "The providers whose refresh started, and the ones skipped.\n`_goose/unstable/providers/inventory/refresh` responds after the started\nrefreshes finish. The provider config and custom provider requests respond\nwhile they are still running.",
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/inventory/refresh"
     },
@@ -2932,11 +2932,11 @@
           "items": {
             "type": "string"
           },
-          "description": "Which providers to refresh. Empty means all known providers.",
+          "description": "Providers to refresh. Empty means all known providers.",
           "default": []
         }
       },
-      "description": "Trigger a background refresh of provider inventories.",
+      "description": "Ask providers for their current models and save them. Responds after the\nrefreshes finish. A provider that is already refreshing is skipped, not\nwaited for.",
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/inventory/refresh"
     },

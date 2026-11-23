@@ -1209,15 +1209,18 @@ export type ProviderConfigStatusDto = {
 };
 
 /**
- * Refresh acknowledgement.
+ * The providers whose refresh started, and the ones skipped.
+ * `_goose/unstable/providers/inventory/refresh` responds after the started
+ * refreshes finish. The provider config and custom provider requests respond
+ * while they are still running.
  */
 export type RefreshProviderInventoryResponse_unstable = {
     /**
-     * Which providers will be refreshed.
+     * Providers whose refresh started.
      */
     started: Array<string>;
     /**
-     * Which providers were skipped and why.
+     * Providers that were not refreshed, with the reason.
      */
     skipped?: Array<RefreshProviderInventorySkipDto>;
 };
@@ -1301,11 +1304,13 @@ export type CustomProviderDeleteResponse_unstable = {
 };
 
 /**
- * Trigger a background refresh of provider inventories.
+ * Ask providers for their current models and save them. Responds after the
+ * refreshes finish. A provider that is already refreshing is skipped, not
+ * waited for.
  */
 export type RefreshProviderInventoryRequest_unstable = {
     /**
-     * Which providers to refresh. Empty means all known providers.
+     * Providers to refresh. Empty means all known providers.
      */
     providerIds?: Array<string>;
 };

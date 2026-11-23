@@ -2,8 +2,10 @@ use super::*;
 use crate::config::declarative_providers;
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
+use futures::future::join_all;
 use oi_kit_providers::base::ModelInfo;
 use std::str::FromStr;
+use tokio::task::JoinHandle;
 
 const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -856,14 +858,18 @@ impl AcpConnection {
         statuses
     }
 
-    pub(super) fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshJobPlan) {
+    pub(super) fn spawn_provider_inventory_refresh_jobs(
+        &self,
+        refresh_plan: &RefreshJobPlan,
+    ) -> Vec<JoinHandle<()>> {
+        let mut refresh_tasks = Vec::new();
         for refresh_job in refresh_plan.started.iter().cloned() {
             let provider_inventory = self.provider_inventory.clone();
             let provider_factory = Arc::clone(&self.provider_factory);
             let provider_id = refresh_job.provider_id.clone();
             let identity = refresh_job.identity.clone();
             let toolshim = refresh_job.toolshim;
-            tokio::spawn(async move {
+            refresh_tasks.push(tokio::spawn(async move {
                 let mut refresh_guard = provider_inventory.refresh_guard(&identity);
                 let provider_result =
                     AssertUnwindSafe(async { provider_factory(provider_id.clone()).await })
@@ -921,8 +927,9 @@ impl AcpConnection {
                         warn!(provider = %provider_id, error = %error_message, "provider inventory refresh failed");
                     }
                 }
-            });
+            }));
         }
+        refresh_tasks
     }
 
     pub(super) async fn start_provider_inventory_refresh(
@@ -945,8 +952,15 @@ impl AcpConnection {
         req: RefreshProviderInventoryRequest,
     ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
         Config::global().invalidate_secrets_cache();
-        self.start_provider_inventory_refresh(&req.provider_ids)
+        let refresh_job_plan = self
+            .provider_inventory
+            .plan_refresh_jobs(&req.provider_ids)
             .await
+            .internal_err()?;
+        join_all(self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan)).await;
+        Ok(refresh_plan_to_response(
+            refresh_job_plan.into_public_plan(),
+        ))
     }
 
     pub(super) async fn on_read_provider_config(

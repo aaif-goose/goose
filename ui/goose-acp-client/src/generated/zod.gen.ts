@@ -854,7 +854,10 @@ export const zRefreshProviderInventorySkipDto = z.object({
 });
 
 /**
- * Refresh acknowledgement.
+ * The providers whose refresh started, and the ones skipped.
+ * `_goose/unstable/providers/inventory/refresh` responds after the started
+ * refreshes finish. The provider config and custom provider requests respond
+ * while they are still running.
  */
 export const zRefreshProviderInventoryResponse_unstable = z.object({
     started: z.array(z.string()),
@@ -935,7 +938,9 @@ export const zCustomProviderDeleteResponse_unstable = z.object({
 });
 
 /**
- * Trigger a background refresh of provider inventories.
+ * Ask providers for their current models and save them. Responds after the
+ * refreshes finish. A provider that is already refreshing is skipped, not
+ * waited for.
  */
 export const zRefreshProviderInventoryRequest_unstable = z.object({
     providerIds: z.array(z.string()).optional().default([])
