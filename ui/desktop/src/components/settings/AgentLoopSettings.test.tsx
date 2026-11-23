@@ -421,15 +421,13 @@ describe('a rejected cutoff shown as Auto', () => {
   });
 });
 
-describe('typing before the initial read finishes', () => {
-  const key = 'GOOSE_MAX_TURNS';
-
+describe('before the initial read finishes', () => {
   const defaultRead = read.getMockImplementation();
   afterEach(() => {
     if (defaultRead) read.mockImplementation(defaultRead);
   });
 
-  // Holds every read's result until released, so inputs can be used while the page is still loading.
+  // Holds every read's result until released, like a slow round trip.
   function holdReads() {
     const gate = deferred();
     read.mockImplementation(
@@ -451,124 +449,67 @@ describe('typing before the initial read finishes', () => {
     );
   }
 
-  it('keeps the typed value and still saves it on blur', async () => {
-    userConfig[key] = 50;
-    userConfig.GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS = 900;
-    const gate = holdReads();
-    const user = userEvent.setup();
-    renderPage();
+  const labels = [
+    'Turns',
+    'Threshold %',
+    'Token limit',
+    'Cutoff',
+    'Retry timeout',
+    'Failure timeout',
+    'Block limit',
+  ];
+  const toggles = [
+    'Enable Slash commands',
+    'Enable Automatic thinking effort',
+    'Enable Tool pair compaction',
+  ];
 
-    await user.clear(input('Turns'));
-    await user.type(input('Turns'), '60');
-    gate.resolve();
-
-    await waitFor(() => expect(input('Retry timeout')).toHaveValue(900));
-    expect(input('Turns')).toHaveValue(60);
-
-    await user.tab();
-    await waitFor(() => expect(userConfig[key]).toBe(60));
-    expect(upsert).toHaveBeenCalledWith(key, 60, false);
-  });
-
-  it('keeps a value saved before the read finished', async () => {
-    userConfig[key] = 50;
-    const gate = holdReads();
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.clear(input('Turns'));
-    await user.type(input('Turns'), '60');
-    await user.tab();
-    await waitFor(() => expect(userConfig[key]).toBe(60));
-    gate.resolve();
-    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
-
-    expect(input('Turns')).toHaveValue(60);
-    await user.click(input('Turns'));
-    await user.tab();
-    expect(upsert).toHaveBeenCalledTimes(1);
-  });
-
-  it('saves a value typed and blurred before the read finished even if it equals the default', async () => {
-    userConfig[key] = 50;
-    const gate = holdReads();
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.clear(input('Turns'));
-    await user.type(input('Turns'), '1000');
-    await user.tab();
-    gate.resolve();
-
-    await waitFor(() => expect(userConfig[key]).toBe(1000));
-    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
-    expect(input('Turns')).toHaveValue(1000);
-  });
-
-  it('keeps toggles clicked before the read finished and populates the others', async () => {
-    userConfig.GOOSE_SLASH_COMMANDS_ENABLED = true;
-    userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION = false;
+  it('disables every control until the read finishes, then populates them', async () => {
+    userConfig.GOOSE_MAX_TURNS = 50;
+    userConfig.GOOSE_SLASH_COMMANDS_ENABLED = false;
     userConfig.GOOSE_AUTO_EFFORT_ENABLED = true;
-    const gate = holdReads();
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getByLabelText('Enable Slash commands'));
-    await user.click(screen.getByLabelText('Enable Tool pair compaction'));
-    gate.resolve();
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('Enable Automatic thinking effort')).toBeChecked()
-    );
-    expect(screen.getByLabelText('Enable Slash commands')).not.toBeChecked();
-    expect(screen.getByLabelText('Enable Tool pair compaction')).toBeChecked();
-    // Cutoff is only editable while tool pair compaction is on.
-    expect(input('Cutoff')).toBeEnabled();
-    expect(upsert).toHaveBeenCalledTimes(2);
-    expect(userConfig.GOOSE_SLASH_COMMANDS_ENABLED).toBe(false);
-    expect(userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION).toBe(true);
-  });
-
-  it('keeps the API key state saved before the read finished', async () => {
-    userConfig.GOOSE_AUTO_EFFORT_ENABLED = false;
-    const gate = holdReads();
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getByLabelText('Enable Automatic thinking effort'));
-    await user.type(document.querySelector('input[type="password"]') as HTMLInputElement, 'secret');
-    await user.click(screen.getByRole('button', { name: /save/i }));
-    await waitFor(() => expect(upsert).toHaveBeenCalledWith('TYPESAFE_API_KEY', 'secret', true));
-    gate.resolve();
-    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
-
-    expect(screen.getByLabelText('Enable Automatic thinking effort')).toBeChecked();
-    expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
-  });
-
-  it('lets the read set a toggle again when its save failed', async () => {
-    userConfig.GOOSE_SLASH_COMMANDS_ENABLED = true;
-    const gate = holdReads();
-    upsert.mockRejectedValueOnce(new Error('offline'));
-    await ignoringUnhandledRejections(async () => {
-      const user = userEvent.setup();
-      renderPage();
-
-      await user.click(screen.getByLabelText('Enable Slash commands'));
-      await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
-      gate.resolve();
-
-      await waitFor(() => expect(screen.getByLabelText('Enable Slash commands')).toBeChecked());
-    });
-  });
-
-  it('populates fields the user did not touch', async () => {
-    userConfig[key] = 50;
+    userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION = true;
     const gate = holdReads();
     renderPage();
+
+    for (const label of labels) expect(input(label)).toBeDisabled();
+    for (const label of toggles) expect(screen.getByLabelText(label)).toBeDisabled();
     gate.resolve();
 
     await waitFor(() => expect(input('Turns')).toHaveValue(50));
+    for (const label of labels) expect(input(label)).toBeEnabled();
+    for (const label of toggles) expect(screen.getByLabelText(label)).toBeEnabled();
+    expect(screen.getByLabelText('Enable Slash commands')).not.toBeChecked();
+    expect(screen.getByLabelText('Enable Automatic thinking effort')).toBeChecked();
+    expect(screen.getByLabelText('Enable Tool pair compaction')).toBeChecked();
+  });
+
+  it('keeps the API key controls and Cutoff disabled while loading', async () => {
+    userConfig.GOOSE_AUTO_EFFORT_ENABLED = true;
+    userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION = true;
+    userConfig.TYPESAFE_API_KEY = { maskedValue: '****' };
+    const gate = holdReads();
+    renderPage();
+
+    expect(document.querySelector('input[type="password"]')).toBeDisabled();
+    expect(input('Cutoff')).toBeDisabled();
+    gate.resolve();
+
+    await waitFor(() => expect(input('Cutoff')).toBeEnabled());
+    expect(document.querySelector('input[type="password"]')).toBeEnabled();
+    expect(screen.getByRole('button', { name: /remove/i })).toBeEnabled();
+  });
+
+  it('enables the page with defaults when the read fails', async () => {
+    read.mockImplementation(async () => {
+      throw new Error('read failed');
+    });
+    await ignoringUnhandledRejections(async () => {
+      renderPage();
+
+      await waitFor(() => expect(input('Turns')).toBeEnabled());
+      expect(input('Turns')).toHaveValue(1000);
+    });
   });
 });
 

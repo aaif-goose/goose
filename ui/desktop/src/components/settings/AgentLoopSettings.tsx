@@ -252,12 +252,14 @@ function OperationRow({
   description,
   enabled,
   onEnabledChange,
+  disabled = false,
   children,
 }: {
   title: string;
   description: string;
   enabled?: boolean;
   onEnabledChange?: (checked: boolean) => void;
+  disabled?: boolean;
   children?: ReactNode;
 }) {
   const intl = useIntl();
@@ -271,6 +273,7 @@ function OperationRow({
               type="checkbox"
               aria-label={intl.formatMessage(i18n.enableOperation, { operation: title })}
               checked={enabled}
+              disabled={disabled}
               onChange={(event) => onEnabledChange(event.target.checked)}
               className="h-4 w-4 cursor-pointer rounded border-border-primary accent-bgApp"
             />
@@ -333,22 +336,19 @@ export default function AgentLoopSettings() {
   const [typesafeApiKeyConfigured, setTypesafeApiKeyConfigured] = useState(false);
   const [toolPairCompactionEnabled, setToolPairCompactionEnabled] = useState(false);
   const [numbers, setNumbers] = useState(defaultNumberSettings);
+  // Inputs stay disabled until the first config read finishes, so nothing can be edited against
+  // values that are still defaults.
+  const [loaded, setLoaded] = useState(false);
   // Per field, the value last loaded or sent to config ('' while a removal is pending, null after
   // a failed write). A blur only writes when the input differs from it, so leaving a field
   // unchanged never pins the displayed effective value into the user's config.
   const requestedNumbers = useRef<Record<NumberSetting, string | null>>(defaultNumberSettings);
   // Fields the user has typed in since load or the last write.
   const editedNumbers = useRef<Partial<Record<NumberSetting, boolean>>>({});
-  // Controls the user changed since the page opened; the initial read must not overwrite them.
-  const changed = useRef(
-    new Set<'slashCommands' | 'autoEffort' | 'toolPairCompaction' | 'apiKey'>()
-  );
   // Writes for one field run in order so that the last edit is the one that persists.
   const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
   // Per field, a counter bumped by every write so a finished write can tell whether it is still
   // the latest one; comparing values cannot, since two writes may request the same value.
-  // False until the first config read lands; until then snapshots are only the page defaults.
-  const configLoaded = useRef(false);
   const numberGenerations = useRef<Partial<Record<NumberSetting, number>>>({});
 
   useEffect(() => {
@@ -365,63 +365,34 @@ export default function AgentLoopSettings() {
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
       read('GOOSE_AUTO_EFFORT_ENABLED', false),
       read('TYPESAFE_API_KEY', true),
-    ]).then(([loadedNumbers, slashCommands, toolPairCompaction, autoEffort, typesafeApiKey]) => {
-      if (!active) return;
+    ])
+      .then(([loadedNumbers, slashCommands, toolPairCompaction, autoEffort, typesafeApiKey]) => {
+        if (!active) return;
 
-      if (!changed.current.has('slashCommands')) {
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
-      }
-      if (!changed.current.has('autoEffort')) {
         setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
-      }
-      if (!changed.current.has('apiKey')) {
         setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
-      }
-      if (!changed.current.has('toolPairCompaction')) {
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
         );
-      }
-      // A field the user edited or saved while this read was in flight keeps its input text; a
-      // field that was saved also keeps its save snapshot, since that is newer than the read.
-      const shown = Object.fromEntries(
-        loadedNumbers.map(([setting, value]) => [setting, value])
-      ) as NumberSettings;
-      // A rejected stored value displays as blank, so snapshot it as something no input can
-      // equal: clearing the field after editing it must still remove the stored value.
-      const snapshots = Object.fromEntries(
-        loadedNumbers.map(([setting, value, stored]) => [
-          setting,
-          value === '' && stored ? hiddenOverride : value,
-        ])
-      ) as NumberSettings;
-      configLoaded.current = true;
-      const touched = new Set(
-        numberFieldEntries
-          .map(([setting]) => setting)
-          .filter(
-            (setting) =>
-              editedNumbers.current[setting] || numberGenerations.current[setting] !== undefined
-          )
-      );
-      requestedNumbers.current = Object.fromEntries(
-        numberFieldEntries.map(([setting]) => [
-          setting,
-          numberGenerations.current[setting] !== undefined
-            ? requestedNumbers.current[setting]
-            : snapshots[setting],
-        ])
-      ) as Record<NumberSetting, string | null>;
-      setNumbers(
-        (current) =>
+        setNumbers(
           Object.fromEntries(
-            numberFieldEntries.map(([setting]) => [
-              setting,
-              touched.has(setting) ? current[setting] : shown[setting],
-            ])
+            loadedNumbers.map(([setting, shown]) => [setting, shown])
           ) as NumberSettings
-      );
-    });
+        );
+        // A rejected stored value displays as blank, so snapshot it as something no input can
+        // equal: clearing the field after editing it must still remove the stored value.
+        requestedNumbers.current = Object.fromEntries(
+          loadedNumbers.map(([setting, shown, stored]) => [
+            setting,
+            shown === '' && stored ? hiddenOverride : shown,
+          ])
+        ) as NumberSettings;
+      })
+      .finally(() => {
+        // A failed read leaves the defaults showing rather than a page that never enables.
+        if (active) setLoaded(true);
+      });
 
     return () => {
       active = false;
@@ -478,12 +449,6 @@ export default function AgentLoopSettings() {
     });
   };
 
-  // Before the config has loaded the snapshot is only a default, so an edited field is not
-  // unchanged just because it matches it.
-  const isUnchanged = (setting: NumberSetting, input: string) =>
-    input === requestedNumbers.current[setting] &&
-    (configLoaded.current || !editedNumbers.current[setting]);
-
   const saveNumber = async (setting: NumberSetting) => {
     const input = numbers[setting].trim();
     if (input === '') {
@@ -492,13 +457,13 @@ export default function AgentLoopSettings() {
     }
     // Compare before clamping: an out-of-range value from config (e.g. a threshold of 0, which
     // disables compaction) must survive an unchanged blur.
-    if (isUnchanged(setting, input)) return;
+    if (input === requestedNumbers.current[setting]) return;
     const { configKey, min, max, integer, toConfig } = numberFields[setting];
     const parsed = Number(input);
     const clamped = Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : min));
     const value = integer ? Math.round(clamped) : clamped;
     setNumber(setting, String(value));
-    if (isUnchanged(setting, String(value))) return;
+    if (String(value) === requestedNumbers.current[setting]) return;
     await writeNumber(setting, String(value), () => upsert(configKey, toConfig(value), false));
   };
 
@@ -511,51 +476,35 @@ export default function AgentLoopSettings() {
       step,
       onChange: (value: string) => editNumber(setting, value),
       onBlur: () => saveNumber(setting),
+      disabled: !loaded,
     };
-  };
-
-  // Marks a control as changed before its save starts, so a config read that finishes meanwhile
-  // leaves it alone; a failed save lets the next read set it again.
-  const saveChange = async (
-    control: 'slashCommands' | 'autoEffort' | 'toolPairCompaction' | 'apiKey',
-    save: () => Promise<void>
-  ) => {
-    changed.current.add(control);
-    try {
-      await save();
-    } catch (error) {
-      changed.current.delete(control);
-      throw error;
-    }
   };
 
   const handleToolPairCompactionToggle = async (checked: boolean) => {
     setToolPairCompactionEnabled(checked);
-    await saveChange('toolPairCompaction', () =>
-      upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false)
-    );
+    await upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false);
   };
 
   const handleSlashCommandsToggle = async (checked: boolean) => {
     setSlashCommandsEnabled(checked);
-    await saveChange('slashCommands', () => upsert('GOOSE_SLASH_COMMANDS_ENABLED', checked, false));
+    await upsert('GOOSE_SLASH_COMMANDS_ENABLED', checked, false);
   };
 
   const handleAutoEffortToggle = async (checked: boolean) => {
     setAutoEffortEnabled(checked);
-    await saveChange('autoEffort', () => upsert('GOOSE_AUTO_EFFORT_ENABLED', checked, false));
+    await upsert('GOOSE_AUTO_EFFORT_ENABLED', checked, false);
   };
 
   const saveTypesafeApiKey = async () => {
     const apiKey = typesafeApiKey.trim();
     if (!apiKey) return;
-    await saveChange('apiKey', () => upsert('TYPESAFE_API_KEY', apiKey, true));
+    await upsert('TYPESAFE_API_KEY', apiKey, true);
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(true);
   };
 
   const removeTypesafeApiKey = async () => {
-    await saveChange('apiKey', () => remove('TYPESAFE_API_KEY', true));
+    await remove('TYPESAFE_API_KEY', true);
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(false);
   };
@@ -577,6 +526,7 @@ export default function AgentLoopSettings() {
             description={intl.formatMessage(i18n.slashCommandsDescription)}
             enabled={slashCommandsEnabled}
             onEnabledChange={handleSlashCommandsToggle}
+            disabled={!loaded}
           />
 
           <OperationRow
@@ -584,6 +534,7 @@ export default function AgentLoopSettings() {
             description={intl.formatMessage(i18n.autoEffortDescription)}
             enabled={autoEffortEnabled}
             onEnabledChange={handleAutoEffortToggle}
+            disabled={!loaded}
           >
             <div className="flex w-full max-w-xl flex-col gap-2">
               <label className="text-xs text-text-secondary">
@@ -598,13 +549,13 @@ export default function AgentLoopSettings() {
                 <Input
                   type="password"
                   value={typesafeApiKey}
-                  disabled={!autoEffortEnabled}
+                  disabled={!autoEffortEnabled || !loaded}
                   placeholder={intl.formatMessage(i18n.typesafeApiKeyPlaceholder)}
                   onChange={(event) => setTypesafeApiKey(event.target.value)}
                 />
                 <Button
                   size="sm"
-                  disabled={!autoEffortEnabled || !typesafeApiKey.trim()}
+                  disabled={!autoEffortEnabled || !loaded || !typesafeApiKey.trim()}
                   onClick={saveTypesafeApiKey}
                 >
                   {intl.formatMessage(i18n.saveApiKey)}
@@ -613,7 +564,7 @@ export default function AgentLoopSettings() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!autoEffortEnabled}
+                    disabled={!autoEffortEnabled || !loaded}
                     onClick={removeTypesafeApiKey}
                   >
                     {intl.formatMessage(i18n.removeApiKey)}
@@ -654,13 +605,14 @@ export default function AgentLoopSettings() {
             description={intl.formatMessage(i18n.toolPairCompactionDescription)}
             enabled={toolPairCompactionEnabled}
             onEnabledChange={handleToolPairCompactionToggle}
+            disabled={!loaded}
           >
             <div className="flex flex-wrap items-center gap-4">
               <NumberInput
                 label={intl.formatMessage(i18n.cutoffLabel)}
                 {...numberInputProps('toolCallCutoff')}
                 placeholder={intl.formatMessage(i18n.autoPlaceholder)}
-                disabled={!toolPairCompactionEnabled}
+                disabled={!toolPairCompactionEnabled || !loaded}
               />
             </div>
           </OperationRow>
