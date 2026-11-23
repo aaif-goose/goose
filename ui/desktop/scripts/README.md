@@ -34,9 +34,9 @@ launch rebuilds. An unreadable or non-object stamp counts as a miss. The stamp l
 `ui/goose-acp-client/node_modules/.cache`; a missing `dist/index.js` also triggers a build.
 
 Builds are serialized with a lock in the same directory, held from the freshness check
-until the stamp is written. The ACP package's own `build` (and so `prepack`) takes the
-same lock and removes the stamp before writing `dist`, so building it directly cannot
-leave an old stamp vouching for new output.
+until the stamp is written. The ACP package's own `build` and `build:ts` (and so `prepack` and the Justfile's
+`build-acp-client`) take the same lock and remove the stamp before writing `dist`, so
+building it directly cannot leave an old stamp vouching for new output.
 
 `package`, `make`, and `scripts/build-windows.ps1` always force a rebuild. The input
 list is maintained manually, so packaging must not rely on it to detect every change.

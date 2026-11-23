@@ -1,15 +1,31 @@
 #!/usr/bin/env node
-// `pnpm run build` for this package: generate, then compile, under the build lock and with the
-// desktop freshness stamp removed first. See build-guard.cjs.
+// Every writer of this package's dist goes through here: `build` (generate + compile) and
+// `build:ts` (compile only). Each takes the build lock and removes the desktop freshness stamp
+// before writing anything. See build-guard.cjs.
+//
+// Usage: node scripts/build.cjs <generate|tsc>...
 const { spawnSync } = require("child_process");
-const { acquireLock, dropStamp } = require("./build-guard.cjs");
+const { acquireLock, dropStamp, HELD_ENV } = require("./build-guard.cjs");
+
+// Windows needs a shell to resolve .cmd shims; the commands and arguments here are fixed.
+const steps = {
+  generate: ["npm", ["run", "generate"]],
+  tsc: ["tsc", []],
+};
+const requested = process.argv.slice(2);
+if (!requested.length || requested.some((step) => !steps[step])) {
+  console.error(`Usage: build.cjs <${Object.keys(steps).join("|")}>...`);
+  process.exit(2);
+}
 
 acquireLock();
 dropStamp();
+// Anything this process starts that also goes through here already has the lock.
+process.env[HELD_ENV] = "1";
 
-for (const script of ["generate", "build:ts"]) {
-  // Windows needs a shell to resolve npm.cmd; the command and arguments are fixed.
-  const result = spawnSync("npm", ["run", script], {
+for (const step of requested) {
+  const [command, args] = steps[step];
+  const result = spawnSync(command, args, {
     stdio: "inherit",
     shell: process.platform === "win32",
   });

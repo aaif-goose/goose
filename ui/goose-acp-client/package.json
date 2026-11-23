@@ -27,8 +27,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "node scripts/build.cjs",
-    "build:ts": "tsc",
+    "build": "node scripts/build.cjs generate tsc",
+    "build:ts": "node scripts/build.cjs tsc",
     "generate": "tsx generate-schema.ts",
     "lint": "tsc --noEmit",
     "format": "prettier --write src/ generate-schema.ts",
