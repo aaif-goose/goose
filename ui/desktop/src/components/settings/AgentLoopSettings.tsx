@@ -173,6 +173,9 @@ function parseUnsignedSetting(value: unknown, limit: number) {
     : undefined;
 }
 
+// Snapshot for a stored value the field shows as blank (see requestedNumbers).
+const hiddenOverride = 'stored value hidden';
+
 const asIs = (value: number) => value;
 const displayUnsigned = (fallback: number, limit: number) => (value: unknown) =>
   String(parseUnsignedSetting(value, limit) ?? fallback);
@@ -334,6 +337,8 @@ export default function AgentLoopSettings() {
   // a failed write). A blur only writes when the input differs from it, so leaving a field
   // unchanged never pins the displayed effective value into the user's config.
   const requestedNumbers = useRef<Record<NumberSetting, string | null>>(defaultNumberSettings);
+  // Fields the user has typed in since load or the last write.
+  const editedNumbers = useRef<Partial<Record<NumberSetting, boolean>>>({});
   // Writes for one field run in order so that the last edit is the one that persists.
   const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
 
@@ -342,10 +347,10 @@ export default function AgentLoopSettings() {
 
     Promise.all([
       Promise.all(
-        numberFieldEntries.map(async ([setting, field]) => [
-          setting,
-          field.display(await read(field.configKey, false)),
-        ])
+        numberFieldEntries.map(async ([setting, field]) => {
+          const stored = await read(field.configKey, false);
+          return [setting, field.display(stored), stored !== null && stored !== undefined] as const;
+        })
       ),
       read('GOOSE_SLASH_COMMANDS_ENABLED', false),
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
@@ -360,8 +365,18 @@ export default function AgentLoopSettings() {
       setToolPairCompactionEnabled(
         typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
       );
-      const loaded = Object.fromEntries(loadedNumbers) as NumberSettings;
-      requestedNumbers.current = loaded;
+      const loaded = Object.fromEntries(
+        loadedNumbers.map(([setting, shown]) => [setting, shown])
+      ) as NumberSettings;
+      // A rejected stored value displays as blank, so snapshot it as something no input can
+      // equal: clearing the field after editing it must still remove the stored value.
+      editedNumbers.current = {};
+      requestedNumbers.current = Object.fromEntries(
+        loadedNumbers.map(([setting, shown, stored]) => [
+          setting,
+          shown === '' && stored ? hiddenOverride : shown,
+        ])
+      ) as NumberSettings;
       setNumbers(loaded);
     });
 
@@ -374,8 +389,14 @@ export default function AgentLoopSettings() {
     setNumbers((current) => ({ ...current, [setting]: value }));
   };
 
+  const editNumber = (setting: NumberSetting, value: string) => {
+    editedNumbers.current[setting] = true;
+    setNumber(setting, value);
+  };
+
   const writeNumber = (setting: NumberSetting, requested: string, write: () => Promise<void>) => {
     requestedNumbers.current = { ...requestedNumbers.current, [setting]: requested };
+    editedNumbers.current[setting] = false;
     const previous = numberWrites.current[setting] ?? Promise.resolve();
     const next = previous
       .catch(() => {})
@@ -391,7 +412,10 @@ export default function AgentLoopSettings() {
   };
 
   const resetNumber = async (setting: NumberSetting) => {
-    if (requestedNumbers.current[setting] === '') return;
+    const requested = requestedNumbers.current[setting];
+    if (requested === '') return;
+    // An untouched blank field with a rejected stored value has nothing to reset.
+    if (requested === hiddenOverride && !editedNumbers.current[setting]) return;
     const { configKey, display } = numberFields[setting];
     await writeNumber(setting, '', async () => {
       await remove(configKey, false);
@@ -429,7 +453,7 @@ export default function AgentLoopSettings() {
       min,
       max,
       step,
-      onChange: (value: string) => setNumber(setting, value),
+      onChange: (value: string) => editNumber(setting, value),
       onBlur: () => saveNumber(setting),
     };
   };

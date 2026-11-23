@@ -388,6 +388,39 @@ describe('values goose rejects for an integer field', () => {
   );
 });
 
+describe('a rejected cutoff shown as Auto', () => {
+  const key = 'GOOSE_TOOL_CALL_CUTOFF';
+
+  it('is removed when the user types a value, clears it and leaves the field', async () => {
+    userConfig[key] = '-1';
+    lowerConfig[key] = 30;
+    const user = userEvent.setup();
+    await renderLoaded();
+    await waitFor(() => expect(input('Cutoff')).toHaveValue(null));
+
+    await user.type(input('Cutoff'), '20');
+    await user.clear(input('Cutoff'));
+    await user.tab();
+
+    await waitFor(() => expect(input('Cutoff')).toHaveValue(30));
+    expect(remove).toHaveBeenCalledWith(key, false);
+    expect(userConfig).not.toHaveProperty(key);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('is left alone when the field is untouched', async () => {
+    userConfig[key] = '-1';
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.click(input('Cutoff'));
+    await user.tab();
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe('rapid edits', () => {
   const key = 'GOOSE_AUTO_COMPACT_TOKEN_LIMIT';
 
