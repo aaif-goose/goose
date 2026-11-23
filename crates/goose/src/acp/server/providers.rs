@@ -954,13 +954,13 @@ impl AcpConnection {
         req: RefreshProviderInventoryRequest,
     ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
         Config::global().invalidate_secrets_cache();
+        #[cfg(feature = "online-model-meta")]
+        crate::model_catalog::wait_for_download().await;
         let refresh_job_plan = self
             .provider_inventory
             .plan_refresh_jobs(&req.provider_ids)
             .await
             .internal_err()?;
-        #[cfg(feature = "online-model-meta")]
-        crate::model_catalog::wait_for_download().await;
         join_all(self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan)).await;
         Ok(refresh_plan_to_response(
             refresh_job_plan.into_public_plan(),
