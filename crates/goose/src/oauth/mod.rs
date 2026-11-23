@@ -170,12 +170,28 @@ fn client_metadata_url() -> String {
 }
 
 fn allow_private_addresses_for_oauth() -> bool {
-    matches!(
+    is_private_addresses_allowed(
         std::env::var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES")
             .ok()
             .as_deref(),
-        Some("true") | Some("1") | Some("yes")
     )
+}
+
+/// Pure function for testing whether private addresses should be allowed for OAuth.
+/// Takes the environment variable value directly to avoid env-var race conditions in tests.
+fn is_private_addresses_allowed(env_value: Option<&str>) -> bool {
+    matches!(env_value, Some("true") | Some("1") | Some("yes"))
+}
+
+/// Helper function to construct OAuthState with the private-address flag applied.
+async fn create_oauth_state_with_flag(
+    mcp_server_url: &str,
+) -> Result<OAuthState, anyhow::Error> {
+    if allow_private_addresses_for_oauth() {
+        OAuthState::new_allowing_private_addresses(mcp_server_url, None).await
+    } else {
+        OAuthState::new(mcp_server_url, None).await
+    }
 }
 
 fn scope_set(scopes: &[String]) -> BTreeSet<&str> {
@@ -390,7 +406,7 @@ pub async fn oauth_flow_with_challenge(
                         .save_with_requested_scopes(refreshed_credentials, requested_scopes)?;
 
                     if restored_omitted_scopes {
-                        let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
+                        let mut oauth_state = create_oauth_state_with_flag(mcp_server_url).await?;
                         oauth_state
                             .set_credentials(&refreshed_client_id, token_response)
                             .await?;
@@ -462,7 +478,7 @@ pub async fn oauth_flow_with_challenge(
         }
     });
 
-    let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
+    let mut oauth_state = create_oauth_state_with_flag(mcp_server_url).await?;
     let redirect_uri = format!("http://127.0.0.1:{}/oauth_callback", used_addr.port());
     oauth_state
         .start_authorization(build_authorization_request(
@@ -872,33 +888,49 @@ mod tests {
     }
 
     #[test]
-    fn allow_private_addresses_for_oauth_true_values() {
+    fn is_private_addresses_allowed_true_values() {
         for value in &["true", "1", "yes"] {
-            std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", value);
             assert!(
-                allow_private_addresses_for_oauth(),
+                is_private_addresses_allowed(Some(value)),
                 "failed for value: {}",
                 value
             );
         }
-        std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
     }
 
     #[test]
-    fn allow_private_addresses_for_oauth_false_values() {
+    fn is_private_addresses_allowed_false_values() {
         for value in &["false", "0", "no", ""] {
-            std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", value);
             assert!(
-                !allow_private_addresses_for_oauth(),
+                !is_private_addresses_allowed(Some(value)),
                 "failed for value: {}",
                 value
             );
         }
-        std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
     }
 
     #[test]
-    fn allow_private_addresses_for_oauth_unset_defaults_to_false() {
+    fn is_private_addresses_allowed_unset_defaults_to_false() {
+        assert!(!is_private_addresses_allowed(None));
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_env_true_with_lock() {
+        let _lock = env_lock::lock_env("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
+        std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", "true");
+        assert!(allow_private_addresses_for_oauth());
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_env_false_with_lock() {
+        let _lock = env_lock::lock_env("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
+        std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", "false");
+        assert!(!allow_private_addresses_for_oauth());
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_env_unset_with_lock() {
+        let _lock = env_lock::lock_env("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
         std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
         assert!(!allow_private_addresses_for_oauth());
     }
