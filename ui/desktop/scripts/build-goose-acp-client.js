@@ -12,7 +12,8 @@ const { spawnSync } = require('child_process');
 const desktopRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopRoot, '..', '..');
 const acpClientRoot = path.join(repoRoot, 'ui', 'goose-acp-client');
-const builtEntry = path.join(acpClientRoot, 'dist', 'index.js');
+const srcDir = path.join(acpClientRoot, 'src');
+const distDir = path.join(acpClientRoot, 'dist');
 // The stamp and the build lock live with the ACP client package, whose own `build` also honours them.
 const { acquireLock, stampPath, HELD_ENV } = require(
   path.join(acpClientRoot, 'scripts', 'build-guard.cjs')
@@ -68,9 +69,7 @@ function collect(dir, found = []) {
 }
 
 function hashInputs() {
-  const sources = collect(path.join(acpClientRoot, 'src')).filter(
-    (file) => !file.startsWith(generatedDir + path.sep)
-  );
+  const sources = collect(srcDir).filter((file) => !file.startsWith(generatedDir + path.sep));
   const files = [...inputFiles, ...sources];
   const hash = crypto.createHash('sha256');
   for (const file of files) {
@@ -94,9 +93,25 @@ process.env[HELD_ENV] = '1';
 // baseline the post-build hash is compared against.
 const inputsBefore = hashInputs();
 
+// tsc emits <name>.js and <name>.d.ts for every src/**/*.ts that is not itself a declaration file
+// (tsconfig.json includes all of src, generated sources included). If any is missing, the stamp
+// cannot vouch for dist: the client would fail to import even though no input changed.
+function missingOutput() {
+  for (const file of collect(srcDir)) {
+    if (!file.endsWith('.ts') || file.endsWith('.d.ts')) continue;
+    const base = path.join(distDir, path.relative(srcDir, file)).slice(0, -'.ts'.length);
+    for (const ext of ['.js', '.d.ts']) {
+      if (!fs.existsSync(base + ext)) return path.relative(acpClientRoot, base + ext);
+    }
+  }
+  return null;
+}
+
 function stalenessReason() {
   if (force) return '--force';
-  if (!fs.existsSync(builtEntry)) return 'no previous build';
+  if (!fs.existsSync(path.join(distDir, 'index.js'))) return 'no previous build';
+  const missing = missingOutput();
+  if (missing) return `missing build output ${missing}`;
   let stamp;
   try {
     stamp = JSON.parse(fs.readFileSync(stampPath, 'utf8'));

@@ -31,7 +31,8 @@ manifest, and workspace lockfile. Generated sources are build outputs and are ex
 
 A failed build or an input change during the build leaves no stamp, so the next
 launch rebuilds. An unreadable or non-object stamp counts as a miss. The stamp lives in
-`ui/goose-acp-client/node_modules/.cache`; a missing `dist/index.js` also triggers a build.
+`ui/goose-acp-client/node_modules/.cache`. A missing `dist/index.js`, or any other output
+that a `src` file compiles to (`.js` or `.d.ts`), also triggers a build.
 
 Builds are serialized with a lock in the same directory, held from the freshness check
 until the stamp is written. The ACP package's own `build` and `build:ts` (and so `prepack` and the Justfile's
