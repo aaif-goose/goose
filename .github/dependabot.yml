@@ -12,6 +12,10 @@ updates:
       # rehype-katex only accepts katex ^0.16; remove once remarkjs/remark-math#121 ships.
       - dependency-name: "katex"
         versions: [">=0.17"]
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      - dependency-name: "@modelcontextprotocol/ext-apps"
+        versions: [">=2"]
     groups:
       ui-minor-and-patch:
         update-types:
