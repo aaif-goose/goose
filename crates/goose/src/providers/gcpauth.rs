@@ -654,9 +654,12 @@ impl GcpAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_lc_rs::encoding::AsDer;
+    use aws_lc_rs::rsa::{KeyPair, KeySize};
     use mockall::predicate::eq;
+    use pkcs8::der::Decode;
     use serde_json::Value;
-    use tokio::time::sleep;
+    use std::sync::LazyLock;
     use wiremock::matchers::{header, method, path};
     // Only import what we need
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -713,63 +716,20 @@ mod tests {
             .into_owned()
     }
 
-    // Test fixtures for credentials
+    static SERVICE_ACCOUNT_TEST_KEY: LazyLock<String> = LazyLock::new(|| {
+        let key_pair = KeyPair::generate(KeySize::Rsa2048).unwrap();
+        let pkcs8_der = key_pair.as_der().unwrap();
+        let key = pkcs8::PrivateKeyInfoRef::from_der(pkcs8_der.as_ref()).unwrap();
+        pem::encode(&pem::Pem::new(
+            "RSA PRIVATE KEY",
+            key.private_key.as_bytes(),
+        ))
+    });
+
     fn mock_service_account() -> ServiceAccountCredentials {
         ServiceAccountCredentials {
             client_email: "test@test.com".to_string(),
-            // This is a generated test credential
-            private_key: "-----BEGIN RSA PRIVATE KEY-----
-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
------END RSA PRIVATE KEY-----"
-                .to_string(),
+            private_key: SERVICE_ACCOUNT_TEST_KEY.clone(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
         }
     }
@@ -890,55 +850,41 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
 
     #[tokio::test]
     async fn test_token_refresh_race_condition() {
+        let tokens = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "refreshed",
+                "expires_in": 3600,
+            })))
+            .expect(1)
+            .mount(&tokens)
+            .await;
+
+        let credentials = ServiceAccountCredentials {
+            token_uri: format!("{}/token", tokens.uri()),
+            ..mock_service_account()
+        };
         let auth = Arc::new(GcpAuth {
             source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
-            credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
+            credentials: RwLock::new(AdcCredentials::ServiceAccount(credentials)),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(Some(CachedToken {
                 token: AuthToken {
                     token_type: "Bearer".to_string(),
-                    token_value: "about_to_expire".to_string(),
+                    token_value: "expired".to_string(),
                 },
-                expires_at: Instant::now() + Duration::from_millis(100),
+                expires_at: Instant::now(),
             }))),
         });
 
         let mut handles = vec![];
-
-        for i in 0..5 {
-            let auth_clone = Arc::clone(&auth);
-            handles.push(tokio::spawn(async move {
-                sleep(Duration::from_millis(i * 50)).await;
-                let result = auth_clone.get_token().await;
-                match result {
-                    Ok(token) => {
-                        // Should be the cached token since we can't actually exchange tokens in tests
-                        assert_eq!(
-                            token.token_value, "about_to_expire",
-                            "Expected cached token, got: {}",
-                            token.token_value
-                        );
-                    }
-                    Err(e) => {
-                        match e {
-                            AuthError::TokenExchange(err) => {
-                                // This is expected - we can't actually exchange tokens in tests
-                                assert!(
-                                    err.contains("invalid_scope") || err.contains("400"),
-                                    "Unexpected error message: {}",
-                                    err
-                                );
-                            }
-                            other => panic!("Unexpected error type: {:?}", other),
-                        }
-                    }
-                }
-            }));
+        for _ in 0..5 {
+            let auth = Arc::clone(&auth);
+            handles.push(tokio::spawn(async move { auth.get_token().await.unwrap() }));
         }
-
-        // Wait for all handles
         for handle in handles {
-            handle.await.unwrap();
+            assert_eq!(handle.await.unwrap().token_value, "refreshed");
         }
     }
 
@@ -978,6 +924,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_service_account_jwt_creation_with_pkcs8_key() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),

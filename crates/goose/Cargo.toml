@@ -286,6 +286,7 @@ dtor = { version = "1.0.5", default-features = false, features = ["proc_macro"] 
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"] }
 oi-kit-agent = { path = "../oi-kit-agent", default-features = false, features = ["test-support"] }
+aws-lc-rs = { version = "1.17.1", default-features = false, features = ["non-fips"] }
 
 [[example]]
 name = "agent"
