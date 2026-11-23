@@ -191,6 +191,32 @@ prompt: |
   1. Run `cargo test -p goose --features scheduler --lib muse_code` to verify Muse Code metadata, device-code login, key mint, day-long key renewal from the identity token, and CLI-token reuse.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
+  ### OAuth Private-Address Discovery Validation
+  When running from a goose source checkout:
+  This validates the GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES feature for OAuth with private/split-DNS MCP servers.
+
+  **Test Scenarios**:
+  1. Pure-function parsing (concurrent-safe, no env vars):
+     - Verify true values (`"true"`, `"1"`, `"yes"`) parse correctly
+     - Verify false values (`"false"`, `"0"`, `"no"`, `""`) parse correctly
+     - Verify unset (None) defaults to false (security default)
+
+  2. Environment-based integration (with race-condition protection):
+     - Verify GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES=true enables private addresses
+     - Verify GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES=false rejects private addresses
+     - Verify unset variable rejects private addresses (security default)
+
+  3. Flag propagation across OAuth flows:
+     - Verify create_oauth_state_with_flag() chooses the correct OAuthState constructor based on the flag
+     - Verify AuthorizationManager receives the flag through all code paths (initial auth, refresh, reauth)
+
+  **Run the validation**:
+  1. Run `cargo test -p goose oauth::tests::is_private_addresses_allowed` to verify pure-function parsing
+  2. Run `cargo test -p goose oauth::tests::allow_private_addresses_for_oauth_env` to verify environment-based tests with synchronization
+  3. Verify all tests pass without race conditions or flaky failures
+
+  If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
   {% endif %}
 

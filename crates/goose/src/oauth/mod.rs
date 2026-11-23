@@ -183,10 +183,7 @@ fn is_private_addresses_allowed(env_value: Option<&str>) -> bool {
     matches!(env_value, Some("true") | Some("1") | Some("yes"))
 }
 
-/// Helper function to construct OAuthState with the private-address flag applied.
-async fn create_oauth_state_with_flag(
-    mcp_server_url: &str,
-) -> Result<OAuthState, anyhow::Error> {
+async fn create_oauth_state_with_flag(mcp_server_url: &str) -> Result<OAuthState, anyhow::Error> {
     if allow_private_addresses_for_oauth() {
         OAuthState::new_allowing_private_addresses(mcp_server_url, None).await
     } else {
