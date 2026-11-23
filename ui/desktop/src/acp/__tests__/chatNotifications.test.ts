@@ -1,4 +1,4 @@
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppEvents } from '../../constants/events';
 import { ChatState } from '../../types/chatState';

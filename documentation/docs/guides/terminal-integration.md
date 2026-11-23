@@ -66,7 +66,7 @@ npm install express
 @goose "how do I fix this error?"
 ```
 
-goose automatically sees the commands you've run since your last question, so you don't need to explain what you've been doing. Use quotes around your prompt if it contains special characters like `?`, `*`, or `'`:
+Use quotes around your prompt if it contains special characters like `?`, `*`, or `'`:
 
 ```bash
 @goose "what's in this directory?"
@@ -159,6 +159,56 @@ source $goose_term_init
 </TabItem>
 </Tabs>
 
+## Shell History
+
+By default, goose does **not** record the commands you type. To let goose see your recent shell commands as context when you ask a question, pass `--dangerous-include-history` when initialising:
+
+:::warning
+When shell history is enabled, every command you run — including lines that contain passwords, API keys, or other credentials — is sent to the configured model provider. Only enable this if you understand and accept that risk.
+:::
+
+<Tabs groupId="shells">
+<TabItem value="zsh" label="zsh" default>
+
+```bash
+eval "$(goose term init zsh --dangerous-include-history)"
+```
+
+</TabItem>
+<TabItem value="bash" label="bash">
+
+```bash
+eval "$(goose term init bash --dangerous-include-history)"
+```
+
+</TabItem>
+<TabItem value="fish" label="fish">
+
+```fish
+goose term init fish --dangerous-include-history | source
+```
+
+</TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+let goose_term_init = ($nu.cache-dir | path join "goose-term-init.nu")
+^goose term init nu --dangerous-include-history | save --force $goose_term_init
+source $goose_term_init
+```
+
+</TabItem>
+<TabItem value="powershell" label="PowerShell">
+
+```powershell
+Invoke-Expression (goose term init powershell --dangerous-include-history)
+```
+
+</TabItem>
+</Tabs>
+
+With history enabled, goose sees the commands you've run since your last question, so you don't need to explain what you've been doing.
+
 ## Show Context Status in Your Prompt
 
 Add `goose term info` to your prompt to see how much context you've used and which model is active during a terminal goose session. 
@@ -214,12 +264,14 @@ Your terminal prompt now shows the context usage and model name (shortened for r
 ```
 ## Shell Completion for goose Commands
 
-`@goose` provides context-aware assistance based on your command history. To enable tab completion of goose CLI commands (like `goose session`, `goose run`, etc.), see the [shell completion documentation](/docs/guides/goose-cli-commands#completion).
+`@goose` provides context-aware assistance. To enable tab completion of goose CLI commands (like `goose session`, `goose run`, etc.), see the [shell completion documentation](/docs/guides/goose-cli-commands#completion).
 
 ## Troubleshooting
 
 **goose doesn't see recent commands:**
-If you run commands but goose says it doesn't see any recent activity, check if terminal integration is properly [set up in your shell config](#setup).
+Shell history capture is opt-in. goose only sees your recent commands if you initialised with [`--dangerous-include-history`](#shell-history). Without that flag, goose has no record of commands you've run.
+
+If you've already enabled `--dangerous-include-history` but goose still reports no activity, check that terminal integration is properly [set up in your shell config](#setup).
 You can also check the id of the goose session in your current terminal:
 ```bash
 # Check if session ID exists

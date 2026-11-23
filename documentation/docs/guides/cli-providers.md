@@ -285,7 +285,6 @@ The following models are recognized and passed to the Claude CLI via the `--mode
 | `auto` | `--dangerously-skip-permissions` | Bypasses all permission prompts |
 | `smart-approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
 | `approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
-| `chat` | (none) | Default Claude Code behavior |
 
 :::tip Approve Mode Integration
 When using `approve` or `smart_approve` mode with Claude Code, goose routes Claude Code's permission prompts through goose's confirmation interface. This means:
@@ -340,7 +339,6 @@ These are the default models supported by Codex CLI v0.77.0. To access older or 
 | `auto` | `--yolo` | Bypasses all approvals and sandbox restrictions |
 | `smart-approve` | `--full-auto` | Workspace-write sandbox, approvals only on failure |
 | `approve` | (none) | Interactive approvals (Codex default behavior) |
-| `chat` | `--sandbox read-only` | Read-only sandbox mode |
 
 ### Gemini CLI Configuration
 

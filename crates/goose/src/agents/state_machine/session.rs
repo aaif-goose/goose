@@ -1,15 +1,21 @@
+use std::sync::{Arc, Mutex as StdMutex};
+
 use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::agents::state_machine::effects::GooseEffect;
+use crate::agents::state_machine::tool_hooks::{fire_post_tool_hooks, fire_pre_tool_hooks};
 use crate::agents::state_machine::usage;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
-use crate::hooks::{HookContext, HookEvent, HookManager};
+use crate::hooks::HookManager;
 use crate::session::{Session, SessionManager};
-use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
-use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
+use oi_kit_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
+use oi_kit_agent::operation::{ConversationEffect, Emitter, MachineEffect, RunStatus};
+
+use super::ops_auto_effort::current_turn_effort;
 
 fn contains_tool_confirmation_request(message: &Message) -> bool {
     message.content.iter().any(|content| {
@@ -26,6 +32,19 @@ impl MachineSession for Session {
     }
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
+    }
+    fn thinking_effort(&self) -> Option<oi_kit_providers::thinking::ThinkingEffort> {
+        self.conversation
+            .as_ref()
+            .and_then(current_turn_effort)
+            .or_else(|| {
+                self.model_config
+                    .as_ref()
+                    .and_then(|config| config.thinking_effort())
+            })
+    }
+    fn reported_context_tokens(&self) -> Option<i64> {
+        self.usage.total_tokens
     }
 }
 
@@ -47,7 +66,8 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         for effect in effects.iter_mut() {
             effect.ensure_message_ids();
         }
-        usage::enrich(session, effects);
+        let compaction = usage::is_compaction(session, effects);
+        usage::enrich(session, effects, compaction);
 
         for effect in effects.iter_mut() {
             match effect {
@@ -63,13 +83,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .apply()
                         .await?;
                 }
-                GooseEffect::CompactConversation {
-                    conversation,
-                    usage: replacement_usage,
-                } => {
-                    if let Some(provider_usage) = replacement_usage {
-                        usage::record(self, session, provider_usage, true).await?;
-                    }
+                GooseEffect::CompactConversation(conversation) => {
                     self.save_compacted_conversation(&session.id, conversation)
                         .await?;
                     self.update(&session.id)
@@ -83,6 +97,18 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 }) => {
                     self.update_tool_request_meta(&session.id, tool_call_id, patch.clone())
                         .await?;
+                }
+                GooseEffect::Conversation(ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation,
+                    key,
+                    value,
+                }) => {
+                    self.update_message_metadata(&session.id, message_id, |mut metadata| {
+                        metadata.set_operation_note(operation, key, value.clone());
+                        metadata
+                    })
+                    .await?;
                 }
                 GooseEffect::Conversation(ConversationEffect::SetMessageVisibility {
                     message_id,
@@ -111,7 +137,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .await?;
                 }
                 GooseEffect::RecordUsage(provider_usage) => {
-                    usage::record(self, session, provider_usage, false).await?;
+                    usage::record(self, session, provider_usage, compaction).await?;
                 }
             }
         }
@@ -139,7 +165,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(
                     conversation,
                 ))
-                | GooseEffect::CompactConversation { conversation, .. } => {
+                | GooseEffect::CompactConversation(conversation) => {
                     emit.emit(AgentEvent::HistoryReplaced(replaced_history(
                         conversation,
                         &effects[index + 1..],
@@ -155,7 +181,9 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
 
 struct TurnRuntime<'a> {
     session_manager: &'a SessionManager,
-    usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
+    hook_manager: &'a HookManager,
+    tool_snapshot: &'a StdMutex<Option<Arc<ToolSnapshot>>>,
+    usage: std::sync::Mutex<oi_kit_providers::conversation::token_usage::Usage>,
 }
 
 #[async_trait]
@@ -176,6 +204,7 @@ impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
         self.session_manager
             .apply_effects(session, effects, emit)
             .await?;
+        fire_post_tool_hooks(self.hook_manager, self.tool_snapshot, session, effects).await;
         let mut turn_usage = self.usage.lock().unwrap();
         for effect in effects.iter() {
             if let Some(usage) = self.session_manager.usage(effect) {
@@ -198,7 +227,7 @@ fn replaced_history(replacement: &Conversation, later_effects: &[GooseEffect]) -
                 !matches!(
                     effect,
                     GooseEffect::Conversation(ConversationEffect::ReplaceConversation(_))
-                        | GooseEffect::CompactConversation { .. }
+                        | GooseEffect::CompactConversation(_)
                 )
             })
             .filter_map(|effect| match effect {
@@ -215,100 +244,23 @@ impl EffectUsage<GooseEffect> for SessionManager {
     fn usage(
         &self,
         effect: &GooseEffect,
-    ) -> Option<goose_providers::conversation::token_usage::Usage> {
+    ) -> Option<oi_kit_providers::conversation::token_usage::Usage> {
         match effect {
-            GooseEffect::RecordUsage(usage)
-            | GooseEffect::CompactConversation {
-                usage: Some(usage), ..
-            } => Some(usage.usage),
+            GooseEffect::RecordUsage(usage) => Some(usage.usage),
             _ => None,
         }
     }
-}
-
-const ENTRY_HOOK_NOTE_SCOPE: &str = "entry_hook";
-const SESSION_START_NOTE: &str = "session_start";
-
-/// Records that a client fired `SessionStart` when it opened the session, so the first
-/// turn does not fire it again. Hidden from the user when the hooks printed no banner.
-pub(crate) fn session_start_message(banners: &[String]) -> Message {
-    let mut message = Message::assistant();
-    if !banners.is_empty() {
-        message = message.with_text(banners.join("\n"));
-    }
-    let mut message = message.with_visibility(!banners.is_empty(), false);
-    message
-        .metadata
-        .set_operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE, true.into());
-    message
-}
-
-fn is_session_start_message(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE)
-        .is_some()
-}
-
-pub(crate) async fn run_turn_start_hooks(
-    hook_manager: &HookManager,
-    session: &Session,
-) -> Result<()> {
-    let conversation = session
-        .conversation()
-        .ok_or_else(|| anyhow::anyhow!("state-machine session loaded without conversation"))?;
-    let messages = crate::agents::state_machine::messages_since_kickoff(conversation)?;
-    if messages.iter().any(|message| {
-        message.role == rmcp::model::Role::Assistant
-            && ((message.is_user_visible() && message.is_agent_visible())
-                || message.error_kind().is_some())
-    }) {
-        return Ok(());
-    }
-
-    let working_dir = session.working_dir.to_string_lossy().to_string();
-    let messages_before_kickoff = &conversation.messages()[..conversation.len() - messages.len()];
-    if !messages_before_kickoff.iter().any(|message| {
-        is_session_start_message(message)
-            || (message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response())
-    }) {
-        hook_manager
-            .emit(
-                HookEvent::SessionStart,
-                HookContext::new(HookEvent::SessionStart, &session.id)
-                    .with_working_dir(working_dir.clone()),
-            )
-            .await;
-    }
-
-    let prompt = messages
-        .first()
-        .map(|message| message.agent_visible_content().as_concat_text())
-        .unwrap_or_default();
-    if !prompt.is_empty() {
-        hook_manager
-            .emit(
-                HookEvent::UserPromptSubmit,
-                HookContext::new(HookEvent::UserPromptSubmit, &session.id)
-                    .with_message(prompt)
-                    .with_working_dir(working_dir),
-            )
-            .await;
-    }
-    Ok(())
 }
 
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
     hook_manager: &HookManager,
+    tool_snapshot: &StdMutex<Option<Arc<ToolSnapshot>>>,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
     let entry_session = runtime.load(session_id).await?;
-    run_turn_start_hooks(hook_manager, &entry_session).await?;
     tracing::Span::current().record(
         "gen_ai.agent.name",
         crate::agents::gen_ai_telemetry::agent_name(&entry_session),
@@ -332,9 +284,30 @@ pub(crate) async fn run(
 
     let runtime = TurnRuntime {
         session_manager: runtime,
+        hook_manager,
+        tool_snapshot,
         usage: Default::default(),
     };
-    let session = machine.run(&runtime, session_id, emit).await?;
+    loop {
+        let session = runtime.load(session_id).await?;
+        let mut result = machine.step(&session, emit).await?;
+        let pre_tool_hooks =
+            fire_pre_tool_hooks(hook_manager, tool_snapshot, &session, &result.effects);
+        if let Some(Some(denials)) = emit
+            .cancel_token()
+            .run_until_cancelled(pre_tool_hooks)
+            .await
+        {
+            result.effects.push(emit.message(denials).into());
+        }
+        machine
+            .apply(&runtime, &session, &mut result.effects, emit)
+            .await?;
+        if result.status != RunStatus::Continuing {
+            break;
+        }
+    }
+    let session = machine.finalize(&runtime, session_id, emit).await?;
     let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()

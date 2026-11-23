@@ -1,11 +1,13 @@
 use crate::config::{Config, ConfigError};
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
+use crate::providers::get_from_registry;
+use crate::recipe::Settings;
 use anyhow::{anyhow, Result};
-use goose_providers::conversation::token_usage::ProviderUsage;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::conversation::token_usage::ProviderUsage;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,6 +18,45 @@ pub fn model_config_from_user_config(
 ) -> Result<ModelConfig> {
     let model = base_model_config_from_user_config(provider_name, model_name.as_ref())?;
     materialize_model_config(provider_name, model)
+}
+
+pub async fn resolve_provider_and_model_config(
+    config: &Config,
+    requested_provider: Option<String>,
+    recipe_settings: Option<&Settings>,
+) -> Result<(String, ModelConfig)> {
+    let recipe_model = recipe_settings.and_then(|s| s.goose_model.clone());
+    let explicit_provider = recipe_settings
+        .and_then(|s| s.goose_provider.clone())
+        .or(requested_provider);
+
+    let (provider, model) = match explicit_provider {
+        Some(provider) => {
+            let model = match recipe_model {
+                Some(model) => model,
+                None => get_from_registry(&provider)
+                    .await?
+                    .metadata()
+                    .default_model
+                    .clone(),
+            };
+            (provider, model)
+        }
+        None => {
+            let provider = config.get_goose_provider()?;
+            let model = match recipe_model {
+                Some(model) => model,
+                None => config.get_goose_model()?,
+            };
+            (provider, model)
+        }
+    };
+
+    let mut model_config = model_config_from_user_config(&provider, &model)?;
+    if let Some(temperature) = recipe_settings.and_then(|s| s.temperature) {
+        model_config = model_config.with_temperature(Some(temperature));
+    }
+    Ok((provider, model_config))
 }
 
 pub fn model_config_from_user_config_with_session_settings(
@@ -40,7 +81,7 @@ pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Resu
 }
 
 fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfig {
-    if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if provider_name == oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model
     } else {
         model
@@ -76,7 +117,7 @@ fn materialize_model_config_inner(
         }
     }
 
-    if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME {
+    if provider_name == oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME {
         model = apply_openai_request_params(model);
     }
 
@@ -137,7 +178,7 @@ fn base_model_config_from_user_config(
         supports_vision: None,
         request_headers: None,
     };
-    if provider_name != goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if provider_name != oi_kit_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model.normalize_effort_suffix();
     }
     Ok(model)
@@ -339,6 +380,25 @@ mod azure_foundry_tests {
 
         assert_eq!(config.model_name, "gpt-5-none");
         assert_eq!(config.thinking_effort(), None);
+    }
+}
+
+#[cfg(test)]
+mod openrouter_tests {
+    use super::*;
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    fn openrouter_variant_does_not_inherit_base_output_limit(model: &str) {
+        let config = apply_canonical_limits("openrouter", ModelConfig::new(model));
+        assert_eq!(config.max_tokens, None);
+    }
+
+    #[test]
+    fn openrouter_base_keeps_catalog_output_limit() {
+        let config =
+            apply_canonical_limits("openrouter", ModelConfig::new("deepseek/deepseek-v4-flash"));
+        assert!(config.max_tokens.is_some());
     }
 }
 

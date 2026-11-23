@@ -5,13 +5,12 @@ use super::{
     derive_extension_name_from_command, session_provider, split_extension_name_prefix, CliSession,
 };
 use console::style;
-use goose::agents::final_output_tool::FinalOutputTool;
-use goose::agents::{Agent, Container, ExtensionError};
+use goose::agents::{Container, ExtensionError, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::model_config::model_config_from_user_config;
-use goose::recipe::Recipe;
+use goose::recipe::{Recipe, Response};
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, SessionManager};
 use rustyline::EditMode;
@@ -64,9 +63,12 @@ fn disambiguate_stdio_extension_names(
         if !renameable.contains(&idx) || counts.get(&config.key()).copied().unwrap_or(0) < 2 {
             continue;
         }
-        let ExtensionConfig::Stdio {
-            name, cmd, args, ..
-        } = config
+        let ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+            name,
+            cmd,
+            args,
+            ..
+        }) = config
         else {
             continue;
         };
@@ -235,12 +237,11 @@ pub struct ExtensionFailure {
 }
 
 async fn load_extensions(
-    agent: Arc<Agent>,
+    services: Arc<StateMachineServices>,
     session_id: &str,
 ) -> anyhow::Result<Vec<ExtensionFailure>> {
-    Ok(agent
-        .extension_manager
-        .current_lease(session_id)
+    Ok(services
+        .current_tools(session_id)
         .await?
         .start()
         .await
@@ -257,7 +258,7 @@ async fn load_extensions(
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
-    model_config: goose_providers::model::ModelConfig,
+    model_config: oi_kit_providers::model::ModelConfig,
 }
 
 fn validate_provider_override_context(
@@ -290,7 +291,7 @@ async fn resolve_provider_and_model(
     session_config: &SessionBuilderConfig,
     config: &Config,
     saved_provider: Option<String>,
-    saved_model_config: Option<goose_providers::model::ModelConfig>,
+    saved_model_config: Option<oi_kit_providers::model::ModelConfig>,
 ) -> ResolvedProviderConfig {
     let recipe_settings = session_config
         .recipe
@@ -496,9 +497,12 @@ async fn resolve_session_id(
     }
 }
 
-async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
-    let session = agent
-        .config
+async fn handle_resumed_session_workdir(
+    services: &StateMachineServices,
+    session_id: &str,
+    interactive: bool,
+) {
+    let session = services
         .session_manager
         .get_session(session_id, false)
         .await
@@ -559,19 +563,15 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
 }
 
 async fn collect_extension_configs(
-    agent: &Agent,
+    services: &StateMachineServices,
     session_config: &SessionBuilderConfig,
     recipe: Option<&Recipe>,
     session_id: &str,
 ) -> Result<Vec<ExtensionConfig>, ExtensionError> {
     let recipe_extensions = recipe.and_then(|r| r.extensions.as_deref());
     let configured_extensions: Vec<ExtensionConfig> = if session_config.resume {
-        EnabledExtensionsState::for_session(
-            &agent.config.session_manager,
-            session_id,
-            Config::global(),
-        )
-        .await
+        EnabledExtensionsState::for_session(&services.session_manager, session_id, Config::global())
+            .await
     } else if session_config.no_profile {
         Vec::new()
     } else {
@@ -646,13 +646,29 @@ async fn configure_session_prompts(
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    match try_build_session(session_config).await {
+        Ok(session) => session,
+        Err(error) => {
+            output::render_error(&format!(
+                "Error {}.\n\
+                Please check your system keychain and run 'goose configure' again.\n\
+                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
+                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
+                error
+            ));
+            process::exit(1);
+        }
+    }
+}
+
+pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::Result<CliSession> {
     #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();
-    let agent = Agent::new();
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
-    let session_manager = agent.config.session_manager.clone();
+    let session_manager = services.session_manager.clone();
 
     let (saved_provider, saved_model_config) = if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
@@ -678,8 +694,8 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     let recipe = session_config.recipe.as_ref();
 
     if let Some(Err(error)) = recipe
-        .and_then(|r| r.response.clone())
-        .map(FinalOutputTool::try_new)
+        .and_then(|r| r.response.as_ref())
+        .map(Response::validate)
     {
         output::render_error(&format!("Invalid recipe response: {error}"));
         process::exit(1);
@@ -705,19 +721,22 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     }
 
     if session_config.resume {
-        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
+        handle_resumed_session_workdir(&services, &session_id, session_config.interactive).await;
     }
 
     let extensions_for_provider =
-        match collect_extension_configs(&agent, &session_config, recipe, &session_id).await {
+        match collect_extension_configs(&services, &session_config, recipe, &session_id).await {
             Ok(exts) => exts,
             Err(e) => {
                 output::render_error(&format!("Failed to collect extensions: {}", e));
                 process::exit(1);
             }
         };
-    if let Err(e) = agent
-        .persist_extension_configs(&session_id, extensions_for_provider.clone())
+    if let Err(e) = services
+        .session_manager
+        .update_enabled_extensions(&session_id, |selected| {
+            *selected = extensions_for_provider.clone()
+        })
         .await
     {
         output::render_error(&format!("Failed to save session extensions: {}", e));
@@ -725,7 +744,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     }
 
     let (new_provider, effective_provider_name, effective_model_name, effective_model_config) =
-        match session_provider(&agent, &session_id, &resolved.provider_name).await {
+        match session_provider(&services, &session_id, &resolved.provider_name).await {
             Ok(provider) => (
                 provider,
                 resolved.provider_name.clone(),
@@ -766,7 +785,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                 if !session_config.interactive {
                     fallback_model_config = fallback_model_config.with_cache_ttl_clamped();
                 }
-                match session_provider(&agent, &session_id, &fallback_provider).await {
+                match session_provider(&services, &session_id, &fallback_provider).await {
                     Ok(provider) => (
                         provider,
                         fallback_provider,
@@ -774,26 +793,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model_config,
                     ),
                     Err(e2) => {
-                        output::render_error(&format!(
-                        "Error {}.\n\
-                        Please check your system keychain and run 'goose configure' again.\n\
-                        If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                        For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                        e2
-                    ));
-                        process::exit(1);
+                        return Err(e2);
                     }
                 }
             }
             Err(e) => {
-                output::render_error(&format!(
-                "Error {}.\n\
-                Please check your system keychain and run 'goose configure' again.\n\
-                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                e
-            ));
-                process::exit(1);
+                return Err(e);
             }
         };
     tracing::info!("🤖 Using model: {}", effective_model_name);
@@ -811,7 +816,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         process::exit(1);
     });
 
-    agent
+    services
         .switch_provider(
             &session_id,
             &effective_provider_name,
@@ -823,7 +828,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             process::exit(1);
         });
 
-    agent
+    services
         .update_goose_mode(config.get_goose_mode().unwrap_or_default(), &session_id)
         .await
         .unwrap_or_else(|e| {
@@ -848,11 +853,11 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     // Extensions are loaded after session creation because we may change
     // directory when resuming.
-    let agent_ptr = agent;
+    let agent_ptr = services;
     let loading_handle = AbortOnDropHandle::new(tokio::spawn({
-        let agent = agent_ptr.clone();
+        let services = agent_ptr.clone();
         let sid = session_id.clone();
-        async move { load_extensions(agent, &sid).await }
+        async move { load_extensions(services, &sid).await }
     }));
 
     let edit_mode = config
@@ -898,10 +903,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             &Some(session_id),
         );
     }
-    session
+    Ok(session)
 }
 
-fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
+pub fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string();
     msg.contains("is not set")
         || msg.contains("not configured")
@@ -1094,8 +1099,8 @@ mod tests {
         ])
     }
 
-    fn saved_model_config(model_name: &str) -> goose_providers::model::ModelConfig {
-        goose_providers::model::ModelConfig::new(model_name).with_merged_request_params(
+    fn saved_model_config(model_name: &str) -> oi_kit_providers::model::ModelConfig {
+        oi_kit_providers::model::ModelConfig::new(model_name).with_merged_request_params(
             std::collections::HashMap::from([(
                 "anthropic_beta".to_string(),
                 serde_json::json!(["prompt-caching-2024-07-31"]),
@@ -1189,7 +1194,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1251,7 +1256,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1285,7 +1290,7 @@ mod tests {
             },
             &config,
             Some("openai".to_string()),
-            Some(goose_providers::model::ModelConfig::new("saved-model")),
+            Some(oi_kit_providers::model::ModelConfig::new("saved-model")),
         )
         .await;
 
@@ -1397,7 +1402,7 @@ mod tests {
             },
             &config,
             Some("anthropic".to_string()),
-            Some(goose_providers::model::ModelConfig::new(
+            Some(oi_kit_providers::model::ModelConfig::new(
                 "claude-sonnet-4-6",
             )),
         )
@@ -1470,7 +1475,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("5m");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1497,7 +1502,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
         let saved =
-            goose_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
+            oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6").with_cache_ttl("1h");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {
@@ -1523,7 +1528,7 @@ mod tests {
         ]);
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
-        let saved = goose_providers::model::ModelConfig::new("claude-sonnet-4-6");
+        let saved = oi_kit_providers::model::ModelConfig::new("claude-sonnet-4-6");
 
         let resolved = resolve_provider_and_model(
             &SessionBuilderConfig {

@@ -126,11 +126,7 @@ impl McpFixtureServer {
         &self,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        let protocol_version = context
-            .peer
-            .peer_info()
-            .map(|info| info.protocol_version.clone())
-            .unwrap_or_default();
+        let protocol_version = context.protocol_version().unwrap_or_default();
         let roots = if protocol_version < ProtocolVersion::V_2026_07_28 {
             context
                 .peer
@@ -186,8 +182,15 @@ impl McpFixtureServer {
     }
 
     #[tool(name = "db.query", description = "A tool whose name contains a dot")]
-    fn db_query(&self) -> Result<CallToolResult, McpError> {
+    fn dotted_db_query(&self) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![ContentBlock::text("rows")]))
+    }
+
+    #[tool(description = "Spelled like db.query once the dot is replaced")]
+    fn db_query(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            "underscore rows",
+        )]))
     }
 
     #[tool(description = "Send a progress notification, then finish")]
@@ -325,6 +328,22 @@ impl McpFixture {
     }
 
     pub async fn with_max_protocol_version(max_protocol_version: ProtocolVersion) -> Self {
+        Self::serve(max_protocol_version, None).await
+    }
+
+    /// A fixture that answers 401 to any request without this header value.
+    pub async fn requiring_header(name: &'static str, value: &str) -> Self {
+        Self::serve(
+            ProtocolVersion::V_2026_07_28,
+            Some((name, value.to_string())),
+        )
+        .await
+    }
+
+    async fn serve(
+        max_protocol_version: ProtocolVersion,
+        required_header: Option<(&'static str, String)>,
+    ) -> Self {
         let requests = Arc::new(AtomicUsize::new(0));
         let service_factory = {
             let requests = Arc::clone(&requests);
@@ -341,7 +360,26 @@ impl McpFixture {
             LocalSessionManager::default().into(),
             StreamableHttpServerConfig::default(),
         );
-        let router = axum::Router::new().nest_service("/mcp", service);
+        let mut router = axum::Router::new().nest_service("/mcp", service);
+        if let Some((name, value)) = required_header {
+            router = router.layer(axum::middleware::from_fn(
+                move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let authorized = request
+                        .headers()
+                        .get(name)
+                        .is_some_and(|sent| sent.as_bytes() == value.as_bytes());
+                    async move {
+                        if authorized {
+                            next.run(request).await
+                        } else {
+                            axum::response::IntoResponse::into_response(
+                                axum::http::StatusCode::UNAUTHORIZED,
+                            )
+                        }
+                    }
+                },
+            ));
+        }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let url = format!("http://{addr}/mcp");

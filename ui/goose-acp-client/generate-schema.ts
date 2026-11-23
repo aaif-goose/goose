@@ -210,7 +210,7 @@ async function generateClient(meta: { methods: MethodMeta[] }) {
   }`);
   }
 
-  const upstreamImportLine = `import type { ${[...upstreamTypeImports].sort().join(", ")} } from "@agentclientprotocol/sdk";`;
+  const upstreamImportLine = `import type { ${[...upstreamTypeImports].sort().join(", ")} } from "@agentclientprotocol/sdk/unstable";`;
   const typeImportLine = typeImports.size
     ? `import type { ${[...typeImports].sort().join(", ")} } from "./types.gen.js";`
     : "";

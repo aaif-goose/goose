@@ -1,5 +1,5 @@
 use super::*;
-use goose_providers::thinking::ThinkingEffort;
+use oi_kit_providers::thinking::ThinkingEffort;
 
 const SECRET_MASK_SHOW_LEN: usize = 8;
 
@@ -17,7 +17,7 @@ fn mask_secret(secret: serde_json::Value) -> String {
     format!("{}{}", visible, mask)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_preferences_read(
         &self,
         req: PreferencesReadRequest,

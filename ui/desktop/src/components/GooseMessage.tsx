@@ -5,6 +5,7 @@ import { formatMessageTimestamp } from '../utils/timeUtils';
 import MarkdownContent from './MarkdownContent';
 import ThinkingContent from './ThinkingContent';
 import ToolCallWithResponse from './ToolCallWithResponse';
+import FinalOutputLine, { isFinalOutputToolRequest } from './FinalOutputLine';
 import {
   getTextAndImageContent,
   getThinkingContent,
@@ -83,6 +84,8 @@ function GooseMessage({
   const elicitationContent = getElicitationContent(message);
   const hasToolConfirmation = toolConfirmationContent !== undefined;
   const hasElicitation = elicitationContent !== undefined;
+  const hasMessageDetails =
+    message.metadata.usage != null || (message.metadata.operationLogs?.length ?? 0) > 0;
   const outputTokenLimitNotice = isOutputTokenLimitFallback
     ? "Response reached the model's output-token limit before returning content."
     : "Response reached the model's output-token limit and may be incomplete.";
@@ -98,15 +101,30 @@ function GooseMessage({
     <div className="goose-message flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
         {thinkingContent && (
-          <ThinkingContent
-            content={thinkingContent}
-            isExpanded={
-              isStreaming &&
-              !displayText.trim() &&
-              imagePaths.length === 0 &&
-              toolRequests.length === 0
-            }
-          />
+          <div className="group">
+            <ThinkingContent content={thinkingContent} />
+            {!displayText.trim() && imagePaths.length === 0 && toolRequests.length === 0 && (
+              <div className="relative flex items-center justify-between">
+                <div
+                  className={cn(
+                    'text-xs text-text-secondary pt-1',
+                    hasMessageDetails &&
+                      'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
+                  )}
+                >
+                  {!isStreaming && !hideTimestamp && timestamp}
+                </div>
+                {!isStreaming && hasMessageDetails && (
+                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {(displayText.trim() || imagePaths.length > 0) && (
@@ -137,9 +155,12 @@ function GooseMessage({
                     <MessageCopyLink text={displayText} contentRef={contentRef} />
                   </div>
                 )}
-                {!isStreaming && message.metadata.usage && (
+                {!isStreaming && hasMessageDetails && (
                   <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
                   </div>
                 )}
               </div>
@@ -159,18 +180,25 @@ function GooseMessage({
                   );
                   return (
                     <div className="goose-message-tool" key={toolRequest.id}>
-                      <ToolCallWithResponse
-                        sessionId={sessionId}
-                        isCancelledMessage={false}
-                        toolRequest={toolRequest}
-                        toolResponse={toolState.response}
-                        notifications={toolNotifications[toolIndex]}
-                        isStreamingMessage={isStreaming}
-                        isPendingApproval={toolState.isPending}
-                        append={append}
-                        confirmationContent={toolState.confirmation}
-                        isApprovalClicked={isApprovalClicked}
-                      />
+                      {isFinalOutputToolRequest(toolRequest) ? (
+                        <FinalOutputLine
+                          toolResponse={toolState.response}
+                          isStreaming={isStreaming}
+                        />
+                      ) : (
+                        <ToolCallWithResponse
+                          sessionId={sessionId}
+                          isCancelledMessage={false}
+                          toolRequest={toolRequest}
+                          toolResponse={toolState.response}
+                          notifications={toolNotifications[toolIndex]}
+                          isStreamingMessage={isStreaming}
+                          isPendingApproval={toolState.isPending}
+                          append={append}
+                          confirmationContent={toolState.confirmation}
+                          isApprovalClicked={isApprovalClicked}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -179,15 +207,18 @@ function GooseMessage({
                 <div
                   className={cn(
                     'text-xs text-text-secondary pt-1',
-                    message.metadata.usage &&
+                    hasMessageDetails &&
                       'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
                   )}
                 >
                   {!isStreaming && !hideTimestamp && timestamp}
                 </div>
-                {!isStreaming && message.metadata.usage && (
+                {!isStreaming && hasMessageDetails && (
                   <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
                   </div>
                 )}
               </div>

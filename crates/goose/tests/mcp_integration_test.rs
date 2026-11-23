@@ -15,15 +15,16 @@ use tokio_util::sync::CancellationToken;
 
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
-use goose::agents::extension_manager::{
-    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionSet,
-};
+use goose::agents::extension_manager::{CallRequest, ClientContext, ExtensionSet};
+use goose::agents::tool_snapshot::ToolSnapshot;
 use goose::agents::GoosePlatform;
+use goose::agents::{StateMachineServices, StateMachineServicesConfig};
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
 use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
+use oi_kit_agent::mcp::client::GooseMcpClientCapabilities;
 
 use test_case::test_case;
 
@@ -82,8 +83,9 @@ static FIXTURE_BINARY_PATH: Lazy<PathBuf> =
     Lazy::new(|| build_bin("goose-test-support", "mcp_fixture_server"));
 
 struct Fixture {
-    manager: Arc<ExtensionManager>,
+    manager: Arc<StateMachineServices>,
     session_manager: Arc<goose::session::SessionManager>,
+    client: ClientContext,
     _temp_dir: tempfile::TempDir,
 }
 
@@ -94,28 +96,39 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
     let session_manager = Arc::new(goose::session::SessionManager::new(
         temp_dir.path().to_path_buf(),
     ));
-    let manager = Arc::new(ExtensionManager::new(
-        Default::default(),
-        session_manager.clone(),
+    let manager = StateMachineServices::with_config(StateMachineServicesConfig::new(
+        Arc::clone(&session_manager),
+        Arc::new(goose::config::permission::PermissionManager::new(
+            temp_dir.path().join("permissions"),
+        )),
         None,
-        "extension-contract".to_string(),
-        ExtensionManagerCapabilities {
+        true,
+        GoosePlatform::GooseCli,
+    ));
+    let client = ClientContext {
+        name: "extension-contract".to_string(),
+        version: "1.0.0".to_string(),
+        capabilities: GooseMcpClientCapabilities {
             mcpui,
             host_info: None,
             elicitation_handler: None,
             protocol_version,
         },
-    ));
+    };
+    // Fixture clients are attached for each session below.
+    let default_client = client;
     Fixture {
         manager,
         session_manager,
+        client: default_client,
         _temp_dir: temp_dir,
     }
 }
 
 impl Fixture {
     async fn session(&self, session_type: SessionType) -> goose::session::Session {
-        self.session_manager
+        let session = self
+            .session_manager
             .create_session(
                 self._temp_dir.path().to_path_buf(),
                 format!("{session_type:?}"),
@@ -123,12 +136,16 @@ impl Fixture {
                 GooseMode::Auto,
             )
             .await
-            .unwrap()
+            .unwrap();
+        self.manager
+            .extension_manager
+            .attach_client(&session.id, self.client.clone());
+        session
     }
 
     async fn add(&self, session: &goose::session::Session, config: &ExtensionConfig) {
         self.manager
-            .enable(&session.id, config.clone())
+            .enable_extension(&session.id, config.clone())
             .await
             .unwrap();
     }
@@ -137,9 +154,9 @@ impl Fixture {
         &self,
         session: &goose::session::Session,
         configs: &[ExtensionConfig],
-    ) -> ExtensionLease {
+    ) -> ToolSnapshot {
         self.manager
-            .resolve(
+            .resolve_tools(
                 &ExtensionSet::new(
                     &session.id,
                     Some(session.working_dir.clone()),
@@ -154,7 +171,7 @@ impl Fixture {
 fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
     let mut args = vec!["stdio".to_string()];
     args.extend(mode.map(str::to_string));
-    ExtensionConfig::Stdio {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
@@ -165,11 +182,11 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
-    }
+    })
 }
 
 fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
-    ExtensionConfig::StreamableHttp {
+    ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
         name: name.to_string(),
         description: "HTTP fixture".to_string(),
         uri: uri.to_string(),
@@ -183,7 +200,7 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
-    }
+    })
 }
 
 fn platform(name: &str) -> ExtensionConfig {
@@ -194,16 +211,6 @@ fn platform(name: &str) -> ExtensionConfig {
         bundled: Some(true),
         available_tools: vec![],
     }
-}
-
-fn write_skill(workspace: &std::path::Path, marker: &str) {
-    let skill_dir = workspace.join(".goose/skills/leased-workspace");
-    fs::create_dir_all(&skill_dir).unwrap();
-    fs::write(
-        skill_dir.join("SKILL.md"),
-        format!("---\nname: leased-workspace\ndescription: workspace lease\n---\n{marker}"),
-    )
-    .unwrap();
 }
 
 fn tool_names(tools: &[Tool]) -> Vec<String> {
@@ -219,7 +226,8 @@ fn request(name: &str, arguments: Option<rmcp::model::JsonObject>) -> CallToolRe
 }
 
 async fn call(
-    lease: &ExtensionLease,
+    services: &Arc<StateMachineServices>,
+    lease: &ToolSnapshot,
     name: &str,
     arguments: Option<rmcp::model::JsonObject>,
 ) -> Result<CallToolResult, ErrorData> {
@@ -228,6 +236,7 @@ async fn call(
             request(name, arguments),
             CallRequest::new(format!("call-{name}")),
             CancellationToken::default(),
+            services,
         )
         .await?
         .result
@@ -244,25 +253,23 @@ fn text_of(result: &CallToolResult) -> String {
         .join("\n")
 }
 
-async fn call_text(lease: &ExtensionLease, name: &str) -> String {
-    text_of(&call(lease, name, None).await.unwrap())
+async fn call_text(
+    services: &Arc<StateMachineServices>,
+    lease: &ToolSnapshot,
+    name: &str,
+) -> String {
+    text_of(&call(services, lease, name, None).await.unwrap())
 }
 
-async fn load_leased_skill(lease: &ExtensionLease) -> String {
-    text_of(
-        &call(
-            lease,
-            "load_skill",
-            Some(object!({ "name": "leased-workspace" })),
-        )
-        .await
-        .unwrap(),
-    )
+async fn inspect_context(
+    services: &Arc<StateMachineServices>,
+    lease: &ToolSnapshot,
+    name: &str,
+) -> ContextReport {
+    serde_json::from_str(&call_text(services, lease, name).await).unwrap()
 }
 
-async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
-    serde_json::from_str(&call_text(lease, name).await).unwrap()
-}
+const DOTTED_DB_QUERY: &str = "fixture_http__db_query_9cffee1f";
 
 /// One manager, three transports, one lease: the catalog, mangled-name
 /// recovery, filtering, app scoping, the restart-on-config-change rule, and
@@ -280,7 +287,6 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     let http_server = McpFixture::with_max_protocol_version(ProtocolVersion::V_2025_11_25).await;
     let fx = fixture(false, Some(ProtocolVersion::V_2025_11_25)).await;
     let session = fx.session(SessionType::Hidden).await;
-    write_skill(&session.working_dir, "old workspace");
 
     let http = http_fixture("fixture_http", &http_server.url);
     let stdio = stdio_fixture(
@@ -289,22 +295,31 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         &["get_code", "inspect_context"],
     );
     let todo = platform("todo");
-    let skills = platform("skills");
-    for config in [&http, &stdio, &todo, &skills] {
+    for config in [&http, &stdio, &todo] {
         fx.add(&session, config).await;
     }
-    let configs = vec![http.clone(), stdio.clone(), todo.clone(), skills.clone()];
+    let configs = vec![http.clone(), stdio.clone(), todo.clone()];
     let lease = fx.resolve(&session, &configs).await;
 
-    // The catalog: prefixed per extension, filtered by available_tools.
+    // The catalog: prefixed per extension, filtered by available_tools, and
+    // spelled the way providers accept.
     let names = tool_names(&lease.tools().await);
+    for name in &names {
+        assert!(
+            name.len() <= 64
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "{name}"
+        );
+    }
     for expected in [
         "fixture_http__get_code",
-        "fixture_http__db.query",
+        "fixture_http__db_query",
+        DOTTED_DB_QUERY,
         "fixture_stdio__get_code",
         "fixture_stdio__inspect_context",
         "todo__todo_write",
-        "load_skill",
     ] {
         assert!(names.contains(&expected.to_string()), "{names:?}");
     }
@@ -320,13 +335,17 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         .all(|name| !name.starts_with("fixture_stdio__")));
 
     // Calls reach each transport.
-    assert_eq!(call_text(&lease, "fixture_http__get_code").await, FAKE_CODE);
     assert_eq!(
-        call_text(&lease, "fixture_stdio__get_code").await,
+        call_text(&fx.manager, &lease, "fixture_http__get_code").await,
         FAKE_CODE
     );
-    let http_context = inspect_context(&lease, "fixture_http__inspect_context").await;
-    let stdio_context = inspect_context(&lease, "fixture_stdio__inspect_context").await;
+    assert_eq!(
+        call_text(&fx.manager, &lease, "fixture_stdio__get_code").await,
+        FAKE_CODE
+    );
+    let http_context = inspect_context(&fx.manager, &lease, "fixture_http__inspect_context").await;
+    let stdio_context =
+        inspect_context(&fx.manager, &lease, "fixture_stdio__inspect_context").await;
     let working_dir = session.working_dir.to_string_lossy().into_owned();
     assert_eq!(
         http_context.protocol_version,
@@ -345,7 +364,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         .to_string();
     assert_eq!(http_context.roots, std::slice::from_ref(&working_dir_root));
     assert_eq!(
-        inspect_context(&lease, "fixture_http__inspect_context")
+        inspect_context(&fx.manager, &lease, "fixture_http__inspect_context")
             .await
             .instance_id,
         http_context.instance_id
@@ -370,9 +389,9 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         Some(working_dir.as_str())
     );
     assert_eq!(stdio_context.roots, [working_dir_root]);
-    assert!(load_leased_skill(&lease).await.contains("old workspace"));
     assert!(text_of(
         &call(
+            &fx.manager,
             &lease,
             "todo__todo_write",
             Some(object!({ "content": "- [ ] contract" }))
@@ -382,16 +401,31 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     )
     .starts_with("Updated ("));
 
-    // Spellings a model mangles resolve to the same tools; an exact dotted
-    // name is never rewritten.
-    assert_eq!(call_text(&lease, "fixture_stdio.get_code").await, FAKE_CODE);
+    // Spellings a model mangles resolve to the same tools, and a sanitized
+    // name reaches the server under its original name.
     assert_eq!(
-        call_text(&lease, "functions.fixture_stdio__get_code").await,
+        call_text(&fx.manager, &lease, "fixture_stdio.get_code").await,
         FAKE_CODE
     );
-    assert_eq!(call_text(&lease, "fixture_http__db.query").await, "rows");
-    assert_eq!(call_text(&lease, "fixture_http.db.query").await, "rows");
-    let unknown = call(&lease, "no_such_tool", None).await.unwrap_err();
+    assert_eq!(
+        call_text(&fx.manager, &lease, "functions.fixture_stdio__get_code").await,
+        FAKE_CODE
+    );
+    assert_eq!(
+        call_text(&fx.manager, &lease, DOTTED_DB_QUERY).await,
+        "rows"
+    );
+    assert_eq!(
+        call_text(&fx.manager, &lease, "fixture_http__db_query").await,
+        "underscore rows"
+    );
+    assert_eq!(
+        call_text(&fx.manager, &lease, "fixture_http.db_query").await,
+        "underscore rows"
+    );
+    let unknown = call(&fx.manager, &lease, "no_such_tool", None)
+        .await
+        .unwrap_err();
     assert_eq!(unknown.code, ErrorCode::RESOURCE_NOT_FOUND);
     assert!(
         unknown.message.contains("no_such_tool")
@@ -401,13 +435,14 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     // Filtered out by available_tools, and an app scoped to one extension
     // cannot reach another's tool.
     assert_eq!(
-        call(&lease, "fixture_stdio__get_image", None)
+        call(&fx.manager, &lease, "fixture_stdio__get_image", None)
             .await
             .unwrap_err()
             .code,
         ErrorCode::RESOURCE_NOT_FOUND
     );
     let Err(scoped) = lease
+        .mcp
         .call_for_app(
             request("fixture_http__get_code", None),
             "fixture_stdio",
@@ -426,6 +461,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     fx.add(&session, &stdio).await;
     assert_eq!(
         inspect_context(
+            &fx.manager,
             &fx.resolve(&session, &configs).await,
             "fixture_stdio__inspect_context",
         )
@@ -440,30 +476,27 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     );
     fx.add(&session, &wider_stdio).await;
     let after_restart = fx
-        .resolve(
-            &session,
-            &[
-                http.clone(),
-                wider_stdio.clone(),
-                todo.clone(),
-                skills.clone(),
-            ],
-        )
+        .resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
         .await;
     assert_ne!(
-        inspect_context(&after_restart, "fixture_stdio__inspect_context")
-            .await
-            .instance_id,
+        inspect_context(
+            &fx.manager,
+            &after_restart,
+            "fixture_stdio__inspect_context"
+        )
+        .await
+        .instance_id,
         first_instance
     );
     assert_eq!(
-        inspect_context(&lease, "fixture_stdio__inspect_context")
+        inspect_context(&fx.manager, &lease, "fixture_stdio__inspect_context")
             .await
             .instance_id,
         first_instance
     );
     // A set that still names the old config gets a process of its own.
     let old_config_instance = inspect_context(
+        &fx.manager,
         &fx.resolve(&session, &configs).await,
         "fixture_stdio__inspect_context",
     )
@@ -474,15 +507,10 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     // tools/list_changed arrives on the GET stream: the next resolve sees the
     // new tool while the held lease stays as it was.
     let late = "fixture_http__late_tool".to_string();
-    let current = vec![
-        http.clone(),
-        wider_stdio.clone(),
-        todo.clone(),
-        skills.clone(),
-    ];
+    let current = vec![http.clone(), wider_stdio.clone(), todo.clone()];
     assert!(!tool_names(&lease.tools().await).contains(&late));
     assert_eq!(
-        call_text(&lease, "fixture_http__change_tools").await,
+        call_text(&fx.manager, &lease, "fixture_http__change_tools").await,
         "changed"
     );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -494,17 +522,22 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     .expect("tools/list_changed never invalidated the cache");
     assert!(!tool_names(&lease.tools().await).contains(&late));
     assert_eq!(
-        call_text(&fx.resolve(&session, &current).await, &late).await,
+        call_text(&fx.manager, &fx.resolve(&session, &current).await, &late).await,
         "late"
     );
 
     // Removal is invisible to a held lease and visible to the session's next
     // one.
-    assert!(fx.manager.disable(&session.id, "todo").await.unwrap());
+    assert!(fx
+        .manager
+        .extension_manager
+        .disable(&session.id, "todo")
+        .await
+        .unwrap());
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
     assert!(!tool_names(
         &fx.manager
-            .current_lease(&session.id)
+            .current_tools(&session.id)
             .await
             .unwrap()
             .tools()
@@ -512,13 +545,14 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     )
     .contains(&"todo__todo_write".to_string()));
 
-    let active_configs = vec![http.clone(), wider_stdio.clone(), skills.clone()];
+    let active_configs = vec![http.clone(), wider_stdio.clone()];
     let before_move = fx.resolve(&session, &active_configs).await;
-    let before_http = inspect_context(&before_move, "fixture_http__inspect_context").await;
-    let before_stdio = inspect_context(&before_move, "fixture_stdio__inspect_context").await;
+    let before_http =
+        inspect_context(&fx.manager, &before_move, "fixture_http__inspect_context").await;
+    let before_stdio =
+        inspect_context(&fx.manager, &before_move, "fixture_stdio__inspect_context").await;
     let new_working_dir = fx._temp_dir.path().join("new-workspace");
     fs::create_dir_all(&new_working_dir).unwrap();
-    write_skill(&new_working_dir, "new workspace");
     fx.session_manager
         .update(&session.id)
         .working_dir(new_working_dir.clone())
@@ -531,8 +565,10 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         .await
         .unwrap();
     let after_move = fx.resolve(&moved_session, &active_configs).await;
-    let after_http = inspect_context(&after_move, "fixture_http__inspect_context").await;
-    let after_stdio = inspect_context(&after_move, "fixture_stdio__inspect_context").await;
+    let after_http =
+        inspect_context(&fx.manager, &after_move, "fixture_http__inspect_context").await;
+    let after_stdio =
+        inspect_context(&fx.manager, &after_move, "fixture_stdio__inspect_context").await;
     let new_root = url::Url::from_file_path(&new_working_dir)
         .unwrap()
         .to_string();
@@ -540,19 +576,19 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert_eq!(after_stdio.roots, [new_root]);
     assert_ne!(after_http.instance_id, before_http.instance_id);
     assert_ne!(after_stdio.instance_id, before_stdio.instance_id);
-    assert!(load_leased_skill(&after_move)
-        .await
-        .contains("new workspace"));
 
     // `session` still names the old directory; the add follows the stored one.
     fx.add(&session, &stdio).await;
     let re_added = fx
         .resolve(&moved_session, std::slice::from_ref(&stdio))
         .await;
-    let re_added_stdio = inspect_context(&re_added, "fixture_stdio__inspect_context").await;
+    let re_added_stdio =
+        inspect_context(&fx.manager, &re_added, "fixture_stdio__inspect_context").await;
     assert_eq!(re_added_stdio.roots, after_stdio.roots);
-    let retained_http = inspect_context(&before_move, "fixture_http__inspect_context").await;
-    let retained_stdio = inspect_context(&before_move, "fixture_stdio__inspect_context").await;
+    let retained_http =
+        inspect_context(&fx.manager, &before_move, "fixture_http__inspect_context").await;
+    let retained_stdio =
+        inspect_context(&fx.manager, &before_move, "fixture_stdio__inspect_context").await;
     let old_root = url::Url::from_file_path(&session.working_dir)
         .unwrap()
         .to_string();
@@ -560,9 +596,6 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert_eq!(retained_http.roots, std::slice::from_ref(&old_root));
     assert_eq!(retained_stdio.instance_id, before_stdio.instance_id);
     assert_eq!(retained_stdio.roots, [old_root]);
-    assert!(load_leased_skill(&before_move)
-        .await
-        .contains("old workspace"));
 
     assert!(ExtensionSet::new("s", None, vec![todo.clone(), platform("Todo")]).is_err());
 }
@@ -581,7 +614,7 @@ async fn extension_protocol_traffic_through_a_lease() {
     let discovery_2025 = stdio_fixture(
         "fixture_discovery_2025",
         Some(ProtocolVersion::V_2025_11_25.as_str()),
-        &["inspect_context"],
+        &["inspect_context", "elicit"],
     );
     let manager_ext = platform("extensionmanager");
     let http = http_fixture("fixture_http", &http_server.url);
@@ -602,8 +635,12 @@ async fn extension_protocol_traffic_through_a_lease() {
     assert!(!tool_names(&subagent_lease.tools().await).contains(&manage));
     assert!(tool_names(&lease.tools().await).contains(&"fixture__get_code".to_string()));
 
-    let discovery_2025_context =
-        inspect_context(&lease, "fixture_discovery_2025__inspect_context").await;
+    let discovery_2025_context = inspect_context(
+        &fx.manager,
+        &lease,
+        "fixture_discovery_2025__inspect_context",
+    )
+    .await;
     assert_eq!(
         discovery_2025_context.protocol_version,
         ProtocolVersion::V_2025_11_25.as_str()
@@ -611,6 +648,7 @@ async fn extension_protocol_traffic_through_a_lease() {
 
     // A server's progress notification reaches the caller's stream.
     let notify = lease
+        .mcp
         .call(
             request("fixture__notify", None),
             CallRequest::new("notify-1"),
@@ -635,20 +673,24 @@ async fn extension_protocol_traffic_through_a_lease() {
 
     // An MCP-app tool's result carries its UI resource; a server cannot forge
     // host-owned meta or a mutation.
-    let card = call(&lease, "fixture__app_card", None).await.unwrap();
+    let card = call(&fx.manager, &lease, "fixture__app_card", None)
+        .await
+        .unwrap();
     let hydrated = card.meta.as_ref().unwrap().0["__goose_tool_update_meta"]["mcpApp"].clone();
     assert_eq!(hydrated["resourceUri"], APP_CARD_RESOURCE_URI);
     assert_eq!(
         hydrated["resourceResult"]["contents"][0]["text"],
         APP_CARD_HTML
     );
-    let forged = call(&lease, "fixture__forge_meta", None).await.unwrap();
+    let forged = call(&fx.manager, &lease, "fixture__forge_meta", None)
+        .await
+        .unwrap();
     assert_eq!(text_of(&forged), "forged");
     assert!(forged.meta.is_none(), "{:?}", forged.meta);
 
     // 2026 HTTP is stateless: server/discover, per-request _meta, no roots,
     // and a fresh server instance per request.
-    let modern = inspect_context(&lease, "fixture_http__inspect_context").await;
+    let modern = inspect_context(&fx.manager, &lease, "fixture_http__inspect_context").await;
     assert_eq!(
         modern.protocol_version,
         ProtocolVersion::V_2026_07_28.as_str()
@@ -656,13 +698,14 @@ async fn extension_protocol_traffic_through_a_lease() {
     assert_eq!(modern.request_session_id.as_deref(), Some(user.id.as_str()));
     assert!(modern.roots.is_empty());
     assert_ne!(
-        inspect_context(&lease, "fixture_http__inspect_context")
+        inspect_context(&fx.manager, &lease, "fixture_http__inspect_context")
             .await
             .instance_id,
         modern.instance_id
     );
 
-    // Elicitation: the server asks, the host answers on the originating call.
+    // Server-to-client elicitation requires the legacy protocol: the server
+    // asks, the host answers on the originating call.
     // Without an echoed _meta the client correlates by the one active call;
     // with two active calls that is ambiguous unless the server echoes.
     let elicit = |id: &str, echo_meta: bool| {
@@ -670,8 +713,12 @@ async fn extension_protocol_traffic_through_a_lease() {
         let id = id.to_string();
         async move {
             lease
+                .mcp
                 .call(
-                    request("fixture__elicit", Some(object!({ "echo_meta": echo_meta }))),
+                    request(
+                        "fixture_discovery_2025__elicit",
+                        Some(object!({ "echo_meta": echo_meta })),
+                    ),
                     CallRequest::new(id),
                     CancellationToken::default(),
                 )
@@ -804,10 +851,7 @@ async fn test_replayed_session(
     const TEST_WORKING_DIR: &str = "/tmp/goose_test";
     fs::create_dir_all(TEST_WORKING_DIR).ok();
 
-    let _env = env_lock::lock_env([
-        ("GOOSE_MCP_CLIENT_VERSION", Some("0.0.0")),
-        ("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR)),
-    ]);
+    let _env = env_lock::lock_env([("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR))]);
 
     // Setup test file for developer extension tests
     let test_file_path = "/tmp/goose_test/goose.txt";
@@ -870,35 +914,47 @@ async fn test_replayed_session(
     }
 
     let envs = Envs::new(env);
-    let extension_config = ExtensionConfig::Stdio {
-        name: "test".to_string(),
-        description: "Test".to_string(),
-        cmd,
-        args,
-        envs,
-        env_keys: vec![],
-        timeout: Some(30),
-        cwd: None,
-        bundled: Some(false),
-        available_tools: vec![],
-    };
+    let extension_config =
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+            name: "test".to_string(),
+            description: "Test".to_string(),
+            cmd,
+            args,
+            envs,
+            env_keys: vec![],
+            timeout: Some(30),
+            cwd: None,
+            bundled: Some(false),
+            available_tools: vec![],
+        });
 
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(
         temp_dir.path().to_path_buf(),
     ));
-    let extension_manager = Arc::new(ExtensionManager::new(
-        Default::default(),
-        session_manager,
+    let extension_manager = StateMachineServices::with_config(StateMachineServicesConfig::new(
+        Arc::clone(&session_manager),
+        Arc::new(goose::config::permission::PermissionManager::new(
+            temp_dir.path().join("permissions"),
+        )),
         None,
-        GoosePlatform::GooseDesktop.to_string(),
-        ExtensionManagerCapabilities {
+        true,
+        GoosePlatform::GooseCli,
+    ));
+    let client = ClientContext {
+        name: GoosePlatform::GooseDesktop.to_string(),
+        version: "0.0.0".to_string(),
+        capabilities: GooseMcpClientCapabilities {
             mcpui: true,
             host_info: None,
             elicitation_handler: None,
             protocol_version: None,
         },
-    ));
+    };
+    // Fixture clients are attached for each session below.
+    extension_manager
+        .extension_manager
+        .attach_client("test-session-id", client);
 
     #[allow(clippy::redundant_closure_call)]
     let result = (async || -> Result<(), Box<dyn std::error::Error>> {
@@ -919,12 +975,13 @@ async fn test_replayed_session(
                 Some("test-id".to_string()),
             );
             let result = extension_manager
-                .resolve(&set)
+                .resolve_tools(&set)
                 .await
                 .call(
                     tool_call,
                     CallRequest::from(&ctx),
                     CancellationToken::default(),
+                    &extension_manager,
                 )
                 .await;
 

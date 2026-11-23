@@ -2,23 +2,27 @@ use super::*;
 use crate::agents::extension_manager::{get_parameter_names, is_tool_owned_by_extension};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::permission::PermissionLevel;
-use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
+use goose_acp_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_tools(
         &self,
         req: GetToolsRequest,
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let goose_mode = agent
-            .goose_mode(session_id)
+        self.open_session(&req.session_id).await?;
+        let goose_mode = self
+            .services
+            .session_manager
+            .get_session(session_id, false)
             .await
-            .internal_err_ctx("Failed to read goose mode")?;
+            .internal_err_ctx("Failed to read goose mode")?
+            .goose_mode;
         let permission_manager = self.permission_manager();
 
-        let mut tools: Vec<ToolListItem> = agent
+        let mut tools: Vec<ToolListItem> = self
+            .services
             .list_tools(session_id, req.extension_name)
             .await
             .internal_err()?
@@ -66,11 +70,13 @@ impl GooseAcpAgent {
         req: GooseToolCallRequest,
     ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let tools = agent
-            .list_tools(session_id, Some(req.extension_name.clone()))
+        self.open_session(&req.session_id).await?;
+        let snapshot = self
+            .services
+            .current_tools(session_id)
             .await
             .internal_err()?;
+        let tools = snapshot.tools_for(&req.extension_name).await;
 
         let Some(tool) = tools.iter().find(|tool| {
             *tool.name == req.name && is_tool_owned_by_extension(tool, &req.extension_name)
@@ -101,6 +107,7 @@ impl GooseAcpAgent {
         };
 
         let session = self
+            .services
             .session_manager
             .get_session(session_id, false)
             .await
@@ -114,24 +121,18 @@ impl GooseAcpAgent {
         }
 
         let container = session.container;
-        let tool_result = agent
-            .extension_manager
-            .current_lease(session_id)
-            .await
-            .internal_err()?
-            .call_for_app(
+        let tool_result = snapshot
+            .call(
                 tool_call,
-                &req.extension_name,
                 crate::agents::extension_manager::CallRequest::default()
                     .with_container(container.clone()),
                 CancellationToken::new(),
+                &self.services,
             )
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
-        let result = agent
-            .extension_manager
-            .applying_mutation(tool_result, session_id)
+        let result = tool_result
             .result
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;

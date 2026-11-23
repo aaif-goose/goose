@@ -16,11 +16,12 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
-use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai_responses::responses_api_to_streaming_message;
-use goose_providers::model::ModelConfig;
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::formats::openai_responses::{
+    is_encrypted_reasoning_error, reasoning_input_item, responses_api_to_streaming_message,
+    strip_reasoning_items,
+};
+use oi_kit_providers::model::ModelConfig;
 use rmcp::model::{ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -100,14 +101,12 @@ fn known_model_names() -> Vec<&'static str> {
 #[derive(Debug)]
 struct ChatGptCodexAuthState {
     oauth_mutex: TokioMutex<()>,
-    jwks_cache: TokioMutex<Option<JwkSet>>,
 }
 
 impl ChatGptCodexAuthState {
     fn new() -> Self {
         Self {
             oauth_mutex: TokioMutex::new(()),
-            jwks_cache: TokioMutex::new(None),
         }
     }
 
@@ -119,7 +118,198 @@ impl ChatGptCodexAuthState {
 static CHATGPT_CODEX_AUTH_STATE: LazyLock<Arc<ChatGptCodexAuthState>> =
     LazyLock::new(|| Arc::new(ChatGptCodexAuthState::new()));
 
-fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
+const SUPPORTED_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+const MAX_IMAGE_URL_LEN: usize = 20 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION: u32 = 16_384;
+const MAX_DECODED_IMAGE_BYTES: u64 = 128 * 1024 * 1024;
+
+fn image_placeholder(mime_type: &str) -> Value {
+    json!({ "type": "input_text", "text": format!("[Image: {mime_type}]") })
+}
+
+fn oversized_image_placeholder(len: usize) -> Value {
+    json!({
+        "type": "input_text",
+        "text": format!("image data URL is too large: {len} bytes exceeds {MAX_IMAGE_URL_LEN} byte limit")
+    })
+}
+
+fn image_decode_limits() -> image::io::Limits {
+    let mut limits = image::io::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODED_IMAGE_BYTES);
+    limits
+}
+
+fn webp_frame_dimensions(chunk: &[u8], payload: &[u8]) -> Option<(u32, u32)> {
+    match chunk {
+        b"VP8 " => {
+            if payload.get(3..6)? != [0x9d, 0x01, 0x2a] {
+                return None;
+            }
+            let width = u16::from_le_bytes(payload.get(6..8)?.try_into().ok()?) & 0x3fff;
+            let height = u16::from_le_bytes(payload.get(8..10)?.try_into().ok()?) & 0x3fff;
+            Some((width.into(), height.into()))
+        }
+        b"VP8L" => {
+            if payload.first()? != &0x2f {
+                return None;
+            }
+            let bits = u32::from_le_bytes(payload.get(1..5)?.try_into().ok()?);
+            let width = (bits & 0x3fff) + 1;
+            let height = ((bits >> 14) & 0x3fff) + 1;
+            Some((width, height))
+        }
+        _ => None,
+    }
+}
+
+fn webp_chunk(bytes: &[u8], offset: usize) -> Option<(&[u8], &[u8], usize)> {
+    let header_end = offset.checked_add(8)?;
+    let chunk = bytes.get(offset..offset.checked_add(4)?)?;
+    let chunk_len = u32::from_le_bytes(
+        bytes
+            .get(offset.checked_add(4)?..header_end)?
+            .try_into()
+            .ok()?,
+    ) as usize;
+    let payload_end = header_end.checked_add(chunk_len)?;
+    let payload = bytes.get(header_end..payload_end)?;
+    let next_offset = payload_end.checked_add(chunk_len % 2)?;
+    bytes.get(..next_offset)?;
+    Some((chunk, payload, next_offset))
+}
+
+fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.get(..4)? != b"RIFF" || bytes.get(8..12)? != b"WEBP" {
+        return None;
+    }
+    let riff_len = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?) as usize;
+    if 8usize.checked_add(riff_len)? != bytes.len() {
+        return None;
+    }
+    let (chunk, payload, mut offset) = webp_chunk(bytes, 12)?;
+    if let Some(dimensions) = webp_frame_dimensions(chunk, payload) {
+        return Some(dimensions);
+    }
+    if chunk != b"VP8X" {
+        return None;
+    }
+
+    let flags = *payload.first()?;
+    if flags & 0b1100_0011 != 0 || flags & 0b0000_0010 != 0 || payload.get(1..4)? != [0, 0, 0] {
+        return None;
+    }
+    let width_bytes = payload.get(4..7)?;
+    let height_bytes = payload.get(7..10)?;
+    let dimensions = (
+        u32::from_le_bytes([width_bytes[0], width_bytes[1], width_bytes[2], 0]) + 1,
+        u32::from_le_bytes([height_bytes[0], height_bytes[1], height_bytes[2], 0]) + 1,
+    );
+
+    let mut frame_dimensions = None;
+    while offset < bytes.len() {
+        let (chunk, payload, next_offset) = webp_chunk(bytes, offset)?;
+        if chunk == b"ANIM" || chunk == b"ANMF" {
+            return None;
+        }
+        if let Some(found) = webp_frame_dimensions(chunk, payload) {
+            if frame_dimensions.replace(found).is_some() {
+                return None;
+            }
+        }
+        offset = next_offset;
+    }
+
+    (frame_dimensions == Some(dimensions)).then_some(dimensions)
+}
+
+fn webp_is_safe_to_decode(bytes: &[u8]) -> bool {
+    let Some((width, height)) = webp_dimensions(bytes) else {
+        return false;
+    };
+    width > 0
+        && height > 0
+        && width <= MAX_IMAGE_DIMENSION
+        && height <= MAX_IMAGE_DIMENSION
+        && u64::from(width) * u64::from(height) * 4 <= MAX_DECODED_IMAGE_BYTES
+}
+
+fn image_mime_type(bytes: &[u8], declared_mime: &str) -> Option<&'static str> {
+    let format = image::guess_format(bytes).ok()?;
+    let detected_mime = match format {
+        image::ImageFormat::Png => "image/png",
+        image::ImageFormat::Jpeg => "image/jpeg",
+        image::ImageFormat::Gif => "image/gif",
+        image::ImageFormat::WebP => "image/webp",
+        _ => return None,
+    };
+    if !detected_mime.eq_ignore_ascii_case(declared_mime) {
+        return None;
+    }
+
+    if format == image::ImageFormat::Gif {
+        use image::{AnimationDecoder, ImageDecoder};
+
+        let mut decoder = image::codecs::gif::GifDecoder::new(io::Cursor::new(bytes)).ok()?;
+        decoder.set_limits(image_decode_limits()).ok()?;
+        let mut frames = decoder.into_frames();
+        frames.next()?.ok()?;
+        if frames.next().is_some() {
+            return None;
+        }
+    } else {
+        if format == image::ImageFormat::WebP && !webp_is_safe_to_decode(bytes) {
+            return None;
+        }
+        let mut reader = image::io::Reader::with_format(io::Cursor::new(bytes), format);
+        reader.limits(image_decode_limits());
+        reader.decode().ok()?;
+    }
+
+    Some(detected_mime)
+}
+
+fn tool_result_image(data: &str, mime_type: &str) -> Value {
+    let (declared_mime, payload) = if data
+        .get(.."data:".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+    {
+        let Some(rest) = data.get("data:".len()..) else {
+            return image_placeholder(mime_type);
+        };
+        let Some((metadata, payload)) = rest.split_once(',') else {
+            return image_placeholder(mime_type);
+        };
+        let mut metadata = metadata.split(';');
+        let declared_mime = metadata.next().unwrap_or_default();
+        if !metadata.any(|parameter| parameter.eq_ignore_ascii_case("base64")) {
+            return image_placeholder(declared_mime);
+        }
+        (declared_mime, payload)
+    } else {
+        (mime_type, data)
+    };
+    if !SUPPORTED_IMAGE_TYPES.contains(&declared_mime.to_ascii_lowercase().as_str()) {
+        return image_placeholder(declared_mime);
+    }
+
+    let image_url_len = "data:".len() + declared_mime.len() + ";base64,".len() + payload.len();
+    if image_url_len > MAX_IMAGE_URL_LEN {
+        return oversized_image_placeholder(image_url_len);
+    }
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
+        return image_placeholder(declared_mime);
+    };
+    let Some(mime_type) = image_mime_type(&bytes, declared_mime) else {
+        return image_placeholder(declared_mime);
+    };
+    let image_url = format!("data:{mime_type};base64,{payload}");
+    json!({ "type": "input_image", "image_url": image_url })
+}
+
+fn build_input_items(messages: &[Message], model_name: &str) -> Result<Vec<Value>> {
     let mut items = Vec::new();
 
     for message in messages {
@@ -157,6 +347,9 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
                         "image_url": format!("data:{};base64,{}", img.mime_type, img.data),
                     }));
                 }
+                MessageContent::Thinking(thinking) if message.role == Role::Assistant => {
+                    items.extend(reasoning_input_item(message, thinking, model_name));
+                }
                 MessageContent::ToolRequest(request) => {
                     flush_text(&mut items, role, &mut content_items);
                     if let Ok(tool_call) = &request.tool_call {
@@ -176,22 +369,24 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
                     flush_text(&mut items, role, &mut content_items);
                     match &response.tool_result {
                         Ok(contents) => {
-                            let text_content: Vec<String> = contents
+                            let output: Vec<Value> = contents
                                 .content
                                 .iter()
-                                .filter_map(|c| {
-                                    if let ContentBlock::Text(t) = c {
-                                        Some(t.text.clone())
-                                    } else {
-                                        None
+                                .filter_map(|c| match c {
+                                    ContentBlock::Text(t) => {
+                                        Some(json!({ "type": "input_text", "text": t.text }))
                                     }
+                                    ContentBlock::Image(img) => {
+                                        Some(tool_result_image(&img.data, &img.mime_type))
+                                    }
+                                    _ => None,
                                 })
                                 .collect();
-                            if !text_content.is_empty() {
+                            if !output.is_empty() {
                                 items.push(json!({
                                     "type": "function_call_output",
                                     "call_id": response.id,
-                                    "output": text_content.join("\n")
+                                    "output": output
                                 }));
                             }
                         }
@@ -235,7 +430,7 @@ fn get_reasoning_effort(model_name: &str) -> String {
 }
 
 fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
-    use goose_providers::thinking::ThinkingEffort;
+    use oi_kit_providers::thinking::ThinkingEffort;
 
     model_config
         .thinking_effort()
@@ -263,25 +458,51 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
         .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
 }
 
+fn uses_developer_prompt(model_name: &str) -> bool {
+    let Some(version) = model_name.strip_prefix("gpt-") else {
+        return false;
+    };
+    let version = version.split('-').next().unwrap_or_default();
+    let (major, minor) = version.split_once('.').unwrap_or((version, "0"));
+    matches!(
+        (major.parse::<u32>(), minor.parse::<u32>()),
+        (Ok(major), Ok(minor)) if (major, minor) >= (6, 2)
+    )
+}
+
 fn create_codex_request(
     model_config: &ModelConfig,
     system: &str,
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
-    let input_items = build_input_items(messages)?;
+    let mut input_items = build_input_items(messages, &model_config.model_name)?;
+    let developer_prompt = uses_developer_prompt(&model_config.model_name);
+    if developer_prompt && !system.is_empty() {
+        input_items.insert(
+            0,
+            json!({
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": system }],
+            }),
+        );
+    }
     let reasoning_effort = reasoning_effort_for_config(model_config);
 
     let mut payload = json!({
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "instructions": system,
+        "include": ["reasoning.encrypted_content"],
     });
 
     let payload_obj = payload
         .as_object_mut()
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
+
+    if !developer_prompt {
+        payload_obj.insert("instructions".to_string(), json!(system));
+    }
 
     if !tools.is_empty() {
         let tools_spec: Vec<Value> = tools
@@ -378,61 +599,7 @@ struct OrgInfo {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct OidcConfiguration {
-    jwks_uri: String,
-}
-
-async fn fetch_jwks_for(issuer: &str) -> Result<JwkSet> {
-    let client = reqwest::Client::new();
-    let config_url = format!("{}/.well-known/openid-configuration", issuer);
-    let config = client
-        .get(config_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<OidcConfiguration>()
-        .await?;
-
-    let jwks = client
-        .get(config.jwks_uri)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<JwkSet>()
-        .await?;
-
-    Ok(jwks)
-}
-
-async fn get_jwks(state: &ChatGptCodexAuthState) -> Result<JwkSet> {
-    let mut cache = state.jwks_cache.lock().await;
-    if let Some(jwks) = cache.clone() {
-        return Ok(jwks);
-    }
-    let jwks = fetch_jwks_for(ISSUER).await?;
-    *cache = Some(jwks.clone());
-    Ok(jwks)
-}
-
-fn parse_jwt_claims_with_jwks(token: &str, jwks: &JwkSet) -> Result<JwtClaims> {
-    let header = decode_header(token)?;
-    let kid = header
-        .kid
-        .ok_or_else(|| anyhow!("JWT header missing kid"))?;
-    let jwk = jwks
-        .find(&kid)
-        .ok_or_else(|| anyhow!("JWT signing key not found"))?;
-    let decoding_key = DecodingKey::from_jwk(jwk)?;
-
-    let mut validation = Validation::new(header.alg);
-    validation.validate_aud = false;
-
-    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
-    Ok(token_data.claims)
-}
-
-fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
+fn parse_jwt_claims(token: &str) -> Option<JwtClaims> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return None;
@@ -441,15 +608,6 @@ fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
         .decode(parts[1])
         .ok()?;
     serde_json::from_slice(&payload).ok()
-}
-
-async fn parse_jwt_claims(token: &str, state: &ChatGptCodexAuthState) -> Option<JwtClaims> {
-    if let Ok(jwks) = get_jwks(state).await {
-        if let Ok(claims) = parse_jwt_claims_with_jwks(token, &jwks) {
-            return Some(claims);
-        }
-    }
-    parse_jwt_claims_unverified(token)
 }
 
 fn account_id_from_claims(claims: &JwtClaims) -> Option<String> {
@@ -469,21 +627,16 @@ fn account_id_from_claims(claims: &JwtClaims) -> Option<String> {
     None
 }
 
-async fn extract_account_id(
-    token_data: &TokenData,
-    state: &ChatGptCodexAuthState,
-) -> Option<String> {
+fn extract_account_id(token_data: &TokenData) -> Option<String> {
     if let Some(id_token) = token_data.id_token.as_deref() {
-        if let Some(claims) = parse_jwt_claims(id_token, state).await {
+        if let Some(claims) = parse_jwt_claims(id_token) {
             if let Some(account_id) = account_id_from_claims(&claims) {
                 return Some(account_id);
             }
         }
     }
 
-    parse_jwt_claims(&token_data.access_token, state)
-        .await
-        .and_then(|claims| account_id_from_claims(&claims))
+    parse_jwt_claims(&token_data.access_token).and_then(|claims| account_id_from_claims(&claims))
 }
 
 struct PkceChallenge {
@@ -806,7 +959,7 @@ async fn perform_oauth_flow(auth_state: &ChatGptCodexAuthState) -> Result<TokenD
         account_id: None,
     };
 
-    token_data.account_id = extract_account_id(&token_data, auth_state).await;
+    token_data.account_id = extract_account_id(&token_data);
 
     Ok(token_data)
 }
@@ -846,8 +999,7 @@ impl ChatGptCodexAuthProvider {
                     token_data.expires_at = Utc::now()
                         + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
                     if token_data.account_id.is_none() {
-                        token_data.account_id =
-                            extract_account_id(&token_data, self.state.as_ref()).await;
+                        token_data.account_id = extract_account_id(&token_data);
                     }
                     self.cache.save(&token_data)?;
                     tracing::info!("Token refreshed successfully");
@@ -943,7 +1095,7 @@ impl ChatGptCodexProvider {
 
         let request = (self.request_builder)(request)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        let response = goose_providers::http_status::send_bounded(
+        let response = oi_kit_providers::http_status::send_bounded(
             request,
             std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )
@@ -953,7 +1105,7 @@ impl ChatGptCodexProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for ChatGptCodexProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ChatGptCodexProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CHATGPT_CODEX_PROVIDER_NAME,
@@ -1011,12 +1163,23 @@ impl Provider for ChatGptCodexProvider {
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         payload["stream"] = serde_json::Value::Bool(true);
 
-        let response = self
-            .with_retry(|| async {
-                let payload_clone = payload.clone();
-                self.post_streaming(&payload_clone).await
-            })
-            .await?;
+        let response = match self
+            .with_retry(|| async { self.post_streaming(&payload).await })
+            .await
+        {
+            Err(ProviderError::RequestFailed(message))
+                if is_encrypted_reasoning_error(&message) =>
+            {
+                tracing::warn!(
+                    error = %message,
+                    "API rejected replayed reasoning; retrying once without it"
+                );
+                strip_reasoning_items(&mut payload);
+                self.with_retry(|| async { self.post_streaming(&payload).await })
+                    .await
+            }
+            other => other,
+        }?;
 
         let stream = response.bytes_stream().map_err(io::Error::other);
 
@@ -1069,7 +1232,6 @@ mod tests {
     use super::*;
     use crate::conversation::message::Message;
     use goose_test_support::TEST_IMAGE_B64;
-    use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
     use rmcp::object;
     use test_case::test_case;
@@ -1095,6 +1257,34 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn extended_webp(
+        canvas_width: u32,
+        canvas_height: u32,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Vec<u8> {
+        let pixels = vec![0; (frame_width * frame_height * 4) as usize];
+        let mut frame = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut frame)
+            .encode(&pixels, frame_width, frame_height, image::ColorType::Rgba8)
+            .unwrap();
+
+        let frame_chunk = &frame[12..];
+        let riff_len = (4 + 18 + frame_chunk.len()) as u32;
+        let width = (canvas_width - 1).to_le_bytes();
+        let height = (canvas_height - 1).to_le_bytes();
+        let mut webp = Vec::new();
+        webp.extend_from_slice(b"RIFF");
+        webp.extend_from_slice(&riff_len.to_le_bytes());
+        webp.extend_from_slice(b"WEBPVP8X");
+        webp.extend_from_slice(&10u32.to_le_bytes());
+        webp.extend_from_slice(&[0, 0, 0, 0]);
+        webp.extend_from_slice(&width[..3]);
+        webp.extend_from_slice(&height[..3]);
+        webp.extend_from_slice(frame_chunk);
+        webp
     }
 
     #[test]
@@ -1221,16 +1411,311 @@ mod tests {
         "image content included in user message"
     )]
     fn test_codex_input_order(messages: Vec<Message>, expected: Vec<String>) {
-        let items = build_input_items(&messages).unwrap();
+        let items = build_input_items(&messages, "gpt-5.6").unwrap();
         let payload = json!({ "input": items });
         let kinds = input_kinds(&payload);
         assert_eq!(kinds, expected);
     }
 
     #[test]
+    fn test_tool_response_image_forwarded() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image(TEST_IMAGE_B64, "image/png"),
+            ])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(output[0], json!({ "type": "input_text", "text": "img" }));
+        assert_eq!(output[1]["type"], "input_image");
+        assert!(output[1]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_unsupported_image_type() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image(TEST_IMAGE_B64, "image/svg+xml"),
+            ])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([
+                { "type": "input_text", "text": "img" },
+                { "type": "input_text", "text": "[Image: image/svg+xml]" }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_oversized_image() {
+        let data = "A".repeat(MAX_IMAGE_URL_LEN);
+        let image_url_len = "data:".len() + "image/png".len() + ";base64,".len() + data.len();
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data.clone(),
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([{
+                "type": "input_text",
+                "text": format!(
+                    "image data URL is too large: {image_url_len} bytes exceeds {MAX_IMAGE_URL_LEN} byte limit"
+                )
+            }])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_data_url_normalized() {
+        let data = format!("DATA:IMAGE/PNG;BASE64,{TEST_IMAGE_B64}");
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({
+                "type": "input_image",
+                "image_url": format!("data:image/png;base64,{TEST_IMAGE_B64}")
+            })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_data_url_requires_base64_marker() {
+        let data = format!("data:image/png,{TEST_IMAGE_B64}");
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/png]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_truncated_image() {
+        let data = base64::engine::general_purpose::STANDARD.encode([0x89, 0x50, 0x4e, 0x47]);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/png]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_animated_gif() {
+        let mut gif = Vec::new();
+        {
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut gif);
+            encoder
+                .encode_frames([
+                    image::Frame::new(image::RgbaImage::new(1, 1)),
+                    image::Frame::new(image::RgbaImage::new(1, 1)),
+                ])
+                .unwrap();
+        }
+        let data = base64::engine::general_purpose::STANDARD.encode(gif);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/gif",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/gif]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_gif_with_huge_dimensions() {
+        let gif = [
+            b'G', b'I', b'F', b'8', b'9', b'a', 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0x3b,
+        ];
+        let data = base64::engine::general_purpose::STANDARD.encode(gif);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/gif",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/gif]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_rejects_webp_with_huge_dimensions() {
+        let webp = [
+            b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X',
+            10, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x3f, 0, 0xff, 0x3f, 0,
+        ];
+        let data = base64::engine::general_purpose::STANDARD.encode(webp);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/webp]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_accepts_valid_webp() {
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .encode(&[0, 0, 0, 255], 1, 1, image::ColorType::Rgba8)
+            .unwrap();
+        let data = base64::engine::general_purpose::STANDARD.encode(webp);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert!(output[0]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/webp;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_accepts_valid_extended_webp() {
+        let data = base64::engine::general_purpose::STANDARD.encode(extended_webp(2, 2, 2, 2));
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert!(output[0]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/webp;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_rejects_mismatched_webp_dimensions() {
+        let data = base64::engine::general_purpose::STANDARD.encode(extended_webp(1, 1, 2, 2));
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/webp",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/webp]" })
+        );
+    }
+
+    #[test]
+    fn test_webp_preflight_rejects_trailing_chunks() {
+        let mut webp = extended_webp(1, 1, 1, 1);
+        webp.extend_from_slice(b"ANMF\0\0\0\0");
+        assert!(!webp_is_safe_to_decode(&webp));
+    }
+
+    #[test]
+    fn test_tool_response_rejects_mismatched_mime_type() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                TEST_IMAGE_B64,
+                "image/jpeg",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output[0],
+            json!({ "type": "input_text", "text": "[Image: image/jpeg]" })
+        );
+    }
+
+    #[test]
+    fn test_tool_response_invalid_image_bytes() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image("not-valid-base64!!!", "image/png"),
+            ])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([
+                { "type": "input_text", "text": "img" },
+                { "type": "input_text", "text": "[Image: image/png]" }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_non_image_payload() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                "aGVsbG8=",
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages, "gpt-5.6").unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([{ "type": "input_text", "text": "[Image: image/png]" }])
+        );
+    }
+
+    #[test]
     fn test_image_url_format() {
         let messages = vec![Message::user().with_image(TEST_IMAGE_B64, "image/png")];
-        let items = build_input_items(&messages).unwrap();
+        let items = build_input_items(&messages, "gpt-5.6").unwrap();
         // The image is inside the content array of the user message
         let content = items[0]["content"].as_array().unwrap();
         let image_item = &content[0];
@@ -1323,6 +1808,56 @@ mod tests {
         assert_eq!(account_id_from_claims(&claims), expected);
     }
 
+    fn unsigned_jwt(claims: Value) -> String {
+        let encode = |value: Value| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value.to_string())
+        };
+        format!(
+            "{}.{}.signature",
+            encode(json!({"alg": "RS256", "typ": "JWT"})),
+            encode(claims)
+        )
+    }
+
+    fn token_data_with(id_token: Option<String>, access_token: String) -> TokenData {
+        TokenData {
+            access_token,
+            refresh_token: "refresh".to_string(),
+            id_token,
+            expires_at: Utc::now(),
+            account_id: None,
+        }
+    }
+
+    #[test_case(
+        Some(unsigned_jwt(json!({"chatgpt_account_id": "from-id-token"}))),
+        unsigned_jwt(json!({"chatgpt_account_id": "from-access-token"})),
+        Some("from-id-token".to_string());
+        "prefers the id token"
+    )]
+    #[test_case(
+        Some("not-a-jwt".to_string()),
+        unsigned_jwt(json!({"chatgpt_account_id": "from-access-token"})),
+        Some("from-access-token".to_string());
+        "falls back to the access token"
+    )]
+    #[test_case(
+        None,
+        "not-a-jwt".to_string(),
+        None;
+        "returns none without readable claims"
+    )]
+    fn test_extract_account_id(
+        id_token: Option<String>,
+        access_token: String,
+        expected: Option<String>,
+    ) {
+        assert_eq!(
+            extract_account_id(&token_data_with(id_token, access_token)),
+            expected
+        );
+    }
+
     #[tokio::test]
     async fn test_exchange_code_for_tokens() {
         let server = MockServer::start().await;
@@ -1388,59 +1923,6 @@ mod tests {
         assert_eq!(tokens.expires_in, Some(1800));
     }
 
-    #[derive(Serialize)]
-    struct TestClaims {
-        exp: usize,
-        chatgpt_account_id: Option<String>,
-    }
-
-    #[tokio::test]
-    async fn test_parse_jwt_claims_verified_with_issuer() {
-        let server = MockServer::start().await;
-        let jwks_uri = format!("{}/jwks", server.uri());
-        Mock::given(method("GET"))
-            .and(path("/.well-known/openid-configuration"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "jwks_uri": jwks_uri
-            })))
-            .mount(&server)
-            .await;
-
-        let secret = "test-secret";
-        let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret);
-        Mock::given(method("GET"))
-            .and(path("/jwks"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "keys": [{
-                    "kty": "oct",
-                    "alg": "HS256",
-                    "kid": "test-kid",
-                    "k": key
-                }]
-            })))
-            .mount(&server)
-            .await;
-
-        let mut header = Header::new(Algorithm::HS256);
-        header.kid = Some("test-kid".to_string());
-
-        let claims = TestClaims {
-            exp: (Utc::now() + chrono::Duration::seconds(60)).timestamp() as usize,
-            chatgpt_account_id: Some("account-1".to_string()),
-        };
-        let token = jsonwebtoken::encode(
-            &header,
-            &claims,
-            &EncodingKey::from_secret(secret.as_bytes()),
-        )
-        .unwrap();
-
-        let jwks = fetch_jwks_for(&server.uri()).await.unwrap();
-        let claims = parse_jwt_claims_with_jwks(&token, &jwks).unwrap();
-
-        assert_eq!(claims.chatgpt_account_id.as_deref(), Some("account-1"));
-    }
-
     #[test_case("gpt-5.6-sol", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 sol supports extended reasoning levels")]
     #[test_case("gpt-5.6-terra", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 terra supports extended reasoning levels")]
     #[test_case("gpt-5.6-luna", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 luna supports extended reasoning levels")]
@@ -1460,11 +1942,113 @@ mod tests {
         assert!(names.contains(&"gpt-5.6"));
     }
 
-    #[test]
-    fn test_instructions_passed_through() {
-        let model = ModelConfig::new("gpt-5.4");
-        let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
-        let instructions = payload["instructions"].as_str().unwrap();
-        assert_eq!(instructions, "system prompt");
+    #[test_case("gpt-5.4", false)]
+    #[test_case("gpt-5.6-sol", false)]
+    #[test_case("gpt-6-astra", false)]
+    #[test_case("gpt-6.1-sol", false)]
+    #[test_case("gpt-6.2", true)]
+    #[test_case("gpt-6.2-sol", true)]
+    #[test_case("gpt-6.2-astra", true)]
+    #[test_case("gpt-6.2-sol-2026-11-18", true)]
+    #[test_case("gpt-6.3-astra", true)]
+    #[test_case("gpt-6.10-sol", true)]
+    #[test_case("gpt-7-sol", true)]
+    #[test_case("gpt-7.0-astra", true)]
+    #[test_case("unknown-model", false)]
+    fn test_persistent_prompt_placement(model_name: &str, developer_prompt: bool) {
+        let model = ModelConfig::new(model_name);
+        let messages = [Message::user().with_text("question")];
+        let payload = create_codex_request(&model, "system prompt", &messages, &[]).unwrap();
+        let user = json!({
+            "role": "user",
+            "content": [{ "type": "input_text", "text": "question" }],
+        });
+
+        if developer_prompt {
+            assert!(payload.get("instructions").is_none());
+            assert_eq!(
+                payload["input"],
+                json!([
+                    {
+                        "role": "developer",
+                        "content": [{ "type": "input_text", "text": "system prompt" }],
+                    },
+                    user,
+                ])
+            );
+        } else {
+            assert_eq!(payload["instructions"], "system prompt");
+            assert_eq!(payload["input"], json!([user]));
+        }
+    }
+
+    #[test_case("gpt-5.4", false)]
+    #[test_case("gpt-6.2-sol", true)]
+    #[test_case("gpt-6.2-astra", true)]
+    fn test_empty_prompt_adds_no_developer_message(model_name: &str, developer_prompt: bool) {
+        let model = ModelConfig::new(model_name);
+        let messages = [Message::user().with_text("question")];
+        let payload = create_codex_request(&model, "", &messages, &[]).unwrap();
+
+        if developer_prompt {
+            assert!(payload.get("instructions").is_none());
+        } else {
+            assert_eq!(payload["instructions"], "");
+        }
+        assert_eq!(input_kinds(&payload), vec!["message:user"]);
+    }
+
+    #[test_case("gpt-6.2-sol")]
+    #[test_case("gpt-6.2-astra")]
+    fn test_persistent_prompt_prefix_across_tool_and_user_turns(model_name: &str) {
+        let model = ModelConfig::new(model_name);
+        let tools = [Tool::new(
+            "lookup",
+            "Look up a value",
+            object!({
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"],
+            }),
+        )];
+        let mut messages = vec![Message::user().with_text("question")];
+        let first = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+        messages.extend([
+            Message::assistant().with_tool_request(
+                "call-1",
+                Ok(CallToolRequestParams::new("lookup").with_arguments(object!({"key": "value"}))),
+            ),
+            Message::user().with_tool_response(
+                "call-1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("result")])),
+            ),
+        ]);
+        let tool_turn = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+        messages.extend([
+            Message::assistant().with_text("answer"),
+            Message::user().with_text("follow-up"),
+        ]);
+        let follow_up = create_codex_request(&model, "system prompt", &messages, &tools).unwrap();
+
+        let first_input = first["input"].as_array().unwrap();
+        let tool_input = tool_turn["input"].as_array().unwrap();
+        let follow_up_input = follow_up["input"].as_array().unwrap();
+        assert!(tool_input.starts_with(first_input));
+        assert!(follow_up_input.starts_with(tool_input));
+        assert_eq!(follow_up["tools"], first["tools"]);
+        assert!(follow_up.get("instructions").is_none());
+        assert_eq!(
+            input_kinds(&follow_up),
+            vec![
+                "message:developer",
+                "message:user",
+                "function_call",
+                "function_call_output",
+                "message:assistant",
+                "message:user",
+            ]
+        );
+        assert_eq!(follow_up_input[2]["call_id"], "call-1");
+        assert_eq!(follow_up_input[3]["call_id"], "call-1");
     }
 }

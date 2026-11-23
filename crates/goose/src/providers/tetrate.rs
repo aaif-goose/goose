@@ -5,35 +5,31 @@ use super::openai_compatible::{
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
-use crate::config::signup_tetrate::TETRATE_DEFAULT_MODEL;
 use crate::conversation::message::Message;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::errors::ProviderError;
-use goose_providers::images::ImageFormat;
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::images::ImageFormat;
 
-use goose_providers::formats::openai::create_request;
-use goose_providers::model::ModelConfig;
-use goose_providers::request_log::{start_log, LoggerHandleExt};
+use oi_kit_providers::formats::openai::create_request;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 use serde_json::Value;
 
 pub const TETRATE_PROVIDER_NAME: &str = "tetrate";
+pub const TETRATE_DEFAULT_MODEL: &str = "claude-haiku-5-5";
 pub const TETRATE_DOC_URL: &str = "https://router.tetrate.ai";
 pub const TETRATE_BILLING_URL: &str = "https://router.tetrate.ai/billing";
 
 pub const TETRATE_KNOWN_MODELS: &[&str] = &[
-    "claude-opus-4-1",
-    "claude-3-7-sonnet-latest",
-    "claude-sonnet-4-20250514",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gpt-5",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-4.1",
+    TETRATE_DEFAULT_MODEL,
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "gpt-6.1-sol",
+    "gemini-3.5-flash",
+    "xai/grok-4.7",
 ];
 
 #[derive(serde::Serialize)]
@@ -90,7 +86,7 @@ impl TetrateProvider {
     }
 }
 
-impl goose_providers::base::ProviderDescriptor for TetrateProvider {
+impl oi_kit_providers::base::ProviderDescriptor for TetrateProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             TETRATE_PROVIDER_NAME,
@@ -169,7 +165,7 @@ impl Provider for TetrateProvider {
                     .is_some_and(|v| v.contains("json"));
 
                 if is_json {
-                    let body = goose_providers::http_status::read_error_body(resp)
+                    let body = oi_kit_providers::http_status::read_error_body(resp)
                         .await
                         .unwrap_or_default();
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&body) {

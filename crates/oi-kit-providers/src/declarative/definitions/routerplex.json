@@ -1,0 +1,70 @@
+{
+  "name": "routerplex",
+  "engine": "openai",
+  "display_name": "RouterPlex",
+  "description": "Hosted gateway for Claude, GPT, Gemini, DeepSeek, Kimi, GLM and other models through one OpenAI-compatible API, billed from a prepaid balance at vendor list price with per-key USD budgets",
+  "api_key_env": "ROUTERPLEX_API_KEY",
+  "base_url": "https://api.routerplex.com/v1",
+  "dynamic_models": false,
+  "supports_streaming": true,
+  "model_doc_link": "https://routerplex.com/api/models",
+  "setup_steps": [
+    "Sign up at https://routerplex.com and add credit from the billing page",
+    "Create an API key in the dashboard, optionally with a USD budget",
+    "Paste the key above as ROUTERPLEX_API_KEY"
+  ],
+  "models": [
+    {
+      "name": "claude-sonnet-4-6",
+      "context_limit": 1000000
+    },
+    {
+      "name": "claude-opus-5",
+      "context_limit": 1000000
+    },
+    {
+      "name": "claude-opus-5-5",
+      "context_limit": 1000000
+    },
+    {
+      "name": "claude-haiku-4-5",
+      "context_limit": 256000
+    },
+    {
+      "name": "gpt-6-sol",
+      "context_limit": 922000
+    },
+    {
+      "name": "gpt-6.1-sol",
+      "context_limit": 922000
+    },
+    {
+      "name": "gemini-4-argon",
+      "context_limit": 1048576
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "context_limit": 1000000
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "context_limit": 1000000
+    },
+    {
+      "name": "kimi-k3",
+      "context_limit": 1048576
+    },
+    {
+      "name": "glm-5.3",
+      "context_limit": 1000000
+    },
+    {
+      "name": "qwen3.8-max",
+      "context_limit": 1000000
+    },
+    {
+      "name": "grok-4.7",
+      "context_limit": 500000
+    }
+  ]
+}

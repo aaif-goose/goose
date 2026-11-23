@@ -5,7 +5,7 @@ import {
   type LoadSessionResponse,
   type NewSessionRequest,
   type SessionInfo,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { GooseExtension, SessionExportFormat } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 import type { ExtensionLoadResult } from '../types/extensions';

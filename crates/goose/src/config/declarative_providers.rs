@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-pub use goose_providers::declarative::*;
+pub use oi_kit_providers::declarative::*;
 
 pub fn custom_providers_dir() -> std::path::PathBuf {
     Paths::config_dir().join("custom_providers")
@@ -303,6 +303,12 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                     model.input_token_cost = model.input_token_cost.or(existing.input_token_cost);
                     model.output_token_cost =
                         model.output_token_cost.or(existing.output_token_cost);
+                    model.cache_read_token_cost = model
+                        .cache_read_token_cost
+                        .or(existing.cache_read_token_cost);
+                    model.cache_write_token_cost = model
+                        .cache_write_token_cost
+                        .or(existing.cache_write_token_cost);
                     model.currency = model.currency.or(existing.currency.clone());
                     model.supports_cache_control = model
                         .supports_cache_control
@@ -609,6 +615,8 @@ mod tests {
                 context_limit: Some(128_000),
                 input_token_cost: None,
                 output_token_cost: None,
+                cache_read_token_cost: None,
+                cache_write_token_cost: None,
                 currency: None,
                 supports_cache_control: None,
                 reasoning: false,
@@ -803,6 +811,8 @@ mod tests {
 
         let mut model = ModelInfo::with_cost("large-model", 1_048_576, 0.000002, 0.000006)
             .with_vision_support(true);
+        model.cache_read_token_cost = Some(0.0000002);
+        model.cache_write_token_cost = Some(0.0000004);
         model.request_params = Some(HashMap::from([(
             "temperature".to_string(),
             serde_json::json!(0.25),
@@ -859,6 +869,8 @@ mod tests {
         assert_eq!(model.context_limit, Some(2_097_152));
         assert_eq!(model.input_token_cost, Some(0.000002));
         assert_eq!(model.output_token_cost, Some(0.000006));
+        assert_eq!(model.cache_read_token_cost, Some(0.0000002));
+        assert_eq!(model.cache_write_token_cost, Some(0.0000004));
         assert_eq!(
             model.request_params.as_ref().unwrap()["temperature"],
             serde_json::json!(0.25)

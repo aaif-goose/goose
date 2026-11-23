@@ -16,7 +16,7 @@ use agent_client_protocol_schema::v1::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -42,9 +42,9 @@ use crate::providers::base::{MessageStream, PermissionRouting, Provider};
 use crate::subprocess::configure_subprocess;
 use crate::token_counter::create_token_counter;
 use crate::utils::sanitize_unicode_tags;
-use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
-use goose_providers::thinking::{
+use oi_kit_providers::errors::ProviderError;
+use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::thinking::{
     ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
 };
 
@@ -683,6 +683,13 @@ impl Provider for AcpProvider {
         Some(self.acp_session_id().to_string())
     }
 
+    fn skip_canonical_filtering(&self) -> bool {
+        // ACP agents advertise their own model ids, which are CLI/account-specific
+        // and often absent from the canonical registry, and the agent's order is
+        // its priority order. Keep the live list intact for inventory/config.
+        true
+    }
+
     async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
         if self.acp_session_id().0.as_ref() == session_id {
             return Ok(());
@@ -693,7 +700,20 @@ impl Provider for AcpProvider {
             .load_session(SessionId::new(session_id))
             .await
             .map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
+        let applied_model = self.model_config_option_id.as_ref().and_then(|config_id| {
+            loaded
+                .response
+                .config_options
+                .as_deref()?
+                .iter()
+                .find(|option| option.id.0.as_ref() == config_id.as_str())
+                .and_then(|option| match &option.kind {
+                    SessionConfigKind::Select(select) => Some(select.current_value.0.to_string()),
+                    _ => None,
+                })
+        });
         *self.session.lock().unwrap() = loaded;
+        *self.applied_model.lock().unwrap() = applied_model;
         self.handoff_context_sent.store(true, Ordering::Release);
         let _ = self
             .tx
@@ -707,7 +727,7 @@ impl Provider for AcpProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+        oi_kit_providers::context_limit::ContextLimitResolver::new(self.get_name())
             .resolve(model, override_limit, || async {
                 let size = self.context_size.load(Ordering::Relaxed);
                 Ok((size > 0).then_some(size as usize))
@@ -906,11 +926,9 @@ impl Provider for AcpProvider {
             .lock()
             .map_err(|_| ProviderError::RequestFailed("goose_mode lock poisoned".into()))?;
 
-        let reject_all_tools = goose_mode == GooseMode::Chat;
         let model_name = model_config.model_name.clone();
 
         Ok(Box::pin(try_stream! {
-            let mut suppress_text = false;
             let mut bare_retry = bare_retry;
             let mut updates_seen = 0usize;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
@@ -922,13 +940,11 @@ impl Provider for AcpProvider {
                 updates_seen += 1;
                 match update {
                     AcpUpdate::Text(text) => {
-                        if !suppress_text {
-                            let (id, ts) = text_run
-                                .get_or_insert_with(fresh_text_run)
-                                .clone();
-                            let message = acp_text_update_message(text, id, ts);
-                            yield (Some(message), None);
-                        }
+                        let (id, ts) = text_run
+                            .get_or_insert_with(fresh_text_run)
+                            .clone();
+                        let message = acp_text_update_message(text, id, ts);
+                        yield (Some(message), None);
                     }
                     AcpUpdate::Thought(text) => {
                         let (id, ts) = thought_run
@@ -943,30 +959,25 @@ impl Provider for AcpProvider {
                     AcpUpdate::ToolCallStart { id, name, kind, raw_input } => {
                         text_run = None;
                         thought_run = None;
-                        if reject_all_tools {
-                            suppress_text = true;
-                            rejected_tool_calls.insert(id);
-                        } else {
-                            let mut params = CallToolRequestParams::new(name);
-                            if let Some(serde_json::Value::Object(map)) = raw_input {
-                                params = params.with_arguments(map);
-                            }
-                            // external_dispatch tells the agent loop not to redispatch this
-                            // call. goose.acp.kind preserves ACP's stable categorization for
-                            // downstream consumers (metrics, observability, icon selection)
-                            // independent of the display title we put in `name`.
-                            let tool_meta = Some(serde_json::json!({
-                                TOOL_META_EXTERNAL_DISPATCH_KEY: true,
-                                "goose.acp.kind": kind,
-                            }));
-                            let message = Message::assistant().with_tool_request_with_metadata(
-                                id,
-                                Ok(params),
-                                None,
-                                tool_meta,
-                            );
-                            yield (Some(message), None);
+                        let mut params = CallToolRequestParams::new(name);
+                        if let Some(serde_json::Value::Object(map)) = raw_input {
+                            params = params.with_arguments(map);
                         }
+                        // external_dispatch tells the agent loop not to redispatch this
+                        // call. goose.acp.kind preserves ACP's stable categorization for
+                        // downstream consumers (metrics, observability, icon selection)
+                        // independent of the display title we put in `name`.
+                        let tool_meta = Some(serde_json::json!({
+                            TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+                            "goose.acp.kind": kind,
+                        }));
+                        let message = Message::assistant().with_tool_request_with_metadata(
+                            id,
+                            Ok(params),
+                            None,
+                            tool_meta,
+                        );
+                        yield (Some(message), None);
                     }
                     AcpUpdate::ToolCallComplete {
                         id,
@@ -977,22 +988,10 @@ impl Provider for AcpProvider {
                         text_run = None;
                         thought_run = None;
                         if rejected_tool_calls.remove(&id) {
-                            // In chat mode no tool_request was emitted (suppressed at
-                            // ToolCallStart), so surface a plain text message. In other
-                            // modes a tool_request WAS emitted, so pair it with an error
-                            // tool_response so downstream consumers see the rejection.
-                            if reject_all_tools {
-                                let message = Message::assistant()
-                                    .with_text("Tool call was denied.")
-                                    .with_generated_id();
-                                yield (Some(message), None);
-                            } else {
-                                let denial = vec![RmcpContent::text("Tool call was denied.")];
-                                let result = CallToolResult::error(denial);
-                                let message =
-                                    Message::user().with_tool_response(id, Ok(result));
-                                yield (Some(message), None);
-                            }
+                            let denial = vec![RmcpContent::text("Tool call was denied.")];
+                            let result = CallToolResult::error(denial);
+                            let message = Message::user().with_tool_response(id, Ok(result));
+                            yield (Some(message), None);
                         } else {
                             let result_content =
                                 acp_tool_call_content_to_rmcp(content, raw_output);
@@ -1054,9 +1053,9 @@ impl Provider for AcpProvider {
                             let provider_usage = ProviderUsage::new(
                                 model_name.clone(),
                                 Usage::new(
-                                    Some(usage.input_tokens as i32),
-                                    Some(usage.output_tokens as i32),
-                                    Some(usage.total_tokens as i32),
+                                    Some(usage.input_tokens as i64),
+                                    Some(usage.output_tokens as i64),
+                                    Some(usage.total_tokens as i64),
                                 ),
                             );
                             yield (None, Some(provider_usage));
@@ -1845,23 +1844,27 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
 
     for config in configs {
         match config {
-            ExtensionConfig::StreamableHttp {
-                name,
-                socket: Some(_),
-                ..
-            } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                    name,
+                    socket: Some(_),
+                    ..
+                },
+            ) => {
                 tracing::debug!(
                     name,
                     "skipping socket-backed HTTP extension, unsupported by ACP"
                 );
             }
-            ExtensionConfig::StreamableHttp {
-                name,
-                uri,
-                headers,
-                socket: None,
-                ..
-            } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                    name,
+                    uri,
+                    headers,
+                    socket: None,
+                    ..
+                },
+            ) => {
                 let http_headers = headers
                     .iter()
                     .map(|(key, value)| HttpHeader::new(key, value))
@@ -1870,13 +1873,13 @@ pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpS
                     McpServerHttp::new(name, uri).headers(http_headers),
                 ));
             }
-            ExtensionConfig::Stdio {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
                 name,
                 cmd,
                 args,
                 envs,
                 ..
-            } => {
+            }) => {
                 let env_vars = envs
                     .get_env()
                     .into_iter()
@@ -2274,7 +2277,7 @@ fn replace_effort_state(
 /// and the agent share pass through; goose's own enum values map onto their
 /// closest agent equivalent. Anything else yields `None` so we never send a
 /// value the agent would reject.
-pub(super) fn map_effort_value(
+pub(crate) fn map_effort_value(
     capability: &ThinkingEffortCapability,
     value: &str,
 ) -> Option<String> {
@@ -2368,7 +2371,6 @@ fn resolve_mode(
 fn permission_decision_from_mode(goose_mode: GooseMode) -> Option<PermissionDecision> {
     match goose_mode {
         GooseMode::Auto => Some(PermissionDecision::AllowOnce),
-        GooseMode::Chat => Some(PermissionDecision::RejectOnce),
         GooseMode::Approve | GooseMode::SmartApprove => None,
     }
 }
@@ -2730,74 +2732,6 @@ mod tests {
         assert!(!provider.handoff_context_sent.load(Ordering::Acquire));
     }
 
-    #[tokio::test]
-    async fn chat_mode_denied_tool_messages_get_distinct_provider_ids() {
-        use futures::StreamExt;
-
-        let (tx, mut rx) = mpsc::channel(1);
-        let (provider, model) = test_provider_with_tx(Some(tx));
-        *provider.goose_mode.lock().unwrap() = GooseMode::Chat;
-
-        let messages = vec![Message::user().with_text("inspect src/lib.rs")];
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
-
-        let response_tx = match rx.recv().await.expect("expected ACP prompt request") {
-            ClientRequest::Prompt { response_tx, .. } => response_tx,
-            _ => panic!("expected ACP prompt request"),
-        };
-
-        for id in ["call-1", "call-2"] {
-            response_tx
-                .send(AcpUpdate::ToolCallStart {
-                    id: id.to_string(),
-                    name: "read_file".to_string(),
-                    kind: ToolKind::Read,
-                    raw_input: None,
-                })
-                .await
-                .unwrap();
-            response_tx
-                .send(AcpUpdate::ToolCallComplete {
-                    id: id.to_string(),
-                    raw_output: None,
-                    content: None,
-                    is_error: false,
-                })
-                .await
-                .unwrap();
-        }
-        response_tx
-            .send(AcpUpdate::Complete(StopReason::EndTurn, None))
-            .await
-            .unwrap();
-
-        let mut messages = Vec::new();
-        while let Some(item) = stream.next().await {
-            let (message, usage) = item.unwrap();
-            assert!(usage.is_none());
-            if let Some(message) = message {
-                messages.push(message);
-            }
-        }
-
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].as_concat_text(), "Tool call was denied.");
-        assert_eq!(messages[1].as_concat_text(), "Tool call was denied.");
-
-        let first_id = messages[0]
-            .id
-            .as_deref()
-            .expect("first denial should have a provider message ID");
-        let second_id = messages[1]
-            .id
-            .as_deref()
-            .expect("second denial should have a provider message ID");
-
-        assert!(first_id.starts_with("msg_"));
-        assert!(second_id.starts_with("msg_"));
-        assert_ne!(first_id, second_id);
-    }
-
     #[test]
     fn live_acp_text_update_preserves_assistant_only_audience() {
         let text = TextContent::new("assistant-only")
@@ -2854,8 +2788,8 @@ mod tests {
 
     #[tokio::test]
     async fn resume_replaces_session_and_skips_handoff() {
-        let (tx, mut rx) = mpsc::channel(2);
-        let (provider, _) = test_provider_with_tx(Some(tx));
+        let (tx, mut rx) = mpsc::channel(3);
+        let provider = test_provider_with_model_option(tx, Some("configured-model".to_string()));
 
         let handle = tokio::spawn(async move {
             provider.resume("saved-session").await.unwrap();
@@ -2871,7 +2805,15 @@ mod tests {
         };
         assert_eq!(session_id.to_string(), "saved-session");
         response_tx
-            .send(Ok(NewSessionResponse::new("saved-session")))
+            .send(Ok(NewSessionResponse::new("saved-session").config_options(
+                vec![SessionConfigOption::select(
+                    "model",
+                    "Model",
+                    "session-model",
+                    effort_select_options(&["session-model", "configured-model"]),
+                )
+                .category(SessionConfigOptionCategory::Model)],
+            )))
             .unwrap();
 
         let ClientRequest::CloseSession { session_id } =
@@ -2894,6 +2836,18 @@ mod tests {
         let claim = provider.claim_handoff_context(&messages);
         assert!(!claim.first_prompt);
         assert!(!claim.include_context);
+
+        let handle = tokio::spawn(async move {
+            provider
+                .apply_model_if_changed("configured-model")
+                .await
+                .unwrap();
+        });
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("model".to_string(), "configured-model".to_string())
+        );
+        handle.await.unwrap();
     }
 
     #[tokio::test]
@@ -2901,7 +2855,7 @@ mod tests {
         let (provider, model) = test_provider();
         assert_eq!(
             provider.get_context_limit(&model.model_name, None).await,
-            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            oi_kit_providers::model::DEFAULT_CONTEXT_LIMIT
         );
 
         provider.context_size.store(200_000, Ordering::Relaxed);
@@ -4035,7 +3989,6 @@ mod tests {
     #[test_case(GooseMode::Auto)]
     #[test_case(GooseMode::Approve)]
     #[test_case(GooseMode::SmartApprove)]
-    #[test_case(GooseMode::Chat)]
     fn initial_mode_candidates_empty_when_mode_negotiation_disabled(mode: GooseMode) {
         let config = test_acp_config(HashMap::new(), None);
         assert!(initial_mode_candidates(&config, Some(mode)).is_empty());
@@ -4051,7 +4004,7 @@ mod tests {
             vec!["bypassPermissions".to_string()]
         );
         assert_eq!(
-            initial_mode_candidates(&config, Some(GooseMode::Chat)),
+            initial_mode_candidates(&config, Some(GooseMode::Approve)),
             vec!["default".to_string()]
         );
     }
@@ -4112,23 +4065,23 @@ mod tests {
         let (provider, _) = test_provider_with_tx(Some(tx));
 
         provider
-            .update_mode("session", GooseMode::Chat)
+            .update_mode("session", GooseMode::Approve)
             .await
             .unwrap();
 
         assert!(rx.try_recv().is_err());
-        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
+        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Approve);
     }
 
     #[tokio::test]
     async fn update_mode_with_mapping_sends_set_mode() {
         let (tx, mut rx) = mpsc::channel(1);
         let (mut provider, _) = test_provider_with_tx(Some(tx));
-        provider.mode_mapping = HashMap::from([(GooseMode::Chat, vec!["plan".to_string()])]);
+        provider.mode_mapping = HashMap::from([(GooseMode::Approve, vec!["plan".to_string()])]);
 
         let handle = tokio::spawn(async move {
             provider
-                .update_mode("session", GooseMode::Chat)
+                .update_mode("session", GooseMode::Approve)
                 .await
                 .unwrap();
             provider
@@ -4147,7 +4100,7 @@ mod tests {
         }
 
         let provider = handle.await.unwrap();
-        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
+        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Approve);
     }
 
     #[tokio::test]
@@ -4190,11 +4143,12 @@ mod tests {
     async fn update_mode_errors_when_no_candidate_offered() {
         let (tx, mut rx) = mpsc::channel(1);
         let (mut provider, _) = test_provider_with_tx(Some(tx));
-        provider.mode_mapping = HashMap::from([(GooseMode::Chat, vec!["read-only".to_string()])]);
+        provider.mode_mapping =
+            HashMap::from([(GooseMode::Approve, vec!["read-only".to_string()])]);
         provider.session.lock().unwrap().response = NewSessionResponse::new("test-session")
             .modes(mode_state("agent", &["agent", "agent-full-access"]));
 
-        let result = provider.update_mode("session", GooseMode::Chat).await;
+        let result = provider.update_mode("session", GooseMode::Approve).await;
 
         assert!(result.is_err());
         assert!(rx.try_recv().is_err());
@@ -4221,7 +4175,7 @@ mod tests {
     }
 
     #[test_case(
-        ExtensionConfig::Stdio {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "github".into(),
             description: String::new(),
             cmd: "/path/to/github-mcp-server".into(),
@@ -4232,7 +4186,7 @@ mod tests {
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        },
+        }),
         vec![
             McpServer::Stdio(
                 McpServerStdio::new("github", "/path/to/github-mcp-server")
@@ -4243,7 +4197,7 @@ mod tests {
         ; "stdio_converts_to_mcpserver_stdio"
     )]
     #[test_case(
-        ExtensionConfig::StreamableHttp {
+        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "github".into(),
             description: String::new(),
             uri: "https://api.githubcopilot.com/mcp/".into(),
@@ -4257,7 +4211,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        },
+        }),
         vec![
             McpServer::Http(
                 McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
@@ -4289,36 +4243,38 @@ mod tests {
 
     #[test]
     fn socket_backed_http_is_omitted_without_dropping_ordinary_http() {
-        let socket_backed = ExtensionConfig::StreamableHttp {
-            name: "socket-backed".into(),
-            description: String::new(),
-            uri: "http://127.0.0.1:4711/mcp".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer socket-secret".into())]),
-            timeout: None,
-            socket: Some("/run/private-mcp.sock".into()),
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
-        let ordinary_http = ExtensionConfig::StreamableHttp {
-            name: "ordinary-http".into(),
-            description: String::new(),
-            uri: "https://mcp.example.com/".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer network-secret".into())]),
-            timeout: None,
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
+        let socket_backed =
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "socket-backed".into(),
+                description: String::new(),
+                uri: "http://127.0.0.1:4711/mcp".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([("Authorization".into(), "Bearer socket-secret".into())]),
+                timeout: None,
+                socket: Some("/run/private-mcp.sock".into()),
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
+        let ordinary_http =
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "ordinary-http".into(),
+                description: String::new(),
+                uri: "https://mcp.example.com/".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([("Authorization".into(), "Bearer network-secret".into())]),
+                timeout: None,
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
 
         let result = extension_configs_to_mcp_servers(&[socket_backed, ordinary_http]);
 
@@ -4334,21 +4290,25 @@ mod tests {
 
     #[test]
     fn test_filter_supported_servers_skips_http_without_capability() {
-        let config = ExtensionConfig::StreamableHttp {
-            name: "github".into(),
-            description: String::new(),
-            uri: "https://api.githubcopilot.com/mcp/".into(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
-            timeout: None,
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
-            available_tools: vec![],
-        };
+        let config =
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                name: "github".into(),
+                description: String::new(),
+                uri: "https://api.githubcopilot.com/mcp/".into(),
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: HashMap::from([(
+                    "Authorization".into(),
+                    "Bearer ghp_xxxxxxxxxxxx".into(),
+                )]),
+                timeout: None,
+                socket: None,
+                client_id: None,
+                client_secret_key: None,
+                scopes: vec![],
+                bundled: Some(false),
+                available_tools: vec![],
+            });
 
         let servers = extension_configs_to_mcp_servers(&[config]);
         let filtered = filter_supported_servers(&servers, &McpCapabilities::default());
@@ -4356,7 +4316,6 @@ mod tests {
     }
 
     #[test_case(GooseMode::Auto => Some(PermissionDecision::AllowOnce) ; "auto allows")]
-    #[test_case(GooseMode::Chat => Some(PermissionDecision::RejectOnce) ; "chat rejects")]
     #[test_case(GooseMode::Approve => None ; "approve defers")]
     #[test_case(GooseMode::SmartApprove => None ; "smart_approve defers")]
     fn test_permission_decision_from_mode(mode: GooseMode) -> Option<PermissionDecision> {
@@ -4368,13 +4327,11 @@ mod tests {
             (GooseMode::Auto, vec!["yolo".to_string()]),
             (GooseMode::Approve, vec!["default".to_string()]),
             (GooseMode::SmartApprove, vec!["auto_edit".to_string()]),
-            (GooseMode::Chat, vec!["plan".to_string()]),
         ]),
         HashMap::from([
             ("yolo".to_string(), vec![GooseMode::Auto]),
             ("default".to_string(), vec![GooseMode::Approve]),
             ("auto_edit".to_string(), vec![GooseMode::SmartApprove]),
-            ("plan".to_string(), vec![GooseMode::Chat]),
         ])
         ; "gemini provider mapping"
     )]
@@ -4383,13 +4340,11 @@ mod tests {
             (GooseMode::Auto, vec!["bypassPermissions".to_string()]),
             (GooseMode::Approve, vec!["default".to_string()]),
             (GooseMode::SmartApprove, vec!["acceptEdits".to_string()]),
-            (GooseMode::Chat, vec!["plan".to_string()]),
         ]),
         HashMap::from([
             ("bypassPermissions".to_string(), vec![GooseMode::Auto]),
             ("default".to_string(), vec![GooseMode::Approve]),
             ("acceptEdits".to_string(), vec![GooseMode::SmartApprove]),
-            ("plan".to_string(), vec![GooseMode::Chat]),
         ])
         ; "claude provider mapping"
     )]
@@ -4398,12 +4353,11 @@ mod tests {
             (GooseMode::Auto, vec!["full-access".to_string(), "agent-full-access".to_string()]),
             (GooseMode::Approve, vec!["read-only".to_string()]),
             (GooseMode::SmartApprove, vec!["auto".to_string(), "agent".to_string()]),
-            (GooseMode::Chat, vec!["read-only".to_string()]),
         ]),
         HashMap::from([
             ("full-access".to_string(), vec![GooseMode::Auto]),
             ("agent-full-access".to_string(), vec![GooseMode::Auto]),
-            ("read-only".to_string(), vec![GooseMode::Approve, GooseMode::Chat]),
+            ("read-only".to_string(), vec![GooseMode::Approve]),
             ("auto".to_string(), vec![GooseMode::SmartApprove]),
             ("agent".to_string(), vec![GooseMode::SmartApprove]),
         ])
@@ -4472,7 +4426,7 @@ mod tests {
             ("full-access".to_string(), vec![GooseMode::Auto]),
             (
                 "read-only".to_string(),
-                vec![GooseMode::Approve, GooseMode::Chat],
+                vec![GooseMode::Approve, GooseMode::SmartApprove],
             ),
             ("auto".to_string(), vec![GooseMode::SmartApprove]),
         ])
@@ -4487,8 +4441,8 @@ mod tests {
         ; "duplicate prefers current when current is Approve"
     )]
     #[test_case(
-        "read-only", GooseMode::Chat, Some(GooseMode::Chat)
-        ; "duplicate prefers current when current is Chat"
+        "read-only", GooseMode::SmartApprove, Some(GooseMode::SmartApprove)
+        ; "duplicate prefers current when current is SmartApprove"
     )]
     #[test_case(
         "read-only", GooseMode::Auto, Some(GooseMode::Approve)
@@ -4503,7 +4457,7 @@ mod tests {
         let current = Arc::new(Mutex::new(current));
         let result = resolve_mode(&reverse_modes, mode_id, &current);
         if mode_id == "read-only" && expected == Some(GooseMode::Approve) {
-            assert!(result == Some(GooseMode::Approve) || result == Some(GooseMode::Chat));
+            assert!(result == Some(GooseMode::Approve) || result == Some(GooseMode::SmartApprove));
         } else {
             assert_eq!(result, expected);
         }

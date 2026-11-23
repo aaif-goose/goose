@@ -342,6 +342,10 @@ html[data-theme="light"] .hide-in-light {
   margin-right: 0px;
 }
 
+.menu__list-item.mcp-servers-sidebar {
+  display: none;
+}
+
 /* Dropdown styles */
 .navbar__link--active {
   color: var(--text-prominent);
@@ -497,4 +501,22 @@ main {
 
 [data-theme="dark"] .scrollbar-visible::-webkit-scrollbar-thumb:hover {
   background-color: var(--dark-grey-60);
+}
+
+html:has(.oi-kit-navigation) {
+  --oi-kit-accent: #6d28d9;
+  --ifm-link-color: var(--oi-kit-accent);
+  --ifm-breadcrumb-color-active: var(--oi-kit-accent);
+  --ifm-menu-color-active: var(--oi-kit-accent);
+  --ifm-menu-color-background-active: rgba(109, 40, 217, 0.08);
+  --ifm-navbar-link-hover-color: var(--oi-kit-accent);
+}
+
+html[data-theme="dark"]:has(.oi-kit-navigation) {
+  --oi-kit-accent: #c4b5fd;
+  --ifm-menu-color-background-active: rgba(196, 181, 253, 0.1);
+}
+
+html:has(.oi-kit-navigation) .table-of-contents {
+  --ifm-color-primary: var(--oi-kit-accent);
 }

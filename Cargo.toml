@@ -1,15 +1,13 @@
 [workspace]
 members = [
     "crates/*",
-    # Mainly for cargo-machete to not error out during inspection.
-    "vendor/v8",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.55.0"
-rust-version = "1.94.1"
+version = "1.60.0"
+rust-version = "1.95.0"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
 repository = "https://github.com/aaif-goose/goose"
@@ -20,7 +18,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "3.4.1", default-features = false, features = ["schemars"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["schemars"] }
 agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 agent-client-protocol-http = { version = "2.2.0", default-features = false }
@@ -29,7 +27,7 @@ anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
 async-stream = { version = "0.3.6", default-features = false }
 async-trait = { version = "0.1.89", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
-axum-server = { version = "0.8", default-features = false }
+axum-server = { version = "0.9", default-features = false }
 base64 = { version = "0.23.0", default-features = false, features = ["std"] }
 bytes = { version = "1.10.1", default-features = false, features = ["std"] }
 candle-core = { version = "0.11", default-features = false }
@@ -49,7 +47,7 @@ indoc = { version = "2", default-features = false }
 iroh = { version = "1.2.0", default-features = false }
 iroh-relay = { version = "1", default-features = false }
 keyring = { version = "3.6.3", default-features = false, features = ["vendored"] }
-lru = { version = "0.18", default-features = false }
+lru = { version = "0.19", default-features = false }
 once_cell = { version = "1.21.3", default-features = false, features = ["std"] }
 rand = "0.10.1"
 regex = { version = "1.12.3", default-features = false, features = ["std"] }
@@ -77,23 +75,22 @@ webbrowser = { version = "1", default-features = false }
 which = { version = "8", default-features = false, features = ["real-sys"] }
 winapi = { version = "0.3.9", default-features = false, features = ["wincred", "std"] }
 wiremock = { version = "0.6", default-features = false }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 serial_test = { version = "4", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 shell-words = { version = "1", default-features = false, features = ["std"] }
 snap = { version = "1", default-features = false }
 test-case = { version = "3", default-features = false }
 url = { version = "2.5.4", default-features = false, features = ["std"] }
-opentelemetry = { version = "0.32", default-features = false }
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics"] }
-opentelemetry-http = { version = "0.32", default-features = false, features = ["internal-logs", "reqwest"] }
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "internal-logs", "logs", "metrics", "reqwest-client", "trace"] }
-opentelemetry-appender-tracing = { version = "0.32", default-features = false, features = ["experimental_span_attributes"] }
-opentelemetry-stdout = { version = "0.32", default-features = false, features = ["trace", "metrics", "logs"] }
-tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
+opentelemetry = { version = "0.33", default-features = false }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "internal-logs", "logs", "metrics", "reqwest-client", "trace"] }
+opentelemetry-appender-tracing = { version = "0.33", default-features = false, features = ["experimental_span_attributes"] }
+opentelemetry-stdout = { version = "0.33", default-features = false, features = ["trace", "metrics", "logs"] }
+tracing-opentelemetry = { version = "0.34", default-features = false, features = ["metrics"] }
 
 rayon = { version = "1.10", default-features = false }
-tree-sitter = { version = "0.26", default-features = false, features = ["std"] }
+tree-sitter = { version = "0.27", default-features = false, features = ["std"] }
 tree-sitter-go = { version = "0.25", default-features = false }
 tree-sitter-java = { version = "0.23", default-features = false }
 tree-sitter-javascript = { version = "0.25", default-features = false }
@@ -108,14 +105,7 @@ tree-sitter-typescript = { version = "0.23", default-features = false }
 llama-cpp-2 = { version = "=0.1.146", default-features = false, features = ["sampler", "mtmd"] }
 llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
 
-# These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
-# A fix is available in temporal_rs 0.2 but PCTX has not updated
-# They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
-icu_locale = { version = "=2.1.1", default-features = false }
-
 [patch.crates-io]
-v8 = { path = "vendor/v8" }
 cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 
 # Dependencies don't need debug info. You rarely step-debug into third-party

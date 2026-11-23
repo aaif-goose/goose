@@ -1,3 +1,6 @@
+mod registry;
+pub(crate) use registry::is_platform;
+pub use registry::PlatformExtensions;
 #[cfg(feature = "tree-sitter")]
 pub mod analyze;
 #[cfg(feature = "platform-apps")]
@@ -8,6 +11,8 @@ pub mod chatrecall;
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
+#[cfg(feature = "code-mode")]
+mod javascript;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -17,7 +22,8 @@ pub mod tom;
 
 use std::collections::HashMap;
 
-use crate::agents::mcp_client::McpClientTrait;
+mod client;
+pub use client::PlatformExtension;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -162,11 +168,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 hidden: false,
                 client_factory: |ctx| {
                     Some(Box::new(
-                        code_execution::CodeExecutionClient::new(
-                            ctx,
-                            code_execution::get_tool_disclosure(),
-                        )
-                        .unwrap(),
+                        code_execution::CodeExecutionClient::new(ctx).unwrap(),
                     ))
                 },
             },
@@ -199,30 +201,12 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
-        map.insert(
-            crate::skills::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: crate::skills::EXTENSION_NAME,
-                display_name: "Skills",
-                description: "Discover and provide skill instructions from filesystem and builtins",
-                default_enabled: true,
-                unprefixed_tools: true,
-                hidden: false,
-                client_factory: |_| Some(Box::new(crate::skills::SkillsClient::default())),
-            },
-        );
-
         map
     },
 );
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
-    /// Sibling access for the two extensions that operate on the running set
-    /// (extension management, code mode). Everything else uses the fields
-    /// below.
-    pub extension_manager:
-        Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
     pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
@@ -247,7 +231,7 @@ impl PlatformExtensionContext {
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
-    ) -> Result<goose_providers::model::ModelConfig, String> {
+    ) -> Result<oi_kit_providers::model::ModelConfig, String> {
         if let Ok(session) = self.session_manager.get_session(session_id, false).await {
             if let Some(model_config) = session.model_config {
                 return Ok(model_config);
@@ -309,5 +293,19 @@ pub struct PlatformExtensionDef {
     pub unprefixed_tools: bool,
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
-    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
+    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn PlatformExtension>>,
+}
+
+/// Returns true if the named extension is a first-class platform extension
+/// whose tools are exposed unprefixed and remain visible during code execution mode.
+pub fn is_unprefixed_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.unprefixed_tools)
+}
+
+pub fn is_hidden_extension(name: &str) -> bool {
+    PLATFORM_EXTENSIONS
+        .get(crate::config::extensions::name_to_key(name).as_str())
+        .is_some_and(|def| def.hidden)
 }

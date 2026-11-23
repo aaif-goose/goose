@@ -2,8 +2,8 @@ use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::errors::ProviderError;
+use oi_kit_providers::conversation::token_usage::{ProviderUsage, Usage};
+use oi_kit_providers::errors::ProviderError;
 use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -28,7 +28,7 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::subprocess::configure_subprocess;
-use goose_providers::model::ModelConfig;
+use oi_kit_providers::model::ModelConfig;
 
 use super::cli_common::{error_from_event, extract_usage_tokens};
 use super::private_file::create_private_named_temp_file;
@@ -362,7 +362,6 @@ impl ClaudeCodeProvider {
                 cmd.arg("--permission-prompt-tool").arg("stdio");
                 Ok(true)
             }
-            GooseMode::Chat => Ok(false),
         }
     }
 
@@ -545,7 +544,9 @@ fn claude_mcp_config_json(extensions: &[ExtensionConfig]) -> Option<String> {
 
     for extension in extensions {
         match extension {
-            ExtensionConfig::StreamableHttp { uri, headers, .. } => {
+            ExtensionConfig::External(
+                oi_kit_agent::extension::ExtensionConfig::StreamableHttp { uri, headers, .. },
+            ) => {
                 let key = extension.key();
                 let mut config = serde_json::Map::new();
                 config.insert("type".to_string(), json!("http"));
@@ -555,9 +556,12 @@ fn claude_mcp_config_json(extensions: &[ExtensionConfig]) -> Option<String> {
                 }
                 mcp_servers.insert(key, Value::Object(config));
             }
-            ExtensionConfig::Stdio {
-                cmd, args, envs, ..
-            } => {
+            ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+                cmd,
+                args,
+                envs,
+                ..
+            }) => {
                 let key = extension.key();
                 let mut config = serde_json::Map::new();
                 config.insert("type".to_string(), json!("stdio"));
@@ -618,7 +622,7 @@ fn write_system_prompt_file(
     write_claude_temp_file(state_dir, &prefix, ".txt", system_prompt)
 }
 
-impl goose_providers::base::ProviderDescriptor for ClaudeCodeProvider {
+impl oi_kit_providers::base::ProviderDescriptor for ClaudeCodeProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             CLAUDE_CODE_PROVIDER_NAME,
@@ -1057,8 +1061,8 @@ mod tests {
     #[test_case(json!({}), None, None ; "empty_usage")]
     fn test_extract_usage_tokens(
         usage_json: Value,
-        expected_input: Option<i32>,
-        expected_output: Option<i32>,
+        expected_input: Option<i64>,
+        expected_output: Option<i64>,
     ) {
         let usage = extract_usage_tokens(&usage_json);
         assert_eq!(usage.input_tokens, expected_input);
@@ -1237,7 +1241,7 @@ mod tests {
         ; "empty_extensions_returns_none"
     )]
     #[test_case(
-        vec![ExtensionConfig::Stdio {
+        vec![ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
             name: "lookup".into(),
             description: String::new(),
             cmd: "node".into(),
@@ -1248,7 +1252,7 @@ mod tests {
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "lookup": {
                 "type": "stdio",
@@ -1260,7 +1264,7 @@ mod tests {
         ; "stdio_converts_to_mcp_config_json"
     )]
     #[test_case(
-        vec![ExtensionConfig::StreamableHttp {
+        vec![ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "lookup".into(),
             description: String::new(),
             uri: "http://localhost/mcp".into(),
@@ -1274,7 +1278,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "lookup": {
                 "type": "http",
@@ -1285,7 +1289,7 @@ mod tests {
         ; "streamable_http_converts_to_mcp_config_json"
     )]
     #[test_case(
-        vec![ExtensionConfig::StreamableHttp {
+        vec![ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
             name: "mcp_kiwi_com".into(),
             description: String::new(),
             uri: "https://mcp.kiwi.com".into(),
@@ -1299,7 +1303,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-        }],
+        })],
         Some(json!({ "mcpServers": {
             "mcp_kiwi_com": {
                 "type": "http",

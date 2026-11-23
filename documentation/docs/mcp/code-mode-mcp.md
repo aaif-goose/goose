@@ -10,7 +10,7 @@ import GooseBuiltinInstaller from '@site/src/components/GooseBuiltinInstaller';
 
 The Code Mode extension enables [Code Mode](/docs/guides/managing-tools/code-mode), a programmatic approach for interacting with MCP tools.
 
-The Code Mode extension is an MCP server that exposes three meta-tools. When Code Mode is enabled, the LLM writes JavaScript code that goose executes using a Deno-based runtime called [Port of Context](https://github.com/AdrianCole/pctx) to discover tools, learn their interfaces, and call them programmatically.
+The Code Mode extension is an MCP server that exposes three meta-tools. When Code Mode is enabled, the LLM writes JavaScript code that goose executes in a fresh goose-owned [Boa](https://boajs.dev/) JavaScript context to discover tools, learn their interfaces, and call them programmatically.
 
 This helps manage context window usage more efficiently when multiple extensions are enabled and when performing workflows with multiple tool calls.
 
@@ -63,11 +63,11 @@ Create a LOG.md file with the current git branch, last 3 commits, and the versio
 :::note Desktop
 I'll help you create a LOG.md file with the git branch, last 3 commits, and version from package.json. Let me gather all this information in one operation.
 
-`Execute Code code: import { shell, text_editor } from "developer" ...`
+`execute_javascript: async function run() { const result = await tools.call("shell", { command: "git branch --show-current" }); return result; }`
 
 Let me check the package.json path first:
 
-`Execute Code code: import { shell, text_editor } from "developer" ...`
+`execute_javascript: async function run() { const result = await tools.call("shell", { command: "git branch --show-current" }); return result; }`
 
 Perfect! I've created the **LOG.md** file with:
 

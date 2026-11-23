@@ -26,6 +26,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -415,7 +416,7 @@ pub(crate) struct HookDenial {
 /// Loads and executes plugin hooks.
 #[derive(Debug, Default, Clone)]
 pub struct HookManager {
-    rules: HashMap<HookEvent, Vec<LoadedRule>>,
+    rules: Arc<HashMap<HookEvent, Vec<LoadedRule>>>,
 }
 
 impl HookManager {
@@ -463,7 +464,9 @@ impl HookManager {
             );
         }
 
-        Self { rules }
+        Self {
+            rules: Arc::new(rules),
+        }
     }
 
     /// Returns true if any rule is registered for `event`.

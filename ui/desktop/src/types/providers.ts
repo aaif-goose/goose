@@ -13,6 +13,8 @@ export type ConfigKey = {
 };
 
 export type ModelInfo = {
+  cache_read_token_cost?: number | null;
+  cache_write_token_cost?: number | null;
   context_limit?: number | null;
   currency?: string | null;
   input_token_cost?: number | null;

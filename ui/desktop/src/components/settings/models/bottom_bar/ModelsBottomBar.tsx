@@ -66,6 +66,7 @@ interface ModelsBottomBarProps {
   latestInference?: Message['metadata']['inference'] | null;
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
+  disabled: boolean;
 }
 
 type ModelMenuModal = 'switch-model' | 'local-model-settings';
@@ -79,6 +80,7 @@ export default function ModelsBottomBar({
   latestInference,
   onModelChanged,
   sessionLoaded,
+  disabled,
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
@@ -125,6 +127,9 @@ export default function ModelsBottomBar({
   );
   const loadingModelLabel = intl.formatMessage(i18n.loadingModel);
   const triggerLabel = isModelLoading ? loadingModelLabel : displayModel;
+  const triggerProvider =
+    currentProvider && (currentModel || providerDefaultModel) ? currentProvider : null;
+  const triggerTitle = triggerProvider ? `${triggerProvider}/${triggerLabel}` : triggerLabel;
   const menuModelLabel = isModelLoading ? loadingModelLabel : displayModelName;
 
   useEffect(() => {
@@ -222,7 +227,10 @@ export default function ModelsBottomBar({
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
       <DropdownMenu open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
-        <DropdownMenuTrigger className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors">
+        <DropdownMenuTrigger
+          disabled={disabled}
+          className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        >
           <div className="flex items-center truncate max-w-[130px] md:max-w-[200px] lg:max-w-[360px] min-w-0">
             <Bot className="mr-1 h-4 w-4 flex-shrink-0" />
             {isModelLoading ? (
@@ -234,7 +242,22 @@ export default function ModelsBottomBar({
                 <span className="truncate">{triggerLabel}</span>
               </span>
             ) : (
-              <span className="truncate text-xs">{triggerLabel}</span>
+              <span
+                className="grid min-w-0 grid-cols-[minmax(0,max-content)_auto_minmax(0,max-content)] text-xs"
+                title={triggerTitle}
+              >
+                {triggerProvider && (
+                  <>
+                    <bdi dir="auto" className="truncate">
+                      {triggerProvider}
+                    </bdi>
+                    <span>/</span>
+                  </>
+                )}
+                <bdi dir="auto" className="truncate">
+                  {triggerLabel}
+                </bdi>
+              </span>
             )}
           </div>
         </DropdownMenuTrigger>

@@ -1,4 +1,4 @@
-use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::tool_snapshot::ToolSnapshot;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -208,7 +208,7 @@ impl GooseApp {
     }
 }
 
-pub async fn fetch_mcp_apps(lease: &ExtensionLease) -> Vec<GooseApp> {
+pub async fn fetch_mcp_apps(lease: &ToolSnapshot) -> Vec<GooseApp> {
     let mut apps = Vec::new();
 
     for (extension_name, resource) in lease.ui_resources().await {

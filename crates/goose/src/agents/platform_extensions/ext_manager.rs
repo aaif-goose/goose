@@ -1,7 +1,8 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::extension_manager::ExtensionMutation;
+use crate::agents::platform_extensions::is_hidden_extension;
+use crate::agents::platform_extensions::PlatformExtension;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_all_extensions, get_extension_by_name};
@@ -9,16 +10,14 @@ use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
+use oi_kit_agent::mcp::client::Error;
 use rmcp::model::{
-    CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult, Implementation,
-    InitializeResult, JsonObject, ListPromptsResult, ListResourcesResult, ListToolsResult,
-    ReadResourceResult, ServerCapabilities, ServerNotification, Tool, ToolAnnotations,
+    CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
+    JsonObject, ServerCapabilities, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "Extension Manager";
@@ -63,8 +62,8 @@ pub struct ListResourcesParams {
     pub extension_name: Option<String>,
 }
 
-pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const LIST_RESOURCES_TOOL_NAME: &str = "list_resources";
+pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 pub const SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME: &str = "search_available_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME: &str = "manage_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE: &str = "extensionmanager__manage_extensions";
@@ -103,13 +102,10 @@ impl ExtensionManagerClient {
     }
 
     fn handle_search_available_extensions(ctx: &ToolCallContext) -> Vec<ContentBlock> {
-        let enabled: Vec<String> = ctx
-            .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
-            .configs()
-            .iter()
-            .map(ExtensionConfig::key)
-            .collect();
+        let enabled = ctx
+            .tool_snapshot()
+            .expect("platform calls carry the advertised tool snapshot")
+            .enabled_names();
         vec![ContentBlock::text(search_available_extensions(&enabled))]
     }
 
@@ -211,8 +207,8 @@ impl ExtensionManagerClient {
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
         let result = ctx
-            .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
+            .tool_snapshot()
+            .expect("platform tool calls carry the advertised tool snapshot")
             .list_resources(params, CancellationToken::default())
             .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {
@@ -227,8 +223,8 @@ impl ExtensionManagerClient {
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
         let result = ctx
-            .extension_lease()
-            .expect("platform tool calls are dispatched through a lease")
+            .tool_snapshot()
+            .expect("platform tool calls carry the advertised tool snapshot")
             .read_resource_tool(params, CancellationToken::default())
             .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {
@@ -350,32 +346,8 @@ impl ExtensionManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ExtensionManagerClient {
-    async fn list_resources(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListResourcesResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn read_resource(
-        &self,
-        _session_id: &str,
-        _uri: &str,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ReadResourceResult, Error> {
-        // Extension manager doesn't expose resources directly
-        Err(Error::TransportClosed)
-    }
-
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
+impl PlatformExtension for ExtensionManagerClient {
+    async fn list_tools(&self, session_id: &str) -> Result<Vec<Tool>, Error> {
         let can_manage_extensions = self
             .context
             .session_manager
@@ -383,12 +355,7 @@ impl McpClientTrait for ExtensionManagerClient {
             .await
             .is_ok_and(|session| session.session_type != SessionType::SubAgent);
 
-        Ok(ListToolsResult {
-            tools: self.get_tools(can_manage_extensions),
-            next_cursor: None,
-            meta: None,
-            ..Default::default()
-        })
+        Ok(self.get_tools(can_manage_extensions))
     }
 
     async fn call_tool(
@@ -426,29 +393,6 @@ impl McpClientTrait for ExtensionManagerClient {
         }
     }
 
-    async fn list_prompts(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancellation_token: CancellationToken,
-    ) -> Result<ListPromptsResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn get_prompt(
-        &self,
-        _session_id: &str,
-        _name: &str,
-        _arguments: Value,
-        _cancellation_token: CancellationToken,
-    ) -> Result<GetPromptResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        mpsc::channel(1).1
-    }
-
     fn get_info(&self) -> Option<&InitializeResult> {
         Some(&self.info)
     }
@@ -470,8 +414,15 @@ fn search_available_extensions(enabled: &[String]) -> String {
                     .to_string(),
                 ExtensionConfig::Builtin { description, .. }
                 | ExtensionConfig::Platform { description, .. }
-                | ExtensionConfig::StreamableHttp { description, .. }
-                | ExtensionConfig::Stdio { description, .. } => description.clone(),
+                | ExtensionConfig::External(
+                    oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
+                        description, ..
+                    },
+                )
+                | ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
+                    description,
+                    ..
+                }) => description.clone(),
             };
             format!("- {} - {}", extension.config.name(), description)
         })
@@ -505,23 +456,22 @@ fn search_available_extensions(enabled: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension_manager::ExtensionManager;
+    use crate::agents::StateMachineServices;
     use crate::config::GooseMode;
     use std::path::PathBuf;
 
-    fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
+    fn client_for(manager: &Arc<StateMachineServices>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            providers: manager.get_context().providers.clone(),
-            session_manager: manager.get_context().session_manager.clone(),
+            providers: manager.platform_context().providers.clone(),
+            session_manager: manager.platform_context().session_manager.clone(),
             scheduler: None,
         })
         .unwrap()
     }
 
-    async fn create_session(manager: &ExtensionManager, session_type: SessionType) -> String {
+    async fn create_session(manager: &StateMachineServices, session_type: SessionType) -> String {
         manager
-            .get_context()
+            .platform_context()
             .session_manager
             .create_session(
                 PathBuf::from("/tmp/extension-manager-test"),
@@ -567,9 +517,7 @@ mod tests {
     #[tokio::test]
     async fn manage_extensions_emits_a_mutation_and_refuses_subagents() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(
-            temp_dir.path().to_path_buf(),
-        ));
+        let manager = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
         let client = client_for(&manager);
         let user_id = create_session(&manager, SessionType::User).await;
         let subagent_id = create_session(&manager, SessionType::SubAgent).await;
@@ -592,6 +540,7 @@ mod tests {
         );
         assert!(
             !manager
+                .extension_manager
                 .is_extension_enabled(&user_id, "developer")
                 .await
                 .unwrap(),
@@ -610,9 +559,7 @@ mod tests {
     #[tokio::test]
     async fn extension_manager_cannot_disable_itself() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(
-            temp_dir.path().to_path_buf(),
-        ));
+        let manager = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
         let client = client_for(&manager);
         let user_id = create_session(&manager, SessionType::User).await;
 
@@ -637,33 +584,22 @@ mod tests {
     #[tokio::test]
     async fn subagent_and_unknown_callers_are_not_offered_extension_management() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::with_data_dir(
-            temp_dir.path().to_path_buf(),
-        ));
+        let manager = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
         let client = client_for(&manager);
         let user_id = create_session(&manager, SessionType::User).await;
         let subagent_id = create_session(&manager, SessionType::SubAgent).await;
 
-        let user_tools = client
-            .list_tools(&user_id, None, CancellationToken::default())
-            .await
-            .unwrap();
+        let user_tools = client.list_tools(&user_id).await.unwrap();
         assert!(user_tools
-            .tools
             .iter()
             .any(|tool| tool.name == MANAGE_EXTENSIONS_TOOL_NAME));
 
         for session_id in [&subagent_id, "missing-session"] {
-            let tools = client
-                .list_tools(session_id, None, CancellationToken::default())
-                .await
-                .unwrap();
+            let tools = client.list_tools(session_id).await.unwrap();
             assert!(tools
-                .tools
                 .iter()
                 .any(|tool| tool.name == SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME));
             assert!(tools
-                .tools
                 .iter()
                 .all(|tool| tool.name != MANAGE_EXTENSIONS_TOOL_NAME));
         }
@@ -671,6 +607,7 @@ mod tests {
         let unknown_enable = manage(&client, "missing-session", "enable").await;
         assert!(unknown_enable.is_error.unwrap_or(false));
         assert!(!manager
+            .extension_manager
             .is_extension_enabled(&subagent_id, "developer")
             .await
             .unwrap());

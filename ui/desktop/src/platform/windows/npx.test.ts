@@ -146,6 +146,17 @@ describe.skipIf(process.platform !== 'win32')('Windows npx wrapper', () => {
     expect((JSON.parse(result.stdout) as ChildReport).nodeDir).toBe(systemNodeDir);
   });
 
+  it.each<[string, () => { pathDirs: string[]; goosePortableDir?: string }]>([
+    ['the downloaded Node.js', () => ({ pathDirs: [], goosePortableDir: portableNodeDir })],
+    ['a system Node.js', () => ({ pathDirs: [systemNodeDir] })],
+  ])('keeps ! and ^ in the arguments with %s', (_name, setup) => {
+    const args = ['-y', 'pkg', '--token=abc!123', '--pattern=a^b!c', 'x!'];
+    const result = runWrapper({ ...setup(), args });
+
+    expect(result.status).toBe(0);
+    expect((JSON.parse(result.stdout) as ChildReport).args).toEqual(args);
+  });
+
   it('propagates the npx exit status', () => {
     const result = runWrapper({ pathDirs: [systemNodeDir], args: ['-y', 'pkg'], exitCode: 37 });
 

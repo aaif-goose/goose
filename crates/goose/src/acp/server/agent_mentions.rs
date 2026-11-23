@@ -1,6 +1,6 @@
 use super::*;
 use crate::session::Session;
-use goose_sdk_types::custom_requests::{AgentMention, SourceEntry, SourceType};
+use goose_acp_types::custom_requests::{AgentMention, SourceEntry, SourceType};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -36,7 +36,7 @@ fn add_session_subrecipes(
     }
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_agent_mentions(
         &self,
         req: ListAgentMentionsRequest,
@@ -48,7 +48,8 @@ impl GooseAcpAgent {
             .filter(|session_id| !session_id.is_empty())
         {
             Some(
-                self.session_manager
+                self.services
+                    .session_manager
                     .get_session(session_id, false)
                     .await
                     .map_err(|_| {

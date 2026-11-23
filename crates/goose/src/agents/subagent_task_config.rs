@@ -4,14 +4,11 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Default maximum number of turns for task execution
-pub const DEFAULT_SUBAGENT_MAX_TURNS: usize = 25;
-
 /// Configuration for task execution with all necessary dependencies
 #[derive(Clone)]
 pub struct TaskConfig {
     pub provider: Arc<dyn Provider>,
-    pub model_config: goose_providers::model::ModelConfig,
+    pub model_config: oi_kit_providers::model::ModelConfig,
     pub parent_session_id: String,
     pub parent_working_dir: PathBuf,
     pub extensions: Vec<ExtensionConfig>,

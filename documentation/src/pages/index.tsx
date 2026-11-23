@@ -17,8 +17,9 @@ function HeroSection() {
           <GooseLogo />
         </div>
         <p className={styles.heroSubtitle}>
-          Your native open source AI agent. Desktop app, CLI, and API — for code,
-          workflows, and everything in between.
+          Your open source AI agent. Use goose on desktop or in the terminal, or
+          build agents into your own applications with the{" "}
+          <Link to="/docs/oi-kit/">Open Intelligence Kit (oi-kit)</Link>.
         </p>
         <div className={styles.heroActions}>
           <Link
@@ -100,41 +101,40 @@ function FeaturesSection() {
         <div className={styles.featuresGridTop}>
           <FeatureCard
             icon="🖥️"
-            title="Desktop app, CLI, and API"
+            title="Desktop app, CLI, or your own app"
             description={
               <p>
                 A native desktop app for macOS, Linux, and Windows. A full CLI
-                for terminal workflows. An API to embed it anywhere. Built
-                in Rust for performance and portability.
+                for terminal workflows. Use goose as the agent behind your own
+                app through the{" "}
+                <Link to="/docs/oi-kit/acp/">Agent Client Protocol (ACP)</Link>.
+                Built in Rust for performance and portability.
               </p>
             }
           />
           <FeatureCard
-            icon="🔌"
-            title="Extensible"
+            icon="🛠️"
+            title="Open Intelligence Kit (oi-kit)"
             description={
               <p>
-                Connect to 70+ extensions — databases, APIs, browsers, GitHub,
-                Google Drive, and more — via the{" "}
-                <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">
-                  Model Context Protocol
-                </a>{" "}
-                open standard. Add{" "}
-                <Link to="/docs/guides/context-engineering/using-skills">skills</Link>,
-                {" "}or{" "}
-                <Link to="/docs/tutorials/custom-extensions">build your own extension</Link>.
+                Build agents on oi-kit that run across native apps, servers, and
+                the browser, and resume from saved state. Use the runtime
+                components behind goose, with control over models, tools, and
+                agent behavior. <Link to="/docs/oi-kit/">Explore oi-kit</Link>.
               </p>
             }
           />
           <FeatureCard
             icon="🤖"
-            title="Any LLM, including your subscriptions"
+            title="Local models and 85+ providers"
             description={
               <p>
-                Works with 15+ providers — Anthropic, OpenAI, Google, Ollama,
-                OpenRouter, Azure, Bedrock, and more. Use API keys or your
-                existing Claude, ChatGPT, or Gemini subscriptions via{" "}
-                <Link to="/docs/guides/acp-providers">ACP</Link>.
+                Load and run local models directly inside goose, with control
+                over inference and visibility into how they run—no Ollama or
+                separate server required. goose also supports{" "}
+                <Link to="/docs/getting-started/providers">over 85 providers</Link>,
+                including Anthropic, OpenAI, Gemini, OpenRouter, and Amazon
+                Bedrock.
               </p>
             }
           />
@@ -222,7 +222,7 @@ function StandardsSection() {
               an ACP server — connect from Zed, JetBrains, or VS Code — and can
               use ACP agents like Claude Code and Codex as providers.
             </p>
-            <Link to="/docs/gdk/acp">goose as ACP server →</Link>
+            <Link to="/docs/guides/zed">Set up goose in Zed →</Link>
           </div>
           <div className={styles.standardCard}>
             <h3>Agentic AI Foundation</h3>
@@ -352,7 +352,7 @@ function VideoSection() {
 
 export default function Home(): ReactNode {
   return (
-    <Layout description="Your native open source AI agent. Desktop app, CLI, and API — for code, workflows, and everything in between.">
+    <Layout description="Your open source AI agent. Use goose on desktop or in the terminal, or build agents into your own applications with the Open Intelligence Kit (oi-kit).">
       <HeroSection />
       <main>
         <FeaturesSection />

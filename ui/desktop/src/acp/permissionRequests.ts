@@ -1,4 +1,7 @@
-import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
+import type {
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from '@agentclientprotocol/sdk/unstable';
 import type { Permission } from '../types/permissions';
 import { acpChatSessionActions, acpPermissionUserInputRequestId } from './chatSessionStore';
 import type { AcpPermissionRequest } from './permissionRequestTypes';

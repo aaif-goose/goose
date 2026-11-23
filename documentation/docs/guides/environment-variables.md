@@ -84,7 +84,7 @@ export CLAUDE_THINKING_TYPE=disabled
 ```
 
 :::tip Viewing Thinking Output
-To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown automatically in a collapsible "Show reasoning" toggle.
+To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown in a collapsible **Thinking** block; you can change this with `Show Thinking` in `Settings` > `Chat`.
 :::
 
 ### Provider Retries
@@ -136,7 +136,8 @@ These variables control how goose manages conversation sessions and context.
 |----------|---------|---------|---------|
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 |
 | `GOOSE_GATEWAY_MAX_TURNS` | Maximum number of turns for gateway sessions (e.g., Telegram). Overrides `GOOSE_MAX_TURNS` for gateway traffic only, so chat platforms can keep a stricter cap than CLI/desktop sessions. | Integer (e.g., 5, 10, 25) | Falls back to `GOOSE_MAX_TURNS`, then 5 |
-| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
+| `GOOSE_MAX_CONCURRENT_SUBAGENTS` | Maximum number of subagents running at once per parent session. Additional tasks wait for a slot. Unset or invalid values use the default. | Positive integer (e.g., 2, 5, 10) | 5 |
+| `GOOSE_SUBAGENT_MAX_TURNS` | Overrides the turn budget for [subagents](/docs/guides/context-engineering/subagents). An explicit delegate `max_turns` or child recipe [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) takes precedence. | Positive integer (e.g., 25) | Falls back to `GOOSE_MAX_TURNS`, then 1000 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints", "AGENTS.md"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_PROMPT_EDITOR` | [External editor](/docs/guides/goose-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
@@ -153,6 +154,7 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_NO_CODE_TRUNCATION` | Disable code block truncation entirely — all code blocks are shown in full | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically compacts your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0) | 0.8 |
 | `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` | Absolute auto-compaction trigger; the earlier of this and the percentage threshold applies while auto-compaction is enabled. Controls when compaction starts, not a guaranteed maximum request size. | Positive integer | 225000 |
+| `GOOSE_STANDALONE_COMPACTION` | Summarize with a separate request instead of asking the model in the conversation itself. Separate requests cannot reuse the conversation's prompt cache. | "true" to enable | false |
 | `GOOSE_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage | Integer (e.g., 5, 10, 20) | Computed from the model context limit and auto-compaction threshold |
 | `GOOSE_MOIM_MESSAGE_TEXT` | Injects persistent text into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
 | `GOOSE_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
@@ -252,7 +254,7 @@ These variables control how goose handles [tool execution](/docs/guides/managing
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOOSE_MODE` | Controls how goose handles tool execution | "auto", "approve", "chat", "smart_approve" | "auto" |
+| `GOOSE_MODE` | Controls how goose handles tool execution | "auto", "approve", "smart_approve" | "auto" |
 | `GOOSE_TOOLSHIM` | Enables the [tool shim](/docs/guides/tool-shim) for models that output text-based tool calls | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_TOOLSHIM_BACKEND` | Interpreter backend for the tool shim | "ollama" (default), "local", "llama.cpp" | "ollama" |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Ollama model used as the [tool shim](/docs/guides/tool-shim) interpreter | Model name (e.g. llama3.2, mistral-nemo) | "mistral-nemo" |
@@ -311,7 +313,7 @@ These variables control security features, credential storage, and anonymous usa
 | `GOOSE_ALLOWLIST` | Controls which extensions can be loaded | URL for [allowed extensions](/docs/guides/allowlist) list | Unset |
 | `GOOSE_DISABLE_KEYRING` | Disables the system keyring for secret storage | Set to any value (e.g., "1", "true", "yes") to disable. The actual value doesn't matter, only whether the variable is set. | Unset (keyring enabled) |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false |
-| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 |
+| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (lower = stricter) | Float between 0.01 and 1.0 | 0.8 |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false |
 | `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | Classification endpoint URL for ML-based prompt injection detection | URL (e.g., "https://api.example.com/classify") | Unset |
 | `SECURITY_PROMPT_CLASSIFIER_TOKEN` | Authentication token for `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | String | Unset |
@@ -323,7 +325,7 @@ These variables control security features, credential storage, and anonymous usa
 # Enable prompt injection detection with default threshold
 export SECURITY_PROMPT_ENABLED=true
 
-# Enable with custom threshold (stricter)
+# Enable with custom threshold (more lenient than default)
 export SECURITY_PROMPT_ENABLED=true
 export SECURITY_PROMPT_THRESHOLD=0.9
 
@@ -437,6 +439,25 @@ export OTEL_TRACES_EXPORTER="console"
 # Sample 10% of traces (reduce volume in production)
 export OTEL_TRACES_SAMPLER="parentbased_traceidratio"
 export OTEL_TRACES_SAMPLER_ARG="0.1"
+```
+
+#### Sending traces to a hosted OTLP backend
+
+Most hosted observability platforms accept traces over OTLP/HTTP. Set the base endpoint and an auth header:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-backend.example.com/api/otel"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
+```
+
+goose appends `/v1/traces` to the base endpoint when sending traces, so the full URL becomes `https://your-backend.example.com/api/otel/v1/traces`. Check your backend's OTLP ingestion docs to confirm the expected base path.
+
+Exported traces can include user prompts (`user_message` and `trace_input`), assistant replies (`trace_output`), and tool arguments (`input`) in legacy fields even when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is unset or set to `false`. Use a trusted backend whenever you export traces.
+
+GenAI message and tool content capture is off by default. Set the variable to `true` to enable capture for `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and the legacy tool `output` field.
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
 ```
 
 [otel-env]: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/

@@ -17,7 +17,7 @@ pub const AVIAN_DOC_URL: &str = "https://avian.io/docs";
 
 pub struct AvianProvider;
 
-impl goose_providers::base::ProviderDescriptor for AvianProvider {
+impl oi_kit_providers::base::ProviderDescriptor for AvianProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             AVIAN_PROVIDER_NAME,
