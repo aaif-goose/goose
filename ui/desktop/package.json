@@ -144,7 +144,7 @@
     "@types/yauzl": "^3.4.0",
     "@typescript-eslint/eslint-plugin": "^8.73.0",
     "@typescript-eslint/parser": "^8.73.0",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react": "^6.3.0",
     "@vitest/coverage-v8": "^5.1.1",
     "@vitest/ui": "^5.1.1",
     "autoprefixer": "^10.7.0",
