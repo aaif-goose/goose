@@ -5096,7 +5096,7 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest 0.13.5",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "rubato",
  "rustls",
  "schemars 1.2.2",
@@ -5169,7 +5169,7 @@ dependencies = [
  "futures",
  "goose-provider-types",
  "js-sys",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "schemars 1.2.2",
  "serde",
  "serde_json",
@@ -5220,7 +5220,7 @@ dependencies = [
  "rand 0.10.2",
  "regex",
  "reqwest 0.13.5",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "rustyline",
  "serde",
  "serde_json",
@@ -5255,7 +5255,7 @@ dependencies = [
  "goose-provider-types",
  "include_dir",
  "minijinja",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "serde",
  "serde_json",
  "tokio",
@@ -5297,7 +5297,7 @@ dependencies = [
  "minijinja",
  "pulldown-cmark",
  "regex",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "safemlx",
  "safemlx-lm",
  "safemlx-lm-utils",
@@ -5323,7 +5323,7 @@ dependencies = [
  "lopdf",
  "once_cell",
  "process-wrap 9.1.0",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "schemars 1.2.2",
  "serde",
  "serde_json",
@@ -5353,7 +5353,7 @@ dependencies = [
  "rand 0.10.2",
  "regex",
  "reqwest 0.13.5",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "serde",
  "serde_json",
  "strum 0.28.0",
@@ -5387,7 +5387,7 @@ dependencies = [
  "pem 4.0.0",
  "pkcs8 0.11.0",
  "reqwest 0.13.5",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "sec1 0.8.1",
  "serde",
  "serde_json",
@@ -5436,7 +5436,7 @@ dependencies = [
  "goose-context-management",
  "goose-providers",
  "goose-sdk-types",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
@@ -5470,7 +5470,7 @@ dependencies = [
  "axum",
  "env-lock",
  "opentelemetry 0.32.0",
- "rmcp 3.4.1",
+ "rmcp 3.11.0",
  "serde_json",
  "tokio",
 ]
@@ -10015,9 +10015,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.4.1"
+version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b6317cd8c13e3ec9033cf2aa5aa92cd743f0f4f8a93cddc42ea0ae6ce3b8898"
+checksum = "391f153431ab68664d946513ea0cb3edbca78eaf99c5a983036cacab6220d85b"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -10030,16 +10030,19 @@ dependencies = [
  "hyper",
  "hyper-util",
  "indexmap 2.14.2",
+ "libc",
  "oauth2",
  "pastey",
+ "percent-encoding",
  "pin-project-lite",
  "process-wrap 10.0.0",
  "rand 0.10.2",
  "reqwest 0.13.5",
- "rmcp-macros 3.4.1",
+ "rmcp-macros 3.11.0",
  "schemars 1.2.2",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sse-stream",
  "thiserror 2.0.20",
  "tokio",
@@ -10047,6 +10050,8 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
+ "unicode-general-category",
+ "unicode-normalization",
  "url",
  "uuid",
 ]
@@ -10066,9 +10071,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "3.4.1"
+version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ee366004e5f87c103be91c6c09337811517ae8d2f919ece9da7c21444b85c5"
+checksum = "3598e3f36f4af2b5219b133baf7d97a2197039225adc3d4acf3dd8805b5a2aef"
 dependencies = [
  "darling 0.24.1",
  "proc-macro2",

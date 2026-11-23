@@ -169,6 +169,15 @@ fn client_metadata_url() -> String {
         .unwrap_or_else(|_| CLIENT_METADATA_URL.to_string())
 }
 
+fn allow_private_addresses_for_oauth() -> bool {
+    matches!(
+        std::env::var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES")
+            .ok()
+            .as_deref(),
+        Some("true") | Some("1") | Some("yes")
+    )
+}
+
 fn scope_set(scopes: &[String]) -> BTreeSet<&str> {
     scopes.iter().map(String::as_str).collect()
 }
@@ -319,7 +328,11 @@ pub async fn oauth_flow_with_challenge(
     let env_client = env_static_oauth_client();
     let static_client = static_client.or(env_client.as_ref());
     let credential_store = GooseCredentialStore::new(name.clone());
-    let mut auth_manager = AuthorizationManager::new(mcp_server_url).await?;
+    let mut auth_manager = if allow_private_addresses_for_oauth() {
+        AuthorizationManager::new_allowing_private_addresses(mcp_server_url).await?
+    } else {
+        AuthorizationManager::new(mcp_server_url).await?
+    };
     auth_manager.set_credential_store(credential_store.clone());
 
     let stored_credentials = credential_store.load().await?;
@@ -856,6 +869,38 @@ mod tests {
             access_token_needs_refresh(&expired),
             "an expired token must still take the refresh path"
         );
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_true_values() {
+        for value in &["true", "1", "yes"] {
+            std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", value);
+            assert!(
+                allow_private_addresses_for_oauth(),
+                "failed for value: {}",
+                value
+            );
+        }
+        std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_false_values() {
+        for value in &["false", "0", "no", ""] {
+            std::env::set_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES", value);
+            assert!(
+                !allow_private_addresses_for_oauth(),
+                "failed for value: {}",
+                value
+            );
+        }
+        std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
+    }
+
+    #[test]
+    fn allow_private_addresses_for_oauth_unset_defaults_to_false() {
+        std::env::remove_var("GOOSE_MCP_OAUTH_ALLOW_PRIVATE_ADDRESSES");
+        assert!(!allow_private_addresses_for_oauth());
     }
 
     #[tokio::test]
