@@ -1265,6 +1265,9 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "fileDrop.remoteAttachmentUnsupported": {
+    "defaultMessage": "외부 백엔드에 연결된 경우 이미지만 첨부할 수 있습니다"
+  },
   "goosehintsModal.close": {
     "defaultMessage": "닫기"
   },
