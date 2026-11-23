@@ -90,7 +90,7 @@ pub struct Identifier {
         long,
         value_name = "NAME",
         help = "Name for the chat session (e.g., 'project-x')",
-        long_help = "Specify a name for your chat session. When used with --resume, will resume this specific session if it exists."
+        long_help = "Specify a session by name. With goose session or goose run, names the new session, or picks the session to resume when used with --resume."
     )]
     pub name: Option<String>,
 
@@ -99,7 +99,7 @@ pub struct Identifier {
         alias = "id",
         value_name = "SESSION_ID",
         help = "Session ID (e.g., '20250921_143022')",
-        long_help = "Specify a session ID to resume. Requires --resume."
+        long_help = "Specify a session by ID. With goose session or goose run, must be used with --resume."
     )]
     pub session_id: Option<String>,
 
