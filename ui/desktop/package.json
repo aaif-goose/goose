@@ -77,7 +77,7 @@
     "cors": "^2.8.6",
     "cronstrue": "^3.43.0",
     "date-fns": "^4.4.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.10",
     "electron-log": "^5.4.4",
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.11",
