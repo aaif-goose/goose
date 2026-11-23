@@ -90,7 +90,7 @@ pub struct Identifier {
         long,
         value_name = "NAME",
         help = "Name for the chat session (e.g., 'project-x')",
-        long_help = "Specify a name for your chat session. When used with --resume, will resume this specific session if it exists."
+        long_help = "Specify a session by name. With goose session or goose run, names the new session, or picks the session to resume when used with --resume."
     )]
     pub name: Option<String>,
 
@@ -99,7 +99,7 @@ pub struct Identifier {
         alias = "id",
         value_name = "SESSION_ID",
         help = "Session ID (e.g., '20250921_143022')",
-        long_help = "Specify a session ID to resume. Requires --resume."
+        long_help = "Specify a session by ID. With goose session or goose run, must be used with --resume."
     )]
     pub session_id: Option<String>,
 
@@ -709,21 +709,6 @@ enum GatewayCommand {
 
 #[derive(Subcommand)]
 enum PluginCommand {
-    /// Import an MCP Registry server.json as enabled goose extensions
-    #[command(about = "Import an MCP Registry server.json")]
-    ImportServer {
-        #[arg(help = "Path to server.json, or - for stdin")]
-        input: String,
-        #[arg(long, conflicts_with_all = ["remote", "all"], help = "Zero-based package index")]
-        package: Option<usize>,
-        #[arg(long, conflicts_with_all = ["package", "all"], help = "Zero-based remote index")]
-        remote: Option<usize>,
-        #[arg(long, conflicts_with_all = ["package", "remote"], help = "Import every package and remote")]
-        all: bool,
-        #[arg(long, help = "Confirm enabling the selected extensions")]
-        yes: bool,
-    },
-
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
     Install {
@@ -1114,6 +1099,105 @@ enum Command {
         bin_name: String,
     },
 
+    /// Local code review.
+    ///
+    /// Discovers `**/.agents/checks/*.md` subagent reviewers and
+    /// `**/.agents/REVIEW.md` scoped prompt overrides, builds a review
+    /// request from the working tree (or an explicit diff range), and
+    /// runs the review through goose.
+    #[command(about = "Review the current diff using goose")]
+    Review {
+        /// Diff range to review (e.g. "main...HEAD"). Defaults to the working
+        /// tree vs HEAD.
+        #[arg(value_name = "RANGE")]
+        range: Option<String>,
+
+        /// Path to a Markdown file with a custom base review prompt. Replaces
+        /// the embedded default prompt.
+        #[arg(long = "prompt", value_name = "FILE")]
+        prompt: Option<PathBuf>,
+
+        /// Default model used for the main review agent and for any check
+        /// that does not declare its own `model:` in frontmatter.
+        #[arg(long = "model", value_name = "MODEL")]
+        model: Option<String>,
+
+        /// Provider for the main review agent.
+        #[arg(long = "provider", value_name = "PROVIDER")]
+        provider: Option<String>,
+
+        /// Force every discovered check to use this model, regardless of
+        /// the check's own `model:` field.
+        #[arg(long = "override-model", value_name = "MODEL")]
+        override_model: Option<String>,
+
+        /// Default `turn-limit` for orchestrated main-pass subprocesses and
+        /// for checks that do not declare their own. Does not cap the legacy
+        /// `--no-orchestrate` in-process main agent.
+        #[arg(long = "turn-limit", value_name = "N")]
+        turn_limit: Option<usize>,
+
+        /// Print the assembled review prompt and discovered checks instead of
+        /// running the review.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Suppress non-result output from the underlying agent.
+        #[arg(long, short = 'q')]
+        quiet: bool,
+
+        /// Disable the Rust-driven parallel orchestrator and fall back to
+        /// the single-prompt path that asks the main agent to delegate
+        /// each check via `delegate(...)`. The default
+        /// orchestrator dispatches one `goose run` subprocess per check
+        /// (capped at 4 concurrent), bounding wall-clock to the slowest
+        /// single check rather than waiting on the model to issue
+        /// dispatches.
+        /// Checks with an explicit tool allowlist require the default orchestrator.
+        #[arg(long = "no-orchestrate")]
+        no_orchestrate: bool,
+
+        /// Additional free-form instructions to prepend to the review
+        /// (e.g. PR intent, commit-message context, "this is a refactor,
+        /// flag any behavior change"). Mirrors `amp review --instructions`
+        /// for drop-in compatibility with existing reviewer wrappers.
+        #[arg(long = "instructions", short = 'i', value_name = "TEXT")]
+        instructions: Option<String>,
+
+        /// Restrict the review to a specific set of files. Other files in
+        /// the diff are still passed to the agent for context but are
+        /// excluded from the assembled diff sent to checks. Mirrors
+        /// `amp review --files`.
+        #[arg(long = "files", short = 'f', value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+
+        /// Only run checks whose `name` matches one of these. Other
+        /// discovered checks are skipped. Mirrors `amp review --check-filter`.
+        #[arg(long = "check-filter", short = 'c', value_name = "NAME", num_args = 1..)]
+        check_filter: Vec<String>,
+
+        /// Alternate directory to search for `.agents/checks/*.md` instead
+        /// of the repo root. Mirrors `amp review --check-scope`.
+        #[arg(long = "check-scope", short = 's', value_name = "DIR")]
+        check_scope: Option<PathBuf>,
+
+        /// Skip the main correctness pass and only run check subagents.
+        /// Mirrors `amp review --checks-only`.
+        #[arg(long = "checks-only")]
+        checks_only: bool,
+
+        /// Print only the diff summary; skip the full review.
+        /// Mirrors `amp review --summary-only`.
+        #[arg(long = "summary-only")]
+        summary_only: bool,
+
+        /// Minimum severity to display. Findings below this rank are
+        /// dropped from the output. Default is `medium`, matching
+        /// Amp's CLI which hides `low` from review output. Pass
+        /// `--severity low` to surface every finding.
+        #[arg(long = "severity", value_name = "LEVEL", default_value = "medium")]
+        severity: String,
+    },
     #[command(
         name = "validate-extensions",
         about = "Validate a bundled-extensions.json file",
@@ -1336,6 +1420,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
+        Some(Command::Review { .. }) => "review",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
         Some(Command::McpProbe { .. }) => "mcp-probe",
         None => "default_session",
@@ -1415,13 +1500,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         crate::session::CliSession::parse_stdio_extension(&extension_command)?
     };
     match &mut extension {
-        ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::Stdio {
-            name, ..
-        })
-        | ExtensionConfig::External(oi_kit_agent::extension::ExtensionConfig::StreamableHttp {
-            name,
-            ..
-        }) => {
+        ExtensionConfig::Stdio { name, .. } | ExtensionConfig::StreamableHttp { name, .. } => {
             *name = "probe".to_string();
         }
         _ => unreachable!("MCP probe only creates stdio or streamable HTTP extensions"),
@@ -1488,11 +1567,14 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         )
         .await?;
     let session_id = session.id.as_str();
-    services.enable_extension(session_id, extension).await?;
+    services
+        .extension_manager
+        .enable(session_id, extension)
+        .await?;
 
     let mut results = Vec::new();
     for step in script.steps {
-        let lease = services.current_tools(session_id).await?;
+        let lease = services.extension_manager.current_lease(session_id).await?;
         let result = match step {
             McpProbeStep::ListTools => serde_json::json!({
                 "action": "listTools",
@@ -1503,7 +1585,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
             }),
             McpProbeStep::ListPrompts => serde_json::json!({
                 "action": "listPrompts",
-                "result": lease.mcp.list_prompts_from_extension(
+                "result": lease.list_prompts_from_extension(
                     "probe",
                     CancellationToken::new(),
                 ).await?,
@@ -1523,7 +1605,6 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
                             .with_arguments(arguments),
                         CallRequest::new("mcp-probe-tool-call"),
                         CancellationToken::new(),
-                        &services,
                     )
                     .await?
                     .result
@@ -2327,76 +2408,8 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
     }
 }
 
-async fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
-    use goose::config::extension_install::{install, preview};
-    use oi_kit_agent::extension::registry::{ServerDocument, ServerSelection};
-    use std::io::IsTerminal;
+fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
-        PluginCommand::ImportServer {
-            input,
-            package,
-            remote,
-            all,
-            yes,
-        } => {
-            let interactive =
-                std::io::stdin().is_terminal() && std::io::stderr().is_terminal() && input != "-";
-            let json = if input == "-" {
-                let mut json = String::new();
-                std::io::stdin().read_to_string(&mut json)?;
-                json
-            } else {
-                std::fs::read_to_string(&input)?
-            };
-            let server = ServerDocument::parse(&json)?;
-            let choices = server.choices();
-            anyhow::ensure!(
-                !choices.is_empty(),
-                "server.json contains no packages or remotes"
-            );
-            let selections = if all {
-                choices.iter().map(|(selection, _)| *selection).collect()
-            } else if let Some(index) = package {
-                vec![ServerSelection::Package(index)]
-            } else if let Some(index) = remote {
-                vec![ServerSelection::Remote(index)]
-            } else {
-                anyhow::ensure!(
-                    interactive,
-                    "no import selected; pass --package N, --remote N, or --all in non-interactive mode"
-                );
-                let mut prompt = cliclack::multiselect(
-                    "Select MCP server configurations to import (Space to toggle, Enter to confirm)",
-                );
-                for (selection, label) in choices {
-                    prompt = prompt.item(selection, label, "");
-                }
-                let selected = prompt.interact()?;
-                anyhow::ensure!(!selected.is_empty(), "no package or remote selected");
-                selected
-            };
-            anyhow::ensure!(
-                yes || interactive,
-                "pass --yes to confirm a non-interactive import"
-            );
-            let extensions = server.extensions(&selections)?;
-            if !yes {
-                for extension in &extensions {
-                    eprintln!("  {:?}: {:?}", extension.name(), preview(extension));
-                }
-                if !cliclack::confirm("Import and enable these MCP extensions?")
-                    .initial_value(false)
-                    .interact()?
-                {
-                    return Ok(());
-                }
-            }
-            install(Config::global(), &extensions).await?;
-            for extension in extensions {
-                println!("Imported and enabled MCP server {:?}", extension.name());
-            }
-            Ok(())
-        }
         PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
         PluginCommand::Update { name } => handle_plugin_update(&name),
     }
@@ -2930,10 +2943,49 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
         Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
-        Some(Command::Plugin { command }) => handle_plugin_subcommand(command).await,
+        Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
+        Some(Command::Review {
+            range,
+            prompt,
+            model,
+            provider,
+            override_model,
+            turn_limit,
+            dry_run,
+            quiet,
+            no_orchestrate,
+            instructions,
+            files,
+            check_filter,
+            check_scope,
+            checks_only,
+            summary_only,
+            severity,
+        }) => {
+            use crate::commands::review::{handle_review, ReviewOptions};
+            handle_review(ReviewOptions {
+                range,
+                prompt_file: prompt,
+                default_model: model,
+                provider,
+                override_model,
+                default_turn_limit: turn_limit,
+                dry_run,
+                quiet,
+                no_orchestrate,
+                instructions,
+                files,
+                check_filter,
+                check_scope,
+                checks_only,
+                summary_only,
+                severity,
+            })
+            .await
+        }
         Some(Command::ValidateExtensions { file }) => {
             use goose::agents::validate_extensions::validate_bundled_extensions;
             match validate_bundled_extensions(&file) {
@@ -3119,6 +3171,83 @@ mod tests {
                 );
             }
             _ => panic!("expected serve command"),
+        }
+    }
+
+    #[test]
+    fn review_command_accepts_options() {
+        let cli = Cli::try_parse_from([
+            "goose",
+            "review",
+            "origin/main...HEAD",
+            "--prompt",
+            "REVIEW.md",
+            "--model",
+            "test-model",
+            "--provider",
+            "openai",
+            "--override-model",
+            "check-model",
+            "--turn-limit",
+            "4",
+            "--dry-run",
+            "--quiet",
+            "--no-orchestrate",
+            "--instructions",
+            "focus on correctness",
+            "--files",
+            "src/lib.rs",
+            "--check-filter",
+            "security",
+            "--check-scope",
+            ".agents",
+            "--checks-only",
+            "--summary-only",
+            "--severity",
+            "low",
+        ])
+        .expect("parse failed");
+
+        match cli.command {
+            Some(Command::Review {
+                range,
+                prompt,
+                model,
+                provider,
+                override_model,
+                turn_limit,
+                dry_run,
+                quiet,
+                no_orchestrate,
+                instructions,
+                files,
+                check_filter,
+                check_scope,
+                checks_only,
+                summary_only,
+                severity,
+            }) => {
+                assert_eq!(range.as_deref(), Some("origin/main...HEAD"));
+                assert_eq!(prompt.as_deref(), Some(std::path::Path::new("REVIEW.md")));
+                assert_eq!(model.as_deref(), Some("test-model"));
+                assert_eq!(provider.as_deref(), Some("openai"));
+                assert_eq!(override_model.as_deref(), Some("check-model"));
+                assert_eq!(turn_limit, Some(4));
+                assert!(dry_run);
+                assert!(quiet);
+                assert!(no_orchestrate);
+                assert_eq!(instructions.as_deref(), Some("focus on correctness"));
+                assert_eq!(files, vec!["src/lib.rs"]);
+                assert_eq!(check_filter, vec!["security"]);
+                assert_eq!(
+                    check_scope.as_deref(),
+                    Some(std::path::Path::new(".agents"))
+                );
+                assert!(checks_only);
+                assert!(summary_only);
+                assert_eq!(severity, "low");
+            }
+            _ => panic!("expected review command"),
         }
     }
 
