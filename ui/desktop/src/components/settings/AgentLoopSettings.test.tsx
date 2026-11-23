@@ -540,6 +540,40 @@ describe('rapid edits', () => {
     await waitFor(() => expect(userConfig[key]).toBe(1000000));
   });
 
+  it('retries a failed reset after an earlier reset finishes behind a newer one', async () => {
+    userConfig.GOOSE_MAX_TURNS = 50;
+    const firstRemove = deferred();
+    remove
+      .mockImplementationOnce(async (k: string) => {
+        await firstRemove.promise;
+        delete userConfig[k];
+      })
+      .mockRejectedValueOnce(new Error('offline'));
+    await ignoringUnhandledRejections(async () => {
+      const user = userEvent.setup();
+      await renderLoaded();
+      await waitFor(() => expect(input('Turns')).toHaveValue(50));
+
+      await user.clear(input('Turns'));
+      await user.tab();
+      await user.type(input('Turns'), '60');
+      await user.tab();
+      await user.clear(input('Turns'));
+      await user.tab();
+      firstRemove.resolve();
+
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(userConfig.GOOSE_MAX_TURNS).toBe(60));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The failed reset left 60 in config, so blurring the blank field must try again.
+      await user.click(input('Turns'));
+      await user.tab();
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(userConfig).not.toHaveProperty('GOOSE_MAX_TURNS'));
+    });
+  });
+
   it('saves the previous value again after clearing it', async () => {
     userConfig[key] = 500000;
     const user = userEvent.setup();

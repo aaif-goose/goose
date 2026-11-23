@@ -341,6 +341,9 @@ export default function AgentLoopSettings() {
   const editedNumbers = useRef<Partial<Record<NumberSetting, boolean>>>({});
   // Writes for one field run in order so that the last edit is the one that persists.
   const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
+  // Per field, a counter bumped by every write so a finished write can tell whether it is still
+  // the latest one; comparing values cannot, since two writes may request the same value.
+  const numberGenerations = useRef<Partial<Record<NumberSetting, number>>>({});
 
   useEffect(() => {
     let active = true;
@@ -394,15 +397,22 @@ export default function AgentLoopSettings() {
     setNumber(setting, value);
   };
 
-  const writeNumber = (setting: NumberSetting, requested: string, write: () => Promise<void>) => {
+  const writeNumber = (
+    setting: NumberSetting,
+    requested: string,
+    write: (isLatest: () => boolean) => Promise<void>
+  ) => {
+    const generation = (numberGenerations.current[setting] ?? 0) + 1;
+    numberGenerations.current[setting] = generation;
+    const isLatest = () => numberGenerations.current[setting] === generation;
     requestedNumbers.current = { ...requestedNumbers.current, [setting]: requested };
     editedNumbers.current[setting] = false;
     const previous = numberWrites.current[setting] ?? Promise.resolve();
     const next = previous
       .catch(() => {})
-      .then(write)
+      .then(() => write(isLatest))
       .catch((error) => {
-        if (requestedNumbers.current[setting] === requested) {
+        if (isLatest()) {
           requestedNumbers.current = { ...requestedNumbers.current, [setting]: null };
         }
         throw error;
@@ -417,10 +427,10 @@ export default function AgentLoopSettings() {
     // An untouched blank field with a rejected stored value has nothing to reset.
     if (requested === hiddenOverride && !editedNumbers.current[setting]) return;
     const { configKey, display } = numberFields[setting];
-    await writeNumber(setting, '', async () => {
+    await writeNumber(setting, '', async (isLatest) => {
       await remove(configKey, false);
       const effective = display(await read(configKey, false, { throwOnError: true }));
-      if (requestedNumbers.current[setting] !== '') return;
+      if (!isLatest()) return;
       requestedNumbers.current = { ...requestedNumbers.current, [setting]: effective };
       setNumbers((current) =>
         current[setting].trim() === '' ? { ...current, [setting]: effective } : current
