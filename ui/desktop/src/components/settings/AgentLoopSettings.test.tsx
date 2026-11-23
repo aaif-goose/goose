@@ -505,6 +505,63 @@ describe('typing before the initial read finishes', () => {
     expect(input('Turns')).toHaveValue(1000);
   });
 
+  it('keeps toggles clicked before the read finished and populates the others', async () => {
+    userConfig.GOOSE_SLASH_COMMANDS_ENABLED = true;
+    userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION = false;
+    userConfig.GOOSE_AUTO_EFFORT_ENABLED = true;
+    const gate = holdReads();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('Enable Slash commands'));
+    await user.click(screen.getByLabelText('Enable Tool pair compaction'));
+    gate.resolve();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Enable Automatic thinking effort')).toBeChecked()
+    );
+    expect(screen.getByLabelText('Enable Slash commands')).not.toBeChecked();
+    expect(screen.getByLabelText('Enable Tool pair compaction')).toBeChecked();
+    // Cutoff is only editable while tool pair compaction is on.
+    expect(input('Cutoff')).toBeEnabled();
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(userConfig.GOOSE_SLASH_COMMANDS_ENABLED).toBe(false);
+    expect(userConfig.GOOSE_TOOL_PAIR_SUMMARIZATION).toBe(true);
+  });
+
+  it('keeps the API key state saved before the read finished', async () => {
+    userConfig.GOOSE_AUTO_EFFORT_ENABLED = false;
+    const gate = holdReads();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('Enable Automatic thinking effort'));
+    await user.type(document.querySelector('input[type="password"]') as HTMLInputElement, 'secret');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(upsert).toHaveBeenCalledWith('TYPESAFE_API_KEY', 'secret', true));
+    gate.resolve();
+    await waitFor(() => expect(input('Retry timeout')).toHaveValue(300));
+
+    expect(screen.getByLabelText('Enable Automatic thinking effort')).toBeChecked();
+    expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
+  });
+
+  it('lets the read set a toggle again when its save failed', async () => {
+    userConfig.GOOSE_SLASH_COMMANDS_ENABLED = true;
+    const gate = holdReads();
+    upsert.mockRejectedValueOnce(new Error('offline'));
+    await ignoringUnhandledRejections(async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(screen.getByLabelText('Enable Slash commands'));
+      await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
+      gate.resolve();
+
+      await waitFor(() => expect(screen.getByLabelText('Enable Slash commands')).toBeChecked());
+    });
+  });
+
   it('populates fields the user did not touch', async () => {
     userConfig[key] = 50;
     const gate = holdReads();

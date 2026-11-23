@@ -339,6 +339,10 @@ export default function AgentLoopSettings() {
   const requestedNumbers = useRef<Record<NumberSetting, string | null>>(defaultNumberSettings);
   // Fields the user has typed in since load or the last write.
   const editedNumbers = useRef<Partial<Record<NumberSetting, boolean>>>({});
+  // Controls the user changed since the page opened; the initial read must not overwrite them.
+  const changed = useRef(
+    new Set<'slashCommands' | 'autoEffort' | 'toolPairCompaction' | 'apiKey'>()
+  );
   // Writes for one field run in order so that the last edit is the one that persists.
   const numberWrites = useRef<Partial<Record<NumberSetting, Promise<void>>>>({});
   // Per field, a counter bumped by every write so a finished write can tell whether it is still
@@ -364,12 +368,20 @@ export default function AgentLoopSettings() {
     ]).then(([loadedNumbers, slashCommands, toolPairCompaction, autoEffort, typesafeApiKey]) => {
       if (!active) return;
 
-      setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
-      setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
-      setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
-      setToolPairCompactionEnabled(
-        typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
-      );
+      if (!changed.current.has('slashCommands')) {
+        setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
+      }
+      if (!changed.current.has('autoEffort')) {
+        setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
+      }
+      if (!changed.current.has('apiKey')) {
+        setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
+      }
+      if (!changed.current.has('toolPairCompaction')) {
+        setToolPairCompactionEnabled(
+          typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
+        );
+      }
       // A field the user edited or saved while this read was in flight keeps its input text; a
       // field that was saved also keeps its save snapshot, since that is newer than the read.
       const shown = Object.fromEntries(
@@ -502,31 +514,48 @@ export default function AgentLoopSettings() {
     };
   };
 
+  // Marks a control as changed before its save starts, so a config read that finishes meanwhile
+  // leaves it alone; a failed save lets the next read set it again.
+  const saveChange = async (
+    control: 'slashCommands' | 'autoEffort' | 'toolPairCompaction' | 'apiKey',
+    save: () => Promise<void>
+  ) => {
+    changed.current.add(control);
+    try {
+      await save();
+    } catch (error) {
+      changed.current.delete(control);
+      throw error;
+    }
+  };
+
   const handleToolPairCompactionToggle = async (checked: boolean) => {
     setToolPairCompactionEnabled(checked);
-    await upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false);
+    await saveChange('toolPairCompaction', () =>
+      upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false)
+    );
   };
 
   const handleSlashCommandsToggle = async (checked: boolean) => {
     setSlashCommandsEnabled(checked);
-    await upsert('GOOSE_SLASH_COMMANDS_ENABLED', checked, false);
+    await saveChange('slashCommands', () => upsert('GOOSE_SLASH_COMMANDS_ENABLED', checked, false));
   };
 
   const handleAutoEffortToggle = async (checked: boolean) => {
     setAutoEffortEnabled(checked);
-    await upsert('GOOSE_AUTO_EFFORT_ENABLED', checked, false);
+    await saveChange('autoEffort', () => upsert('GOOSE_AUTO_EFFORT_ENABLED', checked, false));
   };
 
   const saveTypesafeApiKey = async () => {
     const apiKey = typesafeApiKey.trim();
     if (!apiKey) return;
-    await upsert('TYPESAFE_API_KEY', apiKey, true);
+    await saveChange('apiKey', () => upsert('TYPESAFE_API_KEY', apiKey, true));
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(true);
   };
 
   const removeTypesafeApiKey = async () => {
-    await remove('TYPESAFE_API_KEY', true);
+    await saveChange('apiKey', () => remove('TYPESAFE_API_KEY', true));
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(false);
   };
