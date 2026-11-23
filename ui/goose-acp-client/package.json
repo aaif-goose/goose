@@ -43,7 +43,7 @@
     "@agentclientprotocol/sdk": "^2.6.0"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "2.7.0",
+    "@agentclientprotocol/sdk": "2.8.0",
     "@hey-api/openapi-ts": "^0.99.0",
     "@types/node": "^26.6.6",
     "prettier": "^3.10.1",
