@@ -61,22 +61,201 @@ const alreadyScheduledManifest = {
   schedule_cron: '0 0 9 * * *',
 } as unknown as RecipeManifest;
 
+type FileSelection = Awaited<ReturnType<typeof window.electron.selectRecipeFile>>;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((accept) => {
+    resolve = accept;
+  });
+  return { promise, resolve };
+}
+
+const earlierRecipe = {
+  title: 'Earlier recipe',
+  description: 'A sample recipe',
+  instructions: 'Summarize the sample',
+} as Recipe;
+
+const selectedRecipe = {
+  title: 'Selected recipe',
+  description: 'Another sample recipe',
+  instructions: 'Count the words in the sample',
+} as Recipe;
+
+const yamlFile = (filePath: string) => ({
+  found: true,
+  error: null,
+  filePath,
+  file: 'sample recipe',
+});
+
 describe('ScheduleModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listSavedRecipes).mockResolvedValue([savedRecipeManifest]);
   });
 
-  it('preserves the form when the recipe picker is cancelled', async () => {
+  it('blocks submission while picking a replacement and preserves the draft on cancellation', async () => {
     const user = userEvent.setup();
-    const selectRecipeFile = vi.fn().mockResolvedValue(null);
-    window.electron.selectRecipeFile = selectRecipeFile;
+    const picker = deferred<FileSelection>();
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockResolvedValueOnce(yamlFile('/recipes/earlier.yaml'))
+      .mockReturnValueOnce(picker.promise);
+    vi.mocked(parseRecipeFromFile).mockResolvedValueOnce(earlierRecipe);
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+    const submit = screen.getByRole('button', { name: 'Create Schedule' });
+    await user.click(browse);
+    await waitFor(() => expect(screen.getByLabelText(/name/i)).toHaveValue('earlier-recipe'));
+
+    await user.click(browse);
+    expect(submit).toBeDisabled();
+    fireEvent.submit((submit as HTMLButtonElement).form!);
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => picker.resolve(null));
+    expect(screen.getByText('Selected: /recipes/earlier.yaml')).toBeInTheDocument();
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: 'file', recipe: earlierRecipe })
+    );
+  });
+
+  it('keeps an earlier parse pending when a replacement picker is canceled', async () => {
+    const user = userEvent.setup();
+    const parsing = deferred<Recipe>();
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockResolvedValueOnce(yamlFile('/recipes/earlier.yaml'))
+      .mockResolvedValueOnce(null);
+    vi.mocked(parseRecipeFromFile).mockReturnValueOnce(parsing.promise);
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+    await user.click(browse);
+    expect(parseRecipeFromFile).toHaveBeenCalledOnce();
+    await user.click(browse);
+    await act(async () => parsing.resolve(earlierRecipe));
+
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: 'file', recipe: earlierRecipe })
+    );
+  });
+
+  it('clears the draft for an invalid selection and accepts uppercase YAML extensions', async () => {
+    const user = userEvent.setup();
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockResolvedValueOnce(yamlFile('/recipes/earlier.yaml'))
+      .mockResolvedValueOnce({
+        filePath: '/recipes/notes.txt',
+        found: false,
+        error: 'The selected recipe must be a YAML file',
+        file: '',
+      })
+      .mockResolvedValueOnce(yamlFile('/recipes/selected.YAML'));
+    vi.mocked(parseRecipeFromFile)
+      .mockResolvedValueOnce(earlierRecipe)
+      .mockResolvedValueOnce(selectedRecipe);
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+    const submit = screen.getByRole('button', { name: 'Create Schedule' });
+    await user.click(browse);
+    await waitFor(() => expect(screen.getByLabelText(/name/i)).toHaveValue('earlier-recipe'));
+
+    await user.click(browse);
+    await user.click(submit);
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(parseRecipeFromFile).toHaveBeenCalledOnce();
+
+    await user.click(browse);
+    await waitFor(() => expect(screen.getByLabelText(/name/i)).toHaveValue('selected-recipe'));
+    await user.click(submit);
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: 'file', recipe: selectedRecipe })
+    );
+  });
+
+  it('ignores a late file picker result after switching to a deeplink', async () => {
+    const user = userEvent.setup();
+    const picker = deferred<FileSelection>();
+    window.electron.selectRecipeFile = vi.fn().mockReturnValueOnce(picker.promise);
+    vi.mocked(parseDeeplink).mockResolvedValueOnce(selectedRecipe);
     renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
 
     await user.click(screen.getByRole('button', { name: 'Browse for YAML file...' }));
+    await user.click(screen.getByRole('button', { name: 'Deep link' }));
+    fireEvent.change(screen.getByPlaceholderText('Paste goose://recipe link here...'), {
+      target: { value: 'goose://recipe?config=sample' },
+    });
+    await waitFor(() => expect(screen.getByText('Title: Selected recipe')).toBeInTheDocument());
+    await act(async () => picker.resolve(yamlFile('/recipes/earlier.yaml')));
 
-    expect(selectRecipeFile).toHaveBeenCalledOnce();
-    expect(screen.queryByText(/Failed to read|Invalid file type/)).not.toBeInTheDocument();
+    expect(parseRecipeFromFile).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: 'deeplink', recipe: selectedRecipe })
+    );
+  });
+
+  it('ignores older picker results after a newer selection or reopening the modal', async () => {
+    const user = userEvent.setup();
+    const olderPicker = deferred<FileSelection>();
+    const previousModal = deferred<FileSelection>();
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockReturnValueOnce(olderPicker.promise)
+      .mockResolvedValueOnce(yamlFile('/recipes/selected.yaml'))
+      .mockReturnValueOnce(previousModal.promise);
+    vi.mocked(parseRecipeFromFile).mockResolvedValueOnce(selectedRecipe);
+    const { rerender } = renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+    await user.click(browse);
+    await user.click(browse);
+    await waitFor(() => expect(screen.getByLabelText(/name/i)).toHaveValue('selected-recipe'));
+    await act(async () => olderPicker.resolve(yamlFile('/recipes/older.yaml')));
+    expect(screen.getByText('Selected: /recipes/selected.yaml')).toBeInTheDocument();
+
+    await user.click(browse);
+    rerender(<ScheduleModal {...baseProps} isOpen={false} schedule={null} />);
+    rerender(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+    await act(async () => previousModal.resolve(yamlFile('/recipes/previous.yaml')));
+
+    expect(parseRecipeFromFile).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText(/name/i)).toHaveValue('');
+    expect(screen.queryByText(/Selected: /)).not.toBeInTheDocument();
+  });
+
+  it('ignores an earlier parse once a newer file has been selected', async () => {
+    const user = userEvent.setup();
+    const earlierParse = deferred<Recipe>();
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockResolvedValueOnce(yamlFile('/recipes/earlier.yaml'))
+      .mockResolvedValueOnce(yamlFile('/recipes/selected.yaml'));
+    vi.mocked(parseRecipeFromFile)
+      .mockReturnValueOnce(earlierParse.promise)
+      .mockResolvedValueOnce(selectedRecipe);
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+    await user.click(browse);
+    expect(parseRecipeFromFile).toHaveBeenCalledOnce();
+    await user.click(browse);
+    await waitFor(() => expect(screen.getByLabelText(/name/i)).toHaveValue('selected-recipe'));
+    await act(async () => earlierParse.resolve(earlierRecipe));
+
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: 'file', id: 'selected-recipe', recipe: selectedRecipe })
+    );
   });
 
   it('clears a validation error from create mode when reopened to edit a schedule', async () => {
@@ -214,8 +393,8 @@ describe('ScheduleModal', () => {
   it('clears a parsed recipe while a replacement deeplink is pending', async () => {
     const priorRecipe = {
       title: 'Project Helper',
-      description: 'Looks harmless',
-      instructions: 'Run the discarded recipe',
+      description: 'An earlier recipe',
+      instructions: 'Summarize a sample paragraph',
     } as Recipe;
     vi.mocked(parseDeeplink)
       .mockResolvedValueOnce(priorRecipe)
@@ -246,13 +425,13 @@ describe('ScheduleModal', () => {
   it('clears a parsed recipe while a replacement YAML file is pending', async () => {
     const priorRecipe = {
       title: 'Project Helper',
-      description: 'Looks harmless',
-      instructions: 'Run the discarded recipe',
+      description: 'An earlier recipe',
+      instructions: 'Summarize a sample paragraph',
     } as Recipe;
     const replacementRecipe = {
       title: 'Trusted Helper',
       description: 'Known local recipe',
-      instructions: 'Run the selected recipe',
+      instructions: 'Count the words in a sample paragraph',
     } as Recipe;
     let resolveReplacement!: (recipe: Recipe) => void;
     const pendingReplacement = new Promise<Recipe>((resolve) => {
@@ -260,7 +439,11 @@ describe('ScheduleModal', () => {
     });
     vi.mocked(parseRecipeFromFile)
       .mockResolvedValueOnce(priorRecipe)
-      .mockReturnValueOnce(pendingReplacement);
+      .mockImplementationOnce(() => {
+        const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Create Schedule' });
+        fireEvent.submit(submit.form!);
+        return pendingReplacement;
+      });
     window.electron.selectRecipeFile = vi
       .fn()
       .mockResolvedValueOnce({

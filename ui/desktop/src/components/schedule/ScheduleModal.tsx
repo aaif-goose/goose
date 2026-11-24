@@ -131,7 +131,10 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   const [sourceType, setSourceType] = useState<SourceType>('file');
   const [recipeSourcePath, setRecipeSourcePath] = useState<string>('');
   const [deepLinkInput, setDeepLinkInput] = useState<string>('');
-  const [parsedRecipe, setParsedRecipe] = useState<Recipe | null>(null);
+  const [parsedSource, setParsedSource] = useState<{ recipe: Recipe; requestId: number } | null>(
+    null
+  );
+  const parsedRecipe = parsedSource?.recipe;
   const [cronExpression, setCronExpression] = useState<string>('0 0 14 * * *');
   const [internalValidationError, setInternalValidationError] = useState<string | null>(null);
   const [isValid, setIsValid] = useState(true);
@@ -140,11 +143,19 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   const [savedRecipesError, setSavedRecipesError] = useState<string | null>(null);
   const [selectedSavedRecipeId, setSelectedSavedRecipeId] = useState<string | null>(null);
   const sourceRequestIdRef = useRef(0);
+  const filePickerRef = useRef<symbol | null>(null);
+  const [isFilePickerPending, setIsFilePickerPending] = useState(false);
 
-  const bumpSourceRequest = () => {
+  const clearFilePicker = useCallback(() => {
+    filePickerRef.current = null;
+    setIsFilePickerPending(false);
+  }, []);
+
+  const bumpSourceRequest = useCallback(() => {
+    clearFilePicker();
     sourceRequestIdRef.current += 1;
     return sourceRequestIdRef.current;
-  };
+  }, [clearFilePicker]);
 
   const setScheduleIdFromTitle = (title: string) => {
     const cleanId = title
@@ -155,7 +166,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   };
 
   const clearRecipeSourceState = useCallback(() => {
-    setParsedRecipe(null);
+    setParsedSource(null);
     setRecipeSourcePath('');
     setDeepLinkInput('');
     setSelectedSavedRecipeId(null);
@@ -171,34 +182,34 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
       clearRecipeSourceState();
       setSourceType(next);
     },
-    [clearRecipeSourceState, sourceType]
+    [bumpSourceRequest, clearRecipeSourceState, sourceType]
   );
 
   const handleSelectSavedRecipe = useCallback(
     (manifest: RecipeManifest | null) => {
-      bumpSourceRequest();
+      const requestId = bumpSourceRequest();
       if (manifest?.schedule_cron) {
         setSelectedSavedRecipeId(null);
-        setParsedRecipe(null);
+        setParsedSource(null);
         setInternalValidationError(intl.formatMessage(i18n.recipeAlreadyScheduled));
         return;
       }
       setSelectedSavedRecipeId(manifest?.id ?? null);
       setInternalValidationError(null);
       if (manifest) {
-        setParsedRecipe(manifest.recipe);
+        setParsedSource({ recipe: manifest.recipe, requestId });
       } else {
-        setParsedRecipe(null);
+        setParsedSource(null);
       }
     },
-    [intl]
+    [bumpSourceRequest, intl]
   );
 
   const handleDeepLinkChange = useCallback(
     async (value: string) => {
       const requestId = bumpSourceRequest();
       setDeepLinkInput(value);
-      setParsedRecipe(null);
+      setParsedSource(null);
       setInternalValidationError(null);
 
       if (value.trim()) {
@@ -208,7 +219,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
             return;
           }
           if (!recipe) throw new Error();
-          setParsedRecipe(recipe);
+          setParsedSource({ recipe, requestId });
           if (recipe.title) {
             setScheduleIdFromTitle(recipe.title);
           }
@@ -216,29 +227,29 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
           if (requestId !== sourceRequestIdRef.current) {
             return;
           }
-          setParsedRecipe(null);
+          setParsedSource(null);
           setInternalValidationError(intl.formatMessage(i18n.invalidDeepLink));
         }
       } else {
-        setParsedRecipe(null);
+        setParsedSource(null);
       }
     },
-    [intl]
+    [bumpSourceRequest, intl]
   );
 
   useEffect(() => {
+    clearFilePicker();
     if (isOpen) {
       setInternalValidationError(null);
       if (schedule) {
         setScheduleId(schedule.id);
         setCronExpression(schedule.cron);
       } else {
-        bumpSourceRequest();
         setScheduleId('');
         setSourceType('file');
         setRecipeSourcePath('');
         setDeepLinkInput('');
-        setParsedRecipe(null);
+        setParsedSource(null);
         setCronExpression('0 0 14 * * *');
         setSavedRecipes([]);
         setSavedRecipesLoading(false);
@@ -250,7 +261,11 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
         }
       }
     }
-  }, [isOpen, schedule, initialDeepLink, handleDeepLinkChange]);
+    return () => {
+      sourceRequestIdRef.current += 1;
+      filePickerRef.current = null;
+    };
+  }, [clearFilePicker, isOpen, schedule, initialDeepLink, handleDeepLinkChange]);
 
   useEffect(() => {
     if (sourceType !== 'saved') {
@@ -289,49 +304,63 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   );
 
   const handleBrowseFile = async () => {
-    const fileResponse = await window.electron.selectRecipeFile();
-    if (fileResponse) {
-      if (fileResponse.filePath.endsWith('.yaml') || fileResponse.filePath.endsWith('.yml')) {
-        const requestId = bumpSourceRequest();
-        setRecipeSourcePath(fileResponse.filePath);
-        setParsedRecipe(null);
-        setInternalValidationError(null);
+    const picker = Symbol();
+    filePickerRef.current = picker;
+    setIsFilePickerPending(true);
 
-        try {
-          if (requestId !== sourceRequestIdRef.current) {
-            return;
-          }
-          if (!fileResponse.found || fileResponse.error) {
-            throw new Error(intl.formatMessage(i18n.failedReadFile));
-          }
-          const recipe = await parseRecipeFromFile(fileResponse.file);
-          if (requestId !== sourceRequestIdRef.current) {
-            return;
-          }
-          if (!recipe) {
-            throw new Error(intl.formatMessage(i18n.failedParseRecipe));
-          }
-          setParsedRecipe(recipe);
-          if (recipe.title) {
-            setScheduleIdFromTitle(recipe.title);
-          }
-        } catch (e) {
-          if (requestId !== sourceRequestIdRef.current) {
-            return;
-          }
-          setParsedRecipe(null);
-          setInternalValidationError(
-            e instanceof Error ? e.message : intl.formatMessage(i18n.failedParseRecipe)
-          );
-        }
-      } else {
-        setInternalValidationError(intl.formatMessage(i18n.invalidFileType));
+    const fileResponse = await window.electron.selectRecipeFile().catch(() => undefined);
+    if (filePickerRef.current !== picker) {
+      return;
+    }
+    if (fileResponse === null) {
+      clearFilePicker();
+      return;
+    }
+
+    // Keep the existing source generation until a replacement is selected so a
+    // canceled picker does not discard a draft whose parse is still pending.
+    const requestId = bumpSourceRequest();
+    setRecipeSourcePath(fileResponse?.filePath ?? '');
+    setParsedSource(null);
+    setInternalValidationError(null);
+
+    try {
+      if (!fileResponse) {
+        throw new Error(intl.formatMessage(i18n.failedReadFile));
       }
+      const filePath = fileResponse.filePath.toLowerCase();
+      if (!filePath.endsWith('.yaml') && !filePath.endsWith('.yml')) {
+        throw new Error(intl.formatMessage(i18n.invalidFileType));
+      }
+      if (!fileResponse.found || fileResponse.error) {
+        throw new Error(intl.formatMessage(i18n.failedReadFile));
+      }
+      const recipe = await parseRecipeFromFile(fileResponse.file);
+      if (requestId !== sourceRequestIdRef.current) {
+        return;
+      }
+      if (!recipe) {
+        throw new Error(intl.formatMessage(i18n.failedParseRecipe));
+      }
+      setParsedSource({ recipe, requestId });
+      if (recipe.title) {
+        setScheduleIdFromTitle(recipe.title);
+      }
+    } catch (e) {
+      if (requestId !== sourceRequestIdRef.current) {
+        return;
+      }
+      setInternalValidationError(
+        e instanceof Error ? e.message : intl.formatMessage(i18n.failedParseRecipe)
+      );
     }
   };
 
   const handleLocalSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!isEditMode && sourceType === 'file' && filePickerRef.current !== null) {
+      return;
+    }
     setInternalValidationError(null);
 
     if (isEditMode) {
@@ -362,7 +391,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
       return;
     }
 
-    if (!parsedRecipe) {
+    if (!parsedSource || parsedSource.requestId !== sourceRequestIdRef.current) {
       setInternalValidationError(intl.formatMessage(i18n.provideValidRecipe));
       return;
     }
@@ -380,7 +409,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
     await onSubmit({
       sourceType,
       id: scheduleId.trim(),
-      recipe: parsedRecipe,
+      recipe: parsedSource.recipe,
       cron: cronExpression,
     });
   };
@@ -579,7 +608,9 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
           <Button
             type="submit"
             form="schedule-form"
-            disabled={isLoadingExternally || !isValid}
+            disabled={
+              isLoadingExternally || !isValid || (sourceType === 'file' && isFilePickerPending)
+            }
             className="flex-1"
           >
             {isLoadingExternally
