@@ -7,7 +7,7 @@ updates:
     directory: "/ui"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 20
     ignore:
       # rehype-katex only accepts katex ^0.16; remove once remarkjs/remark-math#121 ships.
       - dependency-name: "katex"
