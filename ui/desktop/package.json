@@ -151,7 +151,7 @@
     "electron": "45.4.1",
     "electron-builder": "26.18.0",
     "electron-devtools-installer": "^4.0.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.15.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^31.0.1",
