@@ -1076,6 +1076,7 @@ where
         let mut stop_reason: Option<String> = None;
         let mut message_stopped = false;
         let mut additional_data: Option<Map<String, Value>> = None;
+        let mut first_content_at = None;
 
         while let Some(line_result) = stream.next().await {
             let line = line_result?;
@@ -1099,6 +1100,10 @@ where
 
             let event: StreamingEvent = serde_json::from_str(data_part)
                 .map_err(ProviderError::stream_decode_error)?;
+
+            if matches!(event.event_type.as_str(), EVENT_CONTENT_BLOCK_START | EVENT_CONTENT_BLOCK_DELTA) {
+                first_content_at.get_or_insert_with(chrono::Utc::now);
+            }
 
             match event.event_type.as_str() {
                 "error" => {
@@ -1299,7 +1304,8 @@ where
                             let category = str_field("category");
                             // The refusal delta carries the request's usage;
                             // flush it so refused turns are still accounted.
-                            if let Some(mut usage) = final_usage.take() {
+                            if let Some(usage) = final_usage.take() {
+                                let mut usage = usage.with_first_content_at(first_content_at);
                                 usage.finish_reasons = Some(vec![STOP_REASON_REFUSAL.to_string()]);
                                 usage.response_id = message_id.clone();
                                 usage.additional_data = additional_data.clone();
@@ -1386,7 +1392,8 @@ where
             yield (Some(message), None);
         }
 
-        if let Some(mut usage) = final_usage {
+        if let Some(usage) = final_usage {
+            let mut usage = usage.with_first_content_at(first_content_at);
             if let Some(reason) = stop_reason {
                 usage.finish_reasons = Some(vec![reason]);
             }
@@ -1470,6 +1477,7 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
+    use crate::formats::test_support::first_content_window;
     use crate::model::ModelConfig;
     use rmcp::object;
     use serde_json::json;
@@ -2774,6 +2782,58 @@ mod tests {
         );
         assert_eq!(parts.text, vec!["Let me search for that."]);
         assert_eq!(parts.tool_calls, vec!["search"]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_reports_first_content_time_for_tool_call() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"shell","input":{}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":": \"ls\"}"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":0}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":12}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        first_content_window(events, 1, response_to_streaming_message)
+            .await
+            .assert_reported_at_first_content();
+    }
+
+    #[tokio::test]
+    async fn test_streaming_reports_first_content_time_for_thinking() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me check."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":0}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Done."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":1}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        first_content_window(events, 1, response_to_streaming_message)
+            .await
+            .assert_reported_at_first_content();
     }
 
     async fn collect_stream_results(

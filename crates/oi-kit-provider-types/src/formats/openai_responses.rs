@@ -334,6 +334,20 @@ pub enum ResponsesStreamEvent {
     },
 }
 
+impl ResponsesStreamEvent {
+    fn is_model_output(&self) -> bool {
+        matches!(
+            self,
+            Self::OutputItemAdded { .. }
+                | Self::ContentBlockPartAdded { .. }
+                | Self::OutputTextDelta { .. }
+                | Self::FunctionCallArgumentsDelta { .. }
+                | Self::RefusalDelta { .. }
+                | Self::OutputItemDone { .. }
+        )
+    }
+}
+
 fn is_known_responses_stream_event_type(event_type: &str) -> bool {
     matches!(
         event_type,
@@ -1211,6 +1225,7 @@ where
         let mut output_items: Vec<ResponseOutputItemInfo> = Vec::new();
         let mut is_text_response = false;
         let mut output_token_limit_reached = false;
+        let mut first_content_at = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1247,6 +1262,10 @@ where
             let Some(event) = parse_responses_stream_event(data_line)? else {
                 continue;
             };
+
+            if event.is_model_output() {
+                first_content_at.get_or_insert_with(chrono::Utc::now);
+            }
 
             match event {
                 ResponsesStreamEvent::ResponseCreated { response, .. } |
@@ -1399,6 +1418,8 @@ where
             ))?;
         }
 
+        let final_usage = final_usage.map(|usage| usage.with_first_content_at(first_content_at));
+
         // Process final output items and yield usage data
         let content = process_streaming_output_items(output_items, is_text_response)?;
 
@@ -1470,6 +1491,7 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContentBlock;
+    use crate::formats::test_support::first_content_window;
     use crate::model::ModelConfig;
     use futures::StreamExt;
     use rmcp::model::CallToolRequestParams;
@@ -1517,6 +1539,24 @@ mod tests {
         assert_eq!(usage.usage.cache_write_input_tokens, None);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_responses_stream_reports_first_content_time_for_reasoning_then_tool_call() {
+        let events = [
+            r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"gpt-5.2-pro","output":[]}}"#,
+            r#"data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[]}}"#,
+            r#"data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[]}}"#,
+            r#"data: {"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"type":"function_call","id":"fc_1","status":"in_progress","call_id":"call_1","name":"shell","arguments":""}}"#,
+            r#"data: {"type":"response.function_call_arguments.delta","sequence_number":5,"item_id":"fc_1","output_index":1,"delta":"{\"command\":\"ls\"}"}"#,
+            r#"data: {"type":"response.output_item.done","sequence_number":6,"output_index":1,"item":{"type":"function_call","id":"fc_1","status":"completed","call_id":"call_1","name":"shell","arguments":"{\"command\":\"ls\"}"}}"#,
+            r#"data: {"type":"response.completed","sequence_number":7,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#,
+        ]
+        .join("\n");
+
+        first_content_window(&events, 1, responses_api_to_streaming_message)
+            .await
+            .assert_reported_at_first_content();
     }
 
     #[tokio::test]

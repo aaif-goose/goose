@@ -71,10 +71,10 @@ impl Inference<Session, GooseEffect> for TestInference {
         let message = emit.message(Message::assistant().with_text(format!("{prompt} answered")));
         yielded_with([
             GooseEffect::from(message),
-            GooseEffect::RecordUsage(ProviderUsage::new(
+            GooseEffect::RecordUsage(Box::new(ProviderUsage::new(
                 "test-model".to_string(),
                 Usage::new(Some(5), Some(7), Some(12)),
-            )),
+            ))),
         ])
     }
 }

@@ -1,5 +1,6 @@
 use std::ops::{Add, AddAssign};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -40,6 +41,7 @@ pub struct ProviderStats {
     pub elapsed_ms: Option<u64>,
     pub output_tokens: Option<usize>,
     pub draft: Option<DraftStats>,
+    pub first_content_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -75,6 +77,15 @@ impl ProviderUsage {
     pub fn with_cost(mut self, cost: f64, source: CostSource) -> Self {
         self.cost = Some(cost);
         self.cost_source = Some(source);
+        self
+    }
+
+    pub fn with_first_content_at(mut self, at: Option<DateTime<Utc>>) -> Self {
+        if at.is_some() {
+            self.stats
+                .get_or_insert_with(ProviderStats::default)
+                .first_content_at = at;
+        }
         self
     }
 
