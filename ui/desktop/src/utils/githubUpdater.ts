@@ -3,7 +3,7 @@ import { compareVersions } from 'compare-versions';
 import { z } from 'zod';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { constants as fsConstants, existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from './logger';
@@ -71,6 +71,60 @@ function powershellQuote(value: string): string {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// Downloaded archives outlive the install so a broken release can be rolled back without
+// downloading it again; only the newest few are kept.
+const CACHED_ARCHIVE_LIMIT = 2;
+
+async function ensureCacheDir(): Promise<string> {
+  const dir = path.join(app.getPath('userData'), 'update-cache');
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function pruneCache(cacheDir: string, keep = CACHED_ARCHIVE_LIMIT): Promise<void> {
+  const entries = await fs.readdir(cacheDir, { withFileTypes: true });
+  const archives = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.zip'))
+      .map(async (entry) => {
+        const archivePath = path.join(cacheDir, entry.name);
+        return { archivePath, mtimeMs: (await fs.stat(archivePath)).mtimeMs };
+      })
+  );
+  archives.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  await Promise.all(
+    archives.slice(keep).map(({ archivePath }) => fs.rm(archivePath, { force: true }))
+  );
+}
+
+// The swap moves the install aside and recreates it beside the original, so the parent directory
+// must be writable as well as the install itself. fs.access ignores Windows ACLs, so the parent
+// is probed by actually creating an entry in it.
+export async function isTargetWritable(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath, fsConstants.W_OK);
+    const probe = await fs.mkdtemp(path.join(path.dirname(targetPath), '.goose-update-probe-'));
+    await fs.rm(probe, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Gatekeeper refuses to launch a bundle whose signature does not verify, which would leave the
+// user with an app that will not open after the swap. Unsigned local builds are legitimate, so a
+// failure is recorded for diagnosis rather than blocking the install.
+async function logCodeSignature(bundlePath: string): Promise<void> {
+  try {
+    await runCommand('codesign', ['--verify', '--deep', '--strict', bundlePath]);
+    log.info(`GitHubUpdater: codesign verification passed for ${bundlePath}`);
+  } catch (error) {
+    log.warn(
+      `GitHubUpdater: codesign verification failed for ${bundlePath}: ${errorMessage(error, 'unknown')}`
+    );
+  }
 }
 
 async function extractArchive(archivePath: string, destDir: string): Promise<void> {
@@ -470,14 +524,17 @@ async function assertPayloadIsRunnable(
   }
 }
 
+// The swap script deletes stagingDir when it finishes, so it must not be the archive's own
+// directory: the archive lives in the update cache and has to survive the install.
 export async function prepareUpdateInstall(options: {
   archivePath: string;
+  stagingDir: string;
   targetPath: string;
   relaunchPath: string;
   executableRelativePath: string;
   pid: number;
 }): Promise<SwapCommand> {
-  const stagingDir = path.dirname(options.archivePath);
+  const { stagingDir } = options;
   const extractDir = path.join(stagingDir, 'extracted');
 
   await fs.rm(extractDir, { recursive: true, force: true });
@@ -488,6 +545,10 @@ export async function prepareUpdateInstall(options: {
   log.info(`GitHubUpdater: Update payload: ${payloadPath}`);
 
   await assertPayloadIsRunnable(payloadPath, options.executableRelativePath);
+
+  if (process.platform === 'darwin') {
+    await logCodeSignature(payloadPath);
+  }
 
   return writeSwapScript({
     stagingDir,
@@ -663,7 +724,7 @@ export class GitHubUpdater {
     downloadUrl: string,
     latestVersion: string,
     onProgress?: (percent: number) => void
-  ): Promise<{ success: boolean; downloadPath?: string; extractedPath?: string; error?: string }> {
+  ): Promise<{ success: boolean; downloadPath?: string; error?: string }> {
     const downloadStartTime = Date.now();
     try {
       log.info('=== GitHubUpdater: STARTING DOWNLOAD ===');
@@ -753,20 +814,25 @@ export class GitHubUpdater {
       const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
       log.info(`GitHubUpdater: Buffer created - ${buffer.length} bytes`);
 
-      const stagingDir = await fs.mkdtemp(
-        path.join(await fs.realpath(os.tmpdir()), 'goose-update-')
-      );
-      const fileName = `${this.bundleName}-${latestVersion}.zip`;
-      const downloadPath = path.join(stagingDir, fileName);
+      const cacheDir = await ensureCacheDir();
+      const downloadPath = path.join(cacheDir, `${this.bundleName}-${latestVersion}.zip`);
 
       log.info(`GitHubUpdater: Writing file to ${downloadPath}...`);
-      await fs.writeFile(downloadPath, buffer, { flag: 'wx', mode: 0o600 });
+      // Writing exclusively and renaming into place never follows an entry already at either
+      // path, and a crash mid-write cannot leave a truncated archive under the cached name.
+      const partialPath = `${downloadPath}.partial`;
+      await fs.rm(partialPath, { force: true });
+      await fs.writeFile(partialPath, buffer, { flag: 'wx', mode: 0o600 });
+      await fs.rename(partialPath, downloadPath);
+      await pruneCache(cacheDir).catch((error) =>
+        log.warn('GitHubUpdater: Could not prune update cache:', error)
+      );
 
       const totalDuration = Date.now() - downloadStartTime;
       log.info(`=== GitHubUpdater: DOWNLOAD COMPLETE in ${totalDuration}ms ===`);
       log.info(`GitHubUpdater: File saved to ${downloadPath}`);
 
-      return { success: true, downloadPath, extractedPath: stagingDir };
+      return { success: true, downloadPath };
     } catch (error) {
       const duration = Date.now() - downloadStartTime;
       log.error(`=== GitHubUpdater: DOWNLOAD FAILED after ${duration}ms ===`);
@@ -783,7 +849,9 @@ export class GitHubUpdater {
     }
   }
 
-  async installUpdate(downloadPath: string): Promise<{ success: boolean; error?: string }> {
+  async installUpdate(
+    downloadPath: string
+  ): Promise<{ success: boolean; error?: string; needsPermission: boolean }> {
     try {
       log.info('=== GitHubUpdater: STARTING AUTOMATIC INSTALL ===');
       log.info(`GitHubUpdater: Download path: ${downloadPath}`);
@@ -795,22 +863,40 @@ export class GitHubUpdater {
       );
       log.info(`GitHubUpdater: Install target: ${targetPath}`);
 
-      const swap = await prepareUpdateInstall({
-        archivePath: downloadPath,
-        targetPath,
-        relaunchPath,
-        executableRelativePath,
-        pid: process.pid,
-      });
+      if (!(await isTargetWritable(targetPath))) {
+        log.error(`GitHubUpdater: Install target is not writable: ${targetPath}`);
+        return {
+          success: false,
+          needsPermission: true,
+          error: `Goose cannot update itself because ${targetPath} or its folder is not writable. Move Goose to /Applications (macOS) or another folder you can write to, then try again.`,
+        };
+      }
 
-      await launchSwapScript(swap);
+      const stagingDir = await fs.mkdtemp(
+        path.join(await fs.realpath(os.tmpdir()), 'goose-update-')
+      );
+      try {
+        const swap = await prepareUpdateInstall({
+          archivePath: downloadPath,
+          stagingDir,
+          targetPath,
+          relaunchPath,
+          executableRelativePath,
+          pid: process.pid,
+        });
+        await launchSwapScript(swap);
+      } catch (error) {
+        await fs.rm(stagingDir, { recursive: true, force: true });
+        throw error;
+      }
 
       log.info('=== GitHubUpdater: SWAP SCRIPT LAUNCHED, app will quit ===');
-      return { success: true };
+      return { success: true, needsPermission: false };
     } catch (error) {
       log.error('GitHubUpdater: Error installing update:', error);
       return {
         success: false,
+        needsPermission: false,
         error: errorMessage(error, 'Unknown error'),
       };
     }

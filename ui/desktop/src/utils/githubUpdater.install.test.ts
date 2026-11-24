@@ -160,18 +160,20 @@ afterEach(async () => {
 });
 
 describe('prepareUpdateInstall', () => {
-  it('waits for the app to exit, swaps in the new version, and relaunches it', async () => {
+  it('waits for the app to exit, swaps in the new version, relaunches it, and keeps the cached archive', async () => {
     const workspace = await makeTempDir('goose-update-test-');
     const stagingDir = path.join(workspace, 'staging');
+    const cacheDir = path.join(workspace, 'update-cache');
     const payloadSource = path.join(workspace, 'payload');
     const installRoot = path.join(workspace, 'install');
     const markerPath = path.join(workspace, 'relaunched.txt');
     await fs.mkdir(stagingDir, { recursive: true });
+    await fs.mkdir(cacheDir, { recursive: true });
     await fs.mkdir(payloadSource, { recursive: true });
     await fs.mkdir(installRoot, { recursive: true });
 
     const newPayload = await makePayload(payloadSource, '2.0.0', markerPath);
-    const archivePath = path.join(stagingDir, 'Goose-2.0.0.zip');
+    const archivePath = path.join(cacheDir, 'Goose-2.0.0.zip');
     await zip(newPayload, archivePath);
 
     const installedRoot = await makePayload(installRoot, '1.0.0', markerPath);
@@ -190,6 +192,7 @@ describe('prepareUpdateInstall', () => {
 
     const swap = await prepareUpdateInstall({
       archivePath,
+      stagingDir,
       targetPath: installedRoot,
       relaunchPath,
       executableRelativePath: executableRelativePath(),
@@ -217,6 +220,7 @@ describe('prepareUpdateInstall', () => {
     expect(await waitFor(async () => !(await exists(stagingDir)), 60000)).toBe(true);
     expect(await fs.readFile(unrelatedFile, 'utf8')).toBe('keep me');
     expect(await exists(`${installedRoot}.goose-previous`)).toBe(false);
+    expect(await exists(archivePath)).toBe(true);
   }, 150000);
 
   it('restores the previous install when the new payload cannot be copied', async () => {
@@ -246,6 +250,7 @@ describe('prepareUpdateInstall', () => {
 
     const swap = await prepareUpdateInstall({
       archivePath,
+      stagingDir,
       targetPath: installedRoot,
       relaunchPath,
       executableRelativePath: executableRelativePath(),
@@ -280,6 +285,7 @@ describe('prepareUpdateInstall', () => {
     await expect(
       prepareUpdateInstall({
         archivePath,
+        stagingDir,
         targetPath: path.join(workspace, 'install', 'Goose'),
         relaunchPath: path.join(workspace, 'install', 'Goose'),
         executableRelativePath: executableRelativePath(),

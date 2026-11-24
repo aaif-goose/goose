@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveInstallTarget } from './githubUpdater';
+import { isTargetWritable, resolveInstallTarget } from './githubUpdater';
 
 const tempDirs: string[] = [];
 const originalPlatform = process.platform;
@@ -130,4 +130,34 @@ describe('resolveInstallTarget', () => {
 
     await expect(resolveInstallTarget(exePath)).rejects.toThrow(/was set up by the installer/);
   });
+});
+
+describe('isTargetWritable', () => {
+  it('accepts an install whose folder is writable without leaving anything behind', async () => {
+    const root = await makeTempDir();
+    const target = path.join(root, 'Goose.app');
+    await fs.mkdir(target);
+
+    await expect(isTargetWritable(target)).resolves.toBe(true);
+    expect(await fs.readdir(root)).toEqual(['Goose.app']);
+  });
+
+  // Root ignores permission bits and Windows does not apply POSIX modes, so neither can
+  // reproduce a read-only parent this way.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'rejects a writable install inside a folder that is not writable',
+    async () => {
+      const root = await makeTempDir();
+      const parent = path.join(root, 'Applications');
+      const target = path.join(parent, 'Goose.app');
+      await fs.mkdir(target, { recursive: true });
+      await fs.chmod(parent, 0o555);
+
+      try {
+        await expect(isTargetWritable(target)).resolves.toBe(false);
+      } finally {
+        await fs.chmod(parent, 0o755);
+      }
+    }
+  );
 });
