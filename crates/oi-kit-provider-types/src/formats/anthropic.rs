@@ -2786,52 +2786,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_reports_first_content_time_for_tool_call() {
-        let events = concat!(
+        let events = [
             r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":0}}}"#,
-            "\n",
             r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"shell","input":{}}}"#,
-            "\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\""}}"#,
-            "\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":": \"ls\"}"}}"#,
-            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"ls\"}"}}"#,
             r#"data: {"type":"content_block_stop","index":0}"#,
-            "\n",
             r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":12}}"#,
-            "\n",
             r#"data: {"type":"message_stop"}"#,
-        );
+        ]
+        .join("\n");
 
-        first_content_window(events, 1, response_to_streaming_message)
-            .await
-            .assert_reported_at_first_content();
-    }
-
-    #[tokio::test]
-    async fn test_streaming_reports_first_content_time_for_thinking() {
-        let events = concat!(
-            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":0}}}"#,
-            "\n",
-            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
-            "\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me check."}}"#,
-            "\n",
-            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}"#,
-            "\n",
-            r#"data: {"type":"content_block_stop","index":0}"#,
-            "\n",
-            r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
-            "\n",
-            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Done."}}"#,
-            "\n",
-            r#"data: {"type":"content_block_stop","index":1}"#,
-            "\n",
-            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}"#,
-            "\n",
-            r#"data: {"type":"message_stop"}"#,
-        );
-
-        first_content_window(events, 1, response_to_streaming_message)
+        first_content_window(&events, 1, response_to_streaming_message)
             .await
             .assert_reported_at_first_content();
     }

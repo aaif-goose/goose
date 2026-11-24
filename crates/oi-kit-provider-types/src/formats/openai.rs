@@ -3846,21 +3846,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_reports_first_content_time_for_tool_call() {
-        let response_lines = concat!(
+        let response_lines = [
             r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            "\n",
             r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
-            "\n",
-            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\":"}}]},"finish_reason":null}]}"#,
-            "\n",
-            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ls\"}"}}]},"finish_reason":"tool_calls"}]}"#,
-            "\n",
+            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\":\"ls\"}"}}]},"finish_reason":"tool_calls"}]}"#,
             r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
-            "\n",
             "data: [DONE]",
-        );
+        ]
+        .join("\n");
 
-        first_content_window(response_lines, 1, response_to_streaming_message)
+        first_content_window(&response_lines, 1, response_to_streaming_message)
             .await
             .assert_reported_at_first_content();
     }

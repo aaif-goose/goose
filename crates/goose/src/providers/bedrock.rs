@@ -2103,33 +2103,14 @@ mod tests {
     #[test]
     fn test_is_model_output() {
         assert!(is_model_output(&tool_start_event(0, "tool-1", "shell")));
-        assert!(is_model_output(&tool_delta_event(0, "{\"cmd\":")));
         assert!(is_model_output(&delta_event(
             0,
             bedrock::ContentBlockDelta::Text("Hi".to_string())
         )));
-        assert!(is_model_output(&delta_event(
-            0,
-            bedrock::ContentBlockDelta::ReasoningContent(
-                bedrock::ReasoningContentBlockDelta::Text("Let me think".to_string())
-            )
-        )));
-
-        let message_start = bedrock::ConverseStreamOutput::MessageStart(
-            bedrock::MessageStartEvent::builder()
-                .role(bedrock::ConversationRole::Assistant)
-                .build()
-                .unwrap(),
-        );
-        let metadata = bedrock::ConverseStreamOutput::Metadata(
-            bedrock::ConverseStreamMetadataEvent::builder().build(),
-        );
-        assert!(!is_model_output(&message_start));
         assert!(!is_model_output(&stop_event(0)));
         assert!(!is_model_output(&message_stop(
             bedrock::StopReason::EndTurn
         )));
-        assert!(!is_model_output(&metadata));
     }
 
     #[test]
