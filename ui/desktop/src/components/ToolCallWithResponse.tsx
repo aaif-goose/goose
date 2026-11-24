@@ -60,6 +60,7 @@ const i18n = defineMessages({
 });
 
 interface ToolGraphNode {
+  index: number;
   tool: string;
   description: string;
   depends_on: number[];
@@ -67,21 +68,26 @@ interface ToolGraphNode {
 
 const parseToolGraph = (value: unknown): ToolGraphNode[] =>
   Array.isArray(value)
-    ? value
-        .filter((node): node is Record<string, unknown> => !!node && typeof node === 'object')
-        .map((node) => ({
-          tool: typeof node.tool === 'string' ? node.tool : 'unknown',
-          description: typeof node.description === 'string' ? node.description : '',
-          depends_on: Array.isArray(node.depends_on)
-            ? node.depends_on.filter((dep): dep is number => Number.isInteger(dep) && dep >= 0)
-            : [],
-        }))
+    ? value.flatMap((node: unknown, index) => {
+        if (!node || typeof node !== 'object' || Array.isArray(node)) return [];
+        const fields = node as Record<string, unknown>;
+        return [
+          {
+            index,
+            tool: typeof fields.tool === 'string' ? fields.tool : 'unknown',
+            description: typeof fields.description === 'string' ? fields.description : '',
+            depends_on: Array.isArray(fields.depends_on)
+              ? fields.depends_on.filter((dep): dep is number => Number.isInteger(dep) && dep >= 0)
+              : [],
+          },
+        ];
+      })
     : [];
 
-const formatToolGraphNode = (node: ToolGraphNode, index: number) => {
+const formatToolGraphNode = (node: ToolGraphNode) => {
   const deps =
     node.depends_on.length > 0 ? ` (uses ${node.depends_on.map((d) => d + 1).join(', ')})` : '';
-  return `${index + 1}. ${node.tool}: ${node.description}${deps}`;
+  return `${node.index + 1}. ${node.tool}: ${node.description}${deps}`;
 };
 
 type UiMeta = {
@@ -432,7 +438,7 @@ const formatSubagentToolCall = (data: SubagentToolRequestData): string => {
   if (['execute_javascript', 'execute_typescript'].includes(toolName) && toolGraph.length > 0) {
     const plural = toolGraph.length === 1 ? '' : 's';
     const header = `[subagent:${shortId}] ${toolGraph.length} tool call${plural} | ${toolName}`;
-    const lines = toolGraph.map((node, idx) => `  ${formatToolGraphNode(node, idx)}`);
+    const lines = toolGraph.map((node) => `  ${formatToolGraphNode(node)}`);
     return [header, ...lines].join('\n');
   }
 
