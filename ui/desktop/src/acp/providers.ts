@@ -4,7 +4,6 @@ import type {
   CustomProviderReadResponse_unstable,
   ProviderSecretDto,
   ProviderInventoryEntryDto,
-  RefreshProviderInventoryResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from '@aaif/goose-acp-client';
@@ -123,15 +122,9 @@ export async function acpGetProviderDetails(providerId: string): Promise<Provide
 async function waitForProviderInventoryRefresh(
   client: Awaited<ReturnType<typeof getAcpClient>>,
   providerId: string,
-  refresh: RefreshProviderInventoryResponse_unstable,
+  shouldWait: boolean,
   signal?: globalThis.AbortSignal
 ): Promise<ProviderDetails> {
-  const shouldWait =
-    refresh.started.includes(providerId) ||
-    refresh.skipped?.some(
-      (skip) => skip.providerId === providerId && skip.reason === 'already_refreshing'
-    );
-
   let entry: ProviderInventoryEntryDto | undefined;
   const attempts = shouldWait
     ? INVENTORY_REFRESH_TIMEOUT_MS / INVENTORY_REFRESH_POLL_INTERVAL_MS
@@ -187,7 +180,12 @@ export async function acpRefreshProviderDetails(
     const refresh = await client.goose.providersInventoryRefresh_unstable({
       providerIds: [providerId],
     });
-    const provider = await waitForProviderInventoryRefresh(client, providerId, refresh, signal);
+    const shouldWait =
+      refresh.refreshed.includes(providerId) ||
+      (refresh.skipped ?? []).some(
+        (skip) => skip.providerId === providerId && skip.reason === 'already_refreshing'
+      );
+    const provider = await waitForProviderInventoryRefresh(client, providerId, shouldWait, signal);
     return { provider, connectionChecked: true, readinessError: null };
   }
 
@@ -276,12 +274,12 @@ export async function acpEnableProvider(
 ): Promise<ProviderDetails> {
   const client = await getAcpClient();
   throwIfAborted(signal);
-  const { refresh } = await client.goose.providersConfigSave_unstable({
+  await client.goose.providersConfigSave_unstable({
     providerId,
     fields: [],
   });
   throwIfAborted(signal);
-  return waitForProviderInventoryRefresh(client, providerId, refresh, signal);
+  return waitForProviderInventoryRefresh(client, providerId, true, signal);
 }
 
 export async function acpAuthenticateProvider(providerId: string): Promise<void> {

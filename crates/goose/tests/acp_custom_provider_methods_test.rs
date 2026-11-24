@@ -280,18 +280,6 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             })),
             "create should invalidate the secret cache before status checks"
         );
-        assert_eq!(
-            created.get("refresh"),
-            Some(&serde_json::json!({
-                "started": [],
-                "skipped": [
-                    {
-                        "providerId": provider_id,
-                        "reason": "does_not_support_refresh",
-                    },
-                ],
-            }))
-        );
 
         let custom_provider_path = Paths::config_dir()
             .join("custom_providers")
@@ -546,13 +534,6 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         assert_eq!(
             deleted.pointer("/providerId"),
             Some(&serde_json::json!(provider_id))
-        );
-        assert_eq!(
-            deleted.get("refresh"),
-            Some(&serde_json::json!({
-                "started": [],
-                "skipped": [],
-            }))
         );
         assert!(
             !custom_provider_path.exists(),

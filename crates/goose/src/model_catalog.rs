@@ -1,8 +1,12 @@
 use crate::config::paths::Paths;
+use futures::future::{BoxFuture, FutureExt, Shared};
 use oi_kit_providers::canonical::{fetch_remote_catalog, load_cached_catalog};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 const CATALOG_URL: &str = "https://models.dev/api.json";
+
+static DOWNLOAD: OnceLock<Shared<BoxFuture<'static, ()>>> = OnceLock::new();
 
 fn cache_dir() -> PathBuf {
     Paths::in_data_dir("model_catalog")
@@ -14,11 +18,18 @@ pub fn initialize() {
         tracing::warn!(%error, "ignoring invalid cached model catalog");
     }
 
-    tokio::spawn(async move {
+    let download = tokio::spawn(async move {
         if let Err(error) = refresh(cache_dir).await {
             tracing::warn!(%error, "failed to refresh remote model catalog");
         }
     });
+    let _ = DOWNLOAD.set(download.map(|_| ()).boxed().shared());
+}
+
+pub async fn wait_for_download() {
+    if let Some(download) = DOWNLOAD.get() {
+        download.clone().await;
+    }
 }
 
 async fn refresh(cache_dir: PathBuf) -> anyhow::Result<()> {

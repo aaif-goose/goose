@@ -125,14 +125,6 @@ fn provider_secret_mutations_and_inventory_refresh_invalidate_global_secret_cach
             "provider config save should return the updated configured status"
         );
         assert_eq!(
-            save_provider_config.get("refresh"),
-            Some(&serde_json::json!({
-                "started": ["xai"],
-                "skipped": [],
-            })),
-            "provider config save should return the inventory refresh acknowledgement"
-        );
-        assert_eq!(
             Config::global()
                 .get_secret::<String>("XAI_API_KEY")
                 .unwrap(),
@@ -207,7 +199,7 @@ fn provider_secret_mutations_and_inventory_refresh_invalidate_global_secret_cach
         .expect("inventory refresh should succeed");
 
         assert_eq!(
-            refresh.get("started"),
+            refresh.get("refreshed"),
             Some(&serde_json::json!(["anthropic"])),
             "inventory refresh should invalidate the global secrets cache before planning"
         );

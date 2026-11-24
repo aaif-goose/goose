@@ -52,7 +52,7 @@ describe('ACP providers', () => {
         providersReadinessCheck_unstable: vi.fn().mockResolvedValue({ ready: true }),
         providersInventoryRefresh_unstable: vi
           .fn()
-          .mockResolvedValue({ started: ['zai_coding_plan'], skipped: [] }),
+          .mockResolvedValue({ refreshed: ['zai_coding_plan'], skipped: [] }),
       },
     };
     vi.mocked(getAcpClient).mockResolvedValue(
@@ -248,7 +248,7 @@ describe('ACP providers', () => {
           ready: true,
         }),
         providersInventoryRefresh_unstable: vi.fn().mockResolvedValue({
-          started: ['claude-acp'],
+          refreshed: ['claude-acp'],
           skipped: [],
         }),
       },
@@ -273,21 +273,21 @@ describe('ACP providers', () => {
     });
     const client = {
       goose: {
-        providersConfigSave_unstable: vi.fn().mockResolvedValue({
-          status: {},
-          refresh: { started: ['claude-acp'], skipped: [] },
-        }),
+        providersConfigSave_unstable: vi.fn().mockResolvedValue({ status: {} }),
         providersList_unstable: vi
           .fn()
           .mockResolvedValueOnce({ entries: [available] })
           .mockResolvedValueOnce({ entries: [available] })
+          .mockResolvedValueOnce({
+            entries: [{ ...available, configured: true, refreshing: true }],
+          })
           .mockResolvedValueOnce({ entries: [refreshed] }),
         providersReadinessCheck_unstable: vi.fn().mockResolvedValue({
           providerId: 'claude-acp',
           ready: true,
         }),
-        providersInventoryRefresh_unstable: vi.fn().mockResolvedValue({
-          started: [],
+        providersInventoryRefresh_unstable: vi.fn().mockResolvedValueOnce({
+          refreshed: [],
           skipped: [{ providerId: 'claude-acp', reason: 'not_configured' }],
         }),
       },
@@ -305,6 +305,7 @@ describe('ACP providers', () => {
       providerId: 'claude-acp',
       fields: [],
     });
+    expect(client.goose.providersInventoryRefresh_unstable).toHaveBeenCalledTimes(1);
     expect(client.goose.providersList_unstable).toHaveBeenCalledWith({
       providerIds: ['claude-acp'],
     });
@@ -352,7 +353,7 @@ describe('ACP providers', () => {
           ready: true,
         }),
         providersInventoryRefresh_unstable: vi.fn().mockResolvedValue({
-          started: ['claude-acp'],
+          refreshed: ['claude-acp'],
           skipped: [],
         }),
       },

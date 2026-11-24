@@ -1045,7 +1045,6 @@ pub struct ProviderConfigAuthenticateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigChangeResponse {
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1379,7 +1378,6 @@ pub struct CustomProviderCreateRequest {
 pub struct CustomProviderCreateResponse {
     pub provider_id: String,
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
@@ -1420,7 +1418,6 @@ pub struct CustomProviderUpdateRequest {
 pub struct CustomProviderUpdateResponse {
     pub provider_id: String,
     pub status: ProviderConfigStatusDto,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// Delete a custom provider from goose's declarative provider store.
@@ -1438,7 +1435,6 @@ pub struct CustomProviderDeleteRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CustomProviderDeleteResponse {
     pub provider_id: String,
-    pub refresh: RefreshProviderInventoryResponse,
 }
 
 /// The type of source entity.
@@ -1814,7 +1810,9 @@ pub struct ProviderSupportedModelsListResponse {
     pub models: Vec<String>,
 }
 
-/// Trigger a background refresh of provider inventories.
+/// Ask providers for their current models and save them. Responds after the
+/// refreshes finish. A provider that is already refreshing is skipped, not
+/// waited for.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/providers/inventory/refresh",
@@ -1822,18 +1820,18 @@ pub struct ProviderSupportedModelsListResponse {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryRequest {
-    /// Which providers to refresh. Empty means all known providers.
+    /// Providers to refresh. Empty means all known providers.
     #[serde(default)]
     pub provider_ids: Vec<String>,
 }
 
-/// Refresh acknowledgement.
+/// The providers refreshed, and the ones skipped.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshProviderInventoryResponse {
-    /// Which providers will be refreshed.
-    pub started: Vec<String>,
-    /// Which providers were skipped and why.
+    /// Providers that were refreshed, successfully or not.
+    pub refreshed: Vec<String>,
+    /// Providers that were not refreshed, with the reason.
     #[serde(default)]
     pub skipped: Vec<RefreshProviderInventorySkipDto>,
 }

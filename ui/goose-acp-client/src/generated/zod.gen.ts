@@ -841,30 +841,9 @@ export const zProviderConfigStatusDto = z.object({
     isConfigured: z.boolean()
 });
 
-export const zRefreshProviderInventorySkipReasonDto = z.enum([
-    'unknown_provider',
-    'not_configured',
-    'does_not_support_refresh',
-    'already_refreshing'
-]);
-
-export const zRefreshProviderInventorySkipDto = z.object({
-    providerId: z.string(),
-    reason: zRefreshProviderInventorySkipReasonDto
-});
-
-/**
- * Refresh acknowledgement.
- */
-export const zRefreshProviderInventoryResponse_unstable = z.object({
-    started: z.array(z.string()),
-    skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
-});
-
 export const zCustomProviderCreateResponse_unstable = z.object({
     providerId: z.string(),
-    status: zProviderConfigStatusDto,
-    refresh: zRefreshProviderInventoryResponse_unstable
+    status: zProviderConfigStatusDto
 });
 
 /**
@@ -918,8 +897,7 @@ export const zCustomProviderUpdateRequest_unstable = z.object({
 
 export const zCustomProviderUpdateResponse_unstable = z.object({
     providerId: z.string(),
-    status: zProviderConfigStatusDto,
-    refresh: zRefreshProviderInventoryResponse_unstable
+    status: zProviderConfigStatusDto
 });
 
 /**
@@ -930,15 +908,36 @@ export const zCustomProviderDeleteRequest_unstable = z.object({
 });
 
 export const zCustomProviderDeleteResponse_unstable = z.object({
-    providerId: z.string(),
-    refresh: zRefreshProviderInventoryResponse_unstable
+    providerId: z.string()
 });
 
 /**
- * Trigger a background refresh of provider inventories.
+ * Ask providers for their current models and save them. Responds after the
+ * refreshes finish. A provider that is already refreshing is skipped, not
+ * waited for.
  */
 export const zRefreshProviderInventoryRequest_unstable = z.object({
     providerIds: z.array(z.string()).optional().default([])
+});
+
+export const zRefreshProviderInventorySkipReasonDto = z.enum([
+    'unknown_provider',
+    'not_configured',
+    'does_not_support_refresh',
+    'already_refreshing'
+]);
+
+export const zRefreshProviderInventorySkipDto = z.object({
+    providerId: z.string(),
+    reason: zRefreshProviderInventorySkipReasonDto
+});
+
+/**
+ * The providers refreshed, and the ones skipped.
+ */
+export const zRefreshProviderInventoryResponse_unstable = z.object({
+    refreshed: z.array(z.string()),
+    skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
 });
 
 /**
@@ -998,8 +997,7 @@ export const zProviderConfigSaveRequest_unstable = z.object({
 });
 
 export const zProviderConfigChangeResponse_unstable = z.object({
-    status: zProviderConfigStatusDto,
-    refresh: zRefreshProviderInventoryResponse_unstable
+    status: zProviderConfigStatusDto
 });
 
 /**

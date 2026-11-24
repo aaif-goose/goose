@@ -1,11 +1,14 @@
 use super::*;
 use crate::config::declarative_providers;
-use crate::providers::inventory::ensure_refresh_identity_current;
+use crate::providers::inventory::{ensure_refresh_identity_current, InventoryIdentity};
 use crate::providers::provider_secrets;
+use futures::future::join_all;
 use oi_kit_providers::base::ModelInfo;
 use std::str::FromStr;
+use tokio::task::JoinHandle;
 
 const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+const PROVIDER_REFRESH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 
 fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderSecretDto {
     let storage = match secret.storage {
@@ -455,6 +458,29 @@ fn custom_provider_config_to_dto(
     }
 }
 
+async fn fetch_refreshed_models(
+    provider_factory: &AcpProviderFactory,
+    provider_id: &str,
+    identity: &InventoryIdentity,
+    toolshim: bool,
+) -> Result<Vec<String>> {
+    let provider = match AssertUnwindSafe(provider_factory(provider_id.to_string()))
+        .catch_unwind()
+        .await
+    {
+        Ok(result) => result?,
+        Err(_) => return Err(anyhow::anyhow!("provider inventory refresh task panicked")),
+    };
+    ensure_refresh_identity_current(provider_id, identity).await?;
+    match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
+        .catch_unwind()
+        .await
+    {
+        Ok(result) => result.map_err(|error| anyhow::anyhow!(error.to_string())),
+        Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
+    }
+}
+
 fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInventorySkipReasonDto {
     match reason {
         RefreshSkipReason::UnknownProvider => {
@@ -472,7 +498,7 @@ fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInven
 
 fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInventoryResponse {
     RefreshProviderInventoryResponse {
-        started: refresh_plan.started,
+        refreshed: refresh_plan.started,
         skipped: refresh_plan
             .skipped
             .into_iter()
@@ -665,11 +691,10 @@ impl AcpConnection {
         let provider_id = config.name;
         let provider_ids = [provider_id.clone()];
         let status = Self::provider_config_status(provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(CustomProviderCreateResponse {
             provider_id,
             status,
-            refresh,
         })
     }
 
@@ -751,11 +776,10 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(CustomProviderUpdateResponse {
             provider_id: req.provider_id,
             status,
-            refresh,
         })
     }
 
@@ -786,10 +810,6 @@ impl AcpConnection {
 
         Ok(CustomProviderDeleteResponse {
             provider_id: req.provider_id,
-            refresh: RefreshProviderInventoryResponse {
-                started: Vec::new(),
-                skipped: Vec::new(),
-            },
         })
     }
 
@@ -856,41 +876,31 @@ impl AcpConnection {
         statuses
     }
 
-    pub(super) fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshJobPlan) {
+    pub(super) fn spawn_provider_inventory_refresh_jobs(
+        &self,
+        refresh_plan: &RefreshJobPlan,
+    ) -> Vec<JoinHandle<()>> {
+        let mut refresh_tasks = Vec::new();
         for refresh_job in refresh_plan.started.iter().cloned() {
             let provider_inventory = self.provider_inventory.clone();
             let provider_factory = Arc::clone(&self.provider_factory);
             let provider_id = refresh_job.provider_id.clone();
             let identity = refresh_job.identity.clone();
             let toolshim = refresh_job.toolshim;
-            tokio::spawn(async move {
+            refresh_tasks.push(tokio::spawn(async move {
                 let mut refresh_guard = provider_inventory.refresh_guard(&identity);
-                let provider_result =
-                    AssertUnwindSafe(async { provider_factory(provider_id.clone()).await })
-                        .catch_unwind()
-                        .await;
-
-                let fetch_result: Result<Vec<String>> = match provider_result {
-                    Ok(Ok(provider)) => {
-                        match ensure_refresh_identity_current(&provider_id, &identity).await {
-                            Ok(()) => {
-                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
-                                    .catch_unwind()
-                                    .await
-                                {
-                                    Ok(Ok(models)) => Ok(models),
-                                    Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
-                                    Err(_) => Err(anyhow::anyhow!(
-                                        "provider inventory refresh task panicked"
-                                    )),
-                                }
-                            }
-                            Err(error) => Err(error),
-                        }
-                    }
-                    Ok(Err(error)) => Err(error),
-                    Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
-                };
+                let fetch_result: Result<Vec<String>> =
+                    match tokio::time::timeout(
+                        PROVIDER_REFRESH_TIMEOUT,
+                        fetch_refreshed_models(&provider_factory, &provider_id, &identity, toolshim),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => Err(anyhow::anyhow!(
+                            "provider did not list its models within {PROVIDER_REFRESH_TIMEOUT:?}"
+                        )),
+                    };
 
                 match fetch_result {
                     Ok(models) => match provider_inventory
@@ -921,23 +931,22 @@ impl AcpConnection {
                         warn!(provider = %provider_id, error = %error_message, "provider inventory refresh failed");
                     }
                 }
-            });
+            }));
         }
+        refresh_tasks
     }
 
     pub(super) async fn start_provider_inventory_refresh(
         &self,
         provider_ids: &[String],
-    ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let refresh_job_plan = self
             .provider_inventory
             .plan_refresh_jobs(provider_ids)
             .await
             .internal_err()?;
         self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan);
-        Ok(refresh_plan_to_response(
-            refresh_job_plan.into_public_plan(),
-        ))
+        Ok(())
     }
 
     pub(super) async fn on_refresh_provider_inventory(
@@ -945,8 +954,17 @@ impl AcpConnection {
         req: RefreshProviderInventoryRequest,
     ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
         Config::global().invalidate_secrets_cache();
-        self.start_provider_inventory_refresh(&req.provider_ids)
+        #[cfg(feature = "online-model-meta")]
+        crate::model_catalog::wait_for_download().await;
+        let refresh_job_plan = self
+            .provider_inventory
+            .plan_refresh_jobs(&req.provider_ids)
             .await
+            .internal_err()?;
+        join_all(self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan)).await;
+        Ok(refresh_plan_to_response(
+            refresh_job_plan.into_public_plan(),
+        ))
     }
 
     pub(super) async fn on_read_provider_config(
@@ -1048,8 +1066,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_delete_provider_config(
@@ -1091,8 +1109,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_authenticate_provider_config(
@@ -1161,8 +1179,8 @@ impl AcpConnection {
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
+        self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status })
     }
 
     pub(super) async fn on_list_provider_secrets(

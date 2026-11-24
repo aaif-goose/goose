@@ -49,6 +49,7 @@ fn write_acp_global_config(contents: &str) -> PathBuf {
 struct MockProvider {
     name: String,
     recommended_models: Vec<String>,
+    recommended_models_delay: Duration,
     supported_models: Result<Vec<String>, ProviderError>,
 }
 
@@ -72,12 +73,41 @@ impl Provider for MockProvider {
         &self,
         _toolshim: bool,
     ) -> Result<Vec<String>, ProviderError> {
+        tokio::time::sleep(self.recommended_models_delay).await;
         Ok(self.recommended_models.clone())
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         self.supported_models.clone()
     }
+}
+
+async fn connect_with_mock_provider(
+    recommended_models: Vec<String>,
+    recommended_models_delay: Duration,
+    supported_models: Result<Vec<String>, ProviderError>,
+) -> AcpServerConnection {
+    let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+    let provider_factory: AcpProviderFactory = Arc::new(move |provider_name| {
+        let recommended_models = recommended_models.clone();
+        let supported_models = supported_models.clone();
+        Box::pin(async move {
+            Ok(Arc::new(MockProvider {
+                name: provider_name,
+                recommended_models,
+                recommended_models_delay,
+                supported_models,
+            }) as Arc<dyn Provider>)
+        })
+    });
+    AcpServerConnection::new(
+        TestConnectionConfig {
+            provider_factory: Some(provider_factory),
+            ..Default::default()
+        },
+        openai,
+    )
+    .await
 }
 
 fn active_run_id_from_update(update: &SessionUpdate) -> Option<String> {
@@ -1054,25 +1084,13 @@ fn test_custom_unknown_method() {
 fn test_custom_provider_supported_models_lists_raw_provider_models() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
-        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
-            Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: vec!["canonical-filtered-model".to_string()],
-                    supported_models: Ok(vec![
-                        "goose-claude-opus-4-8".to_string(),
-                        "raw-databricks-endpoint".to_string(),
-                    ]),
-                }) as Arc<dyn Provider>)
-            })
-        });
-        let conn = AcpServerConnection::new(
-            TestConnectionConfig {
-                provider_factory: Some(provider_factory),
-                ..Default::default()
-            },
-            openai,
+        let conn = connect_with_mock_provider(
+            vec!["canonical-filtered-model".to_string()],
+            Duration::ZERO,
+            Ok(vec![
+                "goose-claude-opus-4-8".to_string(),
+                "raw-databricks-endpoint".to_string(),
+            ]),
         )
         .await;
 
@@ -1100,25 +1118,47 @@ fn test_custom_provider_supported_models_lists_raw_provider_models() {
 
 #[test]
 #[serial]
+fn test_provider_inventory_refresh_responds_after_models_are_saved() {
+    let _guard = env_lock::lock_env([("OPENAI_API_KEY", Some("test-key"))]);
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let conn = connect_with_mock_provider(
+            vec!["new-model".to_string()],
+            Duration::from_millis(200),
+            Ok(Vec::new()),
+        )
+        .await;
+
+        send_custom(
+            conn.cx(),
+            "_goose/unstable/providers/inventory/refresh",
+            serde_json::json!({ "providerIds": ["openai"] }),
+        )
+        .await
+        .expect("provider inventory refresh should succeed");
+
+        let list = send_custom(
+            conn.cx(),
+            "_goose/unstable/providers/list",
+            serde_json::json!({ "providerIds": ["openai"] }),
+        )
+        .await
+        .expect("provider list should succeed");
+        let entry = &list["entries"][0];
+        assert_eq!(entry["refreshing"], serde_json::json!(false));
+        assert_eq!(entry["models"][0]["id"], serde_json::json!("new-model"));
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_provider_supported_models_maps_not_configured_error() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
-        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
-            Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: Vec::new(),
-                    supported_models: Err(ProviderError::NotConfigured),
-                }) as Arc<dyn Provider>)
-            })
-        });
-        let conn = AcpServerConnection::new(
-            TestConnectionConfig {
-                provider_factory: Some(provider_factory),
-                ..Default::default()
-            },
-            openai,
+        let conn = connect_with_mock_provider(
+            Vec::new(),
+            Duration::ZERO,
+            Err(ProviderError::NotConfigured),
         )
         .await;
 
@@ -1140,24 +1180,12 @@ fn test_custom_provider_supported_models_maps_not_configured_error() {
 fn test_custom_provider_supported_models_maps_authentication_error() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
-        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
-            Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: Vec::new(),
-                    supported_models: Err(ProviderError::Authentication(
-                        "credentials rejected".to_string(),
-                    )),
-                }) as Arc<dyn Provider>)
-            })
-        });
-        let conn = AcpServerConnection::new(
-            TestConnectionConfig {
-                provider_factory: Some(provider_factory),
-                ..Default::default()
-            },
-            openai,
+        let conn = connect_with_mock_provider(
+            Vec::new(),
+            Duration::ZERO,
+            Err(ProviderError::Authentication(
+                "credentials rejected".to_string(),
+            )),
         )
         .await;
 
