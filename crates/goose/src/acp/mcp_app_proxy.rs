@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use crate::acp::transport::auth::token_matches;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -227,7 +229,7 @@ async fn mcp_app_proxy(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
-    if params.secret != state.secret_key {
+    if !token_matches(Some(&params.secret), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
     if !peer_addr_is_loopback(&peer_addr) {
@@ -268,7 +270,7 @@ async fn store_guest_html(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
-    if body.secret != state.secret_key {
+    if !token_matches(Some(&body.secret), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
     if !peer_addr_is_loopback(&peer_addr) {
