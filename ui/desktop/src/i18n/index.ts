@@ -11,8 +11,16 @@
  * the "zh-TW" catalog.
  */
 
+import type { MessageDescriptor } from 'react-intl';
+
 // Re-export react-intl utilities that components use directly
-export { defineMessages, useIntl } from 'react-intl';
+export { useIntl } from 'react-intl';
+
+export function defineMessages<T extends Record<string, MessageDescriptor>>(
+  messages: T
+): { readonly [K in keyof T]: Readonly<T[K]> } {
+  return messages;
+}
 
 /** The set of locales that have translation catalogs. */
 // prettier-ignore

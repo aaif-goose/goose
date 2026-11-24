@@ -9,7 +9,8 @@ import {
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { defineMessages, type IntlShape, type MessageDescriptor } from 'react-intl';
+import type { IntlShape, MessageDescriptor } from 'react-intl';
+import { defineMessages } from '../i18n';
 
 export interface NavItem {
   id: string;
