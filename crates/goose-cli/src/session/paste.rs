@@ -339,12 +339,12 @@ fn paste_marker(
     cursor_position: usize,
 ) -> Option<String> {
     let (before, after) = editor_line.split_at(cursor_position);
-    let first_after_insert = before
-        .chars()
-        .next()
-        .or_else(|| content.chars().next())
-        .or_else(|| after.chars().next());
-    if first_after_insert == Some('/') {
+    let starts_with_slash = [before, content, after]
+        .into_iter()
+        .map(str::trim_start)
+        .find(|part| !part.is_empty())
+        .is_some_and(|part| part.starts_with('/'));
+    if starts_with_slash {
         return None;
     }
 
@@ -391,7 +391,7 @@ enum PasteSubmission {
 fn prepare_paste_submission(line: &str, pastes: &[Paste]) -> PasteSubmission {
     let contained_chip = pastes.iter().any(|paste| line.contains(&paste.marker));
     let expanded = expand_pastes(line, pastes);
-    if contained_chip && expanded.starts_with('/') {
+    if contained_chip && expanded.trim_start().starts_with('/') {
         PasteSubmission::NeedsReview(expanded)
     } else {
         PasteSubmission::Ready(expanded)
@@ -454,15 +454,18 @@ mod tests {
 
     #[test]
     fn test_paste_marker_keeps_direct_and_split_slash_commands_visible() {
-        assert_eq!(marker("/extension example\nignored", 4), None);
+        assert_eq!(marker("/fixture-only example\nignored", 4), None);
 
-        let long = format!("/mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS));
+        let long = format!("/fixture-only {}", "x".repeat(PASTE_CHIP_MIN_CHARS));
         assert_eq!(marker(&long, 5), None);
 
-        assert_eq!(paste_marker("extension example\nignored", 6, "/", 1), None);
+        assert_eq!(
+            paste_marker("fixture-only example\nignored", 6, "/", 1),
+            None
+        );
         assert_eq!(
             paste_marker(
-                &format!("mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS)),
+                &format!("fixture-only {}", "x".repeat(PASTE_CHIP_MIN_CHARS)),
                 7,
                 "/",
                 1,
@@ -472,17 +475,36 @@ mod tests {
     }
 
     #[test]
+    fn test_paste_marker_keeps_slash_after_leading_whitespace_visible() {
+        assert_eq!(marker(" \n\t/fixture-only note\ncontinued", 1), None);
+
+        let whitespace_prefix = " \u{2003}";
+        assert_eq!(
+            paste_marker(
+                "/fixture-only note\ncontinued",
+                2,
+                whitespace_prefix,
+                whitespace_prefix.len(),
+            ),
+            None
+        );
+
+        let line = " /fixture-only";
+        assert_eq!(paste_marker("\n \n ", 3, line, 1), None);
+    }
+
+    #[test]
     fn test_paste_marker_preserves_non_command_chips() {
         assert_eq!(
-            marker("explain /extension\ncontinued", 8),
+            marker("explain /fixture-only\ncontinued", 8),
             Some("[Pasted 2 lines #8]".to_string())
         );
         assert_eq!(
-            paste_marker("/extension example\ncontinued", 9, "explain ", 8),
+            paste_marker("/fixture-only example\ncontinued", 9, "explain ", 8),
             Some("[Pasted 2 lines #9]".to_string())
         );
         assert_eq!(
-            paste_marker("extension example\ncontinued", 10, "explain /", 9),
+            paste_marker("fixture-only example\ncontinued", 10, "explain /", 9),
             Some("[Pasted 2 lines #10]".to_string())
         );
     }
@@ -567,22 +589,42 @@ mod tests {
     fn test_prepare_paste_submission_reviews_hidden_slash_after_edit() {
         let pasted_slash = vec![Paste {
             marker: "[Pasted 2 lines #1]".to_string(),
-            content: "/extension example\ncontinued".to_string(),
+            content: "/fixture-only example\ncontinued".to_string(),
         }];
         assert!(matches!(
             prepare_paste_submission("[Pasted 2 lines #1]", &pasted_slash),
             PasteSubmission::NeedsReview(input)
-                if input == "/extension example\ncontinued"
+                if input == "/fixture-only example\ncontinued"
         ));
 
         let pasted_command = vec![Paste {
             marker: "[Pasted 2 lines #2]".to_string(),
-            content: "extension example\ncontinued".to_string(),
+            content: "fixture-only example\ncontinued".to_string(),
         }];
         assert!(matches!(
             prepare_paste_submission("/[Pasted 2 lines #2]", &pasted_command),
             PasteSubmission::NeedsReview(input)
-                if input == "/extension example\ncontinued"
+                if input == "/fixture-only example\ncontinued"
+        ));
+    }
+
+    #[test]
+    fn test_prepare_paste_submission_requires_review_after_leading_whitespace() {
+        let content = "\n\t/fixture-only note\ncontinued";
+        let pastes = [Paste {
+            marker: "[Pasted 3 lines #1]".to_string(),
+            content: content.to_string(),
+        }];
+        let text = format!(" \u{2003}{content}");
+        let PasteSubmission::NeedsReview(expanded) =
+            prepare_paste_submission(" \u{2003}[Pasted 3 lines #1]", &pastes)
+        else {
+            panic!("slash command must be revealed before submission");
+        };
+        assert_eq!(expanded, text);
+        assert!(matches!(
+            prepare_paste_submission(&expanded, &[]),
+            PasteSubmission::Ready(input) if input == text
         ));
     }
 
@@ -590,12 +632,12 @@ mod tests {
     fn test_prepare_paste_submission_preserves_legitimate_chips() {
         let pastes = vec![Paste {
             marker: "[Pasted 2 lines #1]".to_string(),
-            content: "/extension example\ncontinued".to_string(),
+            content: "/fixture-only example\ncontinued".to_string(),
         }];
         assert!(matches!(
             prepare_paste_submission("explain [Pasted 2 lines #1]", &pastes),
             PasteSubmission::Ready(input)
-                if input == "explain /extension example\ncontinued"
+                if input == "explain /fixture-only example\ncontinued"
         ));
     }
 
