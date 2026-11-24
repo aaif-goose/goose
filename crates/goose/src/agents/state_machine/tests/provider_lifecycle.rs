@@ -4,6 +4,9 @@ use super::calculator_extension::{named_values, value, ADD, ADD_VALUES};
 use super::dummy_api::ProviderFeatures;
 use super::pipeline::MessageKind::{Agent, Error, Thinking, ToolCall, ToolResponse};
 use super::pipeline::{test_pipeline, test_pipeline_with};
+use crate::agents::state_machine::ops_thinking_recovery::{
+    THINKING_ONLY_CONTINUATION_MESSAGE, THINKING_ONLY_TURN_MESSAGE,
+};
 use crate::agents::AgentEvent;
 use crate::conversation::fix_conversation;
 use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
@@ -329,7 +332,21 @@ async fn provider_lifecycle() -> Result<()> {
 
     api.on("hit the reasoning output limit")
         .reasoning_output_limit("I will reason until the budget runs out.");
+    let calls_before = api.call_count();
     let result = pipeline.run(["hit the reasoning output limit"]).await?;
+    assert_eq!(
+        api.call_count() - calls_before,
+        1,
+        "a reasoning-only length stop must not be retried"
+    );
+    assert!(result.conversation().messages().iter().all(|message| {
+        let text = message.as_concat_text();
+        !text.contains(THINKING_ONLY_CONTINUATION_MESSAGE)
+            && !text.contains(THINKING_ONLY_TURN_MESSAGE)
+    }));
+    assert!(result.conversation().last().is_some_and(|message| {
+        message.role == Role::Assistant && message.metadata.output_token_limit_reached
+    }));
     assert!(result.events.iter().any(|event| {
         matches!(
             event,
