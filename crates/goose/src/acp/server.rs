@@ -28,6 +28,7 @@ use crate::conversation::message::{
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
+use crate::output_token_limit::OutputTokenLimitTracker;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -1384,15 +1385,6 @@ impl AcpConnection {
                     )),
                 ))?;
             }
-            MessageContent::RedactedThinking(_) => {
-                cx.send_notification(SessionNotification::new(
-                    session_id.clone(),
-                    SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
-                        message,
-                        ContentBlock::Text(TextContent::new("Thinking was redacted")),
-                    )),
-                ))?;
-            }
             MessageContent::ActionRequired(action_required) => match &action_required.data {
                 ActionRequiredData::ToolConfirmation {
                     id,
@@ -2109,6 +2101,7 @@ impl AcpConnection {
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
         let mut output_token_limit_reached = false;
+        let mut output_limit = OutputTokenLimitTracker::default();
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
         let mut last_message_was_error = false;
@@ -2132,7 +2125,8 @@ impl AcpConnection {
                             .data(format!("Session not found: {session_id}")));
                     }
 
-                    populate_output_token_limit_content(&mut message);
+                    let limit = output_limit.observe(&message);
+                    populate_output_token_limit_content(&mut message, limit);
                     last_message_was_error = message.error_kind().is_some();
                     for content_item in &message.content {
                         if let MessageContent::ToolRequest(tool_request) = content_item {
@@ -2187,6 +2181,7 @@ impl AcpConnection {
                     }
                 }
                 Ok(crate::agents::AgentEvent::Usage(_)) => {
+                    output_limit.reset();
                     // Both agent loops persist usage before emitting this event. A failed
                     // mid-turn update must not abort the turn; the end-of-turn update
                     // still reports errors.
@@ -2203,6 +2198,7 @@ impl AcpConnection {
                     }
                 }
                 Ok(crate::agents::AgentEvent::HistoryReplaced(_)) => {
+                    output_limit.reset();
                     if let Err(error) = self
                         .send_session_usage_updates(
                             cx,

@@ -23,6 +23,13 @@ const DEFAULT_TOOL_CALL_UPDATE = {
 } as const;
 const OUTPUT_TOKEN_LIMIT_FALLBACK_TEXT =
   'Response stopped because the model reached its output-token limit.';
+const REASONING_OUTPUT_TOKEN_LIMIT_TEXT =
+  "Reasoning used the model's output-token budget before producing an answer. Resend your message or run /compact to continue.";
+const REASONING_LIMIT_META = {
+  outputTokenLimitReached: true,
+  fallbackContent: true,
+  reasoningConsumedOutputBudget: true,
+};
 
 function acpUpdate(update: SessionNotification['update']): SessionNotification {
   return {
@@ -426,6 +433,102 @@ describe('createAcpSessionNotificationAdapter', () => {
           thinking: 'Truncated thinking',
         });
         expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+      });
+
+      it('marks reasoning that used the output budget when the marker shares its id', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Reasoning until the budget runs out' },
+            _meta: { goose: { messageId: 'msg-1' } },
+          } as SessionNotification['update'])
+        );
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: REASONING_OUTPUT_TOKEN_LIMIT_TEXT },
+              _meta: { goose: { messageId: 'msg-1', ...REASONING_LIMIT_META } },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0].content).toEqual([
+          { type: 'thinking', thinking: 'Reasoning until the budget runs out', signature: '' },
+        ]);
+        expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+        expect(messages[0].metadata.reasoningConsumedOutputBudget).toBe(true);
+        expect(messages[0].metadata.fallbackContent).toBeUndefined();
+      });
+
+      it('marks a separate reasoning output-limit marker as fallback content', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Reasoning until the budget runs out' },
+            _meta: { goose: { messageId: 'msg-thinking' } },
+          } as SessionNotification['update'])
+        );
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: REASONING_OUTPUT_TOKEN_LIMIT_TEXT },
+              _meta: { goose: { messageId: 'msg-marker', ...REASONING_LIMIT_META } },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(2);
+        expect(messages[0].metadata.reasoningConsumedOutputBudget).toBeUndefined();
+        expect(messages[1].metadata).toMatchObject(REASONING_LIMIT_META);
+      });
+
+      it('marks reasoning carried by a limited thought chunk', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_thought_chunk',
+              content: { type: 'text', text: 'Reasoning until the budget runs out' },
+              _meta: { goose: { messageId: 'msg-1', ...REASONING_LIMIT_META } },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0].metadata.reasoningConsumedOutputBudget).toBe(true);
+      });
+
+      it('keeps the generic output-limit warning for a partial answer', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Reasoning first' },
+            _meta: { goose: { messageId: 'msg-1' } },
+          } as SessionNotification['update'])
+        );
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'Partial answer' },
+              _meta: { goose: { messageId: 'msg-1', outputTokenLimitReached: true } },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+        expect(messages[0].metadata.reasoningConsumedOutputBudget).toBeUndefined();
       });
 
       it('stores the model that produced each assistant message', () => {

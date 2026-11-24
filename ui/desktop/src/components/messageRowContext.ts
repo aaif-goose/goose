@@ -4,7 +4,6 @@ import {
   getToolConfirmationContent,
   getToolRequests,
   getToolResponses,
-  reasoningConsumedOutputBudget,
   type Message,
   type ToolConfirmationData,
   type ToolResponseMessageContent,
@@ -27,7 +26,6 @@ export interface InferenceModel {
 
 export interface MessageRowContext {
   hideTimestamp: boolean;
-  reasoningConsumedBudget: boolean;
   isInToolCallChain: boolean;
   previousModel: InferenceModel | null;
   toolStates: readonly ToolRenderState[];
@@ -135,7 +133,6 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
 
     return {
       hideTimestamp: hiddenTimestampIndices.has(messageIndex),
-      reasoningConsumedBudget: reasoningConsumedOutputBudget(messages, messageIndex),
       isInToolCallChain: chainedMessageIndices.has(messageIndex),
       previousModel: rowPreviousModel,
       toolStates: toolStatesByMessageIndex[messageIndex],

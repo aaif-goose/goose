@@ -1,9 +1,12 @@
 use crate::conversation::message::{Message, MessageContent};
+use crate::output_token_limit::OutputTokenLimit;
 use agent_client_protocol::schema::v1::{ContentBlock, ContentChunk, MessageId, Meta};
 use serde::Serialize;
 
 const OUTPUT_TOKEN_LIMIT_TEXT: &str =
     "Response stopped because the model reached its output-token limit.";
+const REASONING_OUTPUT_TOKEN_LIMIT_TEXT: &str =
+    "Reasoning used the model's output-token budget before producing an answer. Resend your message or run /compact to continue.";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +20,8 @@ struct GooseMessageMeta<'a> {
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    reasoning_consumed_output_budget: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     inference: Option<GooseInferenceMeta<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,7 +47,9 @@ fn goose_message_meta(
         message_id: message.id.as_deref(),
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
-        fallback_content: has_output_token_limit_fallback_content(message),
+        fallback_content: has_output_token_limit_fallback_content(message)
+            || has_reasoning_output_token_limit_content(message),
+        reasoning_consumed_output_budget: has_reasoning_output_token_limit_content(message),
         inference: message
             .metadata
             .inference
@@ -112,17 +119,18 @@ pub(super) fn live_transcript_chunk(message: &Message, content: ContentBlock) ->
     chunk
 }
 
-pub(super) fn populate_output_token_limit_content(message: &mut Message) {
-    if message.role != rmcp::model::Role::Assistant
-        || !message.content.is_empty()
-        || !message.metadata.output_token_limit_reached
-    {
-        return;
-    }
-
-    message
-        .content
-        .push(MessageContent::text(OUTPUT_TOKEN_LIMIT_TEXT));
+/// Clients that do not read `_meta` still get an explanation in the transcript,
+/// and the reasoning text is how the meta flag travels with the message.
+pub(super) fn populate_output_token_limit_content(
+    message: &mut Message,
+    limit: Option<OutputTokenLimit>,
+) {
+    let text = match limit {
+        Some(OutputTokenLimit::Reasoning) => REASONING_OUTPUT_TOKEN_LIMIT_TEXT,
+        Some(_) if message.content.is_empty() => OUTPUT_TOKEN_LIMIT_TEXT,
+        _ => return,
+    };
+    message.content.push(MessageContent::text(text));
 }
 
 fn has_output_token_limit_fallback_content(message: &Message) -> bool {
@@ -131,6 +139,15 @@ fn has_output_token_limit_fallback_content(message: &Message) -> bool {
         && matches!(
             message.content.as_slice(),
             [MessageContent::Text(text)] if text.text == OUTPUT_TOKEN_LIMIT_TEXT
+        )
+}
+
+fn has_reasoning_output_token_limit_content(message: &Message) -> bool {
+    message.role == rmcp::model::Role::Assistant
+        && message.metadata.output_token_limit_reached
+        && matches!(
+            message.content.last(),
+            Some(MessageContent::Text(text)) if text.text == REASONING_OUTPUT_TOKEN_LIMIT_TEXT
         )
 }
 
@@ -209,7 +226,8 @@ mod tests {
             })),
         );
 
-        populate_output_token_limit_content(&mut limited_message);
+        let mut reasoning_limited = limited_message.clone();
+        populate_output_token_limit_content(&mut limited_message, Some(OutputTokenLimit::Empty));
         assert_eq!(
             message_meta(&limited_message).get("goose"),
             Some(&serde_json::json!({
@@ -217,6 +235,21 @@ mod tests {
                 "messageId": "msg_live",
                 "outputTokenLimitReached": true,
                 "fallbackContent": true,
+            })),
+        );
+
+        populate_output_token_limit_content(
+            &mut reasoning_limited,
+            Some(OutputTokenLimit::Reasoning),
+        );
+        assert_eq!(
+            message_meta(&reasoning_limited).get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_live",
+                "outputTokenLimitReached": true,
+                "fallbackContent": true,
+                "reasoningConsumedOutputBudget": true,
             })),
         );
     }
@@ -227,7 +260,7 @@ mod tests {
             .with_id("msg_live")
             .with_steer();
         message.metadata.output_token_limit_reached = true;
-        populate_output_token_limit_content(&mut message);
+        populate_output_token_limit_content(&mut message, Some(OutputTokenLimit::Empty));
         let chunk = content_chunk_for_message(
             &message,
             ContentBlock::Text(TextContent::new(OUTPUT_TOKEN_LIMIT_TEXT)),
@@ -294,16 +327,17 @@ mod tests {
             .with_steer();
         message.metadata.output_token_limit_reached = true;
 
-        populate_output_token_limit_content(&mut message);
+        populate_output_token_limit_content(&mut message, Some(OutputTokenLimit::Empty));
 
         assert!(matches!(
             message.content.as_slice(),
             [MessageContent::Text(text)] if text.text == OUTPUT_TOKEN_LIMIT_TEXT
         ));
         assert!(has_output_token_limit_fallback_content(&message));
+        assert!(!has_reasoning_output_token_limit_content(&message));
 
         let mut unmarked_message = Message::new(Role::Assistant, 1_700_000_000, vec![]);
-        populate_output_token_limit_content(&mut unmarked_message);
+        populate_output_token_limit_content(&mut unmarked_message, None);
         assert!(unmarked_message.content.is_empty());
         assert!(!has_output_token_limit_fallback_content(&unmarked_message));
 
@@ -312,7 +346,10 @@ mod tests {
         marked_message_with_content
             .metadata
             .output_token_limit_reached = true;
-        populate_output_token_limit_content(&mut marked_message_with_content);
+        populate_output_token_limit_content(
+            &mut marked_message_with_content,
+            Some(OutputTokenLimit::Partial),
+        );
         assert!(matches!(
             marked_message_with_content.content.as_slice(),
             [MessageContent::Text(text)] if text.text == "partial response"
@@ -323,11 +360,33 @@ mod tests {
 
         let mut marked_user_message = Message::new(Role::User, 1_700_000_000, vec![]);
         marked_user_message.metadata.output_token_limit_reached = true;
-        populate_output_token_limit_content(&mut marked_user_message);
+        populate_output_token_limit_content(&mut marked_user_message, None);
         assert!(marked_user_message.content.is_empty());
         assert!(!has_output_token_limit_fallback_content(
             &marked_user_message
         ));
+    }
+
+    #[test]
+    fn reasoning_limit_text_follows_the_reasoning_it_explains() {
+        let mut message = Message::new(Role::Assistant, 1_700_000_000, vec![])
+            .with_id("msg_limited")
+            .with_thinking("internal reasoning", "");
+        message.metadata.output_token_limit_reached = true;
+
+        populate_output_token_limit_content(&mut message, Some(OutputTokenLimit::Reasoning));
+
+        assert!(matches!(
+            message.content.as_slice(),
+            [MessageContent::Thinking(_), MessageContent::Text(text)]
+                if text.text == REASONING_OUTPUT_TOKEN_LIMIT_TEXT
+        ));
+        assert_eq!(
+            message_meta(&message)
+                .get("goose")
+                .and_then(|goose| goose.get("reasoningConsumedOutputBudget")),
+            Some(&serde_json::json!(true)),
+        );
     }
 
     #[test]

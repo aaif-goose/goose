@@ -139,7 +139,6 @@ function MessageRowComponent({
             sessionId={sessionId}
             message={message}
             hideTimestamp={rowContext.hideTimestamp}
-            reasoningConsumedBudget={rowContext.reasoningConsumedBudget}
             toolStates={rowContext.toolStates}
             toolNotifications={toolNotifications}
             toolConfirmationShownInline={rowContext.toolConfirmationShownInline}

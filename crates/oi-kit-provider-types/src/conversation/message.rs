@@ -1219,8 +1219,10 @@ impl Message {
 
     pub fn has_thinking_content(&self) -> bool {
         self.content.iter().any(|content| match content {
-            MessageContentBlock::Thinking(thinking) => !thinking.thinking.trim().is_empty(),
-            MessageContentBlock::RedactedThinking(_) => true,
+            MessageContentBlock::Thinking(thinking) => {
+                !thinking.thinking.trim().is_empty() || !thinking.signature.is_empty()
+            }
+            MessageContentBlock::RedactedThinking(thinking) => !thinking.data.is_empty(),
             _ => false,
         })
     }
@@ -2289,6 +2291,17 @@ mod tests {
         empty_thinking.metadata.output_token_limit_reached = true;
         assert!(!empty_thinking.has_thinking_content());
         assert!(!empty_thinking.reasoning_consumed_output_budget());
+
+        let mut encrypted_reasoning = Message::assistant().with_thinking("", "encrypted-payload");
+        encrypted_reasoning.metadata.output_token_limit_reached = true;
+        assert!(encrypted_reasoning.reasoning_consumed_output_budget());
+
+        let mut redacted = Message::assistant().with_redacted_thinking("redacted-payload");
+        redacted.metadata.output_token_limit_reached = true;
+        assert!(redacted.reasoning_consumed_output_budget());
+
+        let empty_redacted = Message::assistant().with_redacted_thinking("");
+        assert!(!empty_redacted.has_thinking_content());
     }
 
     #[test]

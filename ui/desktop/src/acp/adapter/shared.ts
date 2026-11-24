@@ -28,6 +28,7 @@ export interface GooseMessageMeta {
   created?: number;
   outputTokenLimitReached?: boolean;
   fallbackContent?: boolean;
+  reasoningConsumedOutputBudget?: boolean;
   operationLogs?: string[];
   steer?: boolean;
   inference?: InferenceMetadata;
@@ -79,6 +80,7 @@ export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMe
     messageId: typeof goose.messageId === 'string' ? goose.messageId : undefined,
     outputTokenLimitReached: outputTokenLimitReached ? true : undefined,
     fallbackContent: goose.fallbackContent === true ? true : undefined,
+    reasoningConsumedOutputBudget: goose.reasoningConsumedOutputBudget === true ? true : undefined,
     operationLogs,
     steer: goose.steer === true ? true : undefined,
     inference: getInferenceMeta(goose.inference),

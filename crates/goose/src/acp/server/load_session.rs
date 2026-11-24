@@ -22,16 +22,19 @@ fn replay_audience_annotations(audience: &[Role]) -> Annotations {
 }
 
 fn messages_for_acp_replay(conversation: &Conversation) -> Vec<Message> {
+    let mut output_limit = OutputTokenLimitTracker::default();
     conversation
         .messages()
         .iter()
-        .filter(|message| message.is_user_visible())
-        .map(Message::user_visible_content)
-        .map(|mut message| {
-            populate_output_token_limit_content(&mut message);
-            message
+        .filter_map(|message| {
+            let limit = output_limit.observe(message);
+            if !message.is_user_visible() {
+                return None;
+            }
+            let mut message = message.user_visible_content();
+            populate_output_token_limit_content(&mut message, limit);
+            (!message.content.is_empty()).then_some(message)
         })
-        .filter(|message| !message.content.is_empty())
         .collect()
 }
 
@@ -184,15 +187,6 @@ fn replay_conversation_to_client(
                         SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
                             message,
                             ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
-                        )),
-                    ))?;
-                }
-                MessageContent::RedactedThinking(_) => {
-                    cx.send_notification(SessionNotification::new(
-                        session_id.clone(),
-                        SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
-                            message,
-                            ContentBlock::Text(TextContent::new("Thinking was redacted")),
                         )),
                     ))?;
                 }
