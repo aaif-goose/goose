@@ -109,7 +109,8 @@ pub trait ExtensionAuth: Send + Sync {
     fn credential_store(&self, name: &str) -> Box<dyn CredentialStore>;
 
     /// Without `rejected`, authorizes from stored credentials only and never
-    /// asks the user. With it, recovers from that refusal, interactively if
+    /// asks the user; a [`StoredCredentialsError`] tells the connector why they
+    /// could not be used. With it, recovers from that refusal, interactively if
     /// the stored credentials cannot.
     async fn authorize(
         &self,
@@ -127,6 +128,22 @@ pub struct RejectedRequest {
     /// The access token the refused request carried; `None` when it went out
     /// unauthenticated.
     pub presented_token: Option<String>,
+}
+
+/// Why stored credentials could not authorize a connection on their own. Any
+/// other error from [`ExtensionAuth::authorize`] lets the connection proceed
+/// unauthenticated.
+#[derive(Debug, thiserror::Error)]
+pub enum StoredCredentialsError {
+    /// Only a new authorization can replace the stored credentials, so the
+    /// connector authorizes even when the server also accepts anonymous
+    /// clients.
+    #[error("stored credentials need a new authorization")]
+    NeedAuthorization,
+    /// The credentials are kept and the connection fails: an authorization
+    /// could not finish either, since it uses the same token endpoint.
+    #[error("the authorization server is failing")]
+    AuthorizationServerFailing(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub struct ExtensionAuthorization {

@@ -143,7 +143,7 @@ async fn wait_for_callback(
 }
 
 pub use crate::agents::extension_runtime::{
-    ExtensionAuthorization, RejectedRequest, StaticOAuthClientConfig,
+    ExtensionAuthorization, RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError,
 };
 
 /// Pre-registered client supplied through the environment, used by tools that
@@ -422,7 +422,9 @@ async fn reuse_stored_grant(
         Ok(token_response) => token_response,
         // Keep the credentials and fail this attempt: a browser login could not
         // finish either, since its code exchange uses the same token endpoint.
-        Err(e) if is_transient_refresh_failure(&e) => return Err(e.into()),
+        Err(e) if is_transient_refresh_failure(&e) => {
+            return Err(StoredCredentialsError::AuthorizationServerFailing(Box::new(e)).into());
+        }
         Err(e) => {
             warn!("[OAuth:{}] Token refresh failed: {}", name, e);
             return Ok(None);
@@ -502,7 +504,7 @@ pub async fn oauth_flow(
     }
 
     let Some(RejectedRequest { challenge, .. }) = rejected else {
-        anyhow::bail!("stored OAuth credentials for {name} need a new authorization");
+        return Err(StoredCredentialsError::NeedAuthorization.into());
     };
 
     let (callback_sender, callback_receiver) = oneshot::channel::<String>();

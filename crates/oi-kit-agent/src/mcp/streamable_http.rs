@@ -19,7 +19,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::{ExtensionAuth, PresentedToken, RejectedRequest, StaticOAuthClientConfig};
+use super::{
+    ExtensionAuth, PresentedToken, RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError,
+};
 use crate::extension::{ExtensionError, ExtensionResult};
 use crate::mcp::client::McpCallContext as ToolCallContext;
 use crate::mcp::client::{ConnectContext, McpClient, McpClientTrait};
@@ -577,6 +579,7 @@ pub(super) async fn connect(
     // With stored OAuth credentials, connect with them directly. This avoids
     // an unnecessary 401 → browser re-auth cycle on every new session.
     let mut refused_stored_grant = None;
+    let mut stored_grant_unusable = false;
     if auth
         .credential_store(name)
         .load()
@@ -607,24 +610,38 @@ pub(super) async fn connect(
                     Err(error) => return Err(error),
                 }
             }
-            Err(e) => {
-                warn!(
+            Err(e) => match e.downcast_ref::<StoredCredentialsError>() {
+                Some(StoredCredentialsError::NeedAuthorization) => stored_grant_unusable = true,
+                Some(StoredCredentialsError::AuthorizationServerFailing(_)) => {
+                    return Err(ExtensionError::SetupError(format!("{e:#}")));
+                }
+                None => warn!(
                     "[OAuth:{}] Stored credentials could not be used: {}, falling back to unauthenticated attempt",
                     name, e
-                );
-            }
+                ),
+            },
         }
     }
 
-    let (rejected, fallback_error) = match refused_stored_grant {
-        Some(refused) => refused,
+    let (rejected, fallback) = match refused_stored_grant {
+        Some((rejected, error)) => (rejected, Err(error)),
         None => match connect_unauthenticated().await {
             Err(err) if is_oauth_auth_failure(&err) => (
                 RejectedRequest {
                     challenge: auth_challenge_from_error(&err),
                     presented_token: None,
                 },
-                ExtensionError::InitializeError(err),
+                Err(ExtensionError::InitializeError(err)),
+            ),
+            // A server that also accepts anonymous clients never refuses this
+            // connection, so the unusable grant is replaced now; otherwise the
+            // session would quietly lose what the grant gave it access to.
+            Ok(client) if stored_grant_unusable => (
+                RejectedRequest {
+                    challenge: None,
+                    presented_token: None,
+                },
+                Ok(client),
             ),
             client_res => {
                 return Ok(Box::new(
@@ -647,7 +664,9 @@ pub(super) async fn connect(
         }
         Err(e) => {
             warn!("[OAuth:{}] Authorization failed: {:#}", name, e);
-            Err(fallback_error)
+            Ok(Box::new(
+                OAuthStepUpClient::new(fallback?, None, params).await,
+            ))
         }
     }
 }
@@ -696,6 +715,7 @@ mod tests {
     use super::*;
     use crate::action_required_manager::ActionRequiredManager;
     use crate::mcp::client::GooseMcpClientCapabilities;
+    use goose_test_support::mcp::McpFixture;
     use rmcp::transport::auth::{CredentialStore, InMemoryCredentialStore};
     use std::time::Duration;
     use tempfile::tempdir;
@@ -1120,5 +1140,145 @@ mod tests {
 
             assert!(error.to_string().contains("MISSING_KEY"));
         }
+    }
+
+    /// Without a refusal, reports why the stored credentials cannot be used.
+    /// After one, authorizes with the stored token or fails like a closed
+    /// browser would.
+    struct ScriptedAuth {
+        store: InMemoryCredentialStore,
+        stored_credentials_error: fn() -> StoredCredentialsError,
+        authorization_succeeds: bool,
+        calls: std::sync::Mutex<Vec<&'static str>>,
+    }
+
+    impl ScriptedAuth {
+        fn calls(&self) -> Vec<&'static str> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ExtensionAuth for ScriptedAuth {
+        fn credential_store(&self, _name: &str) -> Box<dyn CredentialStore> {
+            Box::new(self.store.clone())
+        }
+
+        async fn authorize(
+            &self,
+            uri: &str,
+            _name: &str,
+            _static_client: Option<&StaticOAuthClientConfig>,
+            rejected: Option<RejectedRequest>,
+        ) -> anyhow::Result<crate::mcp::ExtensionAuthorization> {
+            if rejected.is_none() {
+                self.calls.lock().unwrap().push("stored credentials");
+                return Err((self.stored_credentials_error)().into());
+            }
+            self.calls.lock().unwrap().push("authorization");
+            if !self.authorization_succeeds {
+                anyhow::bail!("the browser was closed");
+            }
+            let mut manager = rmcp::transport::AuthorizationManager::new(uri).await?;
+            manager.set_credential_store(self.store.clone());
+            Ok(crate::mcp::ExtensionAuthorization {
+                manager,
+                presented_token: PresentedToken::default(),
+            })
+        }
+    }
+
+    async fn store_with_grant() -> InMemoryCredentialStore {
+        use rmcp::transport::auth::{OAuthTokenResponse, StoredCredentials};
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "stored-token",
+            "token_type": "bearer",
+        }))
+        .unwrap();
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+        store
+    }
+
+    async fn connect_to(fixture: &McpFixture, auth: &Arc<ScriptedAuth>) -> ExtensionResult<()> {
+        let temp_dir = tempdir().unwrap();
+        let mut params = test_params(&fixture.url, HashMap::new(), temp_dir.path());
+        params.auth = Some(auth.clone());
+        connect(params, None).await.map(|_client| ())
+    }
+
+    #[tokio::test]
+    async fn an_unusable_stored_grant_is_reauthorized_when_the_server_accepts_anonymous_clients() {
+        let fixture = McpFixture::new().await;
+        let auth = Arc::new(ScriptedAuth {
+            store: store_with_grant().await,
+            stored_credentials_error: || StoredCredentialsError::NeedAuthorization,
+            authorization_succeeds: true,
+            calls: Default::default(),
+        });
+
+        connect_to(&fixture, &auth).await.unwrap();
+
+        assert_eq!(auth.calls(), ["stored credentials", "authorization"]);
+    }
+
+    #[tokio::test]
+    async fn the_anonymous_connection_is_kept_when_reauthorization_fails() {
+        let fixture = McpFixture::new().await;
+        let auth = Arc::new(ScriptedAuth {
+            store: store_with_grant().await,
+            stored_credentials_error: || StoredCredentialsError::NeedAuthorization,
+            authorization_succeeds: false,
+            calls: Default::default(),
+        });
+
+        connect_to(&fixture, &auth).await.unwrap();
+
+        assert_eq!(auth.calls(), ["stored credentials", "authorization"]);
+    }
+
+    #[tokio::test]
+    async fn a_failing_authorization_server_fails_the_connection_without_an_anonymous_attempt() {
+        let fixture = McpFixture::new().await;
+        let auth = Arc::new(ScriptedAuth {
+            store: store_with_grant().await,
+            stored_credentials_error: || {
+                StoredCredentialsError::AuthorizationServerFailing(
+                    "token endpoint returned 503".into(),
+                )
+            },
+            authorization_succeeds: true,
+            calls: Default::default(),
+        });
+
+        let error = connect_to(&fixture, &auth).await.unwrap_err();
+
+        assert!(error.to_string().contains("token endpoint returned 503"));
+        assert_eq!(auth.calls(), ["stored credentials"]);
+        assert_eq!(fixture.request_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn without_stored_credentials_an_anonymous_server_is_used_without_authorizing() {
+        let fixture = McpFixture::new().await;
+        let auth = Arc::new(ScriptedAuth {
+            store: InMemoryCredentialStore::new(),
+            stored_credentials_error: || StoredCredentialsError::NeedAuthorization,
+            authorization_succeeds: true,
+            calls: Default::default(),
+        });
+
+        connect_to(&fixture, &auth).await.unwrap();
+
+        assert!(auth.calls().is_empty());
     }
 }

@@ -45,7 +45,7 @@ pub use batch::{ResultNotification, ToolCallBatch};
 pub use call::{ToolCallNotificationEmitter, ToolCallResult, ToolResult};
 pub use host::{
     ExtensionAuth, ExtensionAuthorization, ExtensionHost, ExtensionSpec, PresentedToken,
-    RejectedRequest, StaticOAuthClientConfig, TraceContextInjector,
+    RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError, TraceContextInjector,
 };
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
 pub use operation::{ExtensionOperation, ExtensionSource};
