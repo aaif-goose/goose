@@ -638,7 +638,10 @@ fn initial_session_extensions(
     goose_extensions: Option<Vec<GooseExtension>>,
     recipe_extensions: Option<&[ExtensionConfig]>,
 ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
-    let recipe_extensions = recipe_extensions.filter(|extensions| !extensions.is_empty());
+    if let (Some([]), Some([])) = (recipe_extensions, goose_extensions.as_deref()) {
+        return Ok(Vec::new());
+    }
+
     // A selection the client sends is the whole session: an empty list starts no
     // extensions, and `[memory]` starts Memory without the default built-ins.
     if let (None, Some(goose_extensions)) = (recipe_extensions, goose_extensions) {
@@ -2936,7 +2939,7 @@ extensions:
     #[test]
     fn empty_recipe_extensions_do_not_override_explicit_empty_extensions() {
         let (config, _c, _s) = config_with_yaml(
-            "extensions:\n  developer:\n    enabled: true\n    type: builtin\n    name: developer\n",
+            "extensions:\n  memory:\n    enabled: true\n    type: builtin\n    name: memory\n",
         );
         let project_root = tempfile::tempdir().unwrap();
         let extensions = initial_session_extensions(
@@ -2955,10 +2958,25 @@ extensions:
             project_root.path(),
             vec![],
             None,
-            Some(&[]),
+            None,
         )
         .unwrap();
-        assert!(has_developer(&defaults));
+        assert!(defaults
+            .iter()
+            .any(|extension| extension.name() == "memory"));
+
+        for client_selection in [None, Some(vec![requested_builtin("todo")])] {
+            let extensions = initial_session_extensions(
+                &config,
+                &default_builtin("developer"),
+                project_root.path(),
+                vec![],
+                client_selection,
+                Some(&[]),
+            )
+            .unwrap();
+            assert_eq!(extensions, vec![builtin_to_extension_config("developer")]);
+        }
     }
 
     #[test]
