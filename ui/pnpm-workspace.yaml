@@ -25,10 +25,17 @@ overrides:
   # present in 1.1.11.
   # Enforced by desktop/src/test/radixSingleVersion.test.ts.
   '@radix-ui/react-dismissable-layer': 1.2.1
+  # Security fixes for old copies pulled in indirectly (#13781). Remove a line
+  # once `pnpm why <pkg>` shows no version below its range.
+  # Held back by cosmiconfig@7 (via react-select → babel-plugin-macros).
   'yaml@>=1.0.0 <1.10.3': 1.10.3
+  # Held back by minimatch@3 (electron-builder, electron-forge, eslint-plugin-react).
   'brace-expansion@<1.1.22': 1.1.22
+  # Held back by minimatch@5 and minimatch@9.
   'brace-expansion@>=2.0.0 <2.1.8': 2.1.8
+  # Held back by @hey-api/json-schema-ref-parser, which pins js-yaml 4.2.0.
   'js-yaml@>=4.0.0 <4.3.2': 4.3.2
+  # Pulled in by knip.
   'picomatch@>=4.0.0 <4.0.4': 4.0.7
 allowBuilds:
   '@modelcontextprotocol/ext-apps': true
