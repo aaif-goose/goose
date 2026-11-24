@@ -1,5 +1,6 @@
 use super::*;
 use agent_client_protocol::JsonRpcMessage;
+use oi_kit_providers::model::ModelConfig;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -17,10 +18,7 @@ impl Provider for CountingProvider {
         "openai"
     }
 
-    async fn apply_model_selection(
-        &self,
-        _: &goose_providers::model::ModelConfig,
-    ) -> Result<(), ProviderError> {
+    async fn apply_model_selection(&self, _: &ModelConfig) -> Result<(), ProviderError> {
         if self.pause_activation.swap(false, Ordering::SeqCst) {
             self.activation_entered.notify_one();
             self.activation_release.notified().await;
@@ -30,7 +28,7 @@ impl Provider for CountingProvider {
 
     async fn stream(
         &self,
-        _: &goose_providers::model::ModelConfig,
+        _: &ModelConfig,
         _: &str,
         _: &[Message],
         _: &[rmcp::model::Tool],
@@ -102,11 +100,7 @@ async fn server_with_session(
     let provider = Arc::new(CountingProvider::default());
     server
         .services
-        .update_provider(
-            provider.clone(),
-            goose_providers::model::ModelConfig::new("gpt-4o"),
-            &session.id,
-        )
+        .update_provider(provider.clone(), ModelConfig::new("gpt-4o"), &session.id)
         .await
         .unwrap();
     if lazy {
@@ -119,7 +113,7 @@ async fn server_with_session(
                 &session.id,
                 server.connection_id,
                 Attachment {
-                    client: ClientContext::new(&server.services.goose_platform, None),
+                    client: client_context(&server.services.goose_platform, None),
                     session_names: None,
                 },
             )

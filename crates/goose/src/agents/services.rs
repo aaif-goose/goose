@@ -1733,39 +1733,69 @@ mod tests {
             }
         }
 
+        async fn session_for_steer(services: &StateMachineServices, temp_dir: &TempDir) -> String {
+            services
+                .session_manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "Steering fixture".to_string(),
+                    SessionType::User,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap()
+                .id
+        }
+
         #[tokio::test]
         async fn release_cleanup_preserves_a_later_pending_prompt_and_steer() {
             let temp_dir = TempDir::new().unwrap();
             let services = test_services(&temp_dir, 100);
-            let _lifetime = services.runtime.lock_lifetime("s").await;
+            let session_id = &session_for_steer(&services, &temp_dir).await;
+            let _lifetime = services.runtime.lock_lifetime(session_id).await;
             services
-                .steer("s", Message::user().with_text("discard previous input"))
-                .await;
-            assert!(services.runtime.admit_release("s", Some(1)));
+                .steer(
+                    session_id,
+                    Message::user().with_text("discard previous input"),
+                )
+                .await
+                .unwrap();
+            assert!(services.runtime.admit_release(session_id, Some(1)));
             let token = CancellationToken::new();
             assert!(services
-                .reserve_prompt_run("s", 2, "pending".into(), token.clone())
+                .reserve_prompt_run(session_id, 2, "pending".into(), token.clone())
                 .is_ok());
-            let duplicate =
-                services.reserve_prompt_run("s", 2, "duplicate".into(), CancellationToken::new());
+            let duplicate = services.reserve_prompt_run(
+                session_id,
+                2,
+                "duplicate".into(),
+                CancellationToken::new(),
+            );
             let run_id = match duplicate {
                 Err(crate::agents::active_run::StartRunError::AgentRunExists { run_id }) => run_id,
                 _ => panic!("duplicate prompt did not disclose the pending run"),
             };
-            assert_eq!(services.runtime.runs.agent_run_id("s"), Some(run_id));
+            assert_eq!(services.runtime.runs.agent_run_id(session_id), Some(run_id));
             services
-                .steer("s", Message::user().with_text("keep acknowledged input"))
-                .await;
-            services.runtime.forget("s");
+                .steer(
+                    session_id,
+                    Message::user().with_text("keep acknowledged input"),
+                )
+                .await
+                .unwrap();
+            services.runtime.forget(session_id);
             assert!(!token.is_cancelled());
-            let turn_queue = services.runtime.steer_queue("s");
+            let turn_queue = services.runtime.steer_queue(session_id);
             let mut queued = turn_queue.lock().await;
             assert_eq!(queued.len(), 1);
             assert_eq!(
                 queued.pop_front().unwrap().as_concat_text(),
                 "keep acknowledged input"
             );
-            assert!(services.runtime.runs.remove_agent_run("s", "pending"));
+            assert!(services
+                .runtime
+                .runs
+                .remove_agent_run(session_id, "pending"));
         }
 
         #[tokio::test]
@@ -1773,22 +1803,34 @@ mod tests {
             for explicit_release in [false, true] {
                 let temp_dir = TempDir::new().unwrap();
                 let services = test_services(&temp_dir, 100);
-                services.attach_session("s", 1, attachment("first")).await;
+                let session_id = &session_for_steer(&services, &temp_dir).await;
+                services
+                    .attach_session(session_id, 1, attachment("first"))
+                    .await;
                 let token = CancellationToken::new();
                 assert!(services
-                    .reserve_prompt_run("s", 1, "old".into(), token.clone())
+                    .reserve_prompt_run(session_id, 1, "old".into(), token.clone())
                     .is_ok());
                 services
-                    .steer("s", Message::user().with_text("discard old generation"))
-                    .await;
+                    .steer(
+                        session_id,
+                        Message::user().with_text("discard old generation"),
+                    )
+                    .await
+                    .unwrap();
                 if explicit_release {
-                    services.release_session("s").await;
+                    services.release_session(session_id).await;
                 } else {
-                    assert!(services.detach_session("s", 1).await);
+                    assert!(services.detach_session(session_id, 1).await);
                 }
                 assert!(token.is_cancelled());
-                assert!(services.runtime.steer_queue("s").lock().await.is_empty());
-                assert!(services.runtime.runs.remove_agent_run("s", "old"));
+                assert!(services
+                    .runtime
+                    .steer_queue(session_id)
+                    .lock()
+                    .await
+                    .is_empty());
+                assert!(services.runtime.runs.remove_agent_run(session_id, "old"));
             }
         }
 
@@ -1796,23 +1838,33 @@ mod tests {
         async fn deferred_release_preserves_the_pending_owners_steers() {
             let temp_dir = TempDir::new().unwrap();
             let services = test_services(&temp_dir, 100);
-            services.attach_session("s", 1, attachment("first")).await;
+            let session_id = &session_for_steer(&services, &temp_dir).await;
+            services
+                .attach_session(session_id, 1, attachment("first"))
+                .await;
             let token = CancellationToken::new();
             assert!(services
-                .reserve_prompt_run("s", 2, "pending".into(), token.clone())
+                .reserve_prompt_run(session_id, 2, "pending".into(), token.clone())
                 .is_ok());
             services
-                .steer("s", Message::user().with_text("keep pending generation"))
-                .await;
-            assert!(!services.detach_session("s", 1).await);
+                .steer(
+                    session_id,
+                    Message::user().with_text("keep pending generation"),
+                )
+                .await
+                .unwrap();
+            assert!(!services.detach_session(session_id, 1).await);
             assert!(!token.is_cancelled());
-            let queue = services.runtime.steer_queue("s");
+            let queue = services.runtime.steer_queue(session_id);
             assert_eq!(
                 queue.lock().await.pop_front().unwrap().as_concat_text(),
                 "keep pending generation"
             );
-            services.release_session("s").await;
-            assert!(services.runtime.runs.remove_agent_run("s", "pending"));
+            services.release_session(session_id).await;
+            assert!(services
+                .runtime
+                .runs
+                .remove_agent_run(session_id, "pending"));
         }
 
         #[tokio::test]
