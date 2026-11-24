@@ -4,7 +4,7 @@ use base64::Engine;
 use ring::rand::SystemRandom;
 use ring::signature::{RsaKeyPair, RSA_PKCS1_SHA256};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fmt, io};
@@ -71,7 +71,7 @@ enum AdcSource {
     Metadata(String),
 }
 
-fn absolute_credentials_path(path: &str) -> Result<PathBuf, AuthError> {
+fn absolute_credentials_path(path: impl AsRef<Path>) -> Result<PathBuf, AuthError> {
     std::path::absolute(path)
         .map_err(|error| AuthError::Credentials(format!("Invalid credential path: {error}")))
 }
@@ -79,9 +79,7 @@ fn absolute_credentials_path(path: &str) -> Result<PathBuf, AuthError> {
 impl AdcSource {
     async fn load(&self, fs_ops: &impl FilesystemOps) -> Result<AdcCredentials, AuthError> {
         match self {
-            Self::File(path) => {
-                AdcCredentials::load_from_file(fs_ops, &path.to_string_lossy()).await
-            }
+            Self::File(path) => AdcCredentials::load_from_file(fs_ops, path).await,
             Self::Metadata(base_url) => AdcCredentials::load_from_metadata_server(base_url).await,
         }
     }
@@ -148,7 +146,7 @@ pub trait FilesystemOps {
     ///
     /// # Returns
     /// * `Result<String, io::Error>` - The contents of the file or an error
-    async fn read_to_string(&self, path: String) -> Result<String, io::Error>;
+    async fn read_to_string(&self, path: &Path) -> Result<String, io::Error>;
 }
 
 /// A trait that defines operations for accessing environment variables.
@@ -180,7 +178,7 @@ pub struct RealEnvOps;
 
 #[async_trait]
 impl FilesystemOps for RealFilesystemOps {
-    async fn read_to_string(&self, path: String) -> Result<String, io::Error> {
+    async fn read_to_string(&self, path: &Path) -> Result<String, io::Error> {
         tokio::fs::read_to_string(path).await
     }
 }
@@ -220,12 +218,9 @@ impl AdcCredentials {
         }
 
         // Try default gcloud credentials path
-        if let Ok(cred_path) = Self::get_default_credentials_path(env_ops) {
-            let path = absolute_credentials_path(&cred_path)?;
-            match fs_ops
-                .read_to_string(path.to_string_lossy().into_owned())
-                .await
-            {
+        if let Ok(default_path) = Self::get_default_credentials_path(env_ops) {
+            let path = absolute_credentials_path(default_path)?;
+            match fs_ops.read_to_string(&path).await {
                 Ok(content) => {
                     return Ok((AdcSource::File(path), Self::parse_file_contents(&content)?))
                 }
@@ -233,7 +228,8 @@ impl AdcCredentials {
                 Err(error) => {
                     return Err(AuthError::Credentials(format!(
                         "Failed to read credentials from {}: {}",
-                        cred_path, error
+                        path.display(),
+                        error
                     )));
                 }
             }
@@ -249,9 +245,13 @@ impl AdcCredentials {
         ))
     }
 
-    async fn load_from_file(fs_ops: &impl FilesystemOps, path: &str) -> Result<Self, AuthError> {
-        let content = fs_ops.read_to_string(path.to_string()).await.map_err(|e| {
-            AuthError::Credentials(format!("Failed to read credentials from {}: {}", path, e))
+    async fn load_from_file(fs_ops: &impl FilesystemOps, path: &Path) -> Result<Self, AuthError> {
+        let content = fs_ops.read_to_string(path).await.map_err(|e| {
+            AuthError::Credentials(format!(
+                "Failed to read credentials from {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         Self::parse_file_contents(&content)
@@ -262,7 +262,7 @@ impl AdcCredentials {
             .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
     }
 
-    fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
+    fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<PathBuf, AuthError> {
         let (env_var, subpath) = if cfg!(windows) {
             ("APPDATA", "gcloud\\application_default_credentials.json")
         } else {
@@ -274,12 +274,7 @@ impl AdcCredentials {
 
         env_ops
             .get_var(env_var)
-            .map(|dir| {
-                PathBuf::from(dir)
-                    .join(subpath)
-                    .to_string_lossy()
-                    .into_owned()
-            })
+            .map(|dir| PathBuf::from(dir).join(subpath))
             .map_err(|_| {
                 AuthError::Credentials("Could not determine user home directory".to_string())
             })
@@ -670,7 +665,7 @@ mod tests {
 
         #[async_trait]
         impl FilesystemOps for FilesystemOpsMock {
-            async fn read_to_string(&self, path: String) -> Result<String, std::io::Error>;
+            async fn read_to_string(&self, path: &Path) -> Result<String, std::io::Error>;
         }
     }
 
@@ -704,16 +699,13 @@ mod tests {
         }
     }
 
-    fn default_credentials_path(home: &str) -> String {
+    fn default_credentials_path(home: impl AsRef<Path>) -> PathBuf {
         let suffix = if cfg!(windows) {
             "gcloud\\application_default_credentials.json"
         } else {
             ".config/gcloud/application_default_credentials.json"
         };
-        std::path::absolute(PathBuf::from(home).join(suffix))
-            .unwrap()
-            .to_string_lossy()
-            .into_owned()
+        std::path::absolute(home.as_ref().join(suffix)).unwrap()
     }
 
     static SERVICE_ACCOUNT_TEST_KEY: LazyLock<String> = LazyLock::new(|| {
@@ -1008,10 +1000,9 @@ mod tests {
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq(absolute_credentials_path("/path/to/credentials.json")
-                .unwrap()
-                .to_string_lossy()
-                .into_owned()))
+            .with(eq(
+                absolute_credentials_path("/path/to/credentials.json").unwrap()
+            ))
             .times(1)
             .return_once(move |_| Ok(creds_content.to_string()));
 
@@ -1064,7 +1055,7 @@ mod tests {
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq(expected_path.clone())) // Use clone() to avoid borrowing issues
+            .with(eq(expected_path.clone()))
             .times(1)
             .return_once(move |_| Ok(creds_content.to_string()));
 
@@ -1239,10 +1230,9 @@ mod tests {
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq(absolute_credentials_path("/path/to/credentials.json")
-                .unwrap()
-                .to_string_lossy()
-                .into_owned()))
+            .with(eq(
+                absolute_credentials_path("/path/to/credentials.json").unwrap()
+            ))
             .times(1)
             .return_once(move |_| file_result);
 
@@ -1320,13 +1310,13 @@ mod tests {
     fn file_environment(directory: &std::path::Path, explicit: bool) -> MockEnvOpsMock {
         let mut env = MockEnvOpsMock::new();
         let home = directory.to_string_lossy().into_owned();
-        let path = default_credentials_path(&home);
+        let path = default_credentials_path(directory);
         env.expect_get_var()
             .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
             .times(1)
             .return_once(move |_| {
                 if explicit {
-                    Ok(path)
+                    Ok(path.to_str().unwrap().to_owned())
                 } else {
                     Err(env::VarError::NotPresent)
                 }
@@ -1356,9 +1346,7 @@ mod tests {
     #[tokio::test]
     async fn refresh_missing_file_preserves_source_and_cache(explicit: bool) {
         let directory = tempfile::tempdir().unwrap();
-        let path = PathBuf::from(default_credentials_path(
-            &directory.path().to_string_lossy(),
-        ));
+        let path = default_credentials_path(directory.path());
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -1403,9 +1391,7 @@ mod tests {
     #[tokio::test]
     async fn refresh_reloads_replacement_file_and_invalidates_cached_token() {
         let directory = tempfile::tempdir().unwrap();
-        let path = PathBuf::from(default_credentials_path(
-            &directory.path().to_string_lossy(),
-        ));
+        let path = default_credentials_path(directory.path());
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -1469,9 +1455,7 @@ mod tests {
             auth.get_token().await.unwrap().token_value,
             "metadata-token"
         );
-        let path = PathBuf::from(default_credentials_path(
-            &directory.path().to_string_lossy(),
-        ));
+        let path = default_credentials_path(directory.path());
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -1504,12 +1488,34 @@ mod tests {
             .unwrap()
             .join("relative-credentials.json");
         fs.expect_read_to_string()
-            .with(eq(expected.to_string_lossy().into_owned()))
+            .with(eq(expected.clone()))
             .times(1)
             .return_once(|_| Ok(user_credentials("original", "http://unused.invalid")));
         let auth = GcpAuth::new_impl(&fs, &env, "http://unused.invalid")
             .await
             .unwrap();
         assert!(matches!(auth.source, AdcSource::File(path) if path == expected));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn selected_adc_file_preserves_non_utf8_path_at_read() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let expected = Path::new("/fixture")
+            .join(OsStr::from_bytes(b"workspace-\xff"))
+            .join("selection.json");
+        let source = AdcSource::File(expected.clone());
+        let mut fs = MockFilesystemOpsMock::new();
+        fs.expect_read_to_string()
+            .with(eq(expected))
+            .times(1)
+            .return_once(|_| Err(io::ErrorKind::NotFound.into()));
+
+        assert!(matches!(
+            source.load(&fs).await,
+            Err(AuthError::Credentials(_))
+        ));
     }
 }
