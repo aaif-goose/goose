@@ -4033,7 +4033,11 @@ data: [DONE]
                 errors.push(err);
             }
         }
-        assert_eq!(errors.len(), 1, "EOF without finish_reason or [DONE] must error");
+        assert_eq!(
+            errors.len(),
+            1,
+            "EOF without finish_reason or [DONE] must error"
+        );
         let provider_err = errors[0]
             .downcast_ref::<ProviderError>()
             .expect("error should be ProviderError");
