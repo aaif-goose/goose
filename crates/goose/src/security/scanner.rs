@@ -45,8 +45,8 @@ impl ScannerSettings {
             .get_param::<bool>("SECURITY_PROMPT_CLASSIFIER_ENABLED")
             .unwrap_or(false);
 
-        let command = Self::classifier_settings("COMMAND", command_enabled);
-        let prompt = Self::classifier_settings("PROMPT", prompt_enabled);
+        let command = Self::classifier_settings(config, "COMMAND", command_enabled);
+        let prompt = Self::classifier_settings(config, "PROMPT", prompt_enabled);
         let uses_model_mapping = command.model_name.is_some()
             || prompt.model_name.is_some()
             || (command.enabled && command.endpoint.is_none());
@@ -62,7 +62,7 @@ impl ScannerSettings {
         }
     }
 
-    fn classifier_settings(prefix: &str, enabled: bool) -> ClassifierSettings {
+    fn classifier_settings(config: &Config, prefix: &str, enabled: bool) -> ClassifierSettings {
         if !enabled {
             return ClassifierSettings {
                 enabled,
@@ -72,7 +72,6 @@ impl ScannerSettings {
             };
         }
 
-        let config = Config::global();
         let non_empty_param = |suffix: &str| {
             config
                 .get_param::<String>(&format!("SECURITY_{}_CLASSIFIER_{}", prefix, suffix))
@@ -81,15 +80,24 @@ impl ScannerSettings {
                 .filter(|value| !value.is_empty())
         };
 
-        ClassifierSettings {
-            enabled,
-            model_name: non_empty_param("MODEL"),
-            endpoint: non_empty_param("ENDPOINT"),
-            token: config
-                .get_secret::<String>(&format!("SECURITY_{}_CLASSIFIER_TOKEN", prefix))
+        let model_name = non_empty_param("MODEL");
+        let endpoint = non_empty_param("ENDPOINT");
+        let token = if model_name.is_none() && endpoint.is_some() {
+            // Desktop and CLI can share settings without sharing the process's secrets cache.
+            config
+                .get_secret_uncached::<String>(&format!("SECURITY_{}_CLASSIFIER_TOKEN", prefix))
                 .ok()
                 .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
+                .filter(|value| !value.is_empty())
+        } else {
+            None
+        };
+
+        ClassifierSettings {
+            enabled,
+            model_name,
+            endpoint,
+            token,
         }
     }
 
@@ -507,6 +515,34 @@ mod tests {
     use rmcp::object;
     use wiremock::matchers::{body_string_contains, method};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn direct_classifier_settings_see_credentials_written_by_another_config() -> Result<()> {
+        const TOKEN_KEY: &str = "SECURITY_ROTATION_TEST_CLASSIFIER_TOKEN";
+        let directory = tempfile::tempdir()?;
+        let config_path = directory.path().join("config.yaml");
+        let secrets_path = directory.path().join("secrets.yaml");
+        let reader = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        let writer = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        writer.set_param(
+            "SECURITY_ROTATION_TEST_CLASSIFIER_ENDPOINT",
+            "https://classifier.example",
+        )?;
+        writer.set_secret(TOKEN_KEY, &"initial-test-token")?;
+        assert_eq!(
+            reader.get_secret::<String>(TOKEN_KEY)?,
+            "initial-test-token"
+        );
+
+        let before = ScannerSettings::classifier_settings(&reader, "ROTATION_TEST", true);
+        assert_eq!(before.token.as_deref(), Some("initial-test-token"));
+
+        writer.set_secret(TOKEN_KEY, &"rotated-test-token")?;
+        let after = ScannerSettings::classifier_settings(&reader, "ROTATION_TEST", true);
+        assert_eq!(after.token.as_deref(), Some("rotated-test-token"));
+        assert!(before != after);
+        Ok(())
+    }
 
     async fn classifier_with_confidence(
         injection_confidence: f32,
