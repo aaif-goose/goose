@@ -36,7 +36,7 @@ where
     let reported = results
         .into_iter()
         .filter_map(|result| result.expect("stream must parse").1)
-        .find_map(|usage| usage.stats.and_then(|stats| stats.first_content_at));
+        .find_map(|usage| usage.stats.and_then(|stats| stats.first_token_at));
 
     let read_at = read_at.lock().unwrap();
     FirstContentWindow {

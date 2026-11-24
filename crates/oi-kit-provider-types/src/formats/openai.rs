@@ -1335,7 +1335,7 @@ where
         let mut output_token_limit_reached = false;
         let mut output_token_limit_metadata_emitted = false;
         let mut usage_emitted = false;
-        let mut first_content_at = None;
+        let mut first_token_at = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1361,7 +1361,7 @@ where
                 last_response_id = Some(id.clone());
             }
             if chunk.choices.first().is_some_and(|choice| choice.delta.is_model_output()) {
-                first_content_at.get_or_insert_with(chrono::Utc::now);
+                first_token_at.get_or_insert_with(chrono::Utc::now);
             }
 
             if !chunk.choices.is_empty() {
@@ -1381,7 +1381,7 @@ where
                 last_finish_reason = Some(reason);
             }
             let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref())
-                .map(|usage| usage.with_first_content_at(first_content_at));
+                .map(|usage| usage.with_first_token_at(first_token_at));
             if let Some(u) = usage.as_mut() {
                 if let Some(reason) = &last_finish_reason {
                     u.finish_reasons = Some(vec![reason.clone()]);
@@ -1439,7 +1439,7 @@ where
                                 }
 
                                 if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
-                                    let mut chunk_usage = chunk_usage.with_first_content_at(first_content_at);
+                                    let mut chunk_usage = chunk_usage.with_first_token_at(first_token_at);
                                     if let Some(reason) = &last_finish_reason {
                                         chunk_usage.finish_reasons = Some(vec![reason.clone()]);
                                     }
@@ -1739,7 +1739,7 @@ where
                 last_seen_model.unwrap_or_else(|| "unknown".to_string()),
                 Usage::default(),
             )
-            .with_first_content_at(first_content_at);
+            .with_first_token_at(first_token_at);
             usage.response_id = last_response_id;
             usage.finish_reasons = last_finish_reason.map(|reason| vec![reason]);
             yield (None, Some(usage))

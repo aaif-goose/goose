@@ -169,7 +169,7 @@ impl ProviderCallTimer {
         let stats = usage.stats.get_or_insert_with(ProviderStats::default);
         if stats.time_to_first_token_ms.is_none() {
             stats.time_to_first_token_ms = stats
-                .first_content_at
+                .first_token_at
                 .or(self.first_message_seen_at)
                 .map(|first| millis_between(self.request_started, first));
         }
@@ -1238,7 +1238,7 @@ mod tests {
             first_message_seen_at: Some(request_started + TimeDelta::milliseconds(90)),
         };
         let mut usage = usage_with_stats(Some(ProviderStats {
-            first_content_at: Some(request_started + TimeDelta::milliseconds(15)),
+            first_token_at: Some(request_started + TimeDelta::milliseconds(15)),
             ..Default::default()
         }));
 

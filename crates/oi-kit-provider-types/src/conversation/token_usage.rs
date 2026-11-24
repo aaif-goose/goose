@@ -41,7 +41,7 @@ pub struct ProviderStats {
     pub elapsed_ms: Option<u64>,
     pub output_tokens: Option<usize>,
     pub draft: Option<DraftStats>,
-    pub first_content_at: Option<DateTime<Utc>>,
+    pub first_token_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -80,11 +80,11 @@ impl ProviderUsage {
         self
     }
 
-    pub fn with_first_content_at(mut self, at: Option<DateTime<Utc>>) -> Self {
+    pub fn with_first_token_at(mut self, at: Option<DateTime<Utc>>) -> Self {
         if at.is_some() {
             self.stats
                 .get_or_insert_with(ProviderStats::default)
-                .first_content_at = at;
+                .first_token_at = at;
         }
         self
     }

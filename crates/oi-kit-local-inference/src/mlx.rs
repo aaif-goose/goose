@@ -358,7 +358,7 @@ mod imp {
                 elapsed_ms: Some(generation_started.elapsed().as_millis() as u64),
                 output_tokens: Some(generated_ids.len()),
                 draft: draft_stats,
-                first_content_at: None,
+                first_token_at: None,
             };
             let provider_usage = ProviderUsage::new(request.model_name, usage).with_stats(stats);
             let _ = request.tx.blocking_send(Ok((None, Some(provider_usage))));

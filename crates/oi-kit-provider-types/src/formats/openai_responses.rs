@@ -1225,7 +1225,7 @@ where
         let mut output_items: Vec<ResponseOutputItemInfo> = Vec::new();
         let mut is_text_response = false;
         let mut output_token_limit_reached = false;
-        let mut first_content_at = None;
+        let mut first_token_at = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1264,7 +1264,7 @@ where
             };
 
             if event.is_model_output() {
-                first_content_at.get_or_insert_with(chrono::Utc::now);
+                first_token_at.get_or_insert_with(chrono::Utc::now);
             }
 
             match event {
@@ -1418,7 +1418,7 @@ where
             ))?;
         }
 
-        let final_usage = final_usage.map(|usage| usage.with_first_content_at(first_content_at));
+        let final_usage = final_usage.map(|usage| usage.with_first_token_at(first_token_at));
 
         // Process final output items and yield usage data
         let content = process_streaming_output_items(output_items, is_text_response)?;

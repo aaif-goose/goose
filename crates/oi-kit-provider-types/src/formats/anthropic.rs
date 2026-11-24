@@ -1076,7 +1076,7 @@ where
         let mut stop_reason: Option<String> = None;
         let mut message_stopped = false;
         let mut additional_data: Option<Map<String, Value>> = None;
-        let mut first_content_at = None;
+        let mut first_token_at = None;
 
         while let Some(line_result) = stream.next().await {
             let line = line_result?;
@@ -1102,7 +1102,7 @@ where
                 .map_err(ProviderError::stream_decode_error)?;
 
             if matches!(event.event_type.as_str(), EVENT_CONTENT_BLOCK_START | EVENT_CONTENT_BLOCK_DELTA) {
-                first_content_at.get_or_insert_with(chrono::Utc::now);
+                first_token_at.get_or_insert_with(chrono::Utc::now);
             }
 
             match event.event_type.as_str() {
@@ -1305,7 +1305,7 @@ where
                             // The refusal delta carries the request's usage;
                             // flush it so refused turns are still accounted.
                             if let Some(usage) = final_usage.take() {
-                                let mut usage = usage.with_first_content_at(first_content_at);
+                                let mut usage = usage.with_first_token_at(first_token_at);
                                 usage.finish_reasons = Some(vec![STOP_REASON_REFUSAL.to_string()]);
                                 usage.response_id = message_id.clone();
                                 usage.additional_data = additional_data.clone();
@@ -1393,7 +1393,7 @@ where
         }
 
         if let Some(usage) = final_usage {
-            let mut usage = usage.with_first_content_at(first_content_at);
+            let mut usage = usage.with_first_token_at(first_token_at);
             if let Some(reason) = stop_reason {
                 usage.finish_reasons = Some(vec![reason]);
             }

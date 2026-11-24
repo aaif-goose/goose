@@ -1133,7 +1133,7 @@ impl Provider for BedrockProvider {
             let message_id = format!("msg_{}", uuid::Uuid::new_v4());
             let mut full_text = String::new();
             let mut final_usage: Option<ProviderUsage> = None;
-            let mut first_content_at = None;
+            let mut first_token_at = None;
 
             loop {
                 let event = event_stream.recv().await.map_err(|err| {
@@ -1184,7 +1184,7 @@ impl Provider for BedrockProvider {
                 let Some(event) = event else { break };
 
                 if is_model_output(&event) {
-                    first_content_at.get_or_insert_with(chrono::Utc::now);
+                    first_token_at.get_or_insert_with(chrono::Utc::now);
                 }
 
                 let (messages, usage) = process_stream_event(event, &mut state, &message_id);
@@ -1216,7 +1216,7 @@ impl Provider for BedrockProvider {
 
             let mut usage = final_usage
                 .unwrap_or_else(|| ProviderUsage::new(model_name.clone(), Usage::default()))
-                .with_first_content_at(first_content_at);
+                .with_first_token_at(first_token_at);
             if let Some(reason) = stop_reason.as_ref().map(|reason| reason.as_str().to_string()) {
                 usage.finish_reasons = Some(vec![reason]);
             }
