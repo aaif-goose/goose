@@ -35,6 +35,8 @@ node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 
 If `missing_providers` in `new_models.json` isn't empty, add "Not checked: <providers> (missing from models.dev)." to what you post. In a full report, put it under "Action needed".
 
+A model with `release_date_unclear: true` has only a release month in models.dev, so it may not be new. In the report, add "(release date unclear: models.dev says <release_date>)" to its PASS or FAIL line.
+
 ## 2. Set up
 
 Use a new, empty folder, and give goose its own folders, so goose has no extensions or settings and nothing from this machine ends up in the requests.

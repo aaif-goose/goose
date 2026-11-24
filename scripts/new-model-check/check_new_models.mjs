@@ -17,7 +17,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function parseDate(text) {
   if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
   const time = Date.parse(`${text}T00:00:00Z`);
-  return new Date(time).toISOString().slice(0, 10) === text ? time : null;
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === text ? time : null;
+}
+
+function parseMonth(text) {
+  if (typeof text !== "string" || !/^\d{4}-\d{2}$/.test(text)) return null;
+  const [year, month] = text.split("-").map(Number);
+  if (month < 1 || month > 12) return null;
+  return { start: Date.UTC(year, month - 1, 1), end: Date.UTC(year, month, 1) };
 }
 
 function summarize(provider, id, model) {
@@ -41,6 +48,7 @@ function summarize(provider, id, model) {
 function findNewModels(catalog, now) {
   const today = now.toISOString().slice(0, 10);
   const since = new Date(parseDate(today) - DAYS * DAY_MS).toISOString().slice(0, 10);
+  const sinceTime = parseDate(since);
   const newModels = [];
   const noReleaseDate = [];
   const missingProviders = [];
@@ -55,8 +63,16 @@ function findNewModels(catalog, now) {
       if ((model.type ?? "chat") !== "chat") continue;
       const entry = summarize(provider, id, model);
       const released = parseDate(entry.release_date);
-      if (released === null) noReleaseDate.push(entry);
-      else if (released >= parseDate(since) && released <= now.getTime()) newModels.push(entry);
+      const month = parseMonth(entry.release_date);
+      if (released !== null) {
+        if (released >= sinceTime && released <= now.getTime()) newModels.push(entry);
+      } else if (month) {
+        if (month.start <= now.getTime() && month.end > sinceTime) {
+          newModels.push({ ...entry, release_date_unclear: true });
+        }
+      } else {
+        noReleaseDate.push(entry);
+      }
     }
   }
   if (missingProviders.length === PROVIDERS.length) {
@@ -66,7 +82,7 @@ function findNewModels(catalog, now) {
   newModels.sort((a, b) => b.release_date.localeCompare(a.release_date));
   return {
     checked_at: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    window: `models.dev models with release_date on or after ${since} (last ${DAYS} days, UTC)`,
+    window: `models.dev models released in the last ${DAYS} days (on or after ${since}, UTC); a month-only date counts if the month overlaps those days`,
     providers: PROVIDERS,
     new_models: newModels,
     no_release_date: noReleaseDate,
