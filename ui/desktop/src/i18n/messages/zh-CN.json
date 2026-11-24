@@ -1457,6 +1457,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "无法加载图片"
   },
+  "imageSettings.description": {
+    "defaultMessage": "使用“读取图像”加载的图像在发送给模型之前会缩小到此最大宽度或高度。原始尺寸仍可用于裁剪。"
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "最大尺寸（像素）"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "图像处理"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "取消"
   },

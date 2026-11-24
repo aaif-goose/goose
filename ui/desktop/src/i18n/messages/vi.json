@@ -1457,6 +1457,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Không thể tải hình ảnh"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Hình ảnh được tải bằng Đọc hình ảnh sẽ được thu nhỏ theo chiều rộng hoặc chiều cao tối đa này trước khi gửi đến mô hình. Kích thước gốc vẫn được giữ để cắt ảnh."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Kích thước tối đa (pixel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Xử lý hình ảnh"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Hủy"
   },

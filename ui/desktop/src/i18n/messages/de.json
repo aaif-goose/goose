@@ -1457,6 +1457,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Bild kann nicht geladen werden"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Bilder, die mit „Bild lesen“ geladen werden, werden vor dem Senden an das Modell auf diese maximale Breite oder Höhe verkleinert. Die ursprünglichen Abmessungen bleiben zum Zuschneiden verfügbar."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Maximale Abmessung (Pixel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Bildverarbeitung"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Abbrechen"
   },

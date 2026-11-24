@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine;
+use exif::{In, Tag};
 use image::GenericImageView;
 use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
 use schemars::JsonSchema;
@@ -154,6 +155,7 @@ async fn load_image_with_max_dimension(
     let image = image::load_from_memory_with_format(&bytes, format)
         .map_err(|error| format!("failed to decode image: {error}"))?;
     let (original_width, original_height) = image.dimensions();
+    let orientation = exif_orientation(&bytes, format);
 
     if params.crop.is_none() && original_width <= max_dimension && original_height <= max_dimension
     {
@@ -178,7 +180,13 @@ async fn load_image_with_max_dimension(
     } else {
         (image, false)
     };
-    let processed = processed.thumbnail(max_dimension, max_dimension);
+    let processed = apply_orientation(processed, orientation);
+    let (processed_width, processed_height) = processed.dimensions();
+    let processed = if processed_width > max_dimension || processed_height > max_dimension {
+        processed.thumbnail(max_dimension, max_dimension)
+    } else {
+        processed
+    };
     let (width, height) = processed.dimensions();
     let mut processed_bytes = Cursor::new(Vec::new());
     processed
@@ -197,6 +205,32 @@ async fn load_image_with_max_dimension(
         original_height,
         cropped,
     })
+}
+
+fn exif_orientation(bytes: &[u8], format: image::ImageFormat) -> Option<u32> {
+    if format != image::ImageFormat::Jpeg {
+        return None;
+    }
+
+    exif::Reader::new()
+        .read_from_container(&mut Cursor::new(bytes))
+        .ok()?
+        .get_field(Tag::Orientation, In::PRIMARY)?
+        .value
+        .get_uint(0)
+}
+
+fn apply_orientation(image: image::DynamicImage, orientation: Option<u32>) -> image::DynamicImage {
+    match orientation {
+        Some(2) => image.fliph(),
+        Some(3) => image.rotate180(),
+        Some(4) => image.flipv(),
+        Some(5) => image.rotate90().fliph(),
+        Some(6) => image.rotate90(),
+        Some(7) => image.rotate90().flipv(),
+        Some(8) => image.rotate270(),
+        _ => image,
+    }
 }
 
 async fn load_image_bytes(source: &str, working_dir: Option<&Path>) -> Result<Vec<u8>, String> {
@@ -426,6 +460,20 @@ mod local_file_tests {
         std::fs::write(path, bytes.into_inner()).unwrap();
     }
 
+    fn add_exif_orientation(path: &Path, orientation: u16) {
+        let mut jpeg = std::fs::read(path).unwrap();
+        assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
+
+        let mut app1 = vec![
+            0xff, 0xe1, 0x00, 0x22, b'E', b'x', b'i', b'f', 0x00, 0x00, b'I', b'I', 0x2a, 0x00,
+            0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+        ];
+        app1.extend_from_slice(&orientation.to_le_bytes());
+        app1.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        jpeg.splice(2..2, app1);
+        std::fs::write(path, jpeg).unwrap();
+    }
+
     #[tokio::test]
     async fn oversized_image_is_downscaled_without_changing_format() {
         let temp = tempfile::tempdir().unwrap();
@@ -487,6 +535,64 @@ mod local_file_tests {
             (1600, 1200)
         );
         assert!(loaded.cropped);
+    }
+
+    #[tokio::test]
+    async fn crop_below_max_dimension_is_not_upscaled() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.png");
+        write_test_image(&path, 1600, 1200, image::ImageFormat::Png);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: Some(CropParams {
+                    x: 100,
+                    y: 100,
+                    width: 256,
+                    height: 128,
+                }),
+            },
+            None,
+            1024,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!((loaded.width, loaded.height), (256, 128));
+    }
+
+    #[tokio::test]
+    async fn jpeg_exif_orientation_is_applied_before_downscaling() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("oriented.jpg");
+        write_test_image(&path, 2000, 1000, image::ImageFormat::Jpeg);
+        add_exif_orientation(&path, 6);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: None,
+            },
+            None,
+            1024,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!((loaded.width, loaded.height), (512, 1024));
+        assert_eq!(
+            (loaded.original_width, loaded.original_height),
+            (2000, 1000)
+        );
+
+        let output = base64::prelude::BASE64_STANDARD
+            .decode(loaded.data)
+            .unwrap();
+        let decoded =
+            image::load_from_memory_with_format(&output, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!(decoded.dimensions(), (512, 1024));
+        assert_eq!(exif_orientation(&output, image::ImageFormat::Jpeg), None);
     }
 
     #[tokio::test]

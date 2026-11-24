@@ -1457,6 +1457,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "छवि लोड करने में असमर्थ"
   },
+  "imageSettings.description": {
+    "defaultMessage": "छवि पढ़ें से लोड की गई छवियों को मॉडल पर भेजने से पहले इस अधिकतम चौड़ाई या ऊंचाई तक छोटा किया जाता है। मूल आयाम क्रॉप करने के लिए उपलब्ध रहते हैं।"
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "अधिकतम आयाम (पिक्सेल)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "छवि संसाधन"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "रद्द करें"
   },

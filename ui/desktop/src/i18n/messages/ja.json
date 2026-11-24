@@ -1457,6 +1457,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "画像を読み込めません"
   },
+  "imageSettings.description": {
+    "defaultMessage": "「画像を読み取る」で読み込まれた画像は、モデルに送信される前に、この最大幅または高さまで縮小されます。元の寸法は切り抜きに引き続き使用できます。"
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "最大寸法（ピクセル）"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "画像処理"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "キャンセル"
   },
