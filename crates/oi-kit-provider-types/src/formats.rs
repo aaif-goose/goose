@@ -6,3 +6,6 @@ pub mod openai;
 pub mod openai_responses;
 
 pub mod snowflake;
+
+#[cfg(test)]
+pub(crate) mod test_support;

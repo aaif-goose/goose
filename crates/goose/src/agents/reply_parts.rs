@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use oi_kit_providers::errors::ProviderError;
 use regex::Regex;
 use std::sync::Arc;
@@ -143,22 +144,43 @@ pub(crate) async fn toolshim_postprocess(
     }
 }
 
-/// Fill `usage.stats` timing fields measured by the stream wrapper, keeping any
-/// values the provider already reported (e.g. MLX's own `elapsed_ms`).
-fn fill_stream_timing(
-    usage: &mut ProviderUsage,
-    request_started: std::time::Instant,
-    first_content_at: Option<std::time::Instant>,
-) {
-    let stats = usage.stats.get_or_insert_with(ProviderStats::default);
-    if stats.time_to_first_token_ms.is_none() {
-        if let Some(first) = first_content_at {
-            stats.time_to_first_token_ms = Some((first - request_started).as_millis() as u64);
+struct ProviderCallTimer {
+    request_started: DateTime<Utc>,
+    first_message_seen_at: Option<DateTime<Utc>>,
+}
+
+impl ProviderCallTimer {
+    fn start() -> Self {
+        Self {
+            request_started: Utc::now(),
+            first_message_seen_at: None,
         }
     }
-    if stats.elapsed_ms.is_none() {
-        stats.elapsed_ms = Some(request_started.elapsed().as_millis() as u64);
+
+    fn observe(&mut self, message: &Message) {
+        if message_has_timing_content(message) {
+            self.first_message_seen_at.get_or_insert_with(Utc::now);
+        }
     }
+
+    /// Fill `usage.stats` timing fields measured by the stream wrapper, keeping any
+    /// values the provider already reported (e.g. MLX's own `elapsed_ms`).
+    fn fill_stats(&self, usage: &mut ProviderUsage) {
+        let stats = usage.stats.get_or_insert_with(ProviderStats::default);
+        if stats.time_to_first_token_ms.is_none() {
+            stats.time_to_first_token_ms = stats
+                .first_token_at
+                .or(self.first_message_seen_at)
+                .map(|first| millis_between(self.request_started, first));
+        }
+        if stats.elapsed_ms.is_none() {
+            stats.elapsed_ms = Some(millis_between(self.request_started, Utc::now()));
+        }
+    }
+}
+
+fn millis_between(start: DateTime<Utc>, end: DateTime<Utc>) -> u64 {
+    (end - start).num_milliseconds().max(0) as u64
 }
 
 fn message_has_timing_content(message: &Message) -> bool {
@@ -292,7 +314,7 @@ pub(crate) async fn stream_response_from_provider(
     // so they can be handled by the existing error handling logic in the agent
     let model_config =
         model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
-    let request_started = std::time::Instant::now();
+    let mut timer = ProviderCallTimer::start();
     debug!("WAITING_LLM_STREAM_START");
     let stream_result = crate::session_context::with_session_id(
         Some(session_id.clone()),
@@ -386,15 +408,12 @@ pub(crate) async fn stream_response_from_provider(
             // and stripped before any output reaches the UI.
             let mut accumulated_message: Option<Message> = None;
             let mut final_usage: Option<ProviderUsage> = None;
-            let mut first_content_at: Option<std::time::Instant> = None;
 
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = result?;
 
                 if let Some(msg) = msg_opt {
-                    if first_content_at.is_none() && message_has_timing_content(&msg) {
-                        first_content_at = Some(std::time::Instant::now());
-                    }
+                    timer.observe(&msg);
                     accumulated_message = Some(match accumulated_message {
                         Some(mut prev) => {
                             for new_content in msg.content {
@@ -427,7 +446,7 @@ pub(crate) async fn stream_response_from_provider(
 
             // The toolshim interpreter call below must not count toward elapsed time.
             if let Some(usage) = final_usage.as_mut() {
-                fill_stream_timing(usage, request_started, first_content_at);
+                timer.fill_stats(usage);
                 gen_ai_telemetry::record_provider_usage(&span, usage);
             }
 
@@ -445,19 +464,16 @@ pub(crate) async fn stream_response_from_provider(
                 yield (None, final_usage);
             }
         } else {
-            let mut first_content_at: Option<std::time::Instant> = None;
             let mut active_mergeable_assistant_id: Option<String> = None;
             let mut output_message: Option<Message> = None;
             while let Some(result) = stream.next().await {
                 let (message, mut usage) = result?;
 
-                if first_content_at.is_none()
-                    && message.as_ref().is_some_and(message_has_timing_content)
-                {
-                    first_content_at = Some(std::time::Instant::now());
+                if let Some(message) = message.as_ref() {
+                    timer.observe(message);
                 }
                 if let Some(usage) = usage.as_mut() {
-                    fill_stream_timing(usage, request_started, first_content_at);
+                    timer.fill_stats(usage);
                     gen_ai_telemetry::record_provider_usage(&span, usage);
                 }
                 if capture_message_content {
@@ -500,12 +516,13 @@ mod tests {
     use crate::conversation::message::{Message, SystemNotificationType};
     use crate::providers::base::Provider;
     use async_trait::async_trait;
+    use chrono::TimeDelta;
     use oi_kit_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
     use oi_kit_providers::model::ModelConfig;
     use rmcp::model::{Annotations, Role, TextContent};
     use rmcp::object;
     use std::sync::Mutex;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[derive(Clone)]
     struct GenAiTracingProvider;
@@ -1141,12 +1158,15 @@ mod tests {
     }
 
     #[test]
-    fn fill_stream_timing_fills_both_fields_when_stats_absent() {
-        let request_started = Instant::now() - Duration::from_millis(100);
-        let first_content_at = Some(request_started + Duration::from_millis(40));
+    fn provider_call_timer_fills_both_fields_when_stats_absent() {
+        let request_started = Utc::now() - TimeDelta::milliseconds(100);
+        let timer = ProviderCallTimer {
+            request_started,
+            first_message_seen_at: Some(request_started + TimeDelta::milliseconds(40)),
+        };
         let mut usage = usage_with_stats(None);
 
-        fill_stream_timing(&mut usage, request_started, first_content_at);
+        timer.fill_stats(&mut usage);
 
         let stats = usage.stats.expect("stats must be created when absent");
         assert_eq!(stats.time_to_first_token_ms, Some(40));
@@ -1159,9 +1179,12 @@ mod tests {
     }
 
     #[test]
-    fn fill_stream_timing_preserves_provider_reported_values() {
-        let request_started = Instant::now() - Duration::from_millis(100);
-        let first_content_at = Some(request_started + Duration::from_millis(25));
+    fn provider_call_timer_preserves_provider_reported_values() {
+        let request_started = Utc::now() - TimeDelta::milliseconds(100);
+        let timer = ProviderCallTimer {
+            request_started,
+            first_message_seen_at: Some(request_started + TimeDelta::milliseconds(25)),
+        };
         let mut usage = usage_with_stats(Some(ProviderStats {
             elapsed_ms: Some(7),
             time_to_first_token_ms: Some(3),
@@ -1169,7 +1192,7 @@ mod tests {
             ..Default::default()
         }));
 
-        fill_stream_timing(&mut usage, request_started, first_content_at);
+        timer.fill_stats(&mut usage);
 
         let stats = usage.stats.expect("stats must survive");
         assert_eq!(
@@ -1190,11 +1213,14 @@ mod tests {
     }
 
     #[test]
-    fn fill_stream_timing_without_first_content_leaves_ttft_unset() {
-        let request_started = Instant::now() - Duration::from_millis(100);
+    fn provider_call_timer_without_first_content_leaves_ttft_unset() {
+        let timer = ProviderCallTimer {
+            request_started: Utc::now() - TimeDelta::milliseconds(100),
+            first_message_seen_at: None,
+        };
         let mut usage = usage_with_stats(None);
 
-        fill_stream_timing(&mut usage, request_started, None);
+        timer.fill_stats(&mut usage);
 
         let stats = usage.stats.expect("stats must be created when absent");
         assert_eq!(
@@ -1202,6 +1228,24 @@ mod tests {
             "no content chunk observed means no TTFT"
         );
         assert!(stats.elapsed_ms.expect("elapsed_ms must be filled") >= 100);
+    }
+
+    #[test]
+    fn provider_call_timer_prefers_parser_first_content_time() {
+        let request_started = Utc::now() - TimeDelta::milliseconds(100);
+        let timer = ProviderCallTimer {
+            request_started,
+            first_message_seen_at: Some(request_started + TimeDelta::milliseconds(90)),
+        };
+        let mut usage = usage_with_stats(Some(ProviderStats {
+            first_token_at: Some(request_started + TimeDelta::milliseconds(15)),
+            ..Default::default()
+        }));
+
+        timer.fill_stats(&mut usage);
+
+        let stats = usage.stats.expect("stats must survive");
+        assert_eq!(stats.time_to_first_token_ms, Some(15));
     }
 
     type TestStreamItem = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>;

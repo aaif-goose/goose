@@ -145,6 +145,24 @@ impl Delta {
             .filter(|s| !s.is_empty())
             .or_else(|| self.reasoning.as_deref().filter(|s| !s.is_empty()))
     }
+
+    fn is_model_output(&self) -> bool {
+        let has_text = match &self.content {
+            Some(DeltaContentBlock::String(text)) => !text.is_empty(),
+            Some(DeltaContentBlock::Array(parts)) => !parts.is_empty(),
+            None => false,
+        };
+        has_text
+            || self.reasoning_text().is_some()
+            || self
+                .reasoning_details
+                .as_ref()
+                .is_some_and(|details| !details.is_empty())
+            || self
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1317,6 +1335,7 @@ where
         let mut output_token_limit_reached = false;
         let mut output_token_limit_metadata_emitted = false;
         let mut usage_emitted = false;
+        let mut first_token_at = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1341,6 +1360,9 @@ where
             if let Some(id) = &chunk.id {
                 last_response_id = Some(id.clone());
             }
+            if chunk.choices.first().is_some_and(|choice| choice.delta.is_model_output()) {
+                first_token_at.get_or_insert_with(chrono::Utc::now);
+            }
 
             if !chunk.choices.is_empty() {
                 if let Some(details) = &chunk.choices[0].delta.reasoning_details {
@@ -1358,7 +1380,8 @@ where
             if let Some(reason) = chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
                 last_finish_reason = Some(reason);
             }
-            let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref());
+            let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref())
+                .map(|usage| usage.with_first_token_at(first_token_at));
             if let Some(u) = usage.as_mut() {
                 if let Some(reason) = &last_finish_reason {
                     u.finish_reasons = Some(vec![reason.clone()]);
@@ -1415,7 +1438,8 @@ where
                                     last_finish_reason = Some(reason);
                                 }
 
-                                if let Some(mut chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
+                                if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
+                                    let mut chunk_usage = chunk_usage.with_first_token_at(first_token_at);
                                     if let Some(reason) = &last_finish_reason {
                                         chunk_usage.finish_reasons = Some(vec![reason.clone()]);
                                     }
@@ -1714,7 +1738,8 @@ where
             let mut usage = ProviderUsage::new(
                 last_seen_model.unwrap_or_else(|| "unknown".to_string()),
                 Usage::default(),
-            );
+            )
+            .with_first_token_at(first_token_at);
             usage.response_id = last_response_id;
             usage.finish_reasons = last_finish_reason.map(|reason| vec![reason]);
             yield (None, Some(usage))
@@ -2083,6 +2108,7 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
+    use crate::formats::test_support::first_content_window;
     use rmcp::model::CallToolResult;
     use rmcp::object;
     use serde_json::json;
@@ -3816,6 +3842,22 @@ mod tests {
             }
         }
         requests
+    }
+
+    #[tokio::test]
+    async fn test_streaming_reports_first_content_time_for_tool_call() {
+        let response_lines = [
+            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
+            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
+            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\":\"ls\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+            r#"data: {"id":"chatcmpl-1","model":"test-model","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
+            "data: [DONE]",
+        ]
+        .join("\n");
+
+        first_content_window(&response_lines, 1, response_to_streaming_message)
+            .await
+            .assert_reported_at_first_content();
     }
 
     #[tokio::test]

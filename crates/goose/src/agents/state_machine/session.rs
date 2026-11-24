@@ -171,7 +171,9 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         &effects[index + 1..],
                     )));
                 }
-                GooseEffect::RecordUsage(usage) => emit.emit(AgentEvent::Usage(usage.clone())),
+                GooseEffect::RecordUsage(usage) => {
+                    emit.emit(AgentEvent::Usage(usage.as_ref().clone()))
+                }
                 _ => {}
             }
         }

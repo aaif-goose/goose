@@ -759,6 +759,14 @@ struct StreamBlockState {
     stop_reason: Option<bedrock::StopReason>,
 }
 
+fn is_model_output(event: &bedrock::ConverseStreamOutput) -> bool {
+    matches!(
+        event,
+        bedrock::ConverseStreamOutput::ContentBlockStart(_)
+            | bedrock::ConverseStreamOutput::ContentBlockDelta(_)
+    )
+}
+
 /// Convert a single `ConverseStream` event into zero or more [`Message`]s
 /// ready to be yielded, plus token usage when the event carries it.
 ///
@@ -1125,6 +1133,7 @@ impl Provider for BedrockProvider {
             let message_id = format!("msg_{}", uuid::Uuid::new_v4());
             let mut full_text = String::new();
             let mut final_usage: Option<ProviderUsage> = None;
+            let mut first_token_at = None;
 
             loop {
                 let event = event_stream.recv().await.map_err(|err| {
@@ -1174,6 +1183,10 @@ impl Provider for BedrockProvider {
                 })?;
                 let Some(event) = event else { break };
 
+                if is_model_output(&event) {
+                    first_token_at.get_or_insert_with(chrono::Utc::now);
+                }
+
                 let (messages, usage) = process_stream_event(event, &mut state, &message_id);
                 if let Some(usage) = usage {
                     final_usage = Some(ProviderUsage::new(model_name.clone(), usage));
@@ -1201,9 +1214,9 @@ impl Provider for BedrockProvider {
                 yield (Some(message), None);
             }
 
-            let mut usage = final_usage.unwrap_or_else(|| {
-                ProviderUsage::new(model_name.clone(), Usage::default())
-            });
+            let mut usage = final_usage
+                .unwrap_or_else(|| ProviderUsage::new(model_name.clone(), Usage::default()))
+                .with_first_token_at(first_token_at);
             if let Some(reason) = stop_reason.as_ref().map(|reason| reason.as_str().to_string()) {
                 usage.finish_reasons = Some(vec![reason]);
             }
@@ -2085,6 +2098,19 @@ mod tests {
         assert_eq!(usage.input_tokens, Some(100));
         assert_eq!(usage.output_tokens, Some(50));
         assert_eq!(usage.total_tokens, Some(150));
+    }
+
+    #[test]
+    fn test_is_model_output() {
+        assert!(is_model_output(&tool_start_event(0, "tool-1", "shell")));
+        assert!(is_model_output(&delta_event(
+            0,
+            bedrock::ContentBlockDelta::Text("Hi".to_string())
+        )));
+        assert!(!is_model_output(&stop_event(0)));
+        assert!(!is_model_output(&message_stop(
+            bedrock::StopReason::EndTurn
+        )));
     }
 
     #[test]

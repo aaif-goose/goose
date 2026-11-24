@@ -30,7 +30,7 @@ impl GooseInferenceProvider {
 
 impl InferenceEffect for GooseEffect {
     fn record_usage(usage: ProviderUsage) -> Self {
-        GooseEffect::RecordUsage(usage)
+        GooseEffect::RecordUsage(Box::new(usage))
     }
 }
 

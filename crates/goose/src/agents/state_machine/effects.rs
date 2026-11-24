@@ -16,7 +16,7 @@ pub enum GooseEffect {
         version: &'static str,
         value: serde_json::Value,
     },
-    RecordUsage(ProviderUsage),
+    RecordUsage(Box<ProviderUsage>),
 }
 
 impl GooseEffect {

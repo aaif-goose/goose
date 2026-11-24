@@ -136,7 +136,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     );
     apply(vec![
         replacement.into(),
-        state_machine::GooseEffect::RecordUsage(usage),
+        state_machine::GooseEffect::RecordUsage(Box::new(usage)),
         Message::assistant()
             .with_text("response after replacement")
             .into(),
