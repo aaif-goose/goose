@@ -332,8 +332,16 @@ impl OpenAiProvider {
         model_config: &ModelConfig,
     ) {
         if !Self::maps_all_responses_thinking_efforts(&self.name)
+            || model_config.reasoning == Some(false)
             || model_config.request_params.as_ref().is_some_and(|params| {
-                params.contains_key("reasoning") || params.contains_key("reasoning_effort")
+                params
+                    .get("reasoning_effort")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+                    || params
+                        .get("reasoning")
+                        .and_then(|reasoning| reasoning.get("effort"))
+                        .is_some()
             })
         {
             return;
@@ -2236,6 +2244,50 @@ mod tests {
                 "explicit {key} should be preserved"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn perplexity_adds_thinking_effort_to_reasoning_with_no_effort() {
+        let model_config = ModelConfig::new("anthropic/claude-opus-5-5")
+            .with_thinking_effort(ThinkingEffort::High)
+            .with_merged_request_params(HashMap::from([(
+                "reasoning".to_string(),
+                json!({"summary": "detailed"}),
+            )]));
+        let payload = perplexity_payload(&model_config).await;
+        assert_eq!(
+            payload["reasoning"],
+            json!({"effort": "high", "summary": "detailed"}),
+            "the request keeps the summary and adds the high effort"
+        );
+    }
+
+    #[tokio::test]
+    async fn perplexity_adds_thinking_effort_when_reasoning_effort_is_not_a_string() {
+        let model_config = ModelConfig::new("anthropic/claude-opus-5-5")
+            .with_thinking_effort(ThinkingEffort::High)
+            .with_merged_request_params(HashMap::from([(
+                "reasoning_effort".to_string(),
+                json!(1),
+            )]));
+        let payload = perplexity_payload(&model_config).await;
+        assert_eq!(
+            payload["reasoning"]["effort"],
+            json!("high"),
+            "a number in reasoning_effort does not set the effort"
+        );
+    }
+
+    #[tokio::test]
+    async fn perplexity_does_not_add_selected_effort_when_model_config_sets_reasoning_to_false() {
+        let mut model_config = ModelConfig::new("perplexity/nemotron-3.5-super-120b-a12b")
+            .with_thinking_effort(ThinkingEffort::High);
+        model_config.reasoning = Some(false);
+        let payload = perplexity_payload(&model_config).await;
+        assert!(
+            payload.get("reasoning").is_none(),
+            "the mapper must not add the selected effort"
+        );
     }
 
     #[test]
