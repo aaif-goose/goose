@@ -88,7 +88,8 @@ impl AnthropicFormatOptions {
             .unwrap_or(self.preserve_unsigned_thinking)
             || preserve_thinking_context;
         let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
-            == Some(ThinkingMode::AlwaysOnAdaptive);
+            == Some(ThinkingMode::AlwaysOnAdaptive)
+            || zai_effort_levels(provider_name, &model_config.model_name).is_some();
         let thinking_disabled = !always_on
             && (model_config.reasoning == Some(false)
                 || model_config.thinking_effort() == Some(ThinkingEffort::Off));
@@ -171,6 +172,28 @@ fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<Think
         return Some(ThinkingMode::AlwaysOnAdaptive);
     }
     None
+}
+
+fn zai_effort_levels(provider_name: &str, model_name: &str) -> Option<Vec<String>> {
+    if provider_name != "zai" {
+        return None;
+    }
+    maybe_get_canonical_model(provider_name, model_name)
+        .and_then(|model| model.reasoning_efforts)
+        .filter(|levels| !levels.is_empty())
+}
+
+fn zai_effort_level(levels: &[String], effort: ThinkingEffort) -> Option<String> {
+    let preferred: &[&str] = match effort {
+        ThinkingEffort::Off | ThinkingEffort::Low => &["low", "high", "max"],
+        ThinkingEffort::Medium => &["medium", "high", "max"],
+        ThinkingEffort::High => &["high", "max"],
+        ThinkingEffort::Max => &["max", "high"],
+    };
+    preferred
+        .iter()
+        .find(|level| levels.iter().any(|value| value == *level))
+        .map(|level| level.to_string())
 }
 
 /// Adaptive models run adaptive thinking when `thinking` is omitted, so turning
@@ -845,26 +868,36 @@ fn apply_thinking_config(
     options: AnthropicFormatOptions,
 ) {
     let obj = payload.as_object_mut().unwrap();
-    match thinking_type_for_provider(provider_name, model_config) {
-        ThinkingType::Adaptive => {
-            obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = adaptive_effort_wire(provider_name, model_config);
-            obj.insert("output_config".to_string(), json!({"effort": effort}));
-        }
-        ThinkingType::Enabled => {
-            let budget_tokens = thinking_budget_tokens(model_config)
-                .min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
-            if budget_tokens >= MIN_ANSWER_TOKENS {
-                obj.insert(
-                    "thinking".to_string(),
-                    json!({
-                        "type": "enabled",
-                        "budget_tokens": budget_tokens
-                    }),
-                );
+    let effort = model_config
+        .thinking_effort()
+        .unwrap_or(ThinkingEffort::Max);
+    if let Some(level) = zai_effort_levels(provider_name, &model_config.model_name)
+        .and_then(|levels| zai_effort_level(&levels, effort))
+    {
+        obj.insert("thinking".to_string(), json!({"type": "enabled"}));
+        obj.insert("output_config".to_string(), json!({"effort": level}));
+    } else {
+        match thinking_type_for_provider(provider_name, model_config) {
+            ThinkingType::Adaptive => {
+                obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
+                let effort = adaptive_effort_wire(provider_name, model_config);
+                obj.insert("output_config".to_string(), json!({"effort": effort}));
             }
+            ThinkingType::Enabled => {
+                let budget_tokens = thinking_budget_tokens(model_config)
+                    .min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
+                if budget_tokens >= MIN_ANSWER_TOKENS {
+                    obj.insert(
+                        "thinking".to_string(),
+                        json!({
+                            "type": "enabled",
+                            "budget_tokens": budget_tokens
+                        }),
+                    );
+                }
+            }
+            ThinkingType::Disabled => {}
         }
-        ThinkingType::Disabled => {}
     }
 
     if options.preserve_thinking_context && !options.thinking_disabled {
