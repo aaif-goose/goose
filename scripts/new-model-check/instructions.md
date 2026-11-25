@@ -108,10 +108,11 @@ Compare the real requests with the model's models.dev metadata.
 1. **Output limit.** The max-setting request asks for `output_limit` from models.dev. A request for 4096 when models.dev says otherwise is a fail. If models.dev has no output limit, or it equals the context limit, goose ignores it by design: write "skipped".
 2. **Thinking is on.** If models.dev says `reasoning: true`, the max-setting request includes thinking settings; none at all is a fail. Exception: if `reasoning_options` is `[]`, the model always reasons and takes no settings, so the request must have none.
 3. **Thinking levels.** If models.dev's `reasoning_options` has an entry with `"type": "effort"`, its `values` are the model's levels, lowest to highest. Then:
-   - For `low`, `medium`, `high` and `max`, the request must use one of those levels, not a token budget (`thinkingBudget`, `budget_tokens`). A token budget is a fail, even though thinking is on.
-   - Every level goose sends must be on the list.
-   - `max` must send the last (top) value on the list.
-   - For `off`, pass if thinking is disabled, left out, or set to a level on the list. Some models can't turn thinking off.
+   - For `low`, `medium`, `high` and `max`, the request must use a level on the list, not a token budget (`thinkingBudget`, `budget_tokens`). A token budget is a fail, even though thinking is on. Which level:
+     - If the list has a level with the same name as the setting, the request must use it.
+     - If not, place the setting in the order none, minimal, low, medium, high, xhigh, max. The next level on the list above it and the next one below it both pass.
+     - `max` must send the top level on the list.
+   - For `off`: if `reasoning_options` has a `"type": "toggle"` entry, thinking must be disabled or left out. Otherwise the model can't turn thinking off, so a level lower than the one `max` sends also passes.
 
    If models.dev has no levels for the model, find them in the provider's launch notes or API docs. If you can't, write "levels unknown" rather than pass or fail.
 
