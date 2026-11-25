@@ -483,19 +483,15 @@ mod tests {
         registry.register::<OpenAiProviderDef>(false);
         let entry = &registry.entries["openai"];
 
-        for (name, canonical_vision) in [("gpt-4o", true), ("gpt-4", false)] {
-            let detected = entry
-                .normalize_model_config(ModelConfig::new(name))
-                .unwrap();
-            assert_eq!(detected.supports_vision, Some(canonical_vision));
+        let detected = entry
+            .normalize_model_config(ModelConfig::new("gpt-4o"))
+            .unwrap();
+        assert_eq!(detected.supports_vision, Some(true));
 
-            let overridden = entry
-                .normalize_model_config(
-                    ModelConfig::new(name).with_vision_support(!canonical_vision),
-                )
-                .unwrap();
-            assert_eq!(overridden.supports_vision, Some(!canonical_vision));
-        }
+        let overridden = entry
+            .normalize_model_config(ModelConfig::new("gpt-4o").with_vision_support(false))
+            .unwrap();
+        assert_eq!(overridden.supports_vision, Some(false));
     }
 
     #[test]

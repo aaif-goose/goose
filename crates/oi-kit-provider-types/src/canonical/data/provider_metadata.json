@@ -283,7 +283,7 @@
     "env": [
       "AMBIENT_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 11
   },
   {
     "id": "amd",
@@ -536,7 +536,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 19
+    "model_count": 20
   },
   {
     "id": "clarifai",
@@ -603,7 +603,7 @@
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_KEY"
     ],
-    "model_count": 29
+    "model_count": 30
   },
   {
     "id": "commandcode",
@@ -615,6 +615,17 @@
       "CMD_API_KEY"
     ],
     "model_count": 93
+  },
+  {
+    "id": "concentrate",
+    "display_name": "Concentrate",
+    "npm": "@ai-sdk/openai",
+    "api": "https://api.concentrate.ai/v1",
+    "doc": "https://concentrate.ai/docs",
+    "env": [
+      "CONCENTRATE_API_KEY"
+    ],
+    "model_count": 164
   },
   {
     "id": "confidential-ai",
@@ -647,7 +658,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 106
+    "model_count": 110
   },
   {
     "id": "crossmodel",
@@ -658,7 +669,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 73
+    "model_count": 76
   },
   {
     "id": "crusoe",
@@ -714,7 +725,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 86
+    "model_count": 88
   },
   {
     "id": "dinference",
@@ -791,7 +802,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 396
+    "model_count": 390
   },
   {
     "id": "empiriolabs",
@@ -802,7 +813,7 @@
     "env": [
       "EMPIRIOLABS_API_KEY"
     ],
-    "model_count": 65
+    "model_count": 63
   },
   {
     "id": "engy",
@@ -857,7 +868,7 @@
     "env": [
       "FASTROUTER_API_KEY"
     ],
-    "model_count": 48
+    "model_count": 55
   },
   {
     "id": "fiftyx",
@@ -923,7 +934,7 @@
     "env": [
       "FRIENDLI_TOKEN"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "frogbot",
@@ -956,7 +967,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 39
+    "model_count": 44
   },
   {
     "id": "gmicloud",
@@ -1077,7 +1088,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 86
+    "model_count": 93
   },
   {
     "id": "humain",
@@ -1342,7 +1353,7 @@
     "env": [
       "KELN_API_KEY"
     ],
-    "model_count": 14
+    "model_count": 13
   },
   {
     "id": "kenari",
@@ -1353,7 +1364,7 @@
     "env": [
       "KENARI_API_KEY"
     ],
-    "model_count": 81
+    "model_count": 83
   },
   {
     "id": "kilo",
@@ -1364,7 +1375,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 464
+    "model_count": 466
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1463,7 +1474,7 @@
     "env": [
       "KUNAVO_API_KEY"
     ],
-    "model_count": 16
+    "model_count": 19
   },
   {
     "id": "liquid",
@@ -1496,7 +1507,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 208
+    "model_count": 218
   },
   {
     "id": "llmgateway-providers",
@@ -1507,7 +1518,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 477
+    "model_count": 508
   },
   {
     "id": "llmtech",
@@ -1562,7 +1573,7 @@
     "env": [
       "LONGCAT_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 3
   },
   {
     "id": "lowrouter",
@@ -1738,7 +1749,7 @@
     "env": [
       "MODAL_PROXY_TOKEN"
     ],
-    "model_count": 8
+    "model_count": 10
   },
   {
     "id": "model-oracle-ai",
@@ -1793,7 +1804,7 @@
     "env": [
       "MONEO_API_KEY"
     ],
-    "model_count": 11
+    "model_count": 12
   },
   {
     "id": "moonshotai",
@@ -1870,7 +1881,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 625
+    "model_count": 606
   },
   {
     "id": "nearai",
@@ -1881,7 +1892,7 @@
     "env": [
       "NEARAI_API_KEY"
     ],
-    "model_count": 60
+    "model_count": 61
   },
   {
     "id": "nebius",
@@ -1892,7 +1903,7 @@
     "env": [
       "NEBIUS_API_KEY"
     ],
-    "model_count": 23
+    "model_count": 24
   },
   {
     "id": "neon",
@@ -1970,7 +1981,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 93
+    "model_count": 97
   },
   {
     "id": "nvidia",
@@ -2025,7 +2036,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 152
+    "model_count": 157
   },
   {
     "id": "ollama-cloud",
@@ -2036,7 +2047,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 27
+    "model_count": 28
   },
   {
     "id": "opencode",
@@ -2047,7 +2058,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 140
+    "model_count": 145
   },
   {
     "id": "opencode-go",
@@ -2058,7 +2069,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 42
+    "model_count": 43
   },
   {
     "id": "openreason",
@@ -2226,6 +2237,17 @@
     "model_count": 7
   },
   {
+    "id": "primalabs",
+    "display_name": "PrimaLabs",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.primalabs.ai/v1",
+    "doc": "https://docs.primalabs.ai/inference/models",
+    "env": [
+      "PRIMALABS_API_KEY"
+    ],
+    "model_count": 6
+  },
+  {
     "id": "prime",
     "display_name": "Prime Inference",
     "npm": "@ai-sdk/openai-compatible",
@@ -2234,7 +2256,7 @@
     "env": [
       "PRIME_API_KEY"
     ],
-    "model_count": 70
+    "model_count": 69
   },
   {
     "id": "privatemode-ai",
@@ -2333,7 +2355,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 175
+    "model_count": 177
   },
   {
     "id": "routing-run",
@@ -2410,7 +2432,7 @@
     "env": [
       "SAMBANOVA_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "sandbase",
@@ -2427,12 +2449,12 @@
     "id": "sarvam",
     "display_name": "Sarvam AI",
     "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.sarvam.ai/v1",
-    "doc": "https://docs.sarvam.ai/api-reference-docs/getting-started/models",
+    "api": "https://api.sarvam.ai/v2",
+    "doc": "https://docs.sarvam.ai/api/token-factory/models",
     "env": [
       "SARVAM_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 7
   },
   {
     "id": "scaleway",
@@ -2561,11 +2583,11 @@
     "display_name": "SteadyRouter",
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://api.steadyrouter.com/v1",
-    "doc": "https://www.steadyrouter.com/site/docs.html",
+    "doc": "https://www.steadyrouter.com/site/docs.html?utm_source=models.dev",
     "env": [
       "STEADYROUTER_API_KEY"
     ],
-    "model_count": 21
+    "model_count": 20
   },
   {
     "id": "stepfun",
@@ -2796,7 +2818,7 @@
     "env": [
       "TINFOIL_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 9
   },
   {
     "id": "toapis",
@@ -3016,7 +3038,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 38
+    "model_count": 45
   },
   {
     "id": "volcengine",
@@ -3192,7 +3214,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 8
   },
   {
     "id": "zeldoc",
@@ -3259,7 +3281,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 4
+    "model_count": 5
   },
   {
     "id": "zro",

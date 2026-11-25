@@ -388,8 +388,8 @@ mod tests {
             Some("x-ai/grok-4.5".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("openai", "gpt-4-turbo-2024-04-09", &r),
-            Some("openai/gpt-4-turbo".to_string())
+            map_to_canonical_model("openai", "gpt-4.1-2025-04-14", &r),
+            Some("openai/gpt-4.1".to_string())
         );
         assert_eq!(
             map_to_canonical_model("chatgpt_codex", "gpt-5.6-sol", &r),
@@ -505,16 +505,12 @@ mod tests {
 
         // === OpenAI O-series ===
         assert_eq!(
-            map_to_canonical_model("databricks", "goose-o1", &r),
-            Some("openai/o1".to_string())
-        );
-        assert_eq!(
             map_to_canonical_model("databricks", "kgoose-o3", &r),
             Some("openai/o3".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "headless-goose-o3-mini", &r),
-            Some("openai/o3-mini".to_string())
+            map_to_canonical_model("databricks", "headless-goose-o3-pro", &r),
+            Some("openai/o3-pro".to_string())
         );
 
         // === Google Gemini ===

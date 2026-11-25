@@ -2088,7 +2088,7 @@ mod tests {
             metadata
                 .known_models
                 .iter()
-                .any(|model| model.name == "gpt-4"),
+                .any(|model| model.name == "gpt-6-sol"),
             "registry-only list should include models the old hardcoded list had drifted past"
         );
     }
