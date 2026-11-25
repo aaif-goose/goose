@@ -54,9 +54,15 @@ fn glm_5_3_sends_its_effort_levels() {
 }
 
 #[test]
+fn glm_5_2_off_turns_thinking_off() {
+    let payload = zai_request("glm-5.2", Some(ThinkingEffort::Off), &hello());
+    assert!(payload.get("thinking").is_none());
+    assert!(payload.get("output_config").is_none());
+}
+
+#[test]
 fn glm_5_2_uses_its_lowest_level_for_low_settings() {
     for (effort, expected) in [
-        (ThinkingEffort::Off, "high"),
         (ThinkingEffort::Low, "high"),
         (ThinkingEffort::Medium, "high"),
         (ThinkingEffort::High, "high"),

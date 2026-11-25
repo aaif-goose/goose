@@ -330462,6 +330462,7 @@
       "high",
       "max"
     ],
+    "reasoning_toggle": true,
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-06-13",

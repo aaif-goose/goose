@@ -89,7 +89,7 @@ impl AnthropicFormatOptions {
             || preserve_thinking_context;
         let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
             == Some(ThinkingMode::AlwaysOnAdaptive)
-            || zai_effort_levels(provider_name, &model_config.model_name).is_some();
+            || zai_effort_level(provider_name, model_config).is_some();
         let thinking_disabled = !always_on
             && (model_config.reasoning == Some(false)
                 || model_config.thinking_effort() == Some(ThinkingEffort::Off));
@@ -174,16 +174,18 @@ fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<Think
     None
 }
 
-fn zai_effort_levels(provider_name: &str, model_name: &str) -> Option<Vec<String>> {
+fn zai_effort_level(provider_name: &str, model_config: &ModelConfig) -> Option<String> {
     if provider_name != "zai" {
         return None;
     }
-    maybe_get_canonical_model(provider_name, model_name)
-        .and_then(|model| model.reasoning_efforts)
-        .filter(|levels| !levels.is_empty())
-}
-
-fn zai_effort_level(levels: &[String], effort: ThinkingEffort) -> Option<String> {
+    let model = maybe_get_canonical_model(provider_name, &model_config.model_name)?;
+    let levels = model.reasoning_efforts?;
+    let effort = model_config
+        .thinking_effort()
+        .unwrap_or(ThinkingEffort::Max);
+    if effort == ThinkingEffort::Off && model.reasoning_toggle {
+        return None;
+    }
     let preferred: &[&str] = match effort {
         ThinkingEffort::Off | ThinkingEffort::Low => &["low", "high", "max"],
         ThinkingEffort::Medium => &["medium", "high", "max"],
@@ -868,12 +870,7 @@ fn apply_thinking_config(
     options: AnthropicFormatOptions,
 ) {
     let obj = payload.as_object_mut().unwrap();
-    let effort = model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::Max);
-    if let Some(level) = zai_effort_levels(provider_name, &model_config.model_name)
-        .and_then(|levels| zai_effort_level(&levels, effort))
-    {
+    if let Some(level) = zai_effort_level(provider_name, model_config) {
         obj.insert("thinking".to_string(), json!({"type": "enabled"}));
         obj.insert("output_config".to_string(), json!({"effort": level}));
     } else {
