@@ -129,7 +129,7 @@
     "env": [
       "AIAND_API_KEY"
     ],
-    "model_count": 12
+    "model_count": 13
   },
   {
     "id": "aigrow",
@@ -151,7 +151,7 @@
     "env": [
       "AIMLAPI_API_KEY"
     ],
-    "model_count": 163
+    "model_count": 158
   },
   {
     "id": "ainetcafe",
@@ -217,7 +217,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 53
+    "model_count": 34
   },
   {
     "id": "alibaba-cn",
@@ -228,7 +228,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 80
+    "model_count": 68
   },
   {
     "id": "alibaba-coding-plan",
@@ -239,7 +239,7 @@
     "env": [
       "ALIBABA_CODING_PLAN_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 7
   },
   {
     "id": "alibaba-coding-plan-cn",
@@ -250,7 +250,7 @@
     "env": [
       "ALIBABA_CODING_PLAN_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 7
   },
   {
     "id": "alibaba-token-plan",
@@ -261,7 +261,7 @@
     "env": [
       "ALIBABA_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 29
+    "model_count": 27
   },
   {
     "id": "alibaba-token-plan-cn",
@@ -272,7 +272,7 @@
     "env": [
       "ALIBABA_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 29
+    "model_count": 27
   },
   {
     "id": "ambient",
@@ -404,7 +404,7 @@
     "env": [
       "BASETEN_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 18
   },
   {
     "id": "bee",
@@ -536,7 +536,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 20
+    "model_count": 19
   },
   {
     "id": "clarifai",
@@ -703,7 +703,7 @@
       "DATABRICKS_HOST",
       "DATABRICKS_TOKEN"
     ],
-    "model_count": 31
+    "model_count": 61
   },
   {
     "id": "deepseek",
@@ -802,7 +802,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 390
+    "model_count": 392
   },
   {
     "id": "empiriolabs",
@@ -890,7 +890,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 27
+    "model_count": 33
   },
   {
     "id": "fortytwo",
@@ -967,7 +967,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 44
+    "model_count": 33
   },
   {
     "id": "gmicloud",
@@ -1088,7 +1088,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 93
+    "model_count": 118
   },
   {
     "id": "humain",
@@ -1353,7 +1353,7 @@
     "env": [
       "KELN_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 12
   },
   {
     "id": "kenari",
@@ -1375,7 +1375,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 466
+    "model_count": 462
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1507,7 +1507,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 218
+    "model_count": 219
   },
   {
     "id": "llmgateway-providers",
@@ -1518,7 +1518,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 508
+    "model_count": 512
   },
   {
     "id": "llmtech",
@@ -1573,7 +1573,7 @@
     "env": [
       "LONGCAT_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 2
   },
   {
     "id": "lowrouter",
@@ -1881,7 +1881,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 606
+    "model_count": 605
   },
   {
     "id": "nearai",
@@ -1903,7 +1903,7 @@
     "env": [
       "NEBIUS_API_KEY"
     ],
-    "model_count": 24
+    "model_count": 25
   },
   {
     "id": "neon",
@@ -2058,7 +2058,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 145
+    "model_count": 146
   },
   {
     "id": "opencode-go",
@@ -2069,7 +2069,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 43
+    "model_count": 44
   },
   {
     "id": "openreason",
@@ -2124,7 +2124,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 11
+    "model_count": 13
   },
   {
     "id": "paraloncloud",
@@ -2256,7 +2256,7 @@
     "env": [
       "PRIME_API_KEY"
     ],
-    "model_count": 69
+    "model_count": 71
   },
   {
     "id": "privatemode-ai",
@@ -2598,7 +2598,7 @@
     "env": [
       "STEPFUN_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 9
   },
   {
     "id": "stepfun-ai",
@@ -2609,7 +2609,7 @@
     "env": [
       "STEPFUN_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 8
   },
   {
     "id": "stepfun-ai-step-plan",
@@ -2631,7 +2631,7 @@
     "env": [
       "STEPFUN_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 6
   },
   {
     "id": "stepping-stone",
@@ -2730,7 +2730,7 @@
     "env": [
       "TENCENT_CODING_PLAN_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 1
   },
   {
     "id": "tencent-token-plan",
@@ -2741,7 +2741,7 @@
     "env": [
       "TENCENT_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 19
   },
   {
     "id": "tencent-tokenhub",
@@ -2752,7 +2752,7 @@
     "env": [
       "TENCENT_TOKENHUB_API_KEY"
     ],
-    "model_count": 4
+    "model_count": 24
   },
   {
     "id": "tensorx",
@@ -2807,7 +2807,7 @@
     "env": [
       "TINKER_API_KEY"
     ],
-    "model_count": 38
+    "model_count": 40
   },
   {
     "id": "tinfoil",
@@ -3049,7 +3049,7 @@
     "env": [
       "ARK_API_KEY"
     ],
-    "model_count": 16
+    "model_count": 17
   },
   {
     "id": "volcengine-coding-plan",
@@ -3060,7 +3060,7 @@
     "env": [
       "ARK_CODING_PLAN_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 13
   },
   {
     "id": "vultr",
@@ -3137,7 +3137,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 3
   },
   {
     "id": "xiaomi-token-plan-ams",
@@ -3148,7 +3148,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 2
   },
   {
     "id": "xiaomi-token-plan-cn",
@@ -3159,7 +3159,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 2
   },
   {
     "id": "xiaomi-token-plan-sgp",
@@ -3170,7 +3170,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 2
   },
   {
     "id": "xpersona",
@@ -3203,7 +3203,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 18
+    "model_count": 19
   },
   {
     "id": "zai-coding-plan",
@@ -3270,7 +3270,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 18
   },
   {
     "id": "zhipuai-coding-plan",

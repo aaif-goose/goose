@@ -6,7 +6,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.61.0"
+version = "1.61.1"
 rust-version = "1.95.0"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
