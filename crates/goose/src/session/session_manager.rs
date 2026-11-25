@@ -2942,12 +2942,28 @@ impl SessionStorage {
 
     async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
         let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let lost_compaction = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM messages WHERE session_id = ? AND created_timestamp >= ? AND json_extract(metadata_json, '$.compactionSummary') = 1",
+        )
+        .bind(session_id)
+        .bind(timestamp)
+        .fetch_one(&mut *tx)
+        .await?
+            > 0;
+
         sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
             .bind(session_id)
             .bind(timestamp)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
 
+        if lost_compaction {
+            Self::restore_orphaned_visibility(&mut tx, session_id).await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -2968,6 +2984,17 @@ impl SessionStorage {
         .await?;
 
         if let Some((boundary_id, boundary_timestamp)) = boundary {
+            let lost_compaction = sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?)) AND json_extract(metadata_json, '$.compactionSummary') = 1",
+            )
+            .bind(session_id)
+            .bind(boundary_timestamp)
+            .bind(boundary_timestamp)
+            .bind(boundary_id)
+            .fetch_one(&mut *tx)
+            .await?
+                > 0;
+
             sqlx::query(
                 "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?))",
             )
@@ -2977,9 +3004,85 @@ impl SessionStorage {
             .bind(boundary_id)
             .execute(&mut *tx)
             .await?;
+
+            if lost_compaction {
+                Self::restore_orphaned_visibility(&mut tx, session_id).await?;
+            }
         }
 
         tx.commit().await?;
+        Ok(())
+    }
+
+    /// Compaction marks the messages it summarizes agent-invisible and stands
+    /// in for them with an agent-visible summary. Truncating away such a
+    /// summary leaves those messages orphaned: nothing represents them to the
+    /// agent, so the whole conversation drops out of its context. Restore the
+    /// visibility the messages had before the lost compaction superseded them.
+    async fn restore_orphaned_visibility(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+    ) -> Result<()> {
+        // The newest surviving compaction summary still stands in for the
+        // messages before it, so only the messages after it need their
+        // visibility back. If none survives, the whole conversation does.
+        let boundary = sqlx::query_as::<_, (i64, i64)>(
+            r#"
+            SELECT created_timestamp, id FROM messages
+            WHERE session_id = ?
+              AND json_extract(metadata_json, '$.compactionSummary') = 1
+            ORDER BY created_timestamp DESC, id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        // Approval notices and hidden compaction plumbing stay invisible:
+        // they were never part of the agent-visible conversation.
+        match boundary {
+            Some((timestamp, id)) => {
+                sqlx::query(
+                    r#"
+                    UPDATE messages
+                    SET metadata_json = json_set(metadata_json, '$.agentVisible', json('true'))
+                    WHERE session_id = ?
+                      AND json_extract(metadata_json, '$.agentVisible') IS NOT 1
+                      AND (
+                        json_extract(metadata_json, '$.userVisible') = 1
+                        OR json_extract(metadata_json, '$.turnContext') = 1
+                      )
+                      AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?))
+                    "#,
+                )
+                .bind(session_id)
+                .bind(timestamp)
+                .bind(timestamp)
+                .bind(id)
+                .execute(&mut **tx)
+                .await?;
+            }
+            None => {
+                // Every checkpoint was truncated away; restore the whole
+                // surviving conversation.
+                sqlx::query(
+                    r#"
+                    UPDATE messages
+                    SET metadata_json = json_set(metadata_json, '$.agentVisible', json('true'))
+                    WHERE session_id = ?
+                      AND json_extract(metadata_json, '$.agentVisible') IS NOT 1
+                      AND (
+                        json_extract(metadata_json, '$.userVisible') = 1
+                        OR json_extract(metadata_json, '$.turnContext') = 1
+                      )
+                    "#,
+                )
+                .bind(session_id)
+                .execute(&mut **tx)
+                .await?;
+            }
+        }
         Ok(())
     }
 
