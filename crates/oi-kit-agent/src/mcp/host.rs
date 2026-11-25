@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, JsonObject};
 use rmcp::transport::auth::CredentialStore;
@@ -118,16 +118,17 @@ pub trait ExtensionAuth: Send + Sync {
         name: &str,
         static_client: Option<&StaticOAuthClientConfig>,
         rejected: Option<RejectedRequest>,
-    ) -> anyhow::Result<ExtensionAuthorization>;
+    ) -> anyhow::Result<AuthorizationManager>;
 }
 
 /// A request the MCP server refused.
 pub struct RejectedRequest {
     /// The `WWW-Authenticate` challenge from the refusal, if any.
     pub challenge: Option<String>,
-    /// The access token the refused request carried; `None` when it went out
+    /// Access tokens the server refused on the connection that made the
+    /// request, oldest first; empty when its requests went out
     /// unauthenticated.
-    pub presented_token: Option<String>,
+    pub refused_tokens: Vec<String>,
 }
 
 /// Why stored credentials could not authorize a connection on their own. Any
@@ -144,30 +145,6 @@ pub enum StoredCredentialsError {
     /// could not finish either, since it uses the same token endpoint.
     #[error("the authorization server is failing")]
     AuthorizationServerFailing(#[source] Box<dyn std::error::Error + Send + Sync>),
-}
-
-pub struct ExtensionAuthorization {
-    pub manager: AuthorizationManager,
-    pub presented_token: PresentedToken,
-}
-
-/// The access token one connection's requests last carried. It is kept per
-/// connection so a refusal is matched against the token that connection sent,
-/// not against credentials another session may have stored since.
-#[derive(Clone, Default)]
-pub struct PresentedToken(Arc<Mutex<Option<String>>>);
-
-impl PresentedToken {
-    pub fn get(&self) -> Option<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub fn set(&self, token: Option<String>) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = token;
-    }
 }
 
 /// OAuth client credentials registered with the authorization server out of

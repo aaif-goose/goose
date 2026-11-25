@@ -8,14 +8,15 @@ use std::time::Duration;
 use anyhow::Result;
 use rmcp::model::{CallToolResult, MetaObject, Tool};
 use rmcp::transport::auth::CredentialStore;
+use rmcp::transport::AuthorizationManager;
 
 use crate::agents::container::Container;
 use crate::agents::extension::{
     name_to_key, ExtensionConfig, ExtensionError, ExtensionResult, TransportConfig,
 };
 use crate::agents::extension_runtime::{
-    self, ExtensionAuth, ExtensionAuthorization, ExtensionHost, ExtensionSpec, RejectedRequest,
-    StaticOAuthClientConfig, TraceContextInjector,
+    self, ExtensionAuth, ExtensionHost, ExtensionSpec, RejectedRequest, StaticOAuthClientConfig,
+    TraceContextInjector,
 };
 use crate::agents::services::GoosePlatform;
 use crate::config::search_path::SearchPaths;
@@ -224,7 +225,7 @@ impl ExtensionAuth for GooseAuth {
         name: &str,
         static_client: Option<&StaticOAuthClientConfig>,
         rejected: Option<RejectedRequest>,
-    ) -> Result<ExtensionAuthorization> {
+    ) -> Result<AuthorizationManager> {
         crate::oauth::oauth_flow(uri, name, static_client, rejected).await
     }
 }

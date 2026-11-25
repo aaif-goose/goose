@@ -1,16 +1,18 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use rmcp::model::{
-    CallToolResult, ErrorCode, ErrorData, GetPromptResult, ProtocolVersion, ServerConfig,
-    ServerNotification,
+    CallToolResult, ClientJsonRpcMessage, ErrorCode, ErrorData, GetPromptResult, ProtocolVersion,
+    ServerConfig, ServerNotification,
 };
 use rmcp::service::{ClientInitializeError, ServiceError};
 use rmcp::transport::auth::AuthClient;
+use rmcp::transport::common::client_side_sse::BoxedSseResponse;
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClientTransportConfig, StreamableHttpError,
+    StreamableHttpClient, StreamableHttpClientTransportConfig, StreamableHttpError,
+    StreamableHttpPostResponse,
 };
 use rmcp::transport::{DynamicTransportError, IntoTransport, StreamableHttpClientTransport};
 use rmcp::RoleClient;
@@ -19,12 +21,25 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::{
-    ExtensionAuth, PresentedToken, RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError,
-};
+use super::{ExtensionAuth, RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError};
 use crate::extension::{ExtensionError, ExtensionResult};
 use crate::mcp::client::McpCallContext as ToolCallContext;
 use crate::mcp::client::{ConnectContext, McpClient, McpClientTrait};
+
+/// Whether the server refused the request's credentials, with a typed
+/// challenge or a bare 401/403.
+fn refuses_credentials<E>(error: &StreamableHttpError<E>) -> bool
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    match error {
+        StreamableHttpError::AuthRequired(_) | StreamableHttpError::InsufficientScope(_) => true,
+        StreamableHttpError::UnexpectedServerResponse(body) => {
+            body.starts_with("HTTP 401") || body.starts_with("HTTP 403")
+        }
+        _ => false,
+    }
+}
 
 /// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
 fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
@@ -37,15 +52,7 @@ fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        return match http_err {
-            StreamableHttpError::AuthRequired(_) | StreamableHttpError::InsufficientScope(_) => {
-                true
-            }
-            StreamableHttpError::UnexpectedServerResponse(body) => {
-                body.starts_with("HTTP 401") || body.starts_with("HTTP 403")
-            }
-            _ => false,
-        };
+        return refuses_credentials(http_err);
     }
 
     #[cfg(unix)]
@@ -53,15 +60,7 @@ fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
         .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
         )
     {
-        return match http_err {
-            StreamableHttpError::AuthRequired(_) | StreamableHttpError::InsufficientScope(_) => {
-                true
-            }
-            StreamableHttpError::UnexpectedServerResponse(body) => {
-                body.starts_with("HTTP 401") || body.starts_with("HTTP 403")
-            }
-            _ => false,
-        };
+        return refuses_credentials(http_err);
     }
 
     let message = error.to_string();
@@ -224,13 +223,173 @@ where
     McpClient::connect(make_transport(), ctx).await
 }
 
+/// Access tokens the server refused on one connection. Each refusal records
+/// the token its own request sent, so a token another request on the same
+/// connection refreshes in the meantime is never mistaken for the refused one.
+#[derive(Clone, Default)]
+struct RefusedTokens(Arc<std::sync::Mutex<VecDeque<String>>>);
+
+impl RefusedTokens {
+    /// A refusal is followed by a refresh or a new authorization, so only the
+    /// most recent refused tokens can still be the stored one.
+    const KEPT: usize = 8;
+
+    fn record(&self, token: String) {
+        let mut tokens = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if tokens.contains(&token) {
+            return;
+        }
+        if tokens.len() == Self::KEPT {
+            tokens.pop_front();
+        }
+        tokens.push_back(token);
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .cloned()
+            .collect()
+    }
+}
+
+/// Sits under rmcp's `AuthClient`, which picks the token for every attempt,
+/// and records each token the server refuses.
+#[derive(Clone)]
+struct RefusalRecordingClient<C> {
+    inner: C,
+    refused: RefusedTokens,
+}
+
+impl<C: StreamableHttpClient> RefusalRecordingClient<C> {
+    fn record_refusal<T>(
+        &self,
+        auth_token: Option<String>,
+        result: Result<T, StreamableHttpError<C::Error>>,
+    ) -> Result<T, StreamableHttpError<C::Error>> {
+        if let (Some(token), Err(error)) = (auth_token, &result) {
+            if refuses_credentials(error) {
+                self.refused.record(token);
+            }
+        }
+        result
+    }
+}
+
+impl<C: StreamableHttpClient + Sync> StreamableHttpClient for RefusalRecordingClient<C> {
+    type Error = C::Error;
+
+    async fn post_message(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        let result = self
+            .inner
+            .post_message(uri, message, session_id, auth_token.clone(), custom_headers)
+            .await;
+        self.record_refusal(auth_token, result)
+    }
+
+    async fn post_message_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        let result = self
+            .inner
+            .post_message_with_max_sse_event_size(
+                uri,
+                message,
+                session_id,
+                auth_token.clone(),
+                custom_headers,
+                max_sse_event_size,
+            )
+            .await;
+        self.record_refusal(auth_token, result)
+    }
+
+    async fn delete_session(
+        &self,
+        uri: Arc<str>,
+        session_id: Arc<str>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<(), StreamableHttpError<Self::Error>> {
+        let result = self
+            .inner
+            .delete_session(uri, session_id, auth_token.clone(), custom_headers)
+            .await;
+        self.record_refusal(auth_token, result)
+    }
+
+    async fn get_stream(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<BoxedSseResponse, StreamableHttpError<Self::Error>> {
+        let result = self
+            .inner
+            .get_stream(
+                uri,
+                session_id,
+                last_event_id,
+                auth_token.clone(),
+                custom_headers,
+            )
+            .await;
+        self.record_refusal(auth_token, result)
+    }
+
+    async fn get_stream_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<BoxedSseResponse, StreamableHttpError<Self::Error>> {
+        let result = self
+            .inner
+            .get_stream_with_max_sse_event_size(
+                uri,
+                session_id,
+                last_event_id,
+                auth_token.clone(),
+                custom_headers,
+                max_sse_event_size,
+            )
+            .await;
+        self.record_refusal(auth_token, result)
+    }
+}
+
 async fn connect_with_auth(
     auth_manager: rmcp::transport::AuthorizationManager,
     uri: &str,
     headers: &HashMap<String, String>,
     ctx: ConnectContext,
+    refused: RefusedTokens,
 ) -> ExtensionResult<McpClient> {
-    let auth_client = AuthClient::new(http_client(headers, &ctx)?, auth_manager);
+    let recording_client = RefusalRecordingClient {
+        inner: http_client(headers, &ctx)?,
+        refused,
+    };
+    let auth_client = AuthClient::new(recording_client, auth_manager);
     Ok(connect_with_legacy_retry(
         || {
             StreamableHttpClientTransport::with_client(
@@ -255,11 +414,10 @@ pub(super) struct ConnectParams {
     pub(super) ctx: ConnectContext,
 }
 
-/// A connected client and, when it is authorized, the token its requests last
-/// carried.
+/// A connected client and the access tokens the server refused on it.
 struct Connection {
     client: McpClient,
-    presented_token: Option<PresentedToken>,
+    refused_tokens: RefusedTokens,
 }
 
 /// Wraps a streamable HTTP `McpClient` and handles step-up authorization:
@@ -275,18 +433,14 @@ struct OAuthStepUpClient {
 }
 
 impl OAuthStepUpClient {
-    async fn new(
-        client: McpClient,
-        presented_token: Option<PresentedToken>,
-        params: ConnectParams,
-    ) -> Self {
+    async fn new(client: McpClient, refused_tokens: RefusedTokens, params: ConnectParams) -> Self {
         let server_info = client.get_info().cloned();
         let notification_subscribers = Arc::new(Mutex::new(Vec::new()));
         Self::forward_notifications(&client, notification_subscribers.clone()).await;
         Self {
             inner: tokio::sync::RwLock::new(Connection {
                 client,
-                presented_token,
+                refused_tokens,
             }),
             server_info,
             params: tokio::sync::RwLock::new(params),
@@ -320,7 +474,7 @@ impl OAuthStepUpClient {
                 None,
             )));
         };
-        let authorization = auth
+        let manager = auth
             .authorize(
                 &params.uri,
                 &params.name,
@@ -335,11 +489,13 @@ impl OAuthStepUpClient {
                     None,
                 ))
             })?;
+        let refused_tokens = RefusedTokens::default();
         let client = connect_with_auth(
-            authorization.manager,
+            manager,
             &params.uri,
             &params.headers,
             params.ctx.clone(),
+            refused_tokens.clone(),
         )
         .await
         .map_err(|e| {
@@ -352,7 +508,7 @@ impl OAuthStepUpClient {
         Self::forward_notifications(&client, self.notification_subscribers.clone()).await;
         *self.inner.write().await = Connection {
             client,
-            presented_token: Some(authorization.presented_token),
+            refused_tokens,
         };
         Ok(())
     }
@@ -374,14 +530,10 @@ impl OAuthStepUpClient {
         match first {
             Err(err) if auth_challenge_from_service_error(&err).is_some() => {
                 let _step_up_guard = self.step_up_lock.lock().await;
-                let (retry, presented_token) = {
+                let (retry, refused_tokens) = {
                     let connection = self.inner.read().await;
                     let retry = op(&connection.client).await;
-                    let presented_token = connection
-                        .presented_token
-                        .as_ref()
-                        .and_then(PresentedToken::get);
-                    (retry, presented_token)
+                    (retry, connection.refused_tokens.snapshot())
                 };
                 let retry_err = match retry {
                     Ok(value) => return Ok(value),
@@ -392,7 +544,7 @@ impl OAuthStepUpClient {
                 };
                 self.step_up_reconnect(RejectedRequest {
                     challenge: Some(challenge),
-                    presented_token,
+                    refused_tokens,
                 })
                 .await?;
                 let connection = self.inner.read().await;
@@ -573,7 +725,9 @@ pub(super) async fn connect(
 
     let Some(auth) = auth else {
         let client = connect_unauthenticated().await?;
-        return Ok(Box::new(OAuthStepUpClient::new(client, None, params).await));
+        return Ok(Box::new(
+            OAuthStepUpClient::new(client, RefusedTokens::default(), params).await,
+        ));
     };
 
     // With stored OAuth credentials, connect with them directly. This avoids
@@ -590,19 +744,21 @@ pub(super) async fn connect(
             .authorize(uri, name, static_oauth_client.as_ref(), None)
             .await
         {
-            Ok(authorization) => {
-                let presented_token = authorization.presented_token;
-                match connect_with_auth(authorization.manager, uri, headers, ctx.clone()).await {
+            Ok(manager) => {
+                let refused_tokens = RefusedTokens::default();
+                match connect_with_auth(manager, uri, headers, ctx.clone(), refused_tokens.clone())
+                    .await
+                {
                     Ok(client) => {
                         return Ok(Box::new(
-                            OAuthStepUpClient::new(client, Some(presented_token), params).await,
+                            OAuthStepUpClient::new(client, refused_tokens, params).await,
                         ));
                     }
                     Err(ExtensionError::InitializeError(err)) if is_oauth_auth_failure(&err) => {
                         warn!("[OAuth:{}] Stored token was refused, re-authorizing", name);
                         let rejected = RejectedRequest {
                             challenge: auth_challenge_from_error(&err),
-                            presented_token: presented_token.get(),
+                            refused_tokens: refused_tokens.snapshot(),
                         };
                         refused_stored_grant =
                             Some((rejected, ExtensionError::InitializeError(err)));
@@ -629,7 +785,7 @@ pub(super) async fn connect(
             Err(err) if is_oauth_auth_failure(&err) => (
                 RejectedRequest {
                     challenge: auth_challenge_from_error(&err),
-                    presented_token: None,
+                    refused_tokens: Vec::new(),
                 },
                 Err(ExtensionError::InitializeError(err)),
             ),
@@ -639,13 +795,13 @@ pub(super) async fn connect(
             Ok(client) if stored_grant_unusable => (
                 RejectedRequest {
                     challenge: None,
-                    presented_token: None,
+                    refused_tokens: Vec::new(),
                 },
                 Ok(client),
             ),
             client_res => {
                 return Ok(Box::new(
-                    OAuthStepUpClient::new(client_res?, None, params).await,
+                    OAuthStepUpClient::new(client_res?, RefusedTokens::default(), params).await,
                 ));
             }
         },
@@ -655,17 +811,19 @@ pub(super) async fn connect(
         .authorize(uri, name, static_oauth_client.as_ref(), Some(rejected))
         .await
     {
-        Ok(authorization) => {
+        Ok(manager) => {
+            let refused_tokens = RefusedTokens::default();
             let client =
-                connect_with_auth(authorization.manager, uri, headers, ctx.clone()).await?;
+                connect_with_auth(manager, uri, headers, ctx.clone(), refused_tokens.clone())
+                    .await?;
             Ok(Box::new(
-                OAuthStepUpClient::new(client, Some(authorization.presented_token), params).await,
+                OAuthStepUpClient::new(client, refused_tokens, params).await,
             ))
         }
         Err(e) => {
             warn!("[OAuth:{}] Authorization failed: {:#}", name, e);
             Ok(Box::new(
-                OAuthStepUpClient::new(fallback?, None, params).await,
+                OAuthStepUpClient::new(fallback?, RefusedTokens::default(), params).await,
             ))
         }
     }
@@ -928,6 +1086,7 @@ mod tests {
             &mock_server.uri(),
             &headers,
             test_ctx(temp_dir.path()),
+            RefusedTokens::default(),
         )
         .await;
 
@@ -1037,6 +1196,7 @@ mod tests {
             &redirector.uri(),
             &headers,
             test_ctx(temp_dir.path()),
+            RefusedTokens::default(),
         )
         .await;
 
@@ -1142,6 +1302,113 @@ mod tests {
         }
     }
 
+    /// Refuses one access token and requests without one; accepts any other.
+    #[derive(Clone)]
+    struct RefusesToken(&'static str);
+
+    impl RefusesToken {
+        fn answer(
+            &self,
+            auth_token: Option<&str>,
+        ) -> Result<(), StreamableHttpError<std::io::Error>> {
+            if auth_token.is_none_or(|token| token == self.0) {
+                return Err(StreamableHttpError::AuthRequired(
+                    rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                        r#"Bearer error="invalid_token""#.to_string(),
+                    ),
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    impl StreamableHttpClient for RefusesToken {
+        type Error = std::io::Error;
+
+        async fn post_message(
+            &self,
+            _uri: Arc<str>,
+            _message: ClientJsonRpcMessage,
+            _session_id: Option<Arc<str>>,
+            auth_token: Option<String>,
+            _custom_headers: HashMap<HeaderName, HeaderValue>,
+        ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+            tokio::task::yield_now().await;
+            self.answer(auth_token.as_deref())
+                .map(|()| StreamableHttpPostResponse::Accepted)
+        }
+
+        async fn delete_session(
+            &self,
+            _uri: Arc<str>,
+            _session_id: Arc<str>,
+            auth_token: Option<String>,
+            _custom_headers: HashMap<HeaderName, HeaderValue>,
+        ) -> Result<(), StreamableHttpError<Self::Error>> {
+            self.answer(auth_token.as_deref())
+        }
+
+        async fn get_stream(
+            &self,
+            _uri: Arc<str>,
+            _session_id: Option<Arc<str>>,
+            _last_event_id: Option<String>,
+            auth_token: Option<String>,
+            _custom_headers: HashMap<HeaderName, HeaderValue>,
+        ) -> Result<BoxedSseResponse, StreamableHttpError<Self::Error>> {
+            self.answer(auth_token.as_deref())?;
+            Err(StreamableHttpError::ServerDoesNotSupportSse)
+        }
+    }
+
+    fn initialized_notification() -> ClientJsonRpcMessage {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_recorded_with_the_token_its_own_request_sent() {
+        let refused = RefusedTokens::default();
+        let client = RefusalRecordingClient {
+            inner: RefusesToken("t1"),
+            refused: refused.clone(),
+        };
+        let post = |token: Option<&str>| {
+            client.post_message(
+                Arc::from("https://mcp.example"),
+                initialized_notification(),
+                None,
+                token.map(str::to_string),
+                HashMap::new(),
+            )
+        };
+
+        let (with_refused_token, with_successor, unauthenticated) =
+            tokio::join!(post(Some("t1")), post(Some("t2")), post(None));
+
+        assert!(with_refused_token.is_err());
+        assert!(with_successor.is_ok());
+        assert!(unauthenticated.is_err());
+        assert_eq!(refused.snapshot(), ["t1"]);
+    }
+
+    #[test]
+    fn refused_tokens_keep_the_most_recent_ones_once() {
+        let refused = RefusedTokens::default();
+        for index in 0..=RefusedTokens::KEPT {
+            refused.record(format!("t{index}"));
+        }
+        refused.record(format!("t{}", RefusedTokens::KEPT));
+
+        let tokens = refused.snapshot();
+        assert_eq!(tokens.len(), RefusedTokens::KEPT);
+        assert_eq!(tokens.first().map(String::as_str), Some("t1"));
+        assert_eq!(tokens.last(), Some(&format!("t{}", RefusedTokens::KEPT)));
+    }
+
     /// Without a refusal, reports why the stored credentials cannot be used.
     /// After one, authorizes with the stored token or fails like a closed
     /// browser would.
@@ -1170,7 +1437,7 @@ mod tests {
             _name: &str,
             _static_client: Option<&StaticOAuthClientConfig>,
             rejected: Option<RejectedRequest>,
-        ) -> anyhow::Result<crate::mcp::ExtensionAuthorization> {
+        ) -> anyhow::Result<rmcp::transport::AuthorizationManager> {
             if rejected.is_none() {
                 self.calls.lock().unwrap().push("stored credentials");
                 return Err((self.stored_credentials_error)().into());
@@ -1181,10 +1448,7 @@ mod tests {
             }
             let mut manager = rmcp::transport::AuthorizationManager::new(uri).await?;
             manager.set_credential_store(self.store.clone());
-            Ok(crate::mcp::ExtensionAuthorization {
-                manager,
-                presented_token: PresentedToken::default(),
-            })
+            Ok(manager)
         }
     }
 

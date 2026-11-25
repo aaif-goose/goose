@@ -1,6 +1,5 @@
 mod persist;
 
-use persist::ConnectionCredentialStore;
 pub use persist::GooseCredentialStore;
 
 use axum::extract::{Query, State};
@@ -143,7 +142,7 @@ async fn wait_for_callback(
 }
 
 pub use crate::agents::extension_runtime::{
-    ExtensionAuthorization, RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError,
+    RejectedRequest, StaticOAuthClientConfig, StoredCredentialsError,
 };
 
 /// Pre-registered client supplied through the environment, used by tools that
@@ -337,9 +336,11 @@ fn stored_grant_use(
 
     if let Some(rejected) = rejected {
         // The transport already refreshed once before passing the refusal on,
-        // so the stored token cannot be the answer if it is the one refused.
-        if rejected.presented_token.is_some()
-            && rejected.presented_token.as_deref() == stored_access_token(stored)
+        // so the stored token cannot be the answer if the server refused it.
+        if rejected
+            .refused_tokens
+            .iter()
+            .any(|token| Some(token.as_str()) == stored_access_token(stored))
         {
             return StoredGrantUse::Reauthorize;
         }
@@ -397,7 +398,7 @@ async fn reuse_stored_grant(
     mcp_server_url: &str,
     name: &str,
     static_client: Option<&StaticOAuthClientConfig>,
-    credentials: &ConnectionCredentialStore,
+    credentials: &GooseCredentialStore,
     stored: &StoredCredentials,
     stored_use: StoredGrantUse,
 ) -> Result<Option<AuthorizationManager>, anyhow::Error> {
@@ -434,9 +435,7 @@ async fn reuse_stored_grant(
         return Ok(Some(auth_manager));
     }
 
-    credentials
-        .store()
-        .replace_token_response(token_response.clone())?;
+    credentials.replace_token_response(token_response.clone())?;
     let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
     oauth_state
         .set_credentials(&stored.client_id, token_response)
@@ -459,7 +458,7 @@ pub async fn oauth_flow(
     name: &str,
     static_client: Option<&StaticOAuthClientConfig>,
     rejected: Option<RejectedRequest>,
-) -> Result<ExtensionAuthorization, anyhow::Error> {
+) -> Result<AuthorizationManager, anyhow::Error> {
     let env_client = env_static_oauth_client();
     let static_client = static_client.or(env_client.as_ref());
     let credential_store = GooseCredentialStore::new(name.to_string());
@@ -469,8 +468,6 @@ pub async fn oauth_flow(
     let _authorization_lock = credential_store
         .lock_authorization(oauth_callback_timeout() + AUTHORIZATION_LOCK_MARGIN)
         .await?;
-    let credentials = ConnectionCredentialStore::new(credential_store.clone());
-
     let stored_credentials = credential_store.load().await?;
     let previous_requested_scopes = credential_store.load_requested_scopes()?;
     let previously_granted_scopes = stored_credentials
@@ -490,16 +487,13 @@ pub async fn oauth_flow(
             mcp_server_url,
             name,
             static_client,
-            &credentials,
+            &credential_store,
             stored,
             stored_use,
         )
         .await?
         {
-            return Ok(ExtensionAuthorization {
-                manager,
-                presented_token: credentials.presented_token(),
-            });
+            return Ok(manager);
         }
     }
 
@@ -612,13 +606,9 @@ pub async fn oauth_flow(
         )
         .await?;
 
-    let presented_token = credentials.presented_token();
-    auth_manager.set_credential_store(credentials);
+    auth_manager.set_credential_store(credential_store);
 
-    Ok(ExtensionAuthorization {
-        manager: auth_manager,
-        presented_token,
-    })
+    Ok(auth_manager)
 }
 
 #[cfg(test)]
@@ -987,10 +977,13 @@ mod tests {
             .as_secs()
     }
 
-    fn refused(challenge: Option<&str>, presented_token: Option<&str>) -> RejectedRequest {
+    fn refused(challenge: Option<&str>, refused_tokens: &[&str]) -> RejectedRequest {
         RejectedRequest {
             challenge: challenge.map(str::to_string),
-            presented_token: presented_token.map(str::to_string),
+            refused_tokens: refused_tokens
+                .iter()
+                .map(|token| token.to_string())
+                .collect(),
         }
     }
 
@@ -1013,7 +1006,7 @@ mod tests {
     #[test]
     fn refused_token_still_in_the_store_needs_a_new_authorization() {
         let stored = stored_grant("t1", &[], now());
-        let rejected = refused(Some(r#"Bearer error="invalid_token""#), Some("t1"));
+        let rejected = refused(Some(r#"Bearer error="invalid_token""#), &["t1"]);
 
         assert_eq!(
             grant_use(&stored, Some(&rejected)),
@@ -1024,15 +1017,26 @@ mod tests {
     #[test]
     fn grant_saved_by_another_session_answers_a_refused_token() {
         let stored = stored_grant("t2", &[], now());
-        let rejected = refused(Some(r#"Bearer error="invalid_token""#), Some("t1"));
+        let rejected = refused(Some(r#"Bearer error="invalid_token""#), &["t1"]);
 
         assert_eq!(grant_use(&stored, Some(&rejected)), StoredGrantUse::AsIs);
     }
 
     #[test]
+    fn stored_token_refused_by_an_earlier_request_needs_a_new_authorization() {
+        let stored = stored_grant("t2", &[], now());
+        let rejected = refused(Some(r#"Bearer error="invalid_token""#), &["t2", "t1"]);
+
+        assert_eq!(
+            grant_use(&stored, Some(&rejected)),
+            StoredGrantUse::Reauthorize
+        );
+    }
+
+    #[test]
     fn grant_saved_while_waiting_answers_an_unauthenticated_request() {
         let stored = stored_grant("t2", &[], now());
-        let rejected = refused(Some(r#"Bearer resource_metadata="/meta""#), None);
+        let rejected = refused(Some(r#"Bearer resource_metadata="/meta""#), &[]);
 
         assert_eq!(grant_use(&stored, Some(&rejected)), StoredGrantUse::AsIs);
     }
@@ -1041,11 +1045,11 @@ mod tests {
     fn insufficient_scope_reuses_a_stored_grant_only_when_it_covers_the_scope() {
         let rejected = refused(
             Some(r#"Bearer error="insufficient_scope", scope="scope.write""#),
-            Some("t1"),
+            &["t1"],
         );
         let covering = stored_grant("t2", &["scope.read", "scope.write"], now());
         let narrower = stored_grant("t2", &["scope.read"], now());
-        let unscoped = refused(Some(r#"Bearer error="insufficient_scope""#), Some("t1"));
+        let unscoped = refused(Some(r#"Bearer error="insufficient_scope""#), &["t1"]);
 
         assert_eq!(grant_use(&covering, Some(&rejected)), StoredGrantUse::AsIs);
         assert_eq!(

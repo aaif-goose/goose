@@ -12,7 +12,6 @@ use sha2::{Digest, Sha256};
 use tokio::time::Instant;
 use tracing::warn;
 
-use crate::agents::extension_runtime::PresentedToken;
 use crate::config::base::SecretUpdate;
 use crate::config::paths::Paths;
 use crate::config::{Config, ConfigError};
@@ -298,65 +297,6 @@ impl CredentialStore for GooseCredentialStore {
     }
 }
 
-/// The credential store behind one MCP connection. It records the access token
-/// it last handed to that connection's requests.
-#[derive(Clone)]
-pub(crate) struct ConnectionCredentialStore {
-    store: GooseCredentialStore,
-    presented: PresentedToken,
-}
-
-impl ConnectionCredentialStore {
-    pub(crate) fn new(store: GooseCredentialStore) -> Self {
-        Self {
-            store,
-            presented: PresentedToken::default(),
-        }
-    }
-
-    pub(crate) fn store(&self) -> &GooseCredentialStore {
-        &self.store
-    }
-
-    pub(crate) fn presented_token(&self) -> PresentedToken {
-        self.presented.clone()
-    }
-
-    fn remember(&self, credentials: Option<&StoredCredentials>) {
-        self.presented
-            .set(credentials.and_then(access_token_of).map(str::to_string));
-    }
-}
-
-#[async_trait::async_trait]
-impl CredentialStore for ConnectionCredentialStore {
-    async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
-        let credentials = self.store.load().await?;
-        self.remember(credentials.as_ref());
-        Ok(credentials)
-    }
-
-    async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
-        self.remember(Some(&credentials));
-        self.store.save(credentials).await
-    }
-
-    async fn clear(&self) -> Result<(), AuthError> {
-        self.store.clear().await
-    }
-
-    async fn on_refresh_token_rejected(
-        &self,
-        credentials: &StoredCredentials,
-    ) -> Result<(), AuthError> {
-        self.store.on_refresh_token_rejected(credentials).await
-    }
-
-    async fn acquire_refresh_guard(&self) -> Result<Option<CredentialRefreshGuard>, AuthError> {
-        self.store.acquire_refresh_guard().await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,31 +436,6 @@ mod tests {
         assert_eq!(stored_access_token(&first).as_deref(), Some("access-2"));
     }
 
-    #[tokio::test]
-    async fn connection_store_remembers_the_last_token_it_handed_out() {
-        let directory = TempDir::new().unwrap();
-        let shared = test_store(&directory, "ext");
-        shared.save(grant("access-1", "refresh-1")).await.unwrap();
-        let connection = ConnectionCredentialStore::new(shared.clone());
-
-        connection.load().await.unwrap();
-        shared.save(grant("access-2", "refresh-2")).await.unwrap();
-        assert_eq!(
-            connection.presented_token().get().as_deref(),
-            Some("access-1"),
-            "another writer must not change what this connection presented"
-        );
-
-        connection
-            .save(grant("access-3", "refresh-3"))
-            .await
-            .unwrap();
-        assert_eq!(
-            connection.presented_token().get().as_deref(),
-            Some("access-3")
-        );
-    }
-
     /// A token endpoint that rotates refresh tokens: each one is accepted once,
     /// and any reuse is answered with `invalid_grant`.
     struct RotatingTokenEndpoint {
@@ -583,7 +498,7 @@ mod tests {
             metadata.token_endpoint = format!("{}/token", server.uri());
             manager.set_metadata(metadata);
             manager.configure_client_id("client-id").unwrap();
-            manager.set_credential_store(ConnectionCredentialStore::new(store.clone()));
+            manager.set_credential_store(store.clone());
             sessions.push(tokio::spawn(async move { manager.refresh_token().await }));
         }
         for session in sessions {
