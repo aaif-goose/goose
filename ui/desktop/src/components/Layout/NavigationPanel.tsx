@@ -14,6 +14,7 @@ import {
 import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
+import { SessionArchiveAction } from '../sessions/SessionArchiveAction';
 import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
@@ -198,7 +199,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
         <div
           onClick={() => !isEditing && onClick()}
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
+            'group flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
             'hover:bg-background-tertiary/60 transition-colors',
             active && 'bg-background-tertiary'
           )}
@@ -229,6 +230,12 @@ const SessionRow: React.FC<SessionRowProps> = ({
             />
           )}
           <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+          {!isEditing && session.messageCount > 0 && (
+            <SessionArchiveAction
+              session={session}
+              disabled={isStreaming || status?.streamState === 'loading' || isLiveVoiceActive}
+            />
+          )}
         </div>
       </TooltipTrigger>
       <TooltipContent side="right" align="start" className="max-w-xs text-left">

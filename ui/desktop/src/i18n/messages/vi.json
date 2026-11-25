@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Lưu trữ cuộc trò chuyện"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Xóa phiên"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Thao tác với cuộc trò chuyện"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Khôi phục cuộc trò chuyện"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Đã lưu trữ"
   },
   "sessions.cancel": {
     "defaultMessage": "Hủy"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Tìm kiếm lịch sử..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Không thể lưu trữ cuộc trò chuyện: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Đã sao chép vào bộ nhớ tạm"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Đã nhập phiên làm việc thành công"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Không thể khôi phục cuộc trò chuyện: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Không thể cập nhật mô tả phiên làm việc: {error}"

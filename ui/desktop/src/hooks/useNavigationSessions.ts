@@ -22,7 +22,7 @@ export function prependUnique(
   prev: SessionListItem[],
   session: SessionListItem
 ): SessionListItem[] {
-  if (prev.some((s) => s.id === session.id)) return prev;
+  if (session.archivedAt || prev.some((s) => s.id === session.id)) return prev;
   return [session, ...prev].slice(0, MAX_RECENT_SESSIONS);
 }
 
@@ -82,13 +82,15 @@ export function useNavigationSessions() {
     }
   }, [currentSessionId]);
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = useCallback(async (preserveDrafts = false) => {
     const fetchId = ++latestFetchIdRef.current;
     setIsLoadingSessions(true);
     try {
       const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS);
       if (fetchId === latestFetchIdRef.current) {
-        setRecentSessions(sessions);
+        setRecentSessions((prev) =>
+          preserveDrafts ? mergeWithEmptyLocals(prev, sessions) : sessions
+        );
       }
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
@@ -103,13 +105,17 @@ export function useNavigationSessions() {
     if (!activeSessionId) return;
     if (recentSessions.some((s) => s.id === activeSessionId)) return;
 
+    let cancelled = false;
     acpGetSessionListItem(activeSessionId)
       .then((item) => {
-        setRecentSessions((prev) => prependUnique(prev, item));
+        if (!cancelled) setRecentSessions((prev) => prependUnique(prev, item));
       })
       .catch((error) => {
         console.error('Failed to fetch active session:', error);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId, recentSessions]);
 
   useEffect(() => {
@@ -132,9 +138,12 @@ export function useNavigationSessions() {
 
       const pollForUpdates = async () => {
         pollCount++;
+        const version = statusRefreshVersionRef.current;
         try {
           const listed = await acpListRecentSessions(MAX_RECENT_SESSIONS);
-          setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
+          if (version === statusRefreshVersionRef.current) {
+            setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
+          }
         } catch (error) {
           console.error('Failed to poll sessions:', error);
         }
@@ -193,14 +202,28 @@ export function useNavigationSessions() {
       );
     };
 
+    const handleArchiveChanged = (event: Event) => {
+      const { sessionId, archived } = (
+        event as CustomEvent<{ sessionId: string; archived: boolean }>
+      ).detail;
+      statusRefreshVersionRef.current++;
+      fetchVersion++;
+      if (archived) {
+        setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
+      }
+      void fetchSessions(true);
+    };
+
     window.addEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
     window.addEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
+    window.addEventListener(AppEvents.SESSION_ARCHIVE_CHANGED, handleArchiveChanged);
 
     return () => {
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
+      window.removeEventListener(AppEvents.SESSION_ARCHIVE_CHANGED, handleArchiveChanged);
     };
-  }, []);
+  }, [fetchSessions]);
 
   useEffect(() => {
     const streamStates = new Map<string, string>();

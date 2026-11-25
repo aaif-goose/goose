@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Arquivar conversa"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Eliminar sessão"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Ações da conversa"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Abrir numa nova janela"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Restaurar conversa"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Arquivada"
   },
   "sessions.cancel": {
     "defaultMessage": "Cancelar"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Pesquisar no histórico..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Não foi possível arquivar a conversa: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Copiado para a área de transferência"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sessão importada com êxito"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Não foi possível restaurar a conversa: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Falha ao atualizar a descrição da sessão: {error}"

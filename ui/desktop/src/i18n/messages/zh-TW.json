@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "封存聊天"
+  },
   "sessions.action.delete": {
     "defaultMessage": "刪除工作階段"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "聊天操作"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新視窗中開啟"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "還原聊天"
+  },
+  "sessions.archived": {
+    "defaultMessage": "已封存"
   },
   "sessions.cancel": {
     "defaultMessage": "取消"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜尋記錄..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "無法封存聊天：{error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "已複製到剪貼簿"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "已成功匯入工作階段"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "無法還原聊天：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "無法更新工作階段描述：{error}"

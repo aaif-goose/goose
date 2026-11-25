@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Arsipkan obrolan"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Hapus sesi"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Tindakan obrolan"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka di jendela baru"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Pulihkan obrolan"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Diarsipkan"
   },
   "sessions.cancel": {
     "defaultMessage": "Batal"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cari riwayat..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Tidak dapat mengarsipkan obrolan: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Disalin ke papan klip"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sesi berhasil diimpor"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Tidak dapat memulihkan obrolan: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Gagal memperbarui deskripsi sesi: {error}"

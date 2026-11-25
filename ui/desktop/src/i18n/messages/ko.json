@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "채팅 보관"
+  },
   "sessions.action.delete": {
     "defaultMessage": "세션 삭제"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "채팅 작업"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "새 창에서 열기"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "채팅 복원"
+  },
+  "sessions.archived": {
+    "defaultMessage": "보관됨"
   },
   "sessions.cancel": {
     "defaultMessage": "취소"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "기록 검색..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "채팅을 보관하지 못했습니다: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "클립보드에 복사됨"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "세션을 성공적으로 가져왔습니다."
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "채팅을 복원하지 못했습니다: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "세션 설명 업데이트 실패: {error}"

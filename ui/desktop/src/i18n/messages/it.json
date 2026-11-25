@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Archivia chat"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Elimina sessione"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Azioni della chat"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Apri in una nuova finestra"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Ripristina chat"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Archiviata"
   },
   "sessions.cancel": {
     "defaultMessage": "Annulla"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cerca nella cronologia..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Impossibile archiviare la chat: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Copiato negli appunti"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sessione importata correttamente"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Impossibile ripristinare la chat: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Impossibile aggiornare la descrizione della sessione: {error}"

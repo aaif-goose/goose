@@ -174,6 +174,33 @@ describe('useNavigationSessions session names', () => {
     expect(result.current.recentSessions.map((session) => session.id)).toEqual(['session-1']);
   });
 
+  it('keeps an archived chat out of the sidebar even while it is open, until restored', async () => {
+    const session = listItem('session-1', 'First');
+    routerState.searchParams = new URLSearchParams({ resumeSessionId: session.id });
+    getListItem.mockResolvedValue(session);
+    const { result } = await renderWithSessions([session]);
+    getListItem.mockResolvedValue({ ...session, archivedAt: '2026-11-14T00:00:00Z' });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_ARCHIVE_CHANGED, {
+          detail: { sessionId: session.id, archived: true },
+        })
+      );
+    });
+    expect(result.current.recentSessions).toEqual([]);
+
+    listRecent.mockResolvedValue([session]);
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_ARCHIVE_CHANGED, {
+          detail: { sessionId: session.id, archived: false },
+        })
+      );
+    });
+    expect(result.current.recentSessions).toEqual([session]);
+  });
+
   it('keeps a new empty session when the session names reload', async () => {
     routerState.searchParams = new URLSearchParams({ resumeSessionId: 'new-session' });
     getListItem.mockResolvedValue(listItem('new-session', '', 0));

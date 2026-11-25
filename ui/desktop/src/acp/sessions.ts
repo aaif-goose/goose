@@ -166,15 +166,15 @@ export async function acpListSessions(
 }
 
 export async function acpListRecentSessions(maxSessions: number): Promise<SessionListItem[]> {
-  if (maxSessions <= 0) {
-    return [];
+  const sessions: SessionListItem[] = [];
+  let cursor: string | null = null;
+  while (sessions.length < maxSessions) {
+    const page = await acpListSessions(cursor);
+    sessions.push(...page.sessions.filter((session) => !session.archivedAt));
+    cursor = page.nextCursor;
+    if (!cursor) break;
   }
-
-  const client = await getAcpClient();
-  const response = await client.connection.agent.request(methods.agent.session.list, {
-    _meta: { types: SESSION_LIST_TYPES },
-  });
-  return response.sessions.slice(0, maxSessions).map(sessionInfoToListItem);
+  return sessions.slice(0, maxSessions);
 }
 
 export async function acpGetSessionListItem(sessionId: string): Promise<SessionListItem> {
@@ -273,6 +273,15 @@ export async function acpNewSession(
 export async function acpDeleteSession(sessionId: string): Promise<void> {
   const client = await getAcpClient();
   await client.connection.agent.request(methods.agent.session.delete, { sessionId });
+}
+
+export async function acpSetSessionArchived(sessionId: string, archived: boolean): Promise<void> {
+  const client = await getAcpClient();
+  if (archived) {
+    await client.goose.sessionArchive_unstable({ sessionId });
+  } else {
+    await client.goose.sessionUnarchive_unstable({ sessionId });
+  }
 }
 
 export async function acpCloseSession(sessionId: string): Promise<void> {

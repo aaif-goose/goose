@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {
   acpGetSessionListItem,
+  acpListRecentSessions,
   acpListSessions,
   acpLoadSession,
   acpNewSession,
@@ -82,6 +83,28 @@ describe('ACP sessions', () => {
     await acpListSessions(undefined, { includeAcp: true });
     expect(client.connection.agent.request).toHaveBeenLastCalledWith(methods.agent.session.list, {
       _meta: { types: ['user', 'scheduled', 'acp'] },
+    });
+  });
+
+  it('backfills recent chats from later pages when archived chats occupy the first page', async () => {
+    const client = newSessionClient();
+    client.connection.agent.request
+      .mockResolvedValueOnce({
+        sessions: [sessionInfo({ _meta: { archivedAt: '2026-01-15T00:00:00Z' } })],
+        nextCursor: 'next-page',
+      })
+      .mockResolvedValueOnce({
+        sessions: [sessionInfo({ sessionId: 'active-session' })],
+        nextCursor: 'unused-page',
+      });
+
+    const recentChats = await acpListRecentSessions(1);
+
+    expect(recentChats.map((chat) => chat.id)).toEqual(['active-session']);
+    expect(client.connection.agent.request).toHaveBeenCalledTimes(2);
+    expect(client.connection.agent.request).toHaveBeenLastCalledWith(methods.agent.session.list, {
+      cursor: 'next-page',
+      _meta: { types: ['user', 'scheduled'] },
     });
   });
 

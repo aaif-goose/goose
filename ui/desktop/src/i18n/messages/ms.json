@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Arkibkan sembang"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Padam sesi"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Tindakan sembang"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka dalam tetingkap baharu"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Pulihkan sembang"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Diarkibkan"
   },
   "sessions.cancel": {
     "defaultMessage": "Batal"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cari sejarah..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Sembang tidak dapat diarkibkan: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Disalin ke papan keratan"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sesi berjaya diimport"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Sembang tidak dapat dipulihkan: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Gagal mengemas kini penerangan sesi: {error}"

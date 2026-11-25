@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "चैट को आर्काइव करें"
+  },
   "sessions.action.delete": {
     "defaultMessage": "सत्र हटाएँ"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "चैट की कार्रवाइयाँ"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "नई विंडो में खोलें"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "चैट बहाल करें"
+  },
+  "sessions.archived": {
+    "defaultMessage": "आर्काइव की गई"
   },
   "sessions.cancel": {
     "defaultMessage": "रद्द करें"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "खोज इतिहास..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "चैट को आर्काइव नहीं किया जा सका: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "क्लिपबोर्ड पर कॉपी किया गया"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "सत्र सफलतापूर्वक आयात किया गया"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "चैट बहाल नहीं की जा सकी: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "सत्र विवरण अद्यतन करने में विफल: {error}"

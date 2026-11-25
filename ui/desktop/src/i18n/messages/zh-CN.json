@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "归档聊天"
+  },
   "sessions.action.delete": {
     "defaultMessage": "删除会话"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "聊天操作"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新窗口中打开"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "恢复聊天"
+  },
+  "sessions.archived": {
+    "defaultMessage": "已归档"
   },
   "sessions.cancel": {
     "defaultMessage": "取消"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜索历史…"
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "无法归档聊天：{error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "已复制到剪贴板"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "会话导入成功"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "无法恢复聊天：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "更新会话描述失败：{error}"

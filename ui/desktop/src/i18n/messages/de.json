@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Chat archivieren"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Sitzung löschen"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Chat-Aktionen"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "In neuem Fenster öffnen"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Chat wiederherstellen"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Archiviert"
   },
   "sessions.cancel": {
     "defaultMessage": "Abbrechen"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Verlauf durchsuchen..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Chat konnte nicht archiviert werden: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "In die Zwischenablage kopiert"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sitzung erfolgreich importiert"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Chat konnte nicht wiederhergestellt werden: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Sitzungsbeschreibung konnte nicht aktualisiert werden: {error}"
