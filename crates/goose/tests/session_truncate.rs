@@ -228,31 +228,43 @@ async fn truncating_the_newest_of_two_compactions_reactivates_the_older_summary(
 }
 
 #[tokio::test]
-async fn restoring_keeps_intentionally_hidden_kickoffs_hidden_and_instructions_visible(
-) -> Result<()> {
+async fn restoring_returns_agent_only_rows_and_keeps_approval_receipts_hidden() -> Result<()> {
     let dir = TempDir::new()?;
     let sm = SessionManager::new(dir.path().to_path_buf());
-    let id = new_session(&sm, &dir, "truncate-skill-turn").await?;
+    let id = new_session(&sm, &dir, "truncate-message-shapes").await?;
 
-    // A skill turn as the skills operation leaves it: the slash-command
-    // kickoff hidden from the agent by an operation note, the expanded
-    // instructions agent-only, both then superseded by compaction.
-    let mut hidden_command = message_at(Message::user().with_text("/skill command"), 2_000);
-    hidden_command.metadata.agent_visible = false;
-    hidden_command.metadata.set_operation_note(
-        "visibility",
-        "agent_hidden",
-        serde_json::Value::from(true),
-    );
-    let instructions = superseded(message_at(
-        Message::user().with_text("Full skill instructions"),
-        2_000,
-    ));
+    // The agent-only shapes that compaction superseded and the restore must
+    // bring back: the slash-command kickoff an operation hid, its expanded
+    // instructions, a delivered subagent result, and a delivered steer. The
+    // tool-approval receipt was never part of the agent's context.
+    let mut approval = message_at(Message::user().with_text("approval receipt"), 2_050);
+    approval.metadata.user_visible = false;
+    approval.metadata.agent_visible = false;
+    approval
+        .metadata
+        .set_operation_note("tool_approval", "seen", serde_json::Value::from(true));
 
-    let conversation = vec![
+    let mut conversation = vec![
         superseded(message_at(Message::user().with_text("first prompt"), 1_000)),
-        hidden_command,
-        instructions,
+        superseded(message_at(
+            Message::user().with_text("/skill command"),
+            2_000,
+        )),
+        superseded(message_at(
+            Message::user().with_text("Full skill instructions"),
+            2_000,
+        )),
+        approval,
+        superseded(message_at(
+            Message::user().with_steer().with_text("steer instruction"),
+            2_050,
+        )),
+        superseded(message_at(
+            Message::user()
+                .with_text("subagent result")
+                .with_visibility(false, true),
+            2_050,
+        )),
         superseded(message_at(
             Message::assistant().with_text("skill work reply"),
             2_100,
@@ -263,6 +275,13 @@ async fn restoring_keeps_intentionally_hidden_kickoffs_hidden_and_instructions_v
             3_100,
         ),
     ];
+    // Mark the subagent result as delivered, as the subagent operation does.
+    conversation[5].metadata.set_operation_note(
+        "foreground_subagent",
+        "delivered",
+        serde_json::Value::from(true),
+    );
+
     sm.replace_conversation(&id, &Conversation::new_unvalidated(conversation))
         .await?;
 
@@ -273,8 +292,11 @@ async fn restoring_keeps_intentionally_hidden_kickoffs_hidden_and_instructions_v
         agent_texts(&session),
         vec![
             "first prompt",
+            "/skill command",
             "Full skill instructions",
-            "skill work reply"
+            "steer instruction",
+            "subagent result",
+            "skill work reply",
         ]
     );
     Ok(())

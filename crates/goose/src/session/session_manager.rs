@@ -3086,28 +3086,23 @@ impl SessionStorage {
         }
 
         // Restore the visibility the messages had before the lost compaction
-        // superseded them. Rows that were hidden on purpose stay hidden:
-        // steers and hide-response plumbing by their flags, messages an
-        // operation hid through SetMessageVisibility by the operation note it
-        // leaves behind, and approval notices by their operations metadata.
-        // Agent-only rows without such notes (skill instructions, goal
-        // nudges, continuations) were part of the agent's context.
+        // superseded them: every row the deleted compaction had marked
+        // agent-invisible returns to the agent's context, including agent-only
+        // rows such as skill instructions, subagent results, goal nudges,
+        // steers and tool-call summaries. Only rows that were never part of
+        // the agent's context stay hidden: the compaction's own hide-response
+        // plumbing and approval receipts. Rows an operation hid on purpose
+        // restore alongside their replacement content (e.g. a hidden skill
+        // command next to its expanded instructions) — redundant, but never
+        // lossy — because hides that happened after the deleted compaction are
+        // always truncated away together with its summary.
         let restore = r#"
             UPDATE messages
             SET metadata_json = json_set(metadata_json, '$.agentVisible', json('true'))
             WHERE session_id = ?
               AND json_extract(metadata_json, '$.agentVisible') IS NOT 1
-              AND json_extract(metadata_json, '$.steer') IS NOT 1
               AND json_extract(metadata_json, '$.hideResponse') IS NOT 1
-              AND json_extract(metadata_json, '$.operations.visibility.agent_hidden') IS NOT 1
-              AND (
-                json_extract(metadata_json, '$.userVisible') = 1
-                OR json_extract(metadata_json, '$.turnContext') = 1
-                OR (
-                  json_extract(metadata_json, '$.userVisible') = 0
-                  AND json_extract(metadata_json, '$.operations') IS NULL
-                )
-              )
+              AND json_extract(metadata_json, '$.operations.tool_approval') IS NULL
               AND "#;
         match boundary {
             Some((timestamp, id)) => {
