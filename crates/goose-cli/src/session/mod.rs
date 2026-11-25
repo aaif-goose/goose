@@ -132,6 +132,20 @@ struct JsonOutput {
     metadata: JsonMetadata,
 }
 
+/// Output-limit markers often arrive as empty messages of their own, and then
+/// they are the only record in structured output that the provider stopped early.
+fn json_output_messages(conversation: &Conversation) -> Vec<Message> {
+    conversation
+        .messages()
+        .iter()
+        .filter(|message| message.metadata.user_visible)
+        .map(Message::user_visible_content)
+        .filter(|message| {
+            !message.content.is_empty() || message.metadata.output_token_limit_reached
+        })
+        .collect()
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonMetadata {
     total_tokens: Option<i64>,
@@ -1652,7 +1666,7 @@ impl CliSession {
                 },
             };
             let json_output = JsonOutput {
-                messages: self.messages.user_visible_messages(),
+                messages: json_output_messages(&self.messages),
                 metadata,
             };
             println!("{}", serde_json::to_string_pretty(&json_output)?);
@@ -2801,6 +2815,33 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
     use test_case::test_case;
+
+    #[test]
+    fn json_output_keeps_a_separate_output_limit_marker() {
+        let mut marker = Message::assistant()
+            .with_id("chatcmpl-marker")
+            .with_visibility(true, false);
+        marker.metadata.output_token_limit_reached = true;
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("question"),
+            Message::assistant()
+                .with_id("chatcmpl-reasoning")
+                .with_thinking("reasoning until the budget runs out", ""),
+            Message::assistant().with_id("empty"),
+            marker,
+        ]);
+
+        let messages = json_output_messages(&conversation);
+
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("chatcmpl-reasoning"), Some("chatcmpl-marker")]
+        );
+        assert!(messages[2].metadata.output_token_limit_reached);
+    }
 
     #[test]
     fn only_headless_terminal_failures_are_propagated() {
