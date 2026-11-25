@@ -1412,14 +1412,20 @@ where
                     Some("tool_calls" | "length")
                 );
 
+                let mut stream_finished = false;
                 if !is_complete {
                     let mut done = false;
                     while !done {
                         if let Some(response_chunk) = stream.next().await {
                             let response_str = response_chunk?;
                             if let Some(line) = strip_data_prefix(&response_str) {
+                                // [DONE] is the normal end of a Chat Completions stream.
+                                // Leave this accumulation loop so the call already buffered
+                                // is emitted, matching a stream that closes without the sentinel.
+                                // Breaking the outer loop here drops that call.
                                 if line == "[DONE]" {
-                                    break 'outer;
+                                    stream_finished = true;
+                                    break;
                                 }
 
                                 // A metadata frame here must NOT fall through to the
@@ -1640,7 +1646,10 @@ where
                 yield (
                     Some(msg),
                     usage,
-                )
+                );
+                if stream_finished {
+                    break 'outer;
+                }
             } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_text().is_some() {
                 let mut content = Vec::new();
 
@@ -3858,6 +3867,105 @@ mod tests {
         first_content_window(&response_lines, 1, response_to_streaming_message)
             .await
             .assert_reported_at_first_content();
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_after_complete_tool_delta_emits_call() {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":\"echo hi\"}"}}]},"finish_reason":null}]}"#,
+            "\n",
+            "data: [DONE]",
+        );
+
+        let requests = collect_streamed_tool_requests(response_lines).await;
+
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.id, "call_1");
+        let call = request.tool_call.as_ref().expect("buffered tool call");
+        assert_eq!(call.name, "shell");
+        assert_eq!(
+            call.arguments.as_ref().unwrap()["command"],
+            json!("echo hi")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_emits_buffered_tool_call_when_done_precedes_finish_reason() {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
+            "\n",
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\":\"echo hi\"}"}}]},"finish_reason":null}]}"#,
+            "\n",
+            "data: [DONE]",
+            "\n",
+            r#"data: {"id":"after","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_ignored","type":"function","function":{"name":"ignored","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#,
+        );
+
+        let requests = collect_streamed_tool_requests(response_lines).await;
+
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.id, "call_1");
+        let call = request.tool_call.as_ref().expect("buffered tool call");
+        assert_eq!(call.name, "shell");
+        assert_eq!(
+            call.arguments.as_ref().unwrap()["command"],
+            json!("echo hi")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_with_incomplete_tool_arguments_surfaces_parse_error() {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":"}}]},"finish_reason":null}]}"#,
+            "\n",
+            "data: [DONE]",
+        );
+
+        let requests = collect_streamed_tool_requests(response_lines).await;
+
+        assert_eq!(requests.len(), 1);
+        let error = requests[0]
+            .tool_call
+            .as_ref()
+            .expect_err("incomplete arguments are a tool error");
+        assert!(
+            error.message.contains("truncated") || error.message.contains("malformed"),
+            "unexpected tool error: {}",
+            error.message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_finish_reason_tool_calls_then_done_still_emits() {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":\"echo hi\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+            "\n",
+            "data: [DONE]",
+        );
+
+        let requests = collect_streamed_tool_requests(response_lines).await;
+
+        assert_eq!(requests.len(), 1);
+        let call = requests[0].tool_call.as_ref().expect("tool call");
+        assert_eq!(call.name, "shell");
+        assert_eq!(
+            call.arguments.as_ref().unwrap()["command"],
+            json!("echo hi")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_text_then_done_is_unchanged() -> anyhow::Result<()> {
+        let response_lines = "\
+data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hello\"},\"finish_reason\":null}]}
+data: [DONE]
+";
+        let result = run_streaming_test(response_lines).await?;
+        assert_eq!(result.text, "hello");
+        assert!(result.tool_calls.is_empty());
+        Ok(())
     }
 
     #[tokio::test]
