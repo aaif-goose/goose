@@ -38,7 +38,7 @@ export function applyContentChunk(
     const shouldSkipFallbackChunk = isOutputLimitFallbackChunk && existingMessageHasContent;
 
     existing.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
-    existing.metadata.reasoningConsumedOutputBudget = gooseMeta.reasoningConsumedOutputBudget;
+    existing.metadata.outputTokenLimitKind = gooseMeta.outputTokenLimitKind;
     existing.metadata.fallbackContent = shouldSkipFallbackChunk
       ? undefined
       : gooseMeta.fallbackContent;
@@ -75,7 +75,7 @@ export function applyContentChunk(
         ...DEFAULT_VISIBLE_MESSAGE_METADATA,
         ...(gooseMeta.steer ? { steer: true } : {}),
         outputTokenLimitReached: gooseMeta.outputTokenLimitReached,
-        reasoningConsumedOutputBudget: gooseMeta.reasoningConsumedOutputBudget,
+        outputTokenLimitKind: gooseMeta.outputTokenLimitKind,
         fallbackContent: gooseMeta.fallbackContent,
         ...(gooseMeta.operationLogs ? { operationLogs: gooseMeta.operationLogs } : {}),
       },
@@ -111,7 +111,7 @@ export function applyThoughtChunk(
   }
 
   message.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
-  message.metadata.reasoningConsumedOutputBudget = gooseMeta.reasoningConsumedOutputBudget;
+  message.metadata.outputTokenLimitKind = gooseMeta.outputTokenLimitKind;
   if (gooseMeta.operationLogs) {
     message.metadata.operationLogs = gooseMeta.operationLogs;
   }

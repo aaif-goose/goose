@@ -635,7 +635,7 @@ mod tests {
         );
         assert_eq!(
             messages[1].as_concat_text(),
-            "Response stopped because the model reached its output-token limit."
+            "Response reached the model's output-token limit and may be incomplete."
         );
         assert!(messages[1].metadata.output_token_limit_reached);
         assert!(conversation.messages()[2].content.is_empty());

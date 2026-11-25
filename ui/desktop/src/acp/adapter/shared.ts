@@ -1,6 +1,11 @@
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import type { TokenState } from '../../types/chat';
-import type { InferenceMetadata, Message, NotificationEvent } from '../../types/message';
+import type {
+  InferenceMetadata,
+  Message,
+  NotificationEvent,
+  OutputTokenLimitKind,
+} from '../../types/message';
 
 export type AcpChatStateChange =
   | { type: 'messages'; messages: Message[] }
@@ -28,7 +33,7 @@ export interface GooseMessageMeta {
   created?: number;
   outputTokenLimitReached?: boolean;
   fallbackContent?: boolean;
-  reasoningConsumedOutputBudget?: boolean;
+  outputTokenLimitKind?: OutputTokenLimitKind;
   operationLogs?: string[];
   steer?: boolean;
   inference?: InferenceMetadata;
@@ -60,6 +65,8 @@ export function cloneMessage(message: Message): Message {
   };
 }
 
+const OUTPUT_TOKEN_LIMIT_KINDS: readonly OutputTokenLimitKind[] = ['partial', 'empty', 'reasoning'];
+
 export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMeta {
   if (!isRecord(update._meta)) {
     return {};
@@ -80,7 +87,7 @@ export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMe
     messageId: typeof goose.messageId === 'string' ? goose.messageId : undefined,
     outputTokenLimitReached: outputTokenLimitReached ? true : undefined,
     fallbackContent: goose.fallbackContent === true ? true : undefined,
-    reasoningConsumedOutputBudget: goose.reasoningConsumedOutputBudget === true ? true : undefined,
+    outputTokenLimitKind: OUTPUT_TOKEN_LIMIT_KINDS.find((kind) => kind === goose.outputTokenLimitKind),
     operationLogs,
     steer: goose.steer === true ? true : undefined,
     inference: getInferenceMeta(goose.inference),

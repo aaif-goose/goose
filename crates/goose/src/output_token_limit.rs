@@ -3,10 +3,12 @@
 //! whose reasoning used the whole budget.
 
 use rmcp::model::Role;
+use serde::Serialize;
 
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum OutputTokenLimit {
     /// Visible output arrived before the limit, so the answer may be incomplete.
     Partial,

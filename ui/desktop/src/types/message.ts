@@ -178,13 +178,15 @@ export type MessageUsage = {
   isCompaction?: boolean;
 };
 
+export type OutputTokenLimitKind = 'partial' | 'empty' | 'reasoning';
+
 export type MessageMetadata = {
   agentVisible: boolean;
   fallbackContent?: boolean;
   inference?: InferenceMetadata | null;
   operationLogs?: string[];
   outputTokenLimitReached?: boolean;
-  reasoningConsumedOutputBudget?: boolean;
+  outputTokenLimitKind?: OutputTokenLimitKind;
   steer?: boolean;
   usage?: MessageUsage | null;
   userVisible: boolean;

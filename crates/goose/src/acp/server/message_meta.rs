@@ -5,6 +5,8 @@ use serde::Serialize;
 
 const OUTPUT_TOKEN_LIMIT_TEXT: &str =
     "Response stopped because the model reached its output-token limit.";
+const PARTIAL_OUTPUT_TOKEN_LIMIT_TEXT: &str =
+    "Response reached the model's output-token limit and may be incomplete.";
 const REASONING_OUTPUT_TOKEN_LIMIT_TEXT: &str =
     "Reasoning used the model's output-token budget before producing an answer. Resend your message or run /compact to continue.";
 
@@ -20,8 +22,8 @@ struct GooseMessageMeta<'a> {
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    reasoning_consumed_output_budget: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_token_limit_kind: Option<OutputTokenLimit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     inference: Option<GooseInferenceMeta<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,14 +44,14 @@ fn goose_message_meta(
     message: &Message,
     steer: bool,
 ) -> serde_json::Map<String, serde_json::Value> {
+    let output_token_limit_kind = output_token_limit_fallback_kind(message);
     let message_meta = GooseMessageMeta {
         created: message.created,
         message_id: message.id.as_deref(),
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
-        fallback_content: has_output_token_limit_fallback_content(message)
-            || has_reasoning_output_token_limit_content(message),
-        reasoning_consumed_output_budget: has_reasoning_output_token_limit_content(message),
+        fallback_content: output_token_limit_kind.is_some(),
+        output_token_limit_kind,
         inference: message
             .metadata
             .inference
@@ -120,35 +122,41 @@ pub(super) fn live_transcript_chunk(message: &Message, content: ContentBlock) ->
 }
 
 /// Clients that do not read `_meta` still get an explanation in the transcript,
-/// and the reasoning text is how the meta flag travels with the message.
+/// and the fallback text is how the classification travels with the message:
+/// the limit marker often arrives as its own message, apart from the output it
+/// classifies.
 pub(super) fn populate_output_token_limit_content(
     message: &mut Message,
     limit: Option<OutputTokenLimit>,
 ) {
     let text = match limit {
         Some(OutputTokenLimit::Reasoning) => REASONING_OUTPUT_TOKEN_LIMIT_TEXT,
-        Some(_) if message.content.is_empty() => OUTPUT_TOKEN_LIMIT_TEXT,
+        Some(OutputTokenLimit::Partial) if message.content.is_empty() => {
+            PARTIAL_OUTPUT_TOKEN_LIMIT_TEXT
+        }
+        Some(OutputTokenLimit::Empty) if message.content.is_empty() => OUTPUT_TOKEN_LIMIT_TEXT,
         _ => return,
     };
     message.content.push(MessageContent::text(text));
 }
 
-fn has_output_token_limit_fallback_content(message: &Message) -> bool {
-    message.role == rmcp::model::Role::Assistant
-        && message.metadata.output_token_limit_reached
-        && matches!(
-            message.content.as_slice(),
-            [MessageContent::Text(text)] if text.text == OUTPUT_TOKEN_LIMIT_TEXT
-        )
-}
-
-fn has_reasoning_output_token_limit_content(message: &Message) -> bool {
-    message.role == rmcp::model::Role::Assistant
-        && message.metadata.output_token_limit_reached
-        && matches!(
-            message.content.last(),
-            Some(MessageContent::Text(text)) if text.text == REASONING_OUTPUT_TOKEN_LIMIT_TEXT
-        )
+fn output_token_limit_fallback_kind(message: &Message) -> Option<OutputTokenLimit> {
+    if message.role != rmcp::model::Role::Assistant || !message.metadata.output_token_limit_reached
+    {
+        return None;
+    }
+    match message.content.as_slice() {
+        [MessageContent::Text(text)] if text.text == OUTPUT_TOKEN_LIMIT_TEXT => {
+            Some(OutputTokenLimit::Empty)
+        }
+        [MessageContent::Text(text)] if text.text == PARTIAL_OUTPUT_TOKEN_LIMIT_TEXT => {
+            Some(OutputTokenLimit::Partial)
+        }
+        [.., MessageContent::Text(text)] if text.text == REASONING_OUTPUT_TOKEN_LIMIT_TEXT => {
+            Some(OutputTokenLimit::Reasoning)
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -235,6 +243,7 @@ mod tests {
                 "messageId": "msg_live",
                 "outputTokenLimitReached": true,
                 "fallbackContent": true,
+                "outputTokenLimitKind": "empty",
             })),
         );
 
@@ -249,7 +258,7 @@ mod tests {
                 "messageId": "msg_live",
                 "outputTokenLimitReached": true,
                 "fallbackContent": true,
-                "reasoningConsumedOutputBudget": true,
+                "outputTokenLimitKind": "reasoning",
             })),
         );
     }
@@ -274,6 +283,7 @@ mod tests {
                 "messageId": "msg_live",
                 "outputTokenLimitReached": true,
                 "fallbackContent": true,
+                "outputTokenLimitKind": "empty",
                 "steer": true,
             })),
         );
@@ -333,13 +343,15 @@ mod tests {
             message.content.as_slice(),
             [MessageContent::Text(text)] if text.text == OUTPUT_TOKEN_LIMIT_TEXT
         ));
-        assert!(has_output_token_limit_fallback_content(&message));
-        assert!(!has_reasoning_output_token_limit_content(&message));
+        assert_eq!(
+            output_token_limit_fallback_kind(&message),
+            Some(OutputTokenLimit::Empty)
+        );
 
         let mut unmarked_message = Message::new(Role::Assistant, 1_700_000_000, vec![]);
         populate_output_token_limit_content(&mut unmarked_message, None);
         assert!(unmarked_message.content.is_empty());
-        assert!(!has_output_token_limit_fallback_content(&unmarked_message));
+        assert_eq!(output_token_limit_fallback_kind(&unmarked_message), None);
 
         let mut marked_message_with_content =
             Message::new(Role::Assistant, 1_700_000_000, vec![]).with_text("partial response");
@@ -354,17 +366,16 @@ mod tests {
             marked_message_with_content.content.as_slice(),
             [MessageContent::Text(text)] if text.text == "partial response"
         ));
-        assert!(!has_output_token_limit_fallback_content(
-            &marked_message_with_content
-        ));
+        assert_eq!(
+            output_token_limit_fallback_kind(&marked_message_with_content),
+            None
+        );
 
         let mut marked_user_message = Message::new(Role::User, 1_700_000_000, vec![]);
         marked_user_message.metadata.output_token_limit_reached = true;
         populate_output_token_limit_content(&mut marked_user_message, None);
         assert!(marked_user_message.content.is_empty());
-        assert!(!has_output_token_limit_fallback_content(
-            &marked_user_message
-        ));
+        assert_eq!(output_token_limit_fallback_kind(&marked_user_message), None);
     }
 
     #[test]
@@ -384,8 +395,27 @@ mod tests {
         assert_eq!(
             message_meta(&message)
                 .get("goose")
-                .and_then(|goose| goose.get("reasoningConsumedOutputBudget")),
-            Some(&serde_json::json!(true)),
+                .and_then(|goose| goose.get("outputTokenLimitKind")),
+            Some(&serde_json::json!("reasoning")),
+        );
+    }
+
+    #[test]
+    fn separate_partial_marker_keeps_its_classification() {
+        let mut marker = Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id("msg_marker");
+        marker.metadata.output_token_limit_reached = true;
+
+        populate_output_token_limit_content(&mut marker, Some(OutputTokenLimit::Partial));
+
+        assert_eq!(
+            message_meta(&marker).get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_marker",
+                "outputTokenLimitReached": true,
+                "fallbackContent": true,
+                "outputTokenLimitKind": "partial",
+            })),
         );
     }
 
