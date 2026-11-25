@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.16](https://github.com/aaif-goose/goose/compare/oi-kit-v0.1.0-alpha.15...oi-kit-v0.1.0-alpha.16) - 2026-11-25
+
+### Fixed
+
+- *(acp)* make providers/inventory/refresh wait for the refresh, and drop the refresh field from config responses ([#13740](https://github.com/aaif-goose/goose/pull/13740))
+
 ## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
 
 ### Added
