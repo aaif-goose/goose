@@ -89,7 +89,7 @@ impl AnthropicFormatOptions {
             || preserve_thinking_context;
         let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
             == Some(ThinkingMode::AlwaysOnAdaptive)
-            || zai_effort_level(provider_name, model_config).is_some();
+            || zai_effort_to_send(provider_name, model_config).is_some();
         let thinking_disabled = !always_on
             && (model_config.reasoning == Some(false)
                 || model_config.thinking_effort() == Some(ThinkingEffort::Off));
@@ -174,41 +174,24 @@ fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<Think
     None
 }
 
-fn zai_effort_level(provider_name: &str, model_config: &ModelConfig) -> Option<String> {
+fn zai_effort_to_send(provider_name: &str, model_config: &ModelConfig) -> Option<ThinkingEffort> {
     if provider_name != "zai" {
         return None;
     }
-    let model = maybe_get_canonical_model(provider_name, &model_config.model_name)?;
-    let levels = model.reasoning_efforts?;
     let effort = if model_config.reasoning == Some(false) {
-        ThinkingEffort::Off
+        Some(ThinkingEffort::Off)
     } else {
-        model_config
-            .thinking_effort()
-            .unwrap_or(ThinkingEffort::Max)
+        model_config.thinking_effort()
     };
-    if effort == ThinkingEffort::Off && model.reasoning_toggle {
-        return None;
-    }
-    let preferred: &[&str] = match effort {
-        ThinkingEffort::Off | ThinkingEffort::Low => &["low", "high", "max"],
-        ThinkingEffort::Medium => &["medium", "high", "max"],
-        ThinkingEffort::High => &["high", "max"],
-        ThinkingEffort::Max => &["max", "high"],
-    };
-    preferred
-        .iter()
-        .find(|level| levels.iter().any(|value| value == *level))
-        .map(|level| level.to_string())
+    model_config
+        .closest_thinking_effort(provider_name, effort)
+        .filter(|level| *level != ThinkingEffort::Off)
 }
 
 /// Adaptive models run adaptive thinking when `thinking` is omitted, so turning
 /// it off takes an explicit disable. Always-on models reject that disable.
 pub fn requires_explicit_thinking_disable(provider_name: &str, model_name: &str) -> bool {
     canonical_thinking_mode(provider_name, model_name) == Some(ThinkingMode::Adaptive)
-        || (provider_name == "zai"
-            && maybe_get_canonical_model(provider_name, model_name)
-                .is_some_and(|model| model.reasoning_toggle))
 }
 
 fn canonical_reasoning(provider_name: &str, model_config: &ModelConfig) -> Option<bool> {
@@ -877,9 +860,12 @@ fn apply_thinking_config(
     options: AnthropicFormatOptions,
 ) {
     let obj = payload.as_object_mut().unwrap();
-    if let Some(level) = zai_effort_level(provider_name, model_config) {
+    if let Some(level) = zai_effort_to_send(provider_name, model_config) {
         obj.insert("thinking".to_string(), json!({"type": "enabled"}));
-        obj.insert("output_config".to_string(), json!({"effort": level}));
+        obj.insert(
+            "output_config".to_string(),
+            json!({"effort": level.to_string()}),
+        );
     } else {
         match thinking_type_for_provider(provider_name, model_config) {
             ThinkingType::Adaptive => {
@@ -927,8 +913,12 @@ fn apply_thinking_config(
         }
     }
 
+    let can_disable_thinking = model_config
+        .thinking_effort_levels(provider_name)
+        .is_some_and(|levels| levels.contains(&ThinkingEffort::Off));
     if !obj.contains_key("thinking")
-        && requires_explicit_thinking_disable(provider_name, &model_config.model_name)
+        && (can_disable_thinking
+            || requires_explicit_thinking_disable(provider_name, &model_config.model_name))
     {
         obj.insert("thinking".to_string(), json!({"type": "disabled"}));
     }

@@ -425,6 +425,54 @@ impl ModelConfig {
             .and_then(|s| s.parse::<ThinkingEffort>().ok())
     }
 
+    pub fn thinking_effort_levels(&self, provider_name: &str) -> Option<Vec<ThinkingEffort>> {
+        if provider_name == "zai" {
+            if let Some(levels) = self.zai_catalog_effort_levels() {
+                return Some(levels);
+            }
+        }
+        if self.is_glm_5_3_reasoning_model() || self.is_kimi_k3_reasoning_model() {
+            return Some(vec![
+                ThinkingEffort::Low,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]);
+        }
+        None
+    }
+
+    fn zai_catalog_effort_levels(&self) -> Option<Vec<ThinkingEffort>> {
+        let model = crate::canonical::maybe_get_canonical_model("zai", &self.model_name)?;
+        let mut levels: Vec<ThinkingEffort> = model
+            .reasoning_efforts?
+            .iter()
+            .filter_map(|effort| effort.parse().ok())
+            .collect();
+        if levels.is_empty() {
+            return None;
+        }
+        if model.reasoning_toggle {
+            levels.push(ThinkingEffort::Off);
+        }
+        levels.sort();
+        levels.dedup();
+        Some(levels)
+    }
+
+    pub fn closest_thinking_effort(
+        &self,
+        provider_name: &str,
+        effort: Option<ThinkingEffort>,
+    ) -> Option<ThinkingEffort> {
+        let levels = self.thinking_effort_levels(provider_name)?;
+        let requested = effort.unwrap_or(ThinkingEffort::Max);
+        levels
+            .iter()
+            .copied()
+            .find(|level| *level >= requested)
+            .or_else(|| levels.last().copied())
+    }
+
     pub fn with_prompt_cache_disabled(self) -> Self {
         self.with_merged_request_params(HashMap::from([(
             "disable_prompt_cache".to_string(),
