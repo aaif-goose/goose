@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "推荐"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "选择思考强度"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "默认"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "请选择一个模型"

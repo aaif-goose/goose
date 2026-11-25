@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "अनुशंसित"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "प्रयास स्तर का चयन करें"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "डिफ़ॉल्ट"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "कृपया एक मॉडल चुनें"

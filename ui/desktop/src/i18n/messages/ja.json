@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "推奨"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "思考量を選択"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "デフォルト"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "モデルを選択してください"

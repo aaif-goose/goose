@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Önerilen"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "Çaba düzeyini seçin"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "Varsayılan"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Lütfen bir model seçin"

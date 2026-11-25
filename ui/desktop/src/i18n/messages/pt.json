@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Recomendado"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "Selecione o nível de esforço"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "Padrão"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Selecione um modelo"

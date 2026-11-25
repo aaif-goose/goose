@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "추천"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "추론 강도 선택"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "기본값"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "모델을 선택하세요."

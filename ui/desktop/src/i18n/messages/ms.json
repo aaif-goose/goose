@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Disyorkan"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "Pilih tahap usaha"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "Lalai"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Sila pilih model"

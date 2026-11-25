@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "建議"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "選擇用力程度"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "預設"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "請選擇模型"

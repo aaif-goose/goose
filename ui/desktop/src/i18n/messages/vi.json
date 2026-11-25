@@ -4379,8 +4379,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Được đề xuất"
   },
-  "switchModelModal.selectEffortLevel": {
-    "defaultMessage": "Chọn mức độ nỗ lực"
+  "switchModelModal.thinkingEffortDefault": {
+    "defaultMessage": "Mặc định"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Vui lòng chọn một mô hình"

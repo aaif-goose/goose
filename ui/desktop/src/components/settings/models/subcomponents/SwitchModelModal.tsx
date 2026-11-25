@@ -161,9 +161,9 @@ const i18n = defineMessages({
     id: 'switchModelModal.thinkingEffort',
     defaultMessage: 'Thinking Effort',
   },
-  selectEffortLevel: {
-    id: 'switchModelModal.selectEffortLevel',
-    defaultMessage: 'Select effort level',
+  thinkingEffortDefault: {
+    id: 'switchModelModal.thinkingEffortDefault',
+    defaultMessage: 'Default',
   },
   thinkingBudget: {
     id: 'switchModelModal.thinkingBudget',
@@ -416,12 +416,14 @@ export const SwitchModelModal = ({
       };
 
       if (showThinkingControl) {
-        const effort = thinkingEffort ?? modelObj.request_params?.thinking_effort ?? 'off';
-        modelObj = {
-          ...modelObj,
-          request_params: { ...modelObj.request_params, thinking_effort: effort },
-        };
-        acpSaveThinkingEffort(effort).catch(console.warn);
+        const effort = thinkingEffort ?? modelObj.request_params?.thinking_effort;
+        if (effort) {
+          modelObj = {
+            ...modelObj,
+            request_params: { ...modelObj.request_params, thinking_effort: effort },
+          };
+          acpSaveThinkingEffort(effort).catch(console.warn);
+        }
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -729,12 +731,12 @@ export const SwitchModelModal = ({
       </label>
       <Select
         options={THINKING_EFFORT_OPTIONS}
-        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === (thinkingEffort ?? 'off'))}
+        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === thinkingEffort) ?? null}
         onChange={(newValue: unknown) => {
           const option = newValue as { value: ThinkingEffort; label: string } | null;
-          setThinkingEffort(option?.value || 'off');
+          setThinkingEffort(option?.value ?? null);
         }}
-        placeholder={intl.formatMessage(i18n.selectEffortLevel)}
+        placeholder={intl.formatMessage(i18n.thinkingEffortDefault)}
       />
     </div>
   );
