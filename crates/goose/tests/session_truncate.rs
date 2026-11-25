@@ -3,6 +3,7 @@ use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
 use goose::conversation::Conversation;
 use goose::session::{SessionManager, SessionType};
+use oi_kit_providers::conversation::token_usage::Usage;
 use tempfile::TempDir;
 
 fn message_at(mut message: Message, created: i64) -> Message {
@@ -171,6 +172,138 @@ async fn truncating_after_a_summary_keeps_the_compacted_state() -> Result<()> {
     assert_eq!(
         agent_texts(&session),
         vec!["summary of the conversation", "Your context was compacted."]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn truncating_the_newest_of_two_compactions_reactivates_the_older_summary() -> Result<()> {
+    let dir = TempDir::new()?;
+    let sm = SessionManager::new(dir.path().to_path_buf());
+    let id = new_session(&sm, &dir, "truncate-two-compactions").await?;
+
+    // The first compaction's summary was itself superseded by the second.
+    let conversation = vec![
+        superseded(message_at(Message::user().with_text("first prompt"), 1_000)),
+        superseded(message_at(
+            Message::assistant().with_text("first reply"),
+            1_100,
+        )),
+        superseded(compaction_summary(
+            "summary of the early conversation",
+            3_000,
+        )),
+        superseded(continuation("Your context was compacted.", 3_000)),
+        superseded(message_at(
+            Message::user().with_text("second prompt"),
+            4_000,
+        )),
+        superseded(message_at(
+            Message::assistant().with_text("second reply"),
+            4_100,
+        )),
+        compaction_summary("summary of the later conversation", 5_000),
+        continuation("Your context was compacted again.", 5_000),
+        message_at(
+            Message::assistant().with_text("reply after the second compaction"),
+            5_100,
+        ),
+    ];
+    sm.replace_conversation(&id, &Conversation::new_unvalidated(conversation))
+        .await?;
+
+    sm.truncate_conversation(&id, 5_000).await?;
+
+    let session = sm.get_session(&id, true).await?;
+    assert_eq!(
+        agent_texts(&session),
+        vec![
+            "summary of the early conversation",
+            "Your context was compacted.",
+            "second prompt",
+            "second reply",
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn restoring_keeps_intentionally_hidden_kickoffs_hidden_and_instructions_visible(
+) -> Result<()> {
+    let dir = TempDir::new()?;
+    let sm = SessionManager::new(dir.path().to_path_buf());
+    let id = new_session(&sm, &dir, "truncate-skill-turn").await?;
+
+    // A skill turn as the skills operation leaves it: the slash-command
+    // kickoff hidden from the agent by an operation note, the expanded
+    // instructions agent-only, both then superseded by compaction.
+    let mut hidden_command = message_at(Message::user().with_text("/skill command"), 2_000);
+    hidden_command.metadata.agent_visible = false;
+    hidden_command.metadata.set_operation_note(
+        "visibility",
+        "agent_hidden",
+        serde_json::Value::from(true),
+    );
+    let instructions = superseded(message_at(
+        Message::user().with_text("Full skill instructions"),
+        2_000,
+    ));
+
+    let conversation = vec![
+        superseded(message_at(Message::user().with_text("first prompt"), 1_000)),
+        hidden_command,
+        instructions,
+        superseded(message_at(
+            Message::assistant().with_text("skill work reply"),
+            2_100,
+        )),
+        compaction_summary("summary of the conversation", 3_000),
+        message_at(
+            Message::assistant().with_text("reply after compaction"),
+            3_100,
+        ),
+    ];
+    sm.replace_conversation(&id, &Conversation::new_unvalidated(conversation))
+        .await?;
+
+    sm.truncate_conversation(&id, 3_000).await?;
+
+    let session = sm.get_session(&id, true).await?;
+    assert_eq!(
+        agent_texts(&session),
+        vec![
+            "first prompt",
+            "Full skill instructions",
+            "skill work reply"
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn restoring_truncate_refreshes_the_cached_context_usage() -> Result<()> {
+    let dir = TempDir::new()?;
+    let sm = SessionManager::new(dir.path().to_path_buf());
+    let id = new_session(&sm, &dir, "truncate-usage-refresh").await?;
+
+    let mut conversation = compacted_conversation();
+    conversation.pop();
+    sm.replace_conversation(&id, &Conversation::new_unvalidated(conversation))
+        .await?;
+
+    // The stale post-compaction usage of the lost turn.
+    sm.update(&id)
+        .usage(Usage::new(Some(1), None, Some(1)))
+        .apply()
+        .await?;
+
+    sm.truncate_conversation(&id, 3_000).await?;
+
+    let session = sm.get_session(&id, true).await?;
+    let total = session.usage.total_tokens.unwrap_or(0);
+    assert!(
+        total > 1,
+        "expected the restored conversation to be counted, got {total}"
     );
     Ok(())
 }

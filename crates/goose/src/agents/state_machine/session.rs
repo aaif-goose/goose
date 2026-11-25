@@ -118,6 +118,15 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     self.update_message_metadata(&session.id, message_id, |mut metadata| {
                         metadata.user_visible = *user_visible;
                         metadata.agent_visible = *agent_visible;
+                        // Record that an operation chose this visibility so
+                        // restoring orphaned compaction history does not undo
+                        // intentional hides (skill kickoffs, summarized tool
+                        // pairs).
+                        metadata.set_operation_note(
+                            "visibility",
+                            "agent_hidden",
+                            serde_json::Value::from(!*agent_visible),
+                        );
                         metadata
                     })
                     .await?;
