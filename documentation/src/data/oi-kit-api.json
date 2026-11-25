@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.1.0-alpha.15",
+      "version": "0.1.0-alpha.16",
       "docVersion": "0.1",
       "source": "crates/oi-kit-bindings/src/bindings.rs",
       "functions": [

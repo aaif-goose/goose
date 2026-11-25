@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.16](https://github.com/aaif-goose/goose/compare/oi-kit-v0.1.0-alpha.15...oi-kit-v0.1.0-alpha.16) - 2026-11-25
+
+### Other
+
+- rename internal leftover gdk names to oi-kit ([#13679](https://github.com/aaif-goose/goose/pull/13679))
+
 ## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
 
 ### Fixed
