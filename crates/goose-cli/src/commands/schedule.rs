@@ -86,6 +86,7 @@ pub async fn handle_schedule_add(
         source: recipe_source_arg.clone(), // Pass the original user-provided path
         cron,
         last_run: None,
+        last_run_status: None,
         currently_running: false,
         paused: false,
         current_session_id: None,
@@ -162,14 +163,19 @@ pub async fn handle_schedule_list() -> Result<()> {
                 "⏹️  IDLE"
             };
 
+            let last_result = job
+                .last_run_status
+                .map(|status| status.as_str())
+                .unwrap_or("unknown");
             println!(
-                "- ID: {}\n  Status: {}\n  Cron: {}\n  Recipe Source (in store): {}\n  Last Run: {}",
+                "- ID: {}\n  Status: {}\n  Cron: {}\n  Recipe Source (in store): {}\n  Last Run: {}\n  Last Result: {}",
                 job.id,
                 status,
                 job.cron,
                 job.source, // This source is now the path within scheduled_recipes_dir
                 job.last_run
-                    .map_or_else(|| "Never".to_string(), |dt| dt.to_rfc3339())
+                    .map_or_else(|| "Never".to_string(), |dt| dt.to_rfc3339()),
+                last_result
             );
         }
     }
@@ -220,12 +226,13 @@ pub async fn handle_schedule_sessions(schedule_id: String, limit: Option<usize>)
                 println!("Sessions for schedule ID '{}':", schedule_id);
                 for (session_name, metadata) in sessions {
                     println!(
-                        "  - Session ID: {}, Messages: {}, Working Dir: {}, Description: \"{}\", Schedule ID: {:?}",
+                        "  - Session ID: {}, Messages: {}, Working Dir: {}, Description: \"{}\", Schedule ID: {:?}, Run: {}",
                         session_name,
                         metadata.message_count,
                         metadata.working_dir.display(),
                         metadata.name,
-                        metadata.schedule_id.as_deref().unwrap_or("N/A")
+                        metadata.schedule_id.as_deref().unwrap_or("N/A"),
+                        metadata.run_outcome.as_deref().unwrap_or("unknown")
                     );
                 }
             }

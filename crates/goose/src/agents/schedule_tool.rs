@@ -198,6 +198,7 @@ impl ScheduleTool {
             source: canonical_recipe_path.to_string_lossy().into_owned(),
             cron: cron_expression.to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -449,10 +450,11 @@ impl ScheduleTool {
                         .into_iter()
                         .map(|(session_name, session)| {
                             format!(
-                                "- Session: {} (Messages: {}, Working Dir: {})",
+                                "- Session: {} (Messages: {}, Working Dir: {}, Run: {})",
                                 session_name,
                                 session.message_count,
-                                session.working_dir.display()
+                                session.working_dir.display(),
+                                session.run_outcome.as_deref().unwrap_or("unknown")
                             )
                         })
                         .collect();

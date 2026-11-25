@@ -163,12 +163,33 @@ impl From<anyhow::Error> for SchedulerError {
     }
 }
 
+/// Outcome of the most recent scheduled invocation. Absent until a run finishes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleRunStatus {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl ScheduleRunStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ScheduledJob {
     pub id: String,
     pub source: String,
     pub cron: String,
     pub last_run: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_status: Option<ScheduleRunStatus>,
     #[serde(default)]
     pub currently_running: bool,
     #[serde(default)]

@@ -1893,11 +1893,14 @@ export type ScheduledJobDto = {
     source: string;
     cron: string;
     lastRun?: string | null;
+    lastRunStatus?: ScheduleRunStatusDto | null;
     currentlyRunning: boolean;
     paused: boolean;
     currentSessionId?: string | null;
     jobStartTime?: string | null;
 };
+
+export type ScheduleRunStatusDto = 'succeeded' | 'failed' | 'cancelled';
 
 /**
  * List recent sessions created by a scheduled recipe job.

@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use tokio_cron_scheduler::{job::JobId, Job, JobScheduler as TokioJobScheduler};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{AgentEvent, SessionConfig, StateMachineServices};
+use crate::agents::{AgentEvent, ReplyOutcome, SessionConfig, StateMachineServices};
 use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -199,6 +199,7 @@ impl Scheduler {
                     let mut jobs_guard = current_jobs_arc.lock().await;
                     if let Some((_, job)) = jobs_guard.get_mut(&task_job_id) {
                         job.last_run = Some(current_time);
+                        job.last_run_status = None;
                         job.currently_running = true;
                         job.process_start_time = Some(current_time);
                     }
@@ -234,6 +235,7 @@ impl Scheduler {
                         job.currently_running = false;
                         job.current_session_id = None;
                         job.process_start_time = None;
+                        job.last_run_status = Some(result.status);
                     }
                 }
 
@@ -241,12 +243,22 @@ impl Scheduler {
                     tracing::error!("Failed to persist job completion: {}", e);
                 }
 
-                match result {
-                    Ok(_) => tracing::info!("Job '{}' completed", task_job_id),
-                    Err(ref e) => {
-                        tracing::error!("Job '{}' failed: {}", task_job_id, e);
+                match result.status {
+                    ScheduleRunStatus::Succeeded => {
+                        tracing::info!("Job '{}' completed", task_job_id)
+                    }
+                    ScheduleRunStatus::Cancelled => {
+                        tracing::info!("Job '{}' cancelled", task_job_id)
+                    }
+                    ScheduleRunStatus::Failed => {
+                        let error = result
+                            .error
+                            .as_ref()
+                            .map(|error| error.to_string())
+                            .unwrap_or_else(|| "scheduled run failed".to_string());
+                        tracing::error!("Job '{}' failed: {}", task_job_id, error);
                         #[cfg(feature = "telemetry")]
-                        crate::posthog::emit_error("scheduler_job_failed", &e.to_string());
+                        crate::posthog::emit_error("scheduler_job_failed", &error);
                     }
                 }
             })
@@ -375,6 +387,7 @@ impl Scheduler {
                         source: recipe_path_str,
                         cron,
                         last_run: None,
+                        last_run_status: None,
                         currently_running: false,
                         paused: false,
                         current_session_id: None,
@@ -671,9 +684,11 @@ impl Scheduler {
                 )
                 .await
             }
-            None => Err(anyhow!("No goose services are attached to run the job")),
+            None => JobExecution::failed(
+                None,
+                anyhow!("No goose services are attached to run the job"),
+            ),
         };
-        let was_cancelled = cancel_token.is_cancelled();
 
         {
             let mut tasks = self.running_tasks.lock().await;
@@ -687,21 +702,26 @@ impl Scheduler {
                 job.current_session_id = None;
                 job.process_start_time = None;
                 job.last_run = Some(Utc::now());
+                job.last_run_status = Some(result.status);
             }
         }
 
         persist_jobs(&self.storage_path, &self.jobs).await?;
 
-        match result {
-            _ if was_cancelled => Err(SchedulerError::AnyhowError(anyhow!(
+        match result.status {
+            ScheduleRunStatus::Succeeded => Ok(result.session_id.unwrap_or_default()),
+            ScheduleRunStatus::Cancelled => Err(SchedulerError::AnyhowError(anyhow!(
                 "Job '{}' was successfully cancelled",
                 sched_id
             ))),
-            Ok(session_id) => Ok(session_id),
-            Err(e) => Err(SchedulerError::AnyhowError(anyhow!(
+            ScheduleRunStatus::Failed => Err(SchedulerError::AnyhowError(anyhow!(
                 "Job '{}' failed: {}",
                 sched_id,
-                e
+                result
+                    .error
+                    .as_ref()
+                    .map(|error| error.to_string())
+                    .unwrap_or_else(|| "scheduled run failed".to_string())
             ))),
         }
     }
@@ -814,6 +834,9 @@ impl Scheduler {
             let mut jobs_guard = self.jobs.lock().await;
             match jobs_guard.get_mut(sched_id) {
                 Some((_, job)) => {
+                    if job.currently_running {
+                        job.last_run_status = Some(ScheduleRunStatus::Cancelled);
+                    }
                     clear_running_state(job);
                 }
                 None => return Err(SchedulerError::JobNotFound(sched_id.to_string())),
@@ -842,19 +865,88 @@ impl Scheduler {
 }
 
 #[allow(clippy::too_many_lines)]
+struct JobExecution {
+    session_id: Option<String>,
+    status: ScheduleRunStatus,
+    error: Option<anyhow::Error>,
+}
+
+impl JobExecution {
+    fn completed(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: Some(session_id.into()),
+            status: ScheduleRunStatus::Succeeded,
+            error: None,
+        }
+    }
+
+    fn failed(session_id: Option<String>, error: anyhow::Error) -> Self {
+        Self {
+            session_id,
+            status: ScheduleRunStatus::Failed,
+            error: Some(error),
+        }
+    }
+
+    fn cancelled(session_id: Option<String>) -> Self {
+        Self {
+            session_id,
+            status: ScheduleRunStatus::Cancelled,
+            error: None,
+        }
+    }
+}
+
+#[cfg(feature = "telemetry")]
+fn telemetry_status(status: ScheduleRunStatus) -> &'static str {
+    match status {
+        ScheduleRunStatus::Succeeded => "completed",
+        ScheduleRunStatus::Failed => "failed",
+        ScheduleRunStatus::Cancelled => "cancelled",
+    }
+}
+
+fn exit_type(status: ScheduleRunStatus) -> &'static str {
+    match status {
+        ScheduleRunStatus::Succeeded => "normal",
+        ScheduleRunStatus::Failed => "error",
+        ScheduleRunStatus::Cancelled => "cancelled",
+    }
+}
+
+/// A kill can surface as an error from whichever await it interrupts, so a
+/// cancelled token always wins over the error it caused.
 async fn execute_job(
     job: ScheduledJob,
     jobs: Arc<Mutex<JobsMap>>,
     job_id: String,
     cancel_token: CancellationToken,
     services: Arc<StateMachineServices>,
-) -> Result<String> {
+) -> JobExecution {
+    let execution = run_job(job, jobs, job_id, cancel_token.clone(), services).await;
+    if execution.status == ScheduleRunStatus::Failed && cancel_token.is_cancelled() {
+        JobExecution::cancelled(execution.session_id)
+    } else {
+        execution
+    }
+}
+
+async fn run_job(
+    job: ScheduledJob,
+    jobs: Arc<Mutex<JobsMap>>,
+    job_id: String,
+    cancel_token: CancellationToken,
+    services: Arc<StateMachineServices>,
+) -> JobExecution {
     if job.source.is_empty() {
-        return Ok(job.id.to_string());
+        return JobExecution::completed(job.id);
     }
 
     let recipe_path = Path::new(&job.source);
-    let recipe_content = fs::read_to_string(recipe_path)?;
+    let recipe_content = match fs::read_to_string(recipe_path) {
+        Ok(content) => content,
+        Err(error) => return JobExecution::failed(None, error.into()),
+    };
     // Use the original recipe directory for path resolution so that relative
     // references (sub-recipes, template includes) survive the copy into scheduled_recipes/.
     let recipe_dir_owned;
@@ -865,29 +957,52 @@ async fn execute_job(
         recipe_path.parent().unwrap_or(Path::new("."))
     };
 
-    let recipe: Recipe = build_recipe_from_template(
+    let recipe: Recipe = match build_recipe_from_template(
         recipe_content,
         recipe_dir,
         job.parameters.clone(),
         None::<fn(&str, &str) -> anyhow::Result<String>>,
-    )
-    .map_err(|e| anyhow!(e.to_string()))?;
+    ) {
+        Ok(recipe) => recipe,
+        Err(error) => return JobExecution::failed(None, anyhow!(error.to_string())),
+    };
 
     let (provider_name, model_config) =
-        resolve_provider_and_model_config(Config::global(), None, recipe.settings.as_ref()).await?;
+        match resolve_provider_and_model_config(Config::global(), None, recipe.settings.as_ref())
+            .await
+        {
+            Ok(resolved) => resolved,
+            Err(error) => return JobExecution::failed(None, error),
+        };
     let model_config = model_config.with_cache_ttl_clamped();
 
-    let session = services
+    let working_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(error) => return JobExecution::failed(None, error.into()),
+    };
+    let session = match services
         .session_manager
         .create_session(
-            std::env::current_dir()?,
+            working_dir,
             format!("Scheduled job: {}", job.id),
             SessionType::Scheduled,
             GooseMode::Auto,
         )
-        .await?;
+        .await
+    {
+        Ok(session) => session,
+        Err(error) => return JobExecution::failed(None, error),
+    };
     services.touch_session(&session.id).await;
-    let result: Result<String> = async {
+    let result: Result<JobExecution> = async {
+        services
+            .session_manager
+            .update(&session.id)
+            .schedule_id(Some(job.id.clone()))
+            .recipe(Some(recipe.clone()))
+            .apply()
+            .await?;
+
         let mut extensions = resolve_extensions_for_new_session(recipe.extensions.as_deref(), None);
         if recipe.extensions.is_none() {
             extensions.extend(crate::plugins::mcp_servers::enabled_plugin_mcp_servers(
@@ -965,14 +1080,6 @@ async fn execute_job(
         let user_message = Message::user().with_text(prompt_text);
         let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
 
-        services
-            .session_manager
-            .update(&session.id)
-            .schedule_id(Some(job.id.clone()))
-            .recipe(Some(recipe.clone()))
-            .apply()
-            .await?;
-
         let session_config = SessionConfig {
             id: session.id.clone(),
             schedule_id: Some(job.id.clone()),
@@ -990,7 +1097,8 @@ async fn execute_job(
         use futures::StreamExt;
         let mut stream = std::pin::pin!(stream);
 
-        let mut stream_error = false;
+        let mut reply_outcome = ReplyOutcome::Completed;
+        let mut stream_error = None;
         while let Some(message_result) = stream.next().await {
             tokio::task::yield_now().await;
 
@@ -1001,18 +1109,47 @@ async fn execute_job(
                 Ok(AgentEvent::HistoryReplaced(updated)) => {
                     conversation = updated;
                 }
+                Ok(AgentEvent::ReplyOutcome(outcome)) => {
+                    reply_outcome = outcome;
+                }
                 Ok(_) => {}
                 Err(e) => {
                     tracing::error!("Error in services stream: {}", e);
-                    stream_error = true;
+                    stream_error = Some(e);
                     break;
                 }
             }
         }
 
+        let status = if cancel_token.is_cancelled() {
+            ScheduleRunStatus::Cancelled
+        } else if stream_error.is_some() {
+            ScheduleRunStatus::Failed
+        } else {
+            match reply_outcome {
+                ReplyOutcome::Completed => ScheduleRunStatus::Succeeded,
+                ReplyOutcome::Failed { .. } => ScheduleRunStatus::Failed,
+                ReplyOutcome::Cancelled => ScheduleRunStatus::Cancelled,
+            }
+        };
+        let failure = match (&status, stream_error, reply_outcome) {
+            (ScheduleRunStatus::Failed, Some(error), _) => Some(error),
+            (ScheduleRunStatus::Failed, None, ReplyOutcome::Failed { message }) => {
+                Some(anyhow!(message))
+            }
+            _ => None,
+        };
+        if let Err(error) = services
+            .session_manager
+            .set_run_outcome_once(&session.id, status.as_str())
+            .await
+        {
+            tracing::error!("Failed to persist scheduled run outcome: {}", error);
+        }
+
         {
             let session_duration = start_time.elapsed();
-            let exit_type = if stream_error { "error" } else { "normal" };
+            let exit_type = exit_type(status);
             let (total_tokens, message_count) = services
                 .session_manager
                 .get_session(&session.id, false)
@@ -1059,7 +1196,7 @@ async fn execute_job(
                 );
                 props.insert(
                     "status".to_string(),
-                    serde_json::Value::String("completed".to_string()),
+                    serde_json::Value::String(telemetry_status(status).to_string()),
                 );
                 props.insert(
                     "duration_seconds".to_string(),
@@ -1071,11 +1208,34 @@ async fn execute_job(
             });
         }
 
-        Ok(session.id.clone())
+        Ok(match failure {
+            Some(error) => JobExecution::failed(Some(session.id.clone()), error),
+            None if status == ScheduleRunStatus::Cancelled => {
+                JobExecution::cancelled(Some(session.id.clone()))
+            }
+            None => JobExecution::completed(session.id.clone()),
+        })
     }
     .await;
     services.release_session_if_closed(&session.id).await;
-    result
+    match result {
+        Ok(execution) => execution,
+        Err(error) => {
+            let execution = if cancel_token.is_cancelled() {
+                JobExecution::cancelled(Some(session.id.clone()))
+            } else {
+                JobExecution::failed(Some(session.id.clone()), error)
+            };
+            if let Err(persist_error) = services
+                .session_manager
+                .set_run_outcome_once(&session.id, execution.status.as_str())
+                .await
+            {
+                tracing::error!("Failed to persist scheduled run outcome: {}", persist_error);
+            }
+            execution
+        }
+    }
 }
 
 #[async_trait]
@@ -1234,6 +1394,7 @@ mod tests {
             source: replacement_source.to_string_lossy().into_owned(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1292,6 +1453,7 @@ mod tests {
             source: recipe_path.to_string_lossy().into_owned(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1324,6 +1486,7 @@ mod tests {
             source: recipe_path.to_string_lossy().into_owned(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1371,6 +1534,7 @@ mod tests {
             source: recipe_path.to_string_lossy().into_owned(),
             cron: original_cron.to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1439,6 +1603,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "* * * * * *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1488,7 +1653,16 @@ mod tests {
             ("OPENAI_CUSTOM_HEADERS", Some("")),
         ]);
         let temp_dir = tempdir().unwrap();
-        let recipe_path = create_test_recipe(temp_dir.path(), "run_now_job");
+        let recipe_path = temp_dir.path().join("run_now_job.yaml");
+        fs::write(
+            &recipe_path,
+            "version: 1.0.0\n\
+             title: run_now_job\n\
+             description: Scheduler test recipe\n\
+             prompt: test\n\
+             extensions: []\n",
+        )
+        .unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let scheduler = Scheduler::new(
             temp_dir.path().join("schedule.json"),
@@ -1501,6 +1675,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1521,17 +1696,106 @@ mod tests {
                 true,
                 crate::agents::GoosePlatform::GooseCli,
             ));
-        let _ = scheduler.run_now("run_now_job").await;
+        let error = scheduler.run_now("run_now_job").await.unwrap_err();
+        let error = error.to_string();
+        assert!(
+            error.contains("failed"),
+            "closed-port scheduled run should be reported as failed, got {error}"
+        );
+
+        let jobs = scheduler.list_scheduled_jobs().await;
+        assert_eq!(jobs[0].last_run_status, Some(ScheduleRunStatus::Failed));
 
         let sessions = session_manager
             .list_sessions_by_types(&[SessionType::Scheduled])
             .await
             .unwrap();
         assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].run_outcome.as_deref(), Some("failed"));
+        let session = session_manager
+            .get_session(&sessions[0].id, true)
+            .await
+            .unwrap();
+        let last = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| conversation.last());
+        assert!(
+            last.is_some_and(|message| message.error_kind().is_some()),
+            "the failed run should still persist the provider error; run error: {error}; last: {last:?}"
+        );
         assert!(
             !services.tracks_confirmations_for(&sessions[0].id),
             "a finished job releases its session"
         );
+    }
+
+    #[tokio::test]
+    async fn setup_error_after_kill_is_recorded_as_cancelled() {
+        let temp_dir = tempdir().unwrap();
+        let recipe_path = temp_dir.path().join("killed_job.yaml");
+        fs::write(
+            &recipe_path,
+            "version: 1.0.0\n\
+             title: killed_job\n\
+             description: Scheduler test recipe\n\
+             prompt: test\n\
+             extensions:\n\
+             \x20 - type: stdio\n\
+             \x20   name: missing\n\
+             \x20   cmd: /nonexistent/goose-scheduler-test-extension\n\
+             \x20   args: []\n",
+        )
+        .unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(
+            temp_dir.path().join("schedule.json"),
+            session_manager.clone(),
+        )
+        .await
+        .unwrap();
+        let services =
+            StateMachineServices::with_config(crate::agents::StateMachineServicesConfig::new(
+                session_manager.clone(),
+                crate::config::permission::PermissionManager::instance(),
+                Some(scheduler.clone()),
+                true,
+                crate::agents::GoosePlatform::GooseCli,
+            ));
+        let job = ScheduledJob {
+            id: "killed_job".to_string(),
+            source: recipe_path.to_string_lossy().to_string(),
+            cron: "0 0 0 1 1 *".to_string(),
+            last_run: None,
+            last_run_status: None,
+            currently_running: false,
+            paused: false,
+            current_session_id: None,
+            process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
+        };
+        let cancel_token = CancellationToken::new();
+        cancel_token.cancel();
+
+        let execution = execute_job(
+            job,
+            scheduler.jobs.clone(),
+            "killed_job".to_string(),
+            cancel_token,
+            services,
+        )
+        .await;
+
+        assert_eq!(execution.status, ScheduleRunStatus::Cancelled);
+        assert!(execution.error.is_none());
+        let sessions = session_manager
+            .list_sessions_by_types(&[SessionType::Scheduled])
+            .await
+            .unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].run_outcome.as_deref(), Some("cancelled"));
+        assert_eq!(sessions[0].schedule_id.as_deref(), Some("killed_job"));
     }
 
     #[tokio::test]
@@ -1548,7 +1812,7 @@ mod tests {
         let recipe_path = temp_dir.path().join("recipe_settings.yaml");
         fs::write(
             &recipe_path,
-            "title: recipe_settings\ndescription: Recipe with model settings\nprompt: test\nsettings:\n  goose_model: gpt-4o-mini\n  temperature: 0.3\n",
+            "title: recipe_settings\ndescription: Recipe with model settings\nprompt: test\nextensions: []\nsettings:\n  goose_model: gpt-4o-mini\n  temperature: 0.3\n",
         )
         .unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
@@ -1569,6 +1833,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "* * * * * *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1623,6 +1888,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "* * * * * *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1652,6 +1918,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1699,6 +1966,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,
@@ -1726,6 +1994,10 @@ mod tests {
         let jobs = scheduler.list_scheduled_jobs().await;
         let killed_job = jobs.iter().find(|job| job.id == "running_job").unwrap();
         assert!(!killed_job.currently_running);
+        assert_eq!(
+            killed_job.last_run_status,
+            Some(ScheduleRunStatus::Cancelled)
+        );
         assert!(killed_job.current_session_id.is_none());
         assert!(killed_job.process_start_time.is_none());
         assert!(scheduler.running_tasks.lock().await.is_empty());
@@ -1739,6 +2011,10 @@ mod tests {
         assert!(!persisted_job.currently_running);
         assert!(persisted_job.current_session_id.is_none());
         assert!(persisted_job.process_start_time.is_none());
+        assert_eq!(
+            persisted_job.last_run_status,
+            Some(ScheduleRunStatus::Cancelled)
+        );
     }
 
     #[tokio::test]
@@ -1752,6 +2028,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "0 0 0 1 1 *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: true,
             paused: false,
             current_session_id: Some("stale-session-id".to_string()),
@@ -1809,6 +2086,7 @@ mod tests {
             source: recipe_path.to_string_lossy().to_string(),
             cron: "* * * * * *".to_string(),
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,

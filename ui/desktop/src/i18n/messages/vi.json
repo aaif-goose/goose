@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Chấm dứt công việc đang chạy"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Kết quả gần nhất:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "Đã hủy"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Thất bại"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Thành công"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Lần chạy gần nhất:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "Lỗi chấm dứt công việc"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Lần chạy gần nhất đã bị hủy"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Lần chạy gần nhất thất bại"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Lần chạy gần nhất: {date}"

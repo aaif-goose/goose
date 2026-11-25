@@ -63,12 +63,14 @@ where
         if messages.last().and_then(Message::error_kind)
             == Some(MessageErrorKind::ResourceExhausted)
         {
+            emit.record_failure(MAX_TURNS_MESSAGE);
             return yielded();
         }
         if ends_turn(messages) || assistant_turn_count(messages) < self.max_turns {
             return not_applicable();
         }
 
+        emit.record_failure(MAX_TURNS_MESSAGE);
         let message =
             Message::assistant().with_error(MessageErrorKind::ResourceExhausted, MAX_TURNS_MESSAGE);
         let message = emit.message(message);

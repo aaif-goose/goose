@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "रनिंग जॉब को मार डालो"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "अंतिम परिणाम:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "रद्द किया गया"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "विफल"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "सफल"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "अंतिम रन:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "कार्य त्रुटि को समाप्त करें"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "अंतिम रन रद्द किया गया"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "अंतिम रन विफल रहा"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "अंतिम रन: {date}"

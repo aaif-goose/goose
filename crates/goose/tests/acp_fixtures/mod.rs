@@ -100,6 +100,7 @@ impl SchedulerTrait for FixtureScheduler {
                 source: recipe_path.to_string_lossy().to_string(),
                 cron: cron_schedule.unwrap_or_else(|| "0 0 * * * *".to_string()),
                 last_run: None,
+                last_run_status: None,
                 currently_running: false,
                 paused: false,
                 current_session_id: None,

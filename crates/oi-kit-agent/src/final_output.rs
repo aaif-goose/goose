@@ -272,6 +272,7 @@ where
         .clone()
         .ok_or_else(|| anyhow!("kickoff message has no id"))?;
     let kickoff = kickoff.with_visibility(true, false);
+    emit.record_failure(message.clone());
     let response = Message::assistant()
         .with_text(message)
         .with_visibility(true, false);

@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Terminar trabajo en ejecución"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Último resultado:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "Cancelado"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Fallido"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Correcto"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Última ejecución:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "Error al terminar el trabajo"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Última ejecución cancelada"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Última ejecución fallida"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Última ejecución: {date}"

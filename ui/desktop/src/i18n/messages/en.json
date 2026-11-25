@@ -3470,6 +3470,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Kill Running Job"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Last Result:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "Cancelled"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Failed"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Succeeded"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Last Run:"
   },
@@ -3694,6 +3706,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "Kill Job Error"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Last run cancelled"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Last run failed"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Last run: {date}"

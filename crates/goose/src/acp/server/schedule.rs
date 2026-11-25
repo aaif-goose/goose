@@ -3,14 +3,14 @@ use goose_acp_types::custom_requests::{
     InspectRunningJobRequest, InspectRunningJobResponse, KillRunningJobRequest,
     KillRunningJobResponse, ListScheduleSessionsRequest, ListScheduleSessionsResponse,
     ListSchedulesRequest, ListSchedulesResponse, PauseScheduleRequest, RunScheduleNowRequest,
-    RunScheduleNowResponse, RunScheduleNowStatus, ScheduledJobDto, UnpauseScheduleRequest,
-    UpdateScheduleRequest, UpdateScheduleResponse,
+    RunScheduleNowResponse, RunScheduleNowStatus, ScheduleRunStatusDto, ScheduledJobDto,
+    UnpauseScheduleRequest, UpdateScheduleRequest, UpdateScheduleResponse,
 };
 
 use super::{build_session_info, AcpConnection, ResultExt};
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::Recipe;
-use crate::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
+use crate::scheduler::{ScheduleRunStatus, ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
 use crate::scheduler_trait::SchedulerTrait;
 use std::sync::Arc;
 
@@ -114,6 +114,11 @@ fn scheduled_job_to_dto(job: ScheduledJob) -> ScheduledJobDto {
         source: job.source,
         cron: job.cron,
         last_run: job.last_run.map(|value| value.to_rfc3339()),
+        last_run_status: job.last_run_status.map(|status| match status {
+            ScheduleRunStatus::Succeeded => ScheduleRunStatusDto::Succeeded,
+            ScheduleRunStatus::Failed => ScheduleRunStatusDto::Failed,
+            ScheduleRunStatus::Cancelled => ScheduleRunStatusDto::Cancelled,
+        }),
         currently_running: job.currently_running,
         paused: job.paused,
         current_session_id: job.current_session_id,
@@ -187,6 +192,7 @@ impl AcpConnection {
             source: recipe_source.clone(),
             cron: req.cron,
             last_run: None,
+            last_run_status: None,
             currently_running: false,
             paused: false,
             current_session_id: None,

@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "终止运行中的任务"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "上次结果："
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "已取消"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "失败"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "成功"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "上次运行："
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "终止任务错误"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "上次运行已取消"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "上次运行失败"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "上次运行：{date}"

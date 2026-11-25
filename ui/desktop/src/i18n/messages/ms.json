@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Hentikan Kerja Sedang Berjalan"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Keputusan Terakhir:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "Dibatalkan"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Gagal"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Berjaya"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Larian Terakhir:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "Ralat Henti Kerja"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Larian terakhir dibatalkan"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Larian terakhir gagal"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Larian terakhir: {date}"

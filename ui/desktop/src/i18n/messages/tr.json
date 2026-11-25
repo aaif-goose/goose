@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Çalışan İşi Öldür"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Son Sonuç:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "İptal edildi"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Başarısız"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Başarılı"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Son Çalıştırma:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "İş Hatasını Öldür"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Son çalıştırma iptal edildi"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Son çalıştırma başarısız oldu"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Son çalıştırma: {date}"

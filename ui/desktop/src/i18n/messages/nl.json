@@ -3470,6 +3470,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "Lopende taak stoppen"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "Laatste resultaat:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "Geannuleerd"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "Mislukt"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "Geslaagd"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "Laatste keer:"
   },
@@ -3694,6 +3706,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "Fout bij stoppen van de taak"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "Laatste uitvoering geannuleerd"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "Laatste uitvoering mislukt"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "Laatste keer: {date}"
