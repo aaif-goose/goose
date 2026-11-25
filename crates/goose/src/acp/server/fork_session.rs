@@ -51,10 +51,8 @@ impl AcpConnection {
             .await
             .internal_err()?;
 
-        let mut goose_session = self
+        let goose_session = self
             .prepare_session_for_activation(new_session.clone(), cwd, args.mcp_servers, true)
-            .await?;
-        self.render_stored_recipe_template(&mut goose_session)
             .await?;
 
         let extension_results = self.prepare_acp_session(cx, &goose_session).await?;
