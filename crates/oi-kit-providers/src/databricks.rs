@@ -1046,7 +1046,7 @@ mod tests {
         assert_eq!(resolved.supports_vision, Some(true));
         assert_eq!(resolved.model_name, "production-chat");
 
-        let catalog_alias = ModelConfig::new("gpt-3.5-turbo")
+        let catalog_alias = ModelConfig::new("databricks-gpt-oss-120b")
             .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME);
         assert_eq!(catalog_alias.supports_vision, Some(false));
 
@@ -1055,7 +1055,8 @@ mod tests {
         assert_eq!(corrected.supports_vision, Some(true));
 
         let downgraded =
-            DatabricksProvider::resolve_vision_support(&resolved, "gpt-3.5-turbo").unwrap();
+            DatabricksProvider::resolve_vision_support(&resolved, "databricks-gpt-oss-120b")
+                .unwrap();
         assert_eq!(downgraded.supports_vision, Some(false));
     }
 
