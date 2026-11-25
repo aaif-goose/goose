@@ -171,16 +171,24 @@ impl ModelConfig {
         config.with_canonical_vision_support(provider_name)
     }
 
+    /// Takes only the output limit, so a catalog identity cannot set
+    /// `reasoning`, which would switch the OpenAI request into its
+    /// reasoning-model shape.
+    pub fn with_canonical_output_limit(mut self, provider_name: &str) -> Self {
+        if self.max_tokens.is_none() {
+            if let Some(canonical) = self.canonical_model(provider_name) {
+                self.max_tokens = canonical_output_limit(&canonical);
+            }
+        }
+        self
+    }
+
     pub fn with_canonical_limits(mut self, provider_name: &str) -> Self {
         let canonical = self.canonical_model(provider_name);
 
         if let Some(canonical) = canonical {
             if self.max_tokens.is_none() {
-                self.max_tokens = canonical
-                    .limit
-                    .output
-                    .filter(|&output| output < canonical.limit.context)
-                    .map(|output| output as i32);
+                self.max_tokens = canonical_output_limit(&canonical);
             }
             if self.reasoning.is_none() {
                 self.reasoning = canonical.reasoning;
@@ -486,6 +494,14 @@ impl ModelConfig {
             .and_then(|params| params.get(request_key))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
+}
+
+fn canonical_output_limit(canonical: &crate::canonical::CanonicalModel) -> Option<i32> {
+    canonical
+        .limit
+        .output
+        .filter(|&output| output < canonical.limit.context)
+        .map(|output| output as i32)
 }
 
 #[cfg(test)]

@@ -804,6 +804,105 @@ mod tests {
     }
 
     #[test]
+    fn bundled_perplexity_resolves_vision_from_catalog() {
+        let config = fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|c| c.name == "perplexity")
+            .expect("bundled perplexity definition");
+        assert_eq!(
+            config.catalog_provider_id.as_deref(),
+            Some("perplexity-agent")
+        );
+
+        let mut registry = crate::providers::provider_registry::ProviderRegistry::new(None);
+        register_declarative_provider(&mut registry, config, ProviderType::Declarative);
+        let entry = &registry.entries["perplexity"];
+
+        // Only the catalog row knows this model takes images; the provider
+        // name lookup and name inference have no answer for it.
+        let kimi = entry
+            .normalize_model_config(oi_kit_providers::model::ModelConfig::new(
+                "perplexity/kimi-k3",
+            ))
+            .unwrap();
+        assert_eq!(kimi.supports_vision, Some(true));
+
+        let glm = entry
+            .normalize_model_config(oi_kit_providers::model::ModelConfig::new(
+                "perplexity/glm-5.3",
+            ))
+            .unwrap();
+        assert_eq!(glm.supports_vision, Some(false));
+    }
+
+    #[tokio::test]
+    async fn bundled_perplexity_keeps_temperature_for_catalog_reasoning_models() {
+        const NEMOTRON: &str = "perplexity/nemotron-3.5-super-120b-a12b";
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/responses"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "response-1", "object": "response", "created_at": 0,
+                    "status": "completed", "model": NEMOTRON,
+                    "output": [{"type": "message", "role": "assistant", "content": [
+                        {"type": "output_text", "text": "ok"}
+                    ]}]
+                })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
+            ("GOOSE_TEMPERATURE", Some("0.5")),
+            ("GOOSE_THINKING_EFFORT", Some("max")),
+            ("PERPLEXITY_API_KEY", Some("test-key")),
+        ]);
+
+        let mut config = fixed_provider_configs()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.name == "perplexity")
+            .unwrap();
+        config.base_url = server.uri();
+        config.supports_streaming = Some(false);
+        let mut registry = crate::providers::provider_registry::ProviderRegistry::new(None);
+        register_declarative_provider(&mut registry, config, ProviderType::Declarative);
+        let entry = &registry.entries["perplexity"];
+        let model = entry
+            .normalize_model_config(
+                crate::model_config::model_config_from_user_config("perplexity", NEMOTRON).unwrap(),
+            )
+            .unwrap();
+        entry
+            .create(vec![])
+            .await
+            .unwrap()
+            .complete(
+                &model,
+                "system",
+                &[crate::conversation::message::Message::user().with_text("hi")],
+                &[],
+            )
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = requests[0].body_json().unwrap();
+        assert_eq!(body["temperature"], serde_json::json!(0.5), "{body}");
+        assert_eq!(
+            body["reasoning"],
+            serde_json::json!({"effort": "max"}),
+            "{body}"
+        );
+        assert!(body.get("include").is_none(), "{body}");
+    }
+
+    #[test]
     fn custom_provider_update_preserves_model_metadata() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_root = temp_dir.path().display().to_string();

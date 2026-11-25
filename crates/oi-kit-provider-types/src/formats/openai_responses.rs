@@ -20,6 +20,16 @@ use futures::Stream;
 use rmcp::model::{object, CallToolRequestParams, ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+/// Some Responses API backends emit `"content": null` on message items in
+/// `response.output_item.added` where OpenAI emits `[]`. Treat null as empty.
+fn deserialize_null_default_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
+}
 use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,6 +132,7 @@ pub enum ResponseOutputItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         status: Option<String>,
         role: String,
+        #[serde(default, deserialize_with = "deserialize_null_default_vec")]
         content: Vec<ResponseContentBlock>,
     },
     FunctionCall {
@@ -467,6 +478,7 @@ pub enum ResponseOutputItemInfo {
         #[serde(skip_serializing_if = "Option::is_none")]
         status: Option<String>,
         role: String,
+        #[serde(default, deserialize_with = "deserialize_null_default_vec")]
         content: Vec<ContentBlockPart>,
     },
     FunctionCall {
@@ -1496,6 +1508,34 @@ mod tests {
     use futures::StreamExt;
     use rmcp::model::CallToolRequestParams;
     use rmcp::object;
+
+    #[test]
+    fn output_item_added_accepts_null_content() {
+        // Captured from a Responses-compatible backend that sends null where
+        // OpenAI sends an empty array.
+        let data_line = r#"{"item":{"content":null,"id":"msg_2f46426c-0c0d-41b4-9c8e-8df30fd07c75","role":"assistant","status":"completed","type":"message"},"output_index":0,"sequence_number":4,"type":"response.output_item.added"}"#;
+
+        let event = parse_responses_stream_event(data_line)
+            .expect("event should parse")
+            .expect("event should not be skipped");
+
+        match event {
+            ResponsesStreamEvent::OutputItemAdded {
+                item: ResponseOutputItemInfo::Message { content, role, .. },
+                ..
+            } => {
+                assert_eq!(role, "assistant");
+                assert!(content.is_empty());
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+
+        let item: ResponseOutputItem = serde_json::from_str(
+            r#"{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":null}"#,
+        )
+        .expect("output item should parse");
+        assert!(matches!(item, ResponseOutputItem::Message { content, .. } if content.is_empty()));
+    }
 
     #[tokio::test]
     async fn test_responses_stream_ignores_keepalive_event() -> anyhow::Result<()> {
