@@ -1,0 +1,61 @@
+name: New model check
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: new-model-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOOSE_PROVIDER: anthropic
+      GOOSE_MODEL: claude-opus-5-5
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOOSE_DISABLE_KEYRING: 1
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: aaif-goose/goose
+          ref: lifei/check-new-models
+          fetch-depth: 0
+
+      - name: Install goose
+        run: |
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh -o "$RUNNER_TEMP/download_cli.sh"
+          GOOSE_BIN_DIR="$RUNNER_TEMP/agent-bin" GOOSE_VERSION= CANARY=false CONFIGURE=false bash "$RUNNER_TEMP/download_cli.sh"
+          echo "$RUNNER_TEMP/agent-bin" >> "$GITHUB_PATH"
+
+      - name: Set git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run the check
+        env:
+          REPORT: ${{ runner.temp }}/new-model-check-report.md
+        run: |
+          goose run --with-builtin developer --text "You are in a checkout of https://github.com/aaif-goose/goose on branch lifei/check-new-models. Run goose's new-model check by following scripts/new-model-check/instructions.md exactly. Wherever the instructions say to post a message, write that message as Markdown to $REPORT instead; this includes the error messages for setup failures and the short message when there are no new models."
+
+      - name: Show report
+        if: always()
+        env:
+          REPORT: ${{ runner.temp }}/new-model-check-report.md
+        run: cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: new-model-check-report
+          path: ${{ runner.temp }}/new-model-check-report.md
+          if-no-files-found: error
