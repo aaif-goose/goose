@@ -74,28 +74,37 @@ const openTemplateCatalog = async (user: ReturnType<typeof userEvent.setup>) => 
   await user.click(screen.getByText('Start from a provider template'));
 };
 
+const fill = async (
+  user: ReturnType<typeof userEvent.setup>,
+  element: HTMLElement,
+  text: string
+) => {
+  await user.click(element);
+  await user.paste(text);
+};
+
 const addHeader = async (user: ReturnType<typeof userEvent.setup>, name: string, value: string) => {
   const nameInputs = screen.getAllByPlaceholderText('Header name');
   const valueInputs = screen.getAllByPlaceholderText('Value');
-  await user.type(nameInputs[nameInputs.length - 1], name);
-  await user.type(valueInputs[valueInputs.length - 1], value);
+  await fill(user, nameInputs[nameInputs.length - 1], name);
+  await fill(user, valueInputs[valueInputs.length - 1], value);
   await user.click(screen.getByRole('button', { name: 'Add' }));
 };
 
 describe('CustomProviderForm transitions', () => {
   it('does not carry credentials from a cleared template into the next template', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSubmit = renderForm();
     await openTemplateCatalog(user);
     await user.click(screen.getByRole('button', { name: 'Use Template A' }));
 
-    await user.type(screen.getByLabelText(/API Key/), 'template-a-secret');
+    await fill(user, screen.getByLabelText(/API Key/), 'template-a-secret');
     await addHeader(user, 'Authorization', 'Bearer template-a');
 
     const pendingNames = screen.getAllByPlaceholderText('Header name');
     const pendingValues = screen.getAllByPlaceholderText('Value');
-    await user.type(pendingNames[pendingNames.length - 1], 'Authorization');
-    await user.type(pendingValues[pendingValues.length - 1], 'Bearer pending-template-a');
+    await fill(user, pendingNames[pendingNames.length - 1], 'Authorization');
+    await fill(user, pendingValues[pendingValues.length - 1], 'Bearer pending-template-a');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getByText('A header with this name already exists')).toBeInTheDocument();
 
@@ -108,7 +117,7 @@ describe('CustomProviderForm transitions', () => {
     expect(screen.queryByDisplayValue('Bearer pending-template-a')).not.toBeInTheDocument();
     expect(screen.queryByText('A header with this name already exists')).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText(/API Key/), 'template-b-secret');
+    await fill(user, screen.getByLabelText(/API Key/), 'template-b-secret');
     await addHeader(user, 'X-Template-B', 'template-b-header');
     await user.click(screen.getByRole('button', { name: 'Create Provider' }));
 
@@ -124,7 +133,7 @@ describe('CustomProviderForm transitions', () => {
 
   it('clears secrets and submit state when returning to the setup choice', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     let rejectSubmit: ((reason: Error) => void) | undefined;
     const onSubmit = vi.fn(
       () =>
@@ -135,17 +144,17 @@ describe('CustomProviderForm transitions', () => {
     renderForm(onSubmit);
     await user.click(screen.getByText('Configure manually'));
 
-    await user.type(screen.getByLabelText(/Display Name/), 'Manual Provider');
-    await user.type(screen.getByLabelText(/API URL/), 'https://manual.example.com');
-    await user.type(screen.getByLabelText(/Available Models/), 'model-a');
+    await fill(user, screen.getByLabelText(/Display Name/), 'Manual Provider');
+    await fill(user, screen.getByLabelText(/API URL/), 'https://manual.example.com');
+    await fill(user, screen.getByLabelText(/Available Models/), 'model-a');
     await user.click(screen.getByLabelText('This provider requires an API key'));
-    await user.type(screen.getByLabelText(/API Key/), 'manual-secret');
+    await fill(user, screen.getByLabelText(/API Key/), 'manual-secret');
     await addHeader(user, 'Authorization', 'Bearer manual-secret');
 
     const pendingNames = screen.getAllByPlaceholderText('Header name');
     const pendingValues = screen.getAllByPlaceholderText('Value');
-    await user.type(pendingNames[pendingNames.length - 1], 'Authorization');
-    await user.type(pendingValues[pendingValues.length - 1], 'Bearer pending-secret');
+    await fill(user, pendingNames[pendingNames.length - 1], 'Authorization');
+    await fill(user, pendingValues[pendingValues.length - 1], 'Bearer pending-secret');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await user.click(screen.getByRole('button', { name: 'Create Provider' }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
