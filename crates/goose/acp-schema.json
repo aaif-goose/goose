@@ -768,6 +768,73 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/session/working-dir/update"
     },
+    "DeleteSessionsRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sessionIds"
+      ],
+      "description": "Permanently delete multiple sessions and their messages. Sessions whose\nrun or live interaction is still active are retained and not listed.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/batch-delete"
+    },
+    "DeleteSessionsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "deletedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletedSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "deletedCount",
+        "deletedSessionIds"
+      ],
+      "description": "Ids and number of sessions removed by a batch-delete request.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/batch-delete"
+    },
+    "DeleteAllSessionsRequest_unstable": {
+      "type": "object",
+      "description": "Permanently delete every stored session.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/delete-all"
+    },
+    "DeleteAllSessionsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "deletedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletedSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "deletedCount",
+        "deletedSessionIds"
+      ],
+      "description": "Ids and number of sessions removed by a delete-all request.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/delete-all"
+    },
     "SetSessionSystemPromptRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7321,6 +7388,24 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/DeleteSessionsRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/batch-delete",
+                  "title": "DeleteSessionsRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DeleteAllSessionsRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/delete-all",
+                  "title": "DeleteAllSessionsRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/SetSessionSystemPromptRequest_unstable"
                     }
                   ],
@@ -8319,6 +8404,22 @@
                         }
                       ],
                       "title": "AppsDeleteResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DeleteSessionsResponse_unstable"
+                        }
+                      ],
+                      "title": "DeleteSessionsResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DeleteAllSessionsResponse_unstable"
+                        }
+                      ],
+                      "title": "DeleteAllSessionsResponse_unstable"
                     },
                     {
                       "allOf": [

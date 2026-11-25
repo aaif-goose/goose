@@ -3917,6 +3917,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Sessie verwijderen"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Selectie verwijderen"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Sessie dupliceren"
   },
@@ -3935,6 +3938,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "In een nieuw venster openen"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Sessie selecteren"
+  },
   "sessions.cancel": {
     "defaultMessage": "Annuleren"
   },
@@ -3952,6 +3958,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Sessie verwijderen"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Geselecteerde sessies verwijderen"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Vul een omschrijving van de sessie in"
@@ -4007,8 +4016,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Sessie \"{name}\" verwijderen mislukt: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sessie} other {# sessies}} succesvol verwijderd"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sessie verwijderd"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sessie} other {# sessies}} succesvol verwijderd"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Sessie dupliceren mislukt: {error}"
@@ -4846,5 +4861,20 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "Afbeelding uit het bericht halen"
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Alle sessies verwijderen"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Weet u zeker dat u ALLE chatsessies definitief wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Alle sessies verwijderen"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Weet u zeker dat u {count, plural, one {# sessie} other {# sessies}} wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Kan sessies niet verwijderen: {error}"
   }
 }

@@ -3917,6 +3917,12 @@
   "sessions.action.delete": {
     "defaultMessage": "Delete session"
   },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Delete all sessions"
+  },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Delete selected"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Duplicate session"
   },
@@ -3935,6 +3941,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Open in new window"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Select session"
+  },
   "sessions.cancel": {
     "defaultMessage": "Cancel"
   },
@@ -3952,6 +3961,18 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Delete Session"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Are you sure you want to permanently delete ALL chat sessions? This action cannot be undone."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Delete All Sessions"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "{count,plural,one{Are you sure you want to delete # session? This action cannot be undone.} other{Are you sure you want to delete # sessions? This action cannot be undone.}}"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Delete Selected Sessions"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Enter session description"
@@ -4001,6 +4022,12 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Search history..."
   },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Failed to delete sessions: {error}"
+  },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count,plural,one{# session deleted successfully} other{# sessions deleted successfully}}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Copied to clipboard"
   },
@@ -4009,6 +4036,9 @@
   },
   "sessions.toast.deleted": {
     "defaultMessage": "Session deleted successfully"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count,plural,one{# session deleted successfully} other{# sessions deleted successfully}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Failed to duplicate session: {error}"

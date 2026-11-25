@@ -3812,6 +3812,12 @@
   "sessions.action.delete": {
     "defaultMessage": "Oturumu sil"
   },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Tüm oturumları sil"
+  },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Seçilenleri sil"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Yinelenen oturum"
   },
@@ -3830,6 +3836,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Yeni pencerede aç"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Oturumu seç"
+  },
   "sessions.cancel": {
     "defaultMessage": "İptal"
   },
@@ -3844,6 +3853,18 @@
   },
   "sessions.delete.message": {
     "defaultMessage": "\"{name}\" oturumunu silmek istediğinizden emin misiniz? Bu eylem geri alınamaz."
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "TÜM sohbet oturumlarını kalıcı olarak silmek istediğinizden emin misiniz? Bu eylem geri alınamaz."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Tüm Oturumları Sil"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "{count, plural, one {# oturumu} other {# oturumu}} silmek istediğinizden emin misiniz? Bu eylem geri alınamaz."
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Seçilen Oturumları Sil"
   },
   "sessions.delete.title": {
     "defaultMessage": "Oturumu Sil"
@@ -3902,8 +3923,17 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "\"{name}\" oturumu silinemedi: {error}"
   },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Oturumlar silinemedi: {error}"
+  },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# oturum} other {# oturum}} başarıyla silindi"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Oturum başarıyla silindi"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# oturum} other {# oturum}} başarıyla silindi"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Oturum kopyalanamadı: {error}"

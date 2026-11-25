@@ -186,6 +186,39 @@ pub struct UpdateWorkingDirRequest {
     pub working_dir: String,
 }
 
+/// Permanently delete multiple sessions and their messages. Sessions whose
+/// run or live interaction is still active are retained and not listed.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/session/batch-delete", response = DeleteSessionsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSessionsRequest {
+    pub session_ids: Vec<String>,
+}
+
+/// Ids and number of sessions removed by a batch-delete request.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSessionsResponse {
+    pub deleted_count: u32,
+    pub deleted_session_ids: Vec<String>,
+}
+
+/// Permanently delete every stored session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/session/delete-all",
+    response = DeleteAllSessionsResponse
+)]
+pub struct DeleteAllSessionsRequest {}
+
+/// Ids and number of sessions removed by a delete-all request.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteAllSessionsResponse {
+    pub deleted_count: u32,
+    pub deleted_session_ids: Vec<String>,
+}
+
 /// How a session system prompt update should be applied.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

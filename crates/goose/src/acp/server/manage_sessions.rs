@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 impl AcpConnection {
     pub(super) async fn on_update_working_dir(
@@ -104,6 +105,153 @@ impl AcpConnection {
             .internal_err()?;
         self.services.release_session(&session_id).await;
         Ok(DeleteSessionResponse::new())
+    }
+
+    pub(super) async fn on_delete_sessions(
+        &self,
+        req: DeleteSessionsRequest,
+    ) -> Result<DeleteSessionsResponse, agent_client_protocol::Error> {
+        let session_ids = req.session_ids;
+        let (tracked, live_stopped) = self.wind_down_before_delete(&session_ids).await;
+        // Runs or live interactions still going past the cap keep their rows;
+        // deleting under them would let them finish against a missing row.
+        // Only the sessions that lose their row are reported as deleted.
+        let deletable = Self::deletable_sessions(&session_ids, &tracked, &live_stopped);
+        let deleted = self.commit_delete(&session_ids, &deletable).await?;
+        Ok(DeleteSessionsResponse {
+            deleted_count: deleted,
+            deleted_session_ids: deletable,
+        })
+    }
+
+    pub(super) async fn on_delete_all_sessions(
+        &self,
+    ) -> Result<DeleteAllSessionsResponse, agent_client_protocol::Error> {
+        // The snapshot is taken before the gate closes, so a session created
+        // while the wind-down is running keeps its row.
+        let pre_sessions = self
+            .services
+            .session_manager
+            .list_all_sessions()
+            .await
+            .internal_err()?;
+        let pre_session_ids: Vec<String> =
+            pre_sessions.into_iter().map(|session| session.id).collect();
+        let (tracked, live_stopped) = self.wind_down_before_delete(&pre_session_ids).await;
+        // Runs or live interactions still going past the cap keep their rows
+        // (their prompts stay live); a retry picks them up once they finish.
+        let deletable = Self::deletable_sessions(&pre_session_ids, &tracked, &live_stopped);
+        let deleted = self.commit_delete(&pre_session_ids, &deletable).await?;
+        Ok(DeleteAllSessionsResponse {
+            deleted_count: deleted,
+            deleted_session_ids: deletable,
+        })
+    }
+
+    /// Closes prompt admission, cancels the registered runs and stops live
+    /// interactions, then waits for the wind-down under one shared cap, so a
+    /// stalled delegated stream cannot hang the delete request. Returns the
+    /// tracked runs and the sessions whose live interaction stopped in time.
+    async fn wind_down_before_delete(
+        &self,
+        session_ids: &[String],
+    ) -> (
+        Vec<(String, tokio::sync::watch::Receiver<bool>)>,
+        HashSet<String>,
+    ) {
+        const WIND_DOWN_CAP: std::time::Duration = std::time::Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + WIND_DOWN_CAP;
+        // Close prompt admission and cancel the registered runs as one step:
+        // a prompt that passed the gate is tracked, and none can register
+        // before the delete commits.
+        let tracked = self.runs().begin_session_delete(session_ids);
+        let mut live_stopped = HashSet::new();
+        for session_id in session_ids {
+            let stopped = tokio::time::timeout_at(
+                deadline,
+                self.live_voice.stop_session_interaction(session_id),
+            )
+            .await
+            .is_ok();
+            if stopped {
+                live_stopped.insert(session_id.clone());
+            }
+        }
+        // Deleting rows while a prompt task is still winding down lets its
+        // remaining effects write into a missing session, so wait for the
+        // tasks to signal completion instead of only cancelling them.
+        if !tracked.is_empty() {
+            let _ = tokio::time::timeout_at(
+                deadline,
+                futures::future::join_all(
+                    tracked
+                        .iter()
+                        .map(|(_, completion)| Self::wait_for_run_exit(completion.clone())),
+                ),
+            )
+            .await;
+        }
+        (tracked, live_stopped)
+    }
+
+    /// Sessions whose live interaction stopped within the cap and whose run
+    /// signalled completion; only these may lose their rows.
+    fn deletable_sessions(
+        session_ids: &[String],
+        tracked: &[(String, tokio::sync::watch::Receiver<bool>)],
+        live_stopped: &HashSet<String>,
+    ) -> Vec<String> {
+        session_ids
+            .iter()
+            .filter(|session_id| {
+                live_stopped.contains(session_id.as_str())
+                    && tracked
+                        .iter()
+                        .find(|(id, _)| id == *session_id)
+                        .map(|(_, completion)| *completion.borrow())
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Deletes the rows, then reopens prompt admission for the sessions that
+    /// kept theirs. Deleted IDs stay closed: a prompt that already passed the
+    /// admission fast path must not register on a row that is gone. When the
+    /// delete fails nothing was removed (single transaction), so every
+    /// requested session reopens.
+    async fn commit_delete(
+        &self,
+        session_ids: &[String],
+        deletable: &[String],
+    ) -> Result<u32, agent_client_protocol::Error> {
+        let result = self
+            .services
+            .session_manager
+            .delete_sessions(deletable)
+            .await
+            .internal_err();
+        let deleted: HashSet<&str> = deletable.iter().map(String::as_str).collect();
+        let failed = result.is_err();
+        for session_id in session_ids {
+            if failed || !deleted.contains(session_id.as_str()) {
+                self.runs().clear_session_deleting(session_id);
+            }
+        }
+        let count = result? as u32;
+        for session_id in deletable {
+            self.services.release_session(session_id).await;
+        }
+        Ok(count)
+    }
+
+    /// Resolves once the run signals completion (prompt task fully finished).
+    async fn wait_for_run_exit(mut completion: tokio::sync::watch::Receiver<bool>) {
+        while !*completion.borrow_and_update() {
+            if completion.changed().await.is_err() {
+                break;
+            }
+        }
     }
 
     pub(super) async fn on_export_session(

@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Supprimer la session"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Supprimer la sélection"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Dupliquer la session"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Ouvrir dans une nouvelle fenêtre"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Sélectionner une session"
+  },
   "sessions.cancel": {
     "defaultMessage": "Annuler"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Supprimer la session"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Supprimer les sessions sélectionnées"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Saisissez la description de la session"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Échec de la suppression de la session « {name} » : {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# session supprimée avec succès} other {# sessions supprimées avec succès}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Session supprimée avec succès"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# session supprimée avec succès} other {# sessions supprimées avec succès}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Échec de la duplication de la session : {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Seuil de compactage automatique dépassé : la conversation est compactée avant l'envoi de la prochaine requête."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Supprimer toutes les sessions"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Voulez-vous vraiment supprimer définitivement TOUTES les sessions de discussion ? Cette action est irréversible."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Supprimer toutes les sessions"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Voulez-vous vraiment supprimer {count, plural, one {# session} other {# sessions}} ? Cette action est irréversible."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Échec de la suppression des sessions : {error}"
   }
 }

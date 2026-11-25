@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "セッションを削除"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "選択したセッションを削除"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "セッションを複製"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "新しいウィンドウで開く"
   },
+  "sessions.action.select": {
+    "defaultMessage": "セッションを選択"
+  },
   "sessions.cancel": {
     "defaultMessage": "キャンセル"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "セッションを削除"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "選択したセッションを削除"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "セッションの説明を入力"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "セッション「{name}」を削除できませんでした: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, other {# 個のセッションを削除しました}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "セッションを削除しました"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, other {# 個のセッションを削除しました}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "セッションを複製できませんでした: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "自動コンパクション閾値を超えています。次のリクエストを送信する前に会話がコンパクションされます。"
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "すべてのセッションを削除"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "すべてのチャットセッションを完全に削除してもよろしいですか？この操作は元に戻せません。"
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "すべてのセッションを削除"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "{count, plural, other {# 個のセッション}}を削除してもよろしいですか？この操作は元に戻せません。"
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "セッションの削除に失敗しました: {error}"
   }
 }

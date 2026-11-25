@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "删除会话"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "删除所选"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "复制会话"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新窗口中打开"
   },
+  "sessions.action.select": {
+    "defaultMessage": "选择会话"
+  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "删除会话"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "删除所选会话"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "输入会话描述"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "删除会话“{name}”失败：{error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "已成功删除 {count, plural, one {# 个会话} other {# 个会话}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "会话删除成功"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "已成功删除 {count, plural, one {# 个会话} other {# 个会话}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "复制会话失败：{error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "已超过自动压缩阈值：在发送下一个请求之前会先压缩对话。"
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "删除所有会话"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "确定要永久删除所有聊天会话吗？此操作无法撤销。"
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "删除所有会话"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "确定要删除 {count, plural, one {# 个会话} other {# 个会话}}吗？此操作无法撤销。"
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "删除会话失败：{error}"
   }
 }

@@ -36,6 +36,8 @@ import {
 } from '../ui/dropdown-menu';
 import {
   acpDeleteSession,
+  acpDeleteAllSessions,
+  acpDeleteSessions,
   acpExportSession,
   acpForkSession,
   acpImportSession,
@@ -120,6 +122,42 @@ const i18n = defineMessages({
   editSessionName: { id: 'sessions.action.editName', defaultMessage: 'Edit session name' },
   duplicateSession: { id: 'sessions.action.duplicate', defaultMessage: 'Duplicate session' },
   deleteSession: { id: 'sessions.action.delete', defaultMessage: 'Delete session' },
+  selectSession: { id: 'sessions.action.select', defaultMessage: 'Select session' },
+  deleteAllSessions: {
+    id: 'sessions.action.deleteAll',
+    defaultMessage: 'Delete all sessions',
+  },
+  deleteSelectedSessions: {
+    id: 'sessions.action.deleteSelected',
+    defaultMessage: 'Delete selected',
+  },
+  deleteAllTitle: { id: 'sessions.deleteAll.title', defaultMessage: 'Delete All Sessions' },
+  deleteAllMessage: {
+    id: 'sessions.deleteAll.message',
+    defaultMessage:
+      'Are you sure you want to permanently delete ALL chat sessions? This action cannot be undone.',
+  },
+  deleteSelectedTitle: {
+    id: 'sessions.deleteSelected.title',
+    defaultMessage: 'Delete Selected Sessions',
+  },
+  deleteSelectedMessage: {
+    id: 'sessions.deleteSelected.message',
+    defaultMessage:
+      'Are you sure you want to delete {count, plural, one {# session} other {# sessions}}? This action cannot be undone.',
+  },
+  batchDeleteSuccess: {
+    id: 'sessions.toast.batchDeleted',
+    defaultMessage: '{count, plural, one {# session} other {# sessions}} deleted successfully',
+  },
+  deleteAllSuccess: {
+    id: 'sessions.toast.deletedAll',
+    defaultMessage: '{count, plural, one {# session} other {# sessions}} deleted successfully',
+  },
+  batchDeleteFailed: {
+    id: 'sessions.toast.batchDeleteFailed',
+    defaultMessage: 'Failed to delete sessions: {error}',
+  },
   exportSession: { id: 'sessions.action.export', defaultMessage: 'Export session' },
   exportAsJson: { id: 'sessions.action.exportJson', defaultMessage: 'JSON' },
   exportAsMarkdown: { id: 'sessions.action.exportMarkdown', defaultMessage: 'Markdown' },
@@ -298,6 +336,10 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
   // Delete confirmation modal state
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<SessionListItem | null>(null);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
+  const [showBatchDeleteConfirmation, setShowBatchDeleteConfirmation] = useState(false);
+  const [showDeleteAllConfirmation, setShowDeleteAllConfirmation] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   const [includeAcpSessions, setIncludeAcpSessions] = useState(
     () => localStorage.getItem(INCLUDE_ACP_SESSIONS_KEY) === 'true'
@@ -523,6 +565,13 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     setShowEditModal(true);
   }, []);
 
+  const cleanupDeletedSession = useCallback((sessionId: string) => {
+    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId } }));
+    cancelAcpPermissionRequestsForSession(sessionId);
+    cancelAcpElicitationRequestsForSession(sessionId);
+    acpChatSessionActions.deleteSnapshot(sessionId);
+  }, []);
+
   const handleDeleteSession = useCallback((session: SessionListItem) => {
     setSessionToDelete(session);
     setShowDeleteConfirmation(true);
@@ -556,12 +605,12 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     try {
       await acpDeleteSession(sessionToDeleteId);
       toast.success(intl.formatMessage(i18n.deleteSuccess));
-      window.dispatchEvent(
-        new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: sessionToDeleteId } })
-      );
-      cancelAcpPermissionRequestsForSession(sessionToDeleteId);
-      cancelAcpElicitationRequestsForSession(sessionToDeleteId);
-      acpChatSessionActions.deleteSnapshot(sessionToDeleteId);
+      cleanupDeletedSession(sessionToDeleteId);
+      setSelectedSessionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionToDeleteId);
+        return next;
+      });
     } catch (error) {
       console.error('Error deleting session:', error);
       toast.error(
@@ -572,12 +621,71 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
       );
     }
     await loadSessions();
-  }, [sessionToDelete, loadSessions, intl]);
+  }, [sessionToDelete, loadSessions, intl, cleanupDeletedSession]);
 
   const handleCancelDelete = useCallback(() => {
     setShowDeleteConfirmation(false);
     setSessionToDelete(null);
   }, []);
+
+  const toggleSessionSelection = useCallback((sessionId: string) => {
+    setSelectedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleConfirmBatchDelete = useCallback(async () => {
+    setShowBatchDeleteConfirmation(false);
+    const ids = Array.from(selectedSessionIds);
+    if (ids.length === 0) return;
+
+    setSelectedSessionIds(new Set());
+    setIsBatchDeleting(true);
+
+    try {
+      const { deletedCount, deletedSessionIds } = await acpDeleteSessions(ids);
+      deletedSessionIds.forEach((id) => cleanupDeletedSession(id));
+      toast.success(intl.formatMessage(i18n.batchDeleteSuccess, { count: deletedCount }));
+    } catch (error) {
+      console.error('Error deleting selected sessions:', error);
+      toast.error(
+        intl.formatMessage(i18n.batchDeleteFailed, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    } finally {
+      setIsBatchDeleting(false);
+    }
+    await loadSessions();
+  }, [selectedSessionIds, loadSessions, intl, cleanupDeletedSession]);
+
+  const handleConfirmDeleteAll = useCallback(async () => {
+    setShowDeleteAllConfirmation(false);
+    setIsBatchDeleting(true);
+    setSelectedSessionIds(new Set());
+
+    try {
+      const { deletedCount, deletedSessionIds } = await acpDeleteAllSessions();
+      deletedSessionIds.forEach((id) => cleanupDeletedSession(id));
+      toast.success(intl.formatMessage(i18n.deleteAllSuccess, { count: deletedCount }));
+    } catch (error) {
+      console.error('Error deleting all sessions:', error);
+      toast.error(
+        intl.formatMessage(i18n.batchDeleteFailed, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    } finally {
+      setIsBatchDeleting(false);
+    }
+    await loadSessions();
+  }, [loadSessions, intl, cleanupDeletedSession]);
 
   const handleExportSession = useCallback(
     async (session: SessionListItem, format: SessionExportFormat) => {
@@ -664,6 +772,8 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
 
   const SessionItem = React.memo(function SessionItem({
     session,
+    isSelected,
+    onToggleSelect,
     onEditClick,
     onDuplicateClick,
     onDeleteClick,
@@ -671,6 +781,8 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     onOpenInNewWindow,
   }: {
     session: SessionListItem;
+    isSelected: boolean;
+    onToggleSelect: (sessionId: string) => void;
     onEditClick: (session: SessionListItem) => void;
     onDuplicateClick: (session: SessionListItem) => void;
     onDeleteClick: (session: SessionListItem) => void;
@@ -726,6 +838,15 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
         onClick={handleCardClick}
         className="h-full py-3 px-4 hover:shadow-default cursor-pointer transition-all duration-150 flex flex-col justify-between relative group"
       >
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(session.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-3 right-3 w-4 h-4 cursor-pointer accent-red-500 z-10"
+          title={intl.formatMessage(i18n.selectSession)}
+          aria-label={intl.formatMessage(i18n.selectSession)}
+        />
         <div>
           <h3 className="text-base break-words line-clamp-2 w-full mb-1">{displayName}</h3>
           {session.sessionType === 'acp' && (
@@ -893,6 +1014,8 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
                 <SessionItem
                   key={session.id}
                   session={session}
+                  isSelected={selectedSessionIds.has(session.id)}
+                  onToggleSelect={toggleSessionSelection}
                   onEditClick={handleEditSession}
                   onDuplicateClick={handleDuplicateSession}
                   onDeleteClick={handleDeleteSession}
@@ -944,6 +1067,8 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
                           <SessionItem
                             key={session.id}
                             session={session}
+                            isSelected={selectedSessionIds.has(session.id)}
+                            onToggleSelect={toggleSessionSelection}
                             onEditClick={handleEditSession}
                             onDuplicateClick={handleDuplicateSession}
                             onDeleteClick={handleDeleteSession}
@@ -980,6 +1105,30 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
               <div className="flex justify-between items-center mb-1">
                 <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
                 <div className="flex items-center gap-2">
+                  {selectedSessionIds.size > 0 && (
+                    <Button
+                      onClick={() => setShowBatchDeleteConfirmation(true)}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2 text-red-500 hover:text-red-600"
+                      disabled={isBatchDeleting}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {intl.formatMessage(i18n.deleteSelectedSessions)} ({selectedSessionIds.size})
+                    </Button>
+                  )}
+                  {sessions.length > 0 && (
+                    <Button
+                      onClick={() => setShowDeleteAllConfirmation(true)}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2 text-red-500 hover:text-red-600"
+                      disabled={isBatchDeleting}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {intl.formatMessage(i18n.deleteAllSessions)}
+                    </Button>
+                  )}
                   <Button
                     onClick={handleImportClick}
                     variant="outline"
@@ -1101,6 +1250,30 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
         confirmVariant="destructive"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      <ConfirmationModal
+        isOpen={showBatchDeleteConfirmation}
+        title={intl.formatMessage(i18n.deleteSelectedTitle)}
+        message={intl.formatMessage(i18n.deleteSelectedMessage, {
+          count: selectedSessionIds.size,
+        })}
+        confirmLabel={intl.formatMessage(i18n.deleteSelectedSessions)}
+        cancelLabel={intl.formatMessage(i18n.cancel)}
+        confirmVariant="destructive"
+        onConfirm={handleConfirmBatchDelete}
+        onCancel={() => setShowBatchDeleteConfirmation(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={showDeleteAllConfirmation}
+        title={intl.formatMessage(i18n.deleteAllTitle)}
+        message={intl.formatMessage(i18n.deleteAllMessage)}
+        confirmLabel={intl.formatMessage(i18n.deleteAllSessions)}
+        cancelLabel={intl.formatMessage(i18n.cancel)}
+        confirmVariant="destructive"
+        onConfirm={handleConfirmDeleteAll}
+        onCancel={() => setShowDeleteAllConfirmation(false)}
       />
     </>
   );

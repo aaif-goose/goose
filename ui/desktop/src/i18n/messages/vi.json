@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Xóa phiên"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Xóa mục đã chọn"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Nhân bản phiên"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Chọn phiên"
+  },
   "sessions.cancel": {
     "defaultMessage": "Hủy"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Xóa phiên"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Xóa các phiên đã chọn"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Nhập mô tả phiên"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Không thể xóa phiên làm việc \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "Đã xóa thành công {count, plural, one {# phiên} other {# phiên}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Đã xóa phiên làm việc thành công"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "Đã xóa thành công {count, plural, one {# phiên} other {# phiên}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Không thể nhân bản phiên làm việc: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Đã vượt ngưỡng nén tự động: hội thoại sẽ được nén trước khi gửi yêu cầu tiếp theo."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Xóa tất cả phiên"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Bạn có chắc chắn muốn xóa vĩnh viễn TẤT CẢ các phiên trò chuyện không? Hành động này không thể hoàn tác."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Xóa tất cả phiên"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Bạn có chắc chắn muốn xóa {count, plural, one {# phiên} other {# phiên}} không? Hành động này không thể hoàn tác."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Không thể xóa các phiên: {error}"
   }
 }

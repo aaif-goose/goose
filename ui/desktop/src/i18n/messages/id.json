@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Hapus sesi"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Hapus yang dipilih"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Gandakan sesi"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka di jendela baru"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Pilih sesi"
+  },
   "sessions.cancel": {
     "defaultMessage": "Batal"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Hapus Sesi"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Hapus Sesi Terpilih"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Masukkan deskripsi sesi"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Gagal menghapus sesi \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sesi} other {# sesi}} berhasil dihapus"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sesi berhasil dihapus"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sesi} other {# sesi}} berhasil dihapus"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Gagal menggandakan sesi: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Melewati ambang pemadatan otomatis: percakapan dipadatkan sebelum permintaan berikutnya dikirim."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Hapus semua sesi"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Apakah Anda yakin ingin menghapus SEMUA sesi obrolan secara permanen? Tindakan ini tidak dapat dibatalkan."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Hapus Semua Sesi"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Apakah Anda yakin ingin menghapus {count, plural, one {# sesi} other {# sesi}}? Tindakan ini tidak dapat dibatalkan."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Gagal menghapus sesi: {error}"
   }
 }

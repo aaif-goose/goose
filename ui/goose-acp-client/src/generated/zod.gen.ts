@@ -265,6 +265,35 @@ export const zUpdateWorkingDirRequest_unstable = z.object({
 });
 
 /**
+ * Permanently delete multiple sessions and their messages. Sessions whose
+ * run or live interaction is still active are retained and not listed.
+ */
+export const zDeleteSessionsRequest_unstable = z.object({
+    sessionIds: z.array(z.string())
+});
+
+/**
+ * Ids and number of sessions removed by a batch-delete request.
+ */
+export const zDeleteSessionsResponse_unstable = z.object({
+    deletedCount: z.int().gte(0),
+    deletedSessionIds: z.array(z.string())
+});
+
+/**
+ * Permanently delete every stored session.
+ */
+export const zDeleteAllSessionsRequest_unstable = z.record(z.string(), z.unknown());
+
+/**
+ * Ids and number of sessions removed by a delete-all request.
+ */
+export const zDeleteAllSessionsResponse_unstable = z.object({
+    deletedCount: z.int().gte(0),
+    deletedSessionIds: z.array(z.string())
+});
+
+/**
  * How a session system prompt update should be applied.
  */
 export const zSessionSystemPromptMode = z.union([
@@ -2370,6 +2399,8 @@ export const zExtRequest = z.object({
             zAppsImportRequest_unstable,
             zAppsDeleteRequest_unstable,
             zUpdateWorkingDirRequest_unstable,
+            zDeleteSessionsRequest_unstable,
+            zDeleteAllSessionsRequest_unstable,
             zSetSessionSystemPromptRequest_unstable,
             zSteerSessionRequest_unstable,
             zLiveVoiceAvailabilityRequest_unstable,
@@ -2489,6 +2520,8 @@ export const zExtResponse = z.union([
                 zAppsExportResponse_unstable,
                 zAppsImportResponse_unstable,
                 zAppsDeleteResponse_unstable,
+                zDeleteSessionsResponse_unstable,
+                zDeleteAllSessionsResponse_unstable,
                 zSteerSessionResponse_unstable,
                 zLiveVoiceAvailabilityResponse_unstable,
                 zLiveVoiceStartResponse_unstable,
