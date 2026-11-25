@@ -206,6 +206,9 @@ fn zai_effort_level(provider_name: &str, model_config: &ModelConfig) -> Option<S
 /// it off takes an explicit disable. Always-on models reject that disable.
 pub fn requires_explicit_thinking_disable(provider_name: &str, model_name: &str) -> bool {
     canonical_thinking_mode(provider_name, model_name) == Some(ThinkingMode::Adaptive)
+        || (provider_name == "zai"
+            && maybe_get_canonical_model(provider_name, model_name)
+                .is_some_and(|model| model.reasoning_toggle))
 }
 
 fn canonical_reasoning(provider_name: &str, model_config: &ModelConfig) -> Option<bool> {
