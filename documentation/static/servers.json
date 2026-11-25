@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -534,6 +534,23 @@
     "environmentVariables": []
   },
   {
+    "id": "paymos-mcp",
+    "name": "Paymos",
+    "description": "Accept stablecoin (USDT, USDC, USD1, DAI) and gold-backed XAUT payments across 13 networks: 191 merchant, sandbox, and webhook verification tools via OAuth 2.1",
+    "command": "npx -y @paymos/mcp connect",
+    "link": "https://github.com/Paymos-labs/mcp",
+    "installation_notes": "Connects via OAuth 2.1 PKCE to https://app.paymos.io/connect/merchant-mcp (188 remote workspace tools + 3 offline tools). See https://paymos.io/docs/mcp.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "PAYMOS_WEBHOOK_SECRET",
+        "description": "Optional whsec_... webhook signing secret for offline verify_webhook_signature checks",
+        "required": false
+      }
+    ]
+  },
+  {
     "id": "pdf_read",
     "name": "PDF Reader",
     "description": "Read large and complex PDF documents",
@@ -774,7 +791,7 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
@@ -784,26 +801,25 @@
     "environmentVariables": []
   },
   {
-  "id": "scholar-sidekick",
-  "name": "Scholar Sidekick",
-  "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
-  "command": "npx -y scholar-sidekick-mcp@latest",
-  "link": "https://github.com/mlava/scholar-sidekick-mcp",
-  "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
-  "is_builtin": false,
-  "endorsed": false,
-  "environmentVariables": [
-    {
-      "name": "SCHOLAR_API_KEY",
-      "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
-      "required": false
-    },
-    {
-      "name": "RAPIDAPI_KEY",
-      "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
-      "required": false
-    }
-  ]
-}
-
+    "id": "scholar-sidekick",
+    "name": "Scholar Sidekick",
+    "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
+    "command": "npx -y scholar-sidekick-mcp@latest",
+    "link": "https://github.com/mlava/scholar-sidekick-mcp",
+    "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "SCHOLAR_API_KEY",
+        "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
+        "required": false
+      },
+      {
+        "name": "RAPIDAPI_KEY",
+        "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
+        "required": false
+      }
+    ]
+  }
 ]
