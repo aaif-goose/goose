@@ -180,9 +180,13 @@ fn zai_effort_level(provider_name: &str, model_config: &ModelConfig) -> Option<S
     }
     let model = maybe_get_canonical_model(provider_name, &model_config.model_name)?;
     let levels = model.reasoning_efforts?;
-    let effort = model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::Max);
+    let effort = if model_config.reasoning == Some(false) {
+        ThinkingEffort::Off
+    } else {
+        model_config
+            .thinking_effort()
+            .unwrap_or(ThinkingEffort::Max)
+    };
     if effort == ThinkingEffort::Off && model.reasoning_toggle {
         return None;
     }

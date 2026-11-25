@@ -9,9 +9,13 @@ fn zai_request(model: &str, effort: Option<ThinkingEffort>, messages: &[Message]
     if let Some(effort) = effort {
         config = config.with_thinking_effort(effort);
     }
+    send(&config, messages)
+}
+
+fn send(config: &ModelConfig, messages: &[Message]) -> Value {
     create_request(
         "zai",
-        &config,
+        config,
         "system",
         messages,
         &[],
@@ -56,6 +60,15 @@ fn glm_5_3_sends_its_effort_levels() {
 #[test]
 fn glm_5_2_off_turns_thinking_off() {
     let payload = zai_request("glm-5.2", Some(ThinkingEffort::Off), &hello());
+    assert!(payload.get("thinking").is_none());
+    assert!(payload.get("output_config").is_none());
+}
+
+#[test]
+fn glm_5_2_honors_reasoning_disabled() {
+    let mut config = ModelConfig::new("glm-5.2").with_thinking_effort(ThinkingEffort::High);
+    config.reasoning = Some(false);
+    let payload = send(&config, &hello());
     assert!(payload.get("thinking").is_none());
     assert!(payload.get("output_config").is_none());
 }
