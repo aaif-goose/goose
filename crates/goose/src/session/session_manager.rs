@@ -1,8 +1,12 @@
 use crate::agents::Container;
+use crate::config::extensions::get_enabled_extensions_with_config;
 use crate::config::paths::Paths;
+use crate::config::Config;
 use crate::config::ExtensionConfig;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
+use crate::conversation::message::{
+    ActionRequiredData, Message, MessageContent, MessageMetadata, MessageUsage, TokenState,
+};
 use crate::conversation::Conversation;
 use crate::providers::base::CostSource;
 use crate::providers::base::Provider;
@@ -16,6 +20,8 @@ use crate::session::session_naming::{
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use indexmap::IndexMap;
+use oi_kit_agent::tool_approval::APPROVAL_OPERATION;
+use oi_kit_agent::tool_call_state::EXECUTABLE_KEY;
 use oi_kit_providers::conversation::token_usage::Usage;
 use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Role;
@@ -2852,6 +2858,7 @@ impl SessionStorage {
     ) -> Result<Session> {
         let normalized = super::import_formats::convert_to_goose_session_json(json)?;
         let import: Session = serde_json::from_str(&normalized)?;
+        let config = Config::global();
 
         let session = self
             .create_session(
@@ -2859,22 +2866,27 @@ impl SessionStorage {
                 import.working_dir.clone(),
                 import.name.clone(),
                 session_type_override.unwrap_or(import.session_type),
-                import.goose_mode,
+                config.get_goose_mode().unwrap_or_default(),
             )
             .await?;
 
+        let mut extension_data = import.extension_data;
+        EnabledExtensionsState::new(get_enabled_extensions_with_config(config))
+            .to_extension_data(&mut extension_data)?;
+
         let mut builder = session_manager
             .update(&session.id)
-            .extension_data(import.extension_data)
+            .extension_data(extension_data)
             .usage(import.usage)
             .accumulated_usage(import.accumulated_usage)
             .accumulated_cost(import.accumulated_cost)
             .schedule_id(import.schedule_id)
-            .recipe(import.recipe)
-            .user_recipe_values(import.user_recipe_values)
+            .recipe(import.recipe.map(|recipe| Recipe {
+                retry: None,
+                ..recipe
+            }))
             .system_prompt_override(import.system_prompt_override)
-            .system_prompt_extras(import.system_prompt_extras)
-            .container(import.container);
+            .system_prompt_extras(import.system_prompt_extras);
 
         if import.user_set_name {
             builder = builder.user_provided_name(import.name.clone());
@@ -2883,7 +2895,7 @@ impl SessionStorage {
         builder.apply().await?;
 
         if let Some(conversation) = import.conversation {
-            self.replace_conversation(&session.id, &conversation)
+            self.replace_conversation(&session.id, &sanitize_imported_conversation(conversation))
                 .await?;
         }
 
@@ -3056,8 +3068,6 @@ impl SessionStorage {
         tool_call_id: &str,
         patch: serde_json::Value,
     ) -> Result<()> {
-        use crate::conversation::message::MessageContent;
-
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let rows = sqlx::query_as::<_, (i64, String)>(
@@ -3111,10 +3121,49 @@ fn merge_tool_meta(
     serde_json::Value::Object(base)
 }
 
+fn sanitize_imported_conversation(mut conversation: Conversation) -> Conversation {
+    conversation.messages_mut().retain_mut(|message| {
+        if let Some(inference) = message.metadata.inference.as_mut() {
+            inference.provider_session_id = None;
+        }
+        let had_approval_note = message
+            .metadata
+            .operations
+            .as_mut()
+            .is_some_and(|operations| operations.remove(APPROVAL_OPERATION).is_some());
+        if message
+            .metadata
+            .operations
+            .as_ref()
+            .is_some_and(|operations| operations.is_empty())
+        {
+            message.metadata.operations = None;
+        }
+        let had_content = !message.content.is_empty();
+        message.content.retain_mut(|content| match content {
+            MessageContent::ActionRequired(action) => !matches!(
+                action.data,
+                ActionRequiredData::ToolConfirmation { .. }
+                    | ActionRequiredData::ToolConfirmationResponse { .. }
+            ),
+            MessageContent::ToolRequest(request) => {
+                if let Some(serde_json::Value::Object(meta)) = request.tool_meta.as_mut() {
+                    meta.remove(EXECUTABLE_KEY);
+                }
+                true
+            }
+            _ => true,
+        });
+        !((had_content || had_approval_note) && message.content.is_empty())
+    });
+    conversation
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::{Message, MessageContent};
+    use crate::agents::{RetryConfig, SuccessCheck};
+    use crate::conversation::message::{InferenceMetadata, Message, MessageContent};
     use crate::providers::base::MessageStream;
     use oi_kit_providers::conversation::token_usage::{CostSource, ProviderUsage};
     use oi_kit_providers::errors::ProviderError;
@@ -5168,12 +5217,233 @@ mod tests {
             Some("custom prompt")
         );
         assert_eq!(imported.system_prompt_extras["extra"], "extra text");
-        assert_eq!(imported.container, Some(Container::new("container-1")));
+        assert_eq!(imported.container, None);
 
         let conversation = imported.conversation.unwrap();
         assert_eq!(conversation.messages().len(), 2);
         assert_eq!(conversation.messages()[0].role, Role::User);
         assert_eq!(conversation.messages()[1].role, Role::Assistant);
+    }
+
+    #[tokio::test]
+    async fn test_import_session_uses_local_runtime_settings() {
+        let config = Config::global();
+        let local_mode = config.get_goose_mode().unwrap_or_default();
+        let shared_mode = if local_mode == GooseMode::Auto {
+            GooseMode::Approve
+        } else {
+            GooseMode::Auto
+        };
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let shared = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Shared chat".to_string(),
+                SessionType::User,
+                shared_mode,
+            )
+            .await
+            .unwrap();
+
+        let mut extension_data = ExtensionData::new();
+        EnabledExtensionsState::new(vec![ExtensionConfig::External(
+            oi_kit_agent::extension::ExtensionConfig::stdio("shared", "/tmp/payload", "", 300u64),
+        )])
+        .to_extension_data(&mut extension_data)
+        .unwrap();
+        let recipe = Recipe::builder()
+            .title("Shared recipe")
+            .description("Recipe description")
+            .instructions("Follow the recipe")
+            .retry(RetryConfig {
+                max_retries: 1,
+                checks: vec![SuccessCheck::Shell {
+                    command: "/tmp/payload".to_string(),
+                }],
+                on_failure: Some("/tmp/payload".to_string()),
+                timeout_seconds: None,
+                on_failure_timeout_seconds: None,
+            })
+            .build()
+            .unwrap();
+        sm.update(&shared.id)
+            .extension_data(extension_data)
+            .recipe(Some(recipe))
+            .user_recipe_values(Some(HashMap::from([(
+                "secret".to_string(),
+                "/tmp/secret".to_string(),
+            )])))
+            .container(Some(Container::new("container-1")))
+            .apply()
+            .await
+            .unwrap();
+        sm.add_message(
+            &shared.id,
+            &Message::assistant()
+                .with_text("hi")
+                .with_inference(InferenceMetadata {
+                    provider: "claude-acp".to_string(),
+                    requested_model: "default".to_string(),
+                    resolved_model: None,
+                    provider_session_id: Some("provider-session".to_string()),
+                }),
+        )
+        .await
+        .unwrap();
+
+        let exported = sm.export_session(&shared.id).await.unwrap();
+        let imported = sm.import_session(&exported, None).await.unwrap();
+
+        assert_eq!(imported.goose_mode, local_mode);
+        assert_eq!(
+            EnabledExtensionsState::from_extension_data(&imported.extension_data)
+                .unwrap()
+                .extensions,
+            get_enabled_extensions_with_config(config)
+                .into_iter()
+                .filter(crate::config::extensions::is_extension_available)
+                .collect::<Vec<_>>()
+        );
+        let recipe = imported.recipe.unwrap();
+        assert_eq!(recipe.title, "Shared recipe");
+        assert!(recipe.retry.is_none());
+        assert_eq!(imported.user_recipe_values, None);
+        assert_eq!(imported.container, None);
+        assert_eq!(
+            imported.conversation.unwrap().messages()[0]
+                .metadata
+                .inference,
+            Some(InferenceMetadata {
+                provider: "claude-acp".to_string(),
+                requested_model: "default".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn test_import_session_drops_approval_state() {
+        const SHARED_JSON: &str = r#"{
+            "id": "20260101_1",
+            "name": "Shared chat",
+            "working_dir": "/tmp/test",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "goose_mode": "approve",
+            "extension_data": {},
+            "message_count": 5,
+            "conversation": [
+                {
+                    "role": "user",
+                    "created": 1767225600,
+                    "metadata": { "userVisible": true, "agentVisible": true },
+                    "content": [{ "type": "text", "text": "hello" }]
+                },
+                {
+                    "role": "assistant",
+                    "created": 1767225601,
+                    "metadata": { "userVisible": true, "agentVisible": true },
+                    "content": [
+                        {
+                            "type": "toolRequest",
+                            "id": "approved",
+                            "toolCall": {
+                                "status": "success",
+                                "value": { "name": "shell", "arguments": { "command": "id" } }
+                            },
+                            "_meta": {
+                                "goose.executable": true,
+                                "goose.toolSummary.title": "Run id"
+                            }
+                        },
+                        {
+                            "type": "toolRequest",
+                            "id": "answered",
+                            "toolCall": {
+                                "status": "success",
+                                "value": { "name": "shell", "arguments": { "command": "true" } }
+                            },
+                            "_meta": { "goose.executable": false }
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "created": 1767225602,
+                    "metadata": { "userVisible": true, "agentVisible": false },
+                    "content": [{
+                        "type": "actionRequired",
+                        "data": {
+                            "actionType": "toolConfirmation",
+                            "id": "answered",
+                            "toolName": "shell",
+                            "arguments": { "command": "true" },
+                            "prompt": null
+                        }
+                    }]
+                },
+                {
+                    "role": "user",
+                    "created": 1767225603,
+                    "metadata": { "userVisible": false, "agentVisible": false },
+                    "content": [{
+                        "type": "actionRequired",
+                        "data": {
+                            "actionType": "toolConfirmationResponse",
+                            "id": "answered",
+                            "permission": "always_allow"
+                        }
+                    }]
+                },
+                {
+                    "role": "user",
+                    "created": 1767225604,
+                    "metadata": {
+                        "userVisible": false,
+                        "agentVisible": false,
+                        "operations": { "tool_approval": { "seen": ["approved"] } }
+                    },
+                    "content": []
+                }
+            ]
+        }"#;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let imported = sm.import_session(SHARED_JSON, None).await.unwrap();
+
+        let conversation = imported.conversation.unwrap();
+        assert_eq!(conversation.messages().len(), 2);
+        let tool_meta: Vec<_> = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| &message.content)
+            .map(|content| match content {
+                MessageContent::ToolRequest(request) => request.tool_meta.clone(),
+                MessageContent::ActionRequired(_) => panic!("approval message was imported"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            tool_meta,
+            vec![
+                None,
+                Some(serde_json::json!({ "goose.toolSummary.title": "Run id" })),
+                Some(serde_json::json!({})),
+            ]
+        );
+        assert!(conversation
+            .messages()
+            .iter()
+            .all(|message| message.metadata.operations.is_none()));
+        assert!(crate::agents::state_machine::pending_tool_confirmations(&conversation).is_empty());
+        assert!(
+            !crate::agents::state_machine::has_unapplied_tool_confirmation_response(&conversation)
+        );
     }
 
     #[tokio::test]

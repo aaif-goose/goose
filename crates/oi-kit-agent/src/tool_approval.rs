@@ -16,7 +16,7 @@ use crate::operation::{
 };
 use crate::tool_call_state::{add_error_response, pending_tool_requests, request_executable};
 
-const APPROVAL_OPERATION: &str = "tool_approval";
+pub const APPROVAL_OPERATION: &str = "tool_approval";
 const SEEN: &str = "seen";
 
 pub const DEFAULT_DECLINED_MESSAGE: &str = "The user declined to run this tool.";
