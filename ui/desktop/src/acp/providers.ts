@@ -395,24 +395,6 @@ function selectCurrentValue(kind: unknown): unknown {
   return undefined;
 }
 
-function offersThinkingEffort(configOptions: unknown, effort: ThinkingEffort): boolean {
-  if (!Array.isArray(configOptions)) {
-    return false;
-  }
-
-  const option = configOptions.find(
-    (candidate) => candidate && typeof candidate === 'object' && candidate.id === 'thinking_effort'
-  );
-  if (!option || !Array.isArray(option.options)) {
-    return false;
-  }
-
-  return option.options.some(
-    (choice: unknown) =>
-      !!choice && typeof choice === 'object' && 'value' in choice && choice.value === effort
-  );
-}
-
 /**
  * Switch the provider (and model) for an active session via ACP config options.
  *
@@ -423,8 +405,7 @@ export async function acpSetSessionProviderModel(
   sessionId: string,
   providerId: string,
   modelId?: string | null,
-  thinkingEffort?: ThinkingEffort | null,
-  defaultThinkingEffort?: ThinkingEffort | null
+  thinkingEffort?: ThinkingEffort | null
 ): Promise<AppliedSessionProviderModel> {
   const client = await getAcpClient();
   let response = await client.connection.agent.request(methods.agent.session.setConfigOption, {
@@ -439,16 +420,11 @@ export async function acpSetSessionProviderModel(
       value: modelId,
     });
   }
-  const effort =
-    thinkingEffort ??
-    (defaultThinkingEffort && offersThinkingEffort(response.configOptions, defaultThinkingEffort)
-      ? defaultThinkingEffort
-      : null);
-  if (effort != null) {
+  if (thinkingEffort != null) {
     response = await client.connection.agent.request(methods.agent.session.setConfigOption, {
       sessionId,
       configId: 'thinking_effort',
-      value: effort,
+      value: thinkingEffort,
     });
   }
 

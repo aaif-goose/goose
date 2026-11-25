@@ -4574,6 +4574,9 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Recommended"
   },
+  "switchModelModal.selectEffortLevel": {
+    "defaultMessage": "Select effort level"
+  },
   "switchModelModal.selectModel": {
     "defaultMessage": "Please select a model"
   },
@@ -4600,9 +4603,6 @@
   },
   "switchModelModal.thinkingEffort": {
     "defaultMessage": "Thinking Effort"
-  },
-  "switchModelModal.thinkingEffortDefault": {
-    "defaultMessage": "Default"
   },
   "switchModelModal.thinkingEffortOff": {
     "defaultMessage": "Off - No extended thinking"

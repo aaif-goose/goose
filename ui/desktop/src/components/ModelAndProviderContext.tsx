@@ -101,8 +101,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
             sessionId,
             providerName,
             modelName,
-            model.request_params?.thinking_effort ?? null,
-            model.reasoning ? 'off' : null
+            model.request_params?.thinking_effort ?? null
           );
           patchAcpSessionProviderModel(sessionId, applied);
         }

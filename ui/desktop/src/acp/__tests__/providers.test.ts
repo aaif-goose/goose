@@ -146,45 +146,6 @@ describe('ACP providers', () => {
     });
   });
 
-  it.each([
-    { offered: ['off', 'low', 'medium', 'high', 'max'], sendsOff: true },
-    { offered: ['low', 'high', 'max'], sendsOff: false },
-  ])(
-    'sends the fallback thinking effort only when the model offers it ($offered)',
-    async ({ offered, sendsOff }) => {
-      const afterModel = {
-        configOptions: [
-          selectConfigOption('provider', 'zai'),
-          selectConfigOption('model', 'glm-5.3'),
-          {
-            ...selectConfigOption('thinking_effort', offered[offered.length - 1]),
-            options: offered.map((value) => ({ value, name: value })),
-          },
-        ],
-      };
-      const client = {
-        connection: {
-          agent: {
-            request: vi.fn().mockResolvedValue(afterModel),
-          },
-        },
-      };
-      vi.mocked(getAcpClient).mockResolvedValue(
-        client as unknown as Awaited<ReturnType<typeof getAcpClient>>
-      );
-
-      await acpSetSessionProviderModel('session-1', 'zai', 'glm-5.3', null, 'off');
-
-      expect(client.connection.agent.request).toHaveBeenCalledTimes(sendsOff ? 3 : 2);
-      if (sendsOff) {
-        expect(client.connection.agent.request).toHaveBeenLastCalledWith(
-          methods.agent.session.setConfigOption,
-          { sessionId: 'session-1', configId: 'thinking_effort', value: 'off' }
-        );
-      }
-    }
-  );
-
   it('rechecks an uninstalled ACP adapter without trying to start it', async () => {
     const entry = providerEntry({ configured: false, available: false });
     const client = {

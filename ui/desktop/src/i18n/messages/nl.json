@@ -4574,8 +4574,8 @@
   "switchModelModal.recommended": {
     "defaultMessage": "Aanbevolen"
   },
-  "switchModelModal.thinkingEffortDefault": {
-    "defaultMessage": "Standaard"
+  "switchModelModal.selectEffortLevel": {
+    "defaultMessage": "Kies hoeveel denkwerk"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Kies een model"

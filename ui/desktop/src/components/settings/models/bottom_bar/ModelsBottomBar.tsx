@@ -205,8 +205,7 @@ export default function ModelsBottomBar({
       ? {
           name: recent.model,
           provider: recent.provider,
-          reasoning: true,
-          request_params: savedEffort ? { thinking_effort: savedEffort } : undefined,
+          request_params: { thinking_effort: savedEffort ?? 'off' },
         }
       : { name: recent.model, provider: recent.provider };
     const success = await changeModel(sessionId, modelArg);
