@@ -168,6 +168,8 @@ When a hook runs, goose writes a JSON payload to the command's stdin. Every payl
 | `matcher_context` | String the rule's `matcher` is tested against (for example, the tool name on tool events or the prompt text on `UserPromptSubmit`). |
 | `tool_name` | Name of the tool, on tool events. |
 | `tool_input` | Input arguments passed to the tool, on tool events. |
+| `tool_output` | The result of the call, on `PostToolUse`, and on `PostToolUseFailure` when the tool returned a result. The MCP tool result object: `content` (the content blocks), `structuredContent` when the tool returned any, `isError`, and `_meta` when present. Text over `GOOSE_MAX_TOOL_RESPONSE_SIZE` has already been replaced by a pointer to a file before the hook runs; goose adds no other limit, so a hook that logs it should expect large payloads. |
+| `error` | Why the call failed, on `PostToolUseFailure`: the error message when the call itself failed, or the text of the result when the tool returned one flagged as an error. Empty when that result has no text. |
 | `message` | Prompt text the user submitted, on `UserPromptSubmit`. |
 | `last_assistant_message` | Final assistant text for the turn, on `Stop` when there is assistant output. |
 | `working_dir` | Working directory of the session, on tool events. |
@@ -187,6 +189,11 @@ Example payload for a tool event:
   "matcher_context": "shell",
   "tool_name": "shell",
   "tool_input": { "command": "rg TODO" },
+  "tool_output": {
+    "resultType": "complete",
+    "content": [{ "type": "text", "text": "src/main.rs:12: // TODO" }],
+    "isError": false
+  },
   "working_dir": "/Users/you/project"
 }
 ```

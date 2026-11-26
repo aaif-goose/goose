@@ -300,13 +300,33 @@ async fn emit_post_tool_use(
         _ => HookEvent::PostToolUseFailure,
     };
     if hook_manager.has_hooks(event) {
-        let context = HookContext::new(event, session_id)
+        let mut context = HookContext::new(event, session_id)
             .with_tool(tool_name.to_string(), tool_input.cloned())
             .with_tool_call_id(tool_call_id)
             .with_working_dir(working_dir.to_string());
+        if let Ok(result) = result {
+            if let Ok(output) = serde_json::to_value(result) {
+                context = context.with_tool_output(output);
+            }
+        }
+        if event == HookEvent::PostToolUseFailure {
+            context = context.with_error(failure_message(result));
+        }
         hook_manager.emit(event, context).await;
     }
     event
+}
+
+fn failure_message(result: &std::result::Result<CallToolResult, ErrorData>) -> String {
+    match result {
+        Ok(result) => result
+            .content
+            .iter()
+            .filter_map(|content| content.as_text().map(|text| text.text.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Err(error) => error.message.to_string(),
+    }
 }
 
 #[derive(Clone, Copy)]

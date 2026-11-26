@@ -2,7 +2,7 @@ use anyhow::Result;
 use rmcp::model::{Annotations, Role, TextContent};
 use serde_json::Value;
 
-use super::calculator_extension::{value, ADD};
+use super::calculator_extension::{value, ADD, DIVIDE};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
@@ -1320,6 +1320,79 @@ async fn post_tool_use_reports_the_current_call_when_a_provider_reuses_its_id() 
     let posts = env.payloads("post.log");
     assert_eq!(posts.len(), 2);
     assert_eq!(posts[1]["tool_input"], value(2));
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_carries_the_result_the_model_receives() -> Result<()> {
+    let env = RecordingHookEnv::new(&[
+        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+
+    pipeline.run(["add one"]).await?;
+
+    let posts = env.payloads("post.log");
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["tool_output"]["content"][0]["text"], "result: 1");
+    assert!(posts[0].get("error").is_none());
+    assert!(env.payloads("postfail.log").is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_failure_carries_the_error_of_a_failed_call() -> Result<()> {
+    let env = RecordingHookEnv::new(&[(
+        "PostToolUseFailure",
+        "",
+        "postfail.sh",
+        RECORD_POST_FAILURE_SCRIPT,
+    )]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    api.on("divide by zero").call(DIVIDE, value(0));
+    api.on("calculator operation failed").reply("failed");
+
+    pipeline.run(["divide by zero"]).await?;
+
+    let failures = env.payloads("postfail.log");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0]["error"], "calculator operation failed");
+    assert!(failures[0].get("tool_output").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_tool_use_failure_carries_the_text_and_result_of_an_error_result() -> Result<()> {
+    let env = RecordingHookEnv::new(&[(
+        "PostToolUseFailure",
+        "",
+        "postfail.sh",
+        RECORD_POST_FAILURE_SCRIPT,
+    )]);
+    let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_goose_mode(GooseMode::Auto)
+        .await;
+
+    pipeline.run([BANG_COMMAND_NO_TOOL_RUNS]).await?;
+
+    let failures = env.payloads("postfail.log");
+    assert_eq!(failures.len(), 1);
+    let error = failures[0]["error"].as_str().expect("error is a string");
+    assert!(error.contains("is not available"), "{error}");
+    assert_eq!(failures[0]["tool_output"]["isError"], true);
+    assert_eq!(failures[0]["tool_output"]["content"][0]["text"], error);
     Ok(())
 }
 
