@@ -4544,6 +4544,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose {toolName} को कॉल करना चाहेंगे। अनुमति दें?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "गतिविधि"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "पूरा हुआ"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count} टूल कॉल"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "विफल"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "अधूरा"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "पिछला चरण: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "चल रहा है"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} चल रहा है…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "अनुमोदन की प्रतीक्षा है"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "अपडेट बैकग्राउंड में अपने आप डाउनलोड हो जाएगा."
   },

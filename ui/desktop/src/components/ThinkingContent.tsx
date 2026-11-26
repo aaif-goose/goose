@@ -1,30 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MarkdownContent from './MarkdownContent';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import Expand from './ui/Expand';
-import { AppEvents } from '../constants/events';
-import type { ShowThinking } from '../utils/settings';
+import { useShowThinking } from '../hooks/useShowThinking';
 
 interface ThinkingContentProps {
   content: string;
 }
 
 export default function ThinkingContent({ content }: ThinkingContentProps) {
-  const [showThinking, setShowThinking] = useState<ShowThinking | null>(null);
+  const showThinking = useShowThinking();
   const [manualToggle, setManualToggle] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const loadShowThinking = () => {
-      window.electron.getSetting('showThinking').then(setShowThinking);
-    };
-
-    loadShowThinking();
-    window.addEventListener(AppEvents.SHOW_THINKING_CHANGED, loadShowThinking);
-
-    return () => {
-      window.removeEventListener(AppEvents.SHOW_THINKING_CHANGED, loadShowThinking);
-    };
-  }, []);
 
   // Wait for the setting so 'never' and 'always' do not flash a collapsed block.
   if (showThinking === null || showThinking === 'never') {

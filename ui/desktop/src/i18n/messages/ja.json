@@ -4544,6 +4544,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Gooseが{toolName}を実行しようとしています。許可しますか？"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "アクティビティ"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "完了"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "ツール呼び出し {count} 件"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "失敗"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "未完了"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "直前のステップ: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "実行中"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "{tool} を実行中…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "承認待ち"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "アップデートはバックグラウンドで自動的にダウンロードされます。"
   },

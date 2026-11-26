@@ -4544,6 +4544,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose souhaite appeler {toolName}. Autoriser ?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Activité"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Terminé"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count, plural, one {# appel d’outil} other {# appels d’outils}}"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Échec"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Incomplet"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Dernière étape : {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "En cours"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "Exécution de {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "En attente d’approbation"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose téléchargera la mise à jour en arrière-plan et l'installera lors de votre prochaine fermeture ou redémarrage."
   },

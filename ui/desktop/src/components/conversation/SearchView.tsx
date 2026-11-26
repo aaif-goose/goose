@@ -33,6 +33,12 @@ interface SearchContainerElement extends HTMLDivElement {
   _searchHighlighter: SearchHighlighter | null;
 }
 
+const SearchVisibilityContext = React.createContext(false);
+
+export function useSearchVisibility() {
+  return React.useContext(SearchVisibilityContext);
+}
+
 /**
  * SearchView wraps content in a searchable container with a search bar that appears
  * when Cmd/Ctrl+F is pressed. Supports case-sensitive search and result navigation.
@@ -399,7 +405,9 @@ export const SearchView: React.FC<PropsWithChildren<SearchViewProps>> = ({
           showNavigation={showNavigation}
         />
       )}
-      {children}
+      <SearchVisibilityContext.Provider value={isSearchVisible}>
+        {children}
+      </SearchVisibilityContext.Provider>
     </div>
   );
 };

@@ -4544,6 +4544,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose ingin memanggil {toolName}. Izinkan?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Aktivitas"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Selesai"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count} pemanggilan alat"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Gagal"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Belum selesai"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Langkah terakhir: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Sedang berjalan"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "Menjalankan {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Menunggu persetujuan"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Goose akan mengunduh pembaruan di latar belakang dan menginstalnya saat Anda keluar atau memulai ulang berikutnya."
   },

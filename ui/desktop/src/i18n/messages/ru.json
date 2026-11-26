@@ -4544,6 +4544,33 @@
   "toolConfirmation.gooseWouldLikeToCallWithName": {
     "defaultMessage": "Goose хочет вызвать {toolName}. Разрешить?"
   },
+  "turnActivity.activity": {
+    "defaultMessage": "Действия"
+  },
+  "turnActivity.completed": {
+    "defaultMessage": "Завершено"
+  },
+  "turnActivity.count": {
+    "defaultMessage": "{count, plural, one {# вызов инструмента} few {# вызова инструментов} many {# вызовов инструментов} other {# вызова инструментов}}"
+  },
+  "turnActivity.failed": {
+    "defaultMessage": "Ошибка"
+  },
+  "turnActivity.incomplete": {
+    "defaultMessage": "Не завершено"
+  },
+  "turnActivity.lastTool": {
+    "defaultMessage": "Последний шаг: {tool}"
+  },
+  "turnActivity.running": {
+    "defaultMessage": "Выполняется"
+  },
+  "turnActivity.runningTool": {
+    "defaultMessage": "Выполняется {tool}…"
+  },
+  "turnActivity.waiting": {
+    "defaultMessage": "Ожидает подтверждения"
+  },
   "updateSection.autoDownload": {
     "defaultMessage": "Обновление будет автоматически скачано в фоновом режиме."
   },
