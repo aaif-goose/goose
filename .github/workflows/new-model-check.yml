@@ -109,6 +109,7 @@ jobs:
         run: |
           git checkout -b "$FIX_BRANCH"
           git am fix/fix.patch
+          git rebase main --exec "git commit --amend --no-edit --reset-author"
           git push origin "$FIX_BRANCH"
           gh pr create --base main --head "$FIX_BRANCH" \
             --title "$(head -n 1 fix/pr.md)" \
