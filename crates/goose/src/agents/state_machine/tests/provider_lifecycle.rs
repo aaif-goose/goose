@@ -1,14 +1,107 @@
 use anyhow::Result;
+use futures::TryStreamExt;
+use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::{named_values, value, ADD, ADD_VALUES};
 use super::dummy_api::ProviderFeatures;
 use super::pipeline::MessageKind::{Agent, Error, Thinking, ToolCall, ToolResponse};
 use super::pipeline::{test_pipeline, test_pipeline_with};
-use crate::agents::AgentEvent;
+use crate::agents::{AgentEvent, SessionConfig, StateMachineServices};
 use crate::conversation::fix_conversation;
-use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
+use crate::conversation::message::{
+    Message, MessageContent, MessageErrorKind, SystemNotificationType,
+};
 use crate::conversation::Conversation;
 use rmcp::model::{Annotations, Role, TextContent};
+
+#[tokio::test]
+async fn retry_prompt_preserves_the_saved_prompt_and_completed_tool() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("add one and answer").call(ADD, value(1));
+    api.on("result: 1").http_error(403);
+
+    let result = pipeline.run(["add one and answer"]).await?;
+    result.assert_message(-2, ToolResponse, "result: 1");
+    let error_id = StateMachineServices::retryable_prompt_error(result.conversation()).unwrap();
+    let config = SessionConfig {
+        id: pipeline.session_id.clone(),
+        schedule_id: None,
+        max_turns: None,
+    };
+    let services = pipeline.services().await;
+    assert!(services
+        .retry_prompt(config.clone(), "stale-error", CancellationToken::new())
+        .await?
+        .is_none());
+
+    api.on("result: 1").reply("The total is 1.");
+    services
+        .retry_prompt(config, error_id, CancellationToken::new())
+        .await?
+        .expect("retryable failed turn")
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let session = pipeline.session().await?;
+    let conversation = session.conversation.unwrap();
+    assert_eq!(
+        conversation.last().unwrap().as_concat_text(),
+        "The total is 1."
+    );
+    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(
+        conversation
+            .iter()
+            .filter(|message| message.as_concat_text() == "add one and answer")
+            .count(),
+        1
+    );
+    assert!(!conversation
+        .iter()
+        .any(|message| message.id.as_deref() == Some(error_id)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn retry_progress_allows_cancelling_before_the_next_provider_request() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("hit rate limit").http_error(429);
+    let cancel = CancellationToken::new();
+    let mut stream = pipeline
+        .services()
+        .await
+        .reply(
+            Message::user().with_text("hit rate limit"),
+            SessionConfig {
+                id: pipeline.session_id.clone(),
+                schedule_id: None,
+                max_turns: None,
+            },
+            Some(cancel.clone()),
+        )
+        .await?;
+
+    let mut saw_retry = false;
+    while let Some(event) = stream.try_next().await? {
+        if let AgentEvent::Message(message) = event {
+            if message.content.iter().any(|content| {
+                matches!(
+                    content,
+                    MessageContent::SystemNotification(status)
+                        if status.notification_type == SystemNotificationType::ProgressMessage
+                        && status.msg.contains("Retrying provider request")
+                )
+            }) {
+                saw_retry = true;
+                cancel.cancel();
+            }
+        }
+    }
+
+    assert!(saw_retry);
+    assert_eq!(api.call_count(), 1);
+    Ok(())
+}
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {
@@ -532,6 +625,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .iter()
         .any(|event| matches!(event, AgentEvent::MessageUsage { .. })));
     result.assert_message(-2, Agent, "partial response");
+    assert!(StateMachineServices::retryable_prompt_error(result.conversation()).is_none());
     let error = result
         .conversation()
         .messages()

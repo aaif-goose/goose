@@ -23,6 +23,8 @@ export interface UseChatSessionResult {
   ) => Promise<boolean>;
   stopStreaming: () => void;
   retrySessionLoad: () => Promise<void>;
+  retryFailedPrompt: () => Promise<void>;
+  canRetryFailedPrompt: boolean;
   refreshSession: () => Promise<void>;
   sessionLoadError?: string;
   tokenState: TokenState;

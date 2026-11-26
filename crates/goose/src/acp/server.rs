@@ -409,6 +409,7 @@ fn meta_tags(meta: Option<&Meta>) -> Result<Vec<(String, String)>, agent_client_
 fn agent_capabilities_meta() -> Option<Meta> {
     let mut goose = serde_json::Map::new();
     goose.insert("recipeParameterScopes".to_string(), serde_json::json!({}));
+    goose.insert("retryPrompt".to_string(), serde_json::json!({}));
     if cfg!(feature = "local-inference") {
         goose.insert("localInference".to_string(), serde_json::json!({}));
     }
@@ -2237,19 +2238,22 @@ impl AcpConnection {
                     .get_session(session_id, true)
                     .await
                     .internal_err_ctx("Failed to load session")?;
-                if let Some(error) = session
-                    .conversation
-                    .as_ref()
-                    .and_then(Conversation::last)
-                    .filter(|message| message.error_kind().is_some())
-                    .and_then(|message| {
+                if let Some(conversation) = session.conversation.as_ref() {
+                    let error = conversation.last().and_then(|message| {
                         message
                             .content
                             .iter()
                             .find_map(prompt_error_from_message_content)
-                    })
-                {
-                    return Err(error);
+                    });
+                    if let Some(mut error) = error {
+                        if let (Some(error_id), Some(serde_json::Value::Object(data))) = (
+                            StateMachineServices::retryable_prompt_error(conversation),
+                            error.data.as_mut(),
+                        ) {
+                            data.insert("retryPromptErrorId".to_string(), error_id.into());
+                        }
+                        return Err(error);
+                    }
                 }
             }
             if let Some(chain) = chain_tracker.close_current_chain() {
@@ -2278,6 +2282,21 @@ impl AcpConnection {
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
         let session_id = args.session_id.0.to_string();
+        let retry_error_id = args
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("goose"))
+            .and_then(|goose| goose.get("retryPromptErrorId"))
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|id| !id.is_empty() && args.prompt.is_empty())
+                    .ok_or_else(|| {
+                        agent_client_protocol::Error::invalid_params()
+                            .data("A retry requires an error message ID and an empty prompt")
+                    })
+            })
+            .transpose()?;
 
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
@@ -2327,9 +2346,23 @@ impl AcpConnection {
             max_turns: None,
         };
 
-        let reply = self
-            .services
-            .reply(user_message, session_config, Some(cancel_token.clone()));
+        let reply = async {
+            if let Some(error_id) = retry_error_id {
+                let stream = self
+                    .services
+                    .retry_prompt(session_config, error_id, cancel_token.clone())
+                    .await
+                    .internal_err_ctx("Error retrying agent reply")?;
+                return stream.ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("The failed turn is no longer available to retry")
+                });
+            }
+            self.services
+                .reply(user_message, session_config, Some(cancel_token.clone()))
+                .await
+                .internal_err_ctx("Error getting agent reply")
+        };
         #[cfg(feature = "otel")]
         let reply = opentelemetry::context::FutureExt::with_context(reply, trace_cx.clone());
         let stream = match reply.await {
@@ -2337,10 +2370,19 @@ impl AcpConnection {
             Err(error) => {
                 self.clear_active_run(&session_id, &run_id).await;
                 let _ = Self::send_active_run_update(cx, &args.session_id, None);
-                return Err(agent_client_protocol::Error::internal_error()
-                    .data(format!("Error getting agent reply: {error}")));
+                return Err(error);
             }
         };
+        if let Some(error_id) = retry_error_id {
+            let meta = Meta::from_iter([(
+                "goose".to_string(),
+                serde_json::json!({ "removedPromptErrorId": error_id }),
+            )]);
+            cx.send_notification(SessionNotification::new(
+                args.session_id.clone(),
+                SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().meta(meta)),
+            ))?;
+        }
         let forward =
             self.forward_agent_stream(cx, &args.session_id, &session_id, &cancel_token, stream);
         #[cfg(feature = "otel")]

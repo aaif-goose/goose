@@ -210,6 +210,23 @@ describe('acpChatSessionStore', () => {
     expect(snapshot.sessionLoadError).toBeUndefined();
   });
 
+  it('removes only the previous error when a retry starts on the server', () => {
+    const id = sessionId('retry-turn');
+    const prompt = message('prompt', 'Hello');
+    const error = { ...message('failed-turn', 'Provider error'), role: 'assistant' } as const;
+    acpChatSessionActions.setMessages(id, [prompt, error]);
+
+    const snapshot = acpChatSessionActions.applyAcpSessionNotification({
+      sessionId: id,
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: { goose: { removedPromptErrorId: error.id } },
+      },
+    });
+
+    expect(snapshot.messages).toEqual([prompt]);
+  });
+
   it('keeps multiple session snapshots isolated', () => {
     const firstSessionId = sessionId('session-1');
     const secondSessionId = sessionId('session-2');

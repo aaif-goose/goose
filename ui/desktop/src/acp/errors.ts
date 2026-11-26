@@ -62,6 +62,13 @@ export function isAcpTurnError(error: unknown): boolean {
   return asAcpJsonRpcError(error)?.data?.reason === TURN_FAILED_REASON;
 }
 
+export function acpRetryPromptErrorId(error: unknown): string | undefined {
+  const data = asAcpJsonRpcError(error)?.data;
+  return data?.reason === TURN_FAILED_REASON && typeof data.retryPromptErrorId === 'string'
+    ? data.retryPromptErrorId
+    : undefined;
+}
+
 export function formatAcpError(error: unknown): string {
   if (error instanceof RequestError && error.code === AUTH_REQUIRED_CODE) {
     return 'Sign in to your provider, then try again.';

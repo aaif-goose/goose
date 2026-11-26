@@ -23,6 +23,7 @@ export interface AcpChatSessionSnapshot {
   progressMessage: string | undefined;
   chatState: ChatState;
   sessionLoadError: string | undefined;
+  retryPromptErrorId?: string;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
@@ -81,7 +82,11 @@ export interface AcpChatSessionActions {
 
   setSessionMetadata(sessionId: string, session: Session | undefined): AcpChatSessionSnapshot;
   startSessionLoad(sessionId: string): AcpChatSessionSnapshot;
-  finishSessionLoad(sessionId: string, session: Session): AcpChatSessionSnapshot;
+  finishSessionLoad(
+    sessionId: string,
+    session: Session,
+    retryPromptErrorId?: string
+  ): AcpChatSessionSnapshot;
   failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
   setSessionLoadError(
     sessionId: string,
@@ -110,7 +115,11 @@ export interface AcpChatSessionActions {
     promptAttemptId: string
   ): AcpChatSessionSnapshot | undefined;
   waitForPromptCancellation(sessionId: string, promptAttemptId: string): Promise<void>;
-  finishPromptAttemptIfCurrent(sessionId: string, promptAttemptId: string): boolean;
+  finishPromptAttemptIfCurrent(
+    sessionId: string,
+    promptAttemptId: string,
+    retryPromptErrorId?: string
+  ): boolean;
   clearActivePromptAttempt(sessionId: string): AcpChatSessionSnapshot | undefined;
   isCurrentPromptAttempt(sessionId: string, promptAttemptId: string): boolean;
 }
@@ -214,15 +223,21 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     const entry = getOrCreateEntry(sessionId);
     resetReplayState(entry);
     entry.sessionLoadError = undefined;
+    entry.retryPromptErrorId = undefined;
     entry.progressMessage = undefined;
     entry.chatState = ChatState.LoadingConversation;
     return notify(sessionId, entry);
   };
 
-  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (sessionId, session) => {
+  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (
+    sessionId,
+    session,
+    retryPromptErrorId
+  ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.session = session;
     entry.sessionLoadError = undefined;
+    entry.retryPromptErrorId = retryPromptErrorId;
     entry.progressMessage = undefined;
     // Materialize the replayed conversation in one pass (the per-notification
     // fast path above skips message copies while loading).
@@ -323,6 +338,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.pendingUserInputRequestIds.clear();
     entry.chatState = ChatState.Streaming;
     entry.sessionLoadError = undefined;
+    entry.retryPromptErrorId = undefined;
     entry.notifications = [];
     entry.progressMessage = undefined;
     return notify(sessionId, entry);
@@ -410,7 +426,8 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
 
   const finishPromptAttemptIfCurrent: AcpChatSessionActions['finishPromptAttemptIfCurrent'] = (
     sessionId,
-    promptAttemptId
+    promptAttemptId,
+    retryPromptErrorId
   ) => {
     const entry = sessionsById.get(sessionId);
     if (!entry || entry.activePromptAttemptId !== promptAttemptId) {
@@ -425,6 +442,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     discardPendingLocalSteerMessages(entry);
     entry.progressMessage = undefined;
     entry.chatState = ChatState.Idle;
+    entry.retryPromptErrorId = retryPromptErrorId;
     notify(sessionId, entry);
     return true;
   };
@@ -774,6 +792,7 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     progressMessage: entry.progressMessage,
     chatState: entry.chatState,
     sessionLoadError: entry.sessionLoadError,
+    retryPromptErrorId: entry.retryPromptErrorId,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,

@@ -154,6 +154,12 @@ export function useChatSession({
     [sessionId, onSessionLoaded]
   );
 
+  const retryFailedPrompt = useCallback(async () => {
+    if (!isAcpRecovering()) {
+      await acpChatSessionController.retryPrompt(sessionId, { getCurrentSnapshot, onFinish });
+    }
+  }, [getCurrentSnapshot, onFinish, sessionId]);
+
   const refreshSession = useCallback(
     () => acpChatSessionController.restoreSession(sessionId),
     [sessionId]
@@ -363,6 +369,12 @@ export function useChatSession({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    retryFailedPrompt,
+    canRetryFailedPrompt:
+      Boolean(acpSnapshot?.retryPromptErrorId) &&
+      !hasActiveRun &&
+      !queueProcessingBlocked &&
+      chatState === ChatState.Idle,
     refreshSession,
     tokenState,
     notifications: notificationsMap,

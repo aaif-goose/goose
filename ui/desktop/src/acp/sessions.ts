@@ -53,6 +53,7 @@ export interface LoadSessionMeta {
   userRecipeValues?: Record<string, string> | null;
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
+  retryPromptErrorId?: string;
 }
 
 export interface AcpLoadSessionResult {
@@ -70,6 +71,9 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
     userRecipeValues: meta.userRecipeValues,
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
+    ...(typeof meta.retryPromptErrorId === 'string' && {
+      retryPromptErrorId: meta.retryPromptErrorId,
+    }),
   };
 }
 

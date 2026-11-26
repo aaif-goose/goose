@@ -18,6 +18,7 @@ import {
   cloneMessage,
   getGooseActiveRunId,
   getGooseQueuedSteer,
+  messagesChange,
 } from './adapter/shared';
 import { applyToolCall, applyToolCallUpdate } from './adapter/tools';
 import type { AcpElicitationRequest } from './elicitationRequests';
@@ -102,6 +103,21 @@ function applyAcpSessionNotification(
 
       if (queuedSteerMessageId) {
         changes.push({ type: 'localSteerConfirmed', messageId: queuedSteerMessageId });
+      }
+
+      const goose = update._meta?.goose;
+      if (
+        typeof goose === 'object' &&
+        goose !== null &&
+        'removedPromptErrorId' in goose &&
+        typeof goose.removedPromptErrorId === 'string'
+      ) {
+        const errorId = goose.removedPromptErrorId;
+        const index = state.messages.findIndex((message) => message.id === errorId);
+        if (index !== -1) {
+          state.messages.splice(index, 1);
+          changes.push(...messagesChange(state));
+        }
       }
 
       return changes;

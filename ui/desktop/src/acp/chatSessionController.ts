@@ -17,13 +17,14 @@ import {
 } from './chatSessionStore';
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
 import {
+  acpRetryPromptErrorId,
   formatAcpError,
   isAcpTurnError,
   parseAcpCreditsExhaustedError,
   type AcpCreditsExhaustedError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
-import { acpCancelPrompt, acpPromptSession } from './prompt';
+import { acpCancelPrompt, acpPromptSession, acpRetryPrompt } from './prompt';
 import {
   acpForkSession,
   acpLoadSession,
@@ -61,6 +62,7 @@ export interface AcpChatSessionController {
     userMessage: Message,
     options: AcpSubmitMessageOptions
   ): Promise<void>;
+  retryPrompt(sessionId: string, options: AcpSubmitMessageOptions): Promise<void>;
   stop(sessionId: string): void;
   updateMessage(
     sessionId: string,
@@ -164,7 +166,11 @@ async function loadSessionFromServer(
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
+    acpChatSessionActions.finishSessionLoad(
+      sessionId,
+      sessionInfoToSession(sessionInfo, meta),
+      meta.retryPromptErrorId
+    );
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);
@@ -172,9 +178,9 @@ async function loadSessionFromServer(
   }
 }
 
-async function submitMessage(
+async function runPromptAttempt(
   sessionId: string,
-  userMessage: Message,
+  prompt: Message | string,
   options: AcpSubmitMessageOptions
 ): Promise<void> {
   assertNoPendingPromptCancellation(sessionId);
@@ -188,7 +194,11 @@ async function submitMessage(
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
 
   try {
-    await acpPromptSession(sessionId, userMessage);
+    if (typeof prompt === 'string') {
+      await acpRetryPrompt(sessionId, prompt);
+    } else {
+      await acpPromptSession(sessionId, prompt);
+    }
     if (acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }
@@ -218,10 +228,29 @@ async function submitMessage(
     }
 
     const message = isAcpTurnError(error) ? undefined : formatAcpError(error);
-    if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
+    if (
+      acpChatSessionActions.finishPromptAttemptIfCurrent(
+        sessionId,
+        promptAttemptId,
+        acpRetryPromptErrorId(error)
+      )
+    ) {
       void options.onFinish({ status: 'failed', message });
     }
   }
+}
+
+async function retryPrompt(sessionId: string, options: AcpSubmitMessageOptions): Promise<void> {
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  if (
+    !snapshot?.retryPromptErrorId ||
+    snapshot.chatState !== ChatState.Idle ||
+    snapshot.pendingCancelPromptAttemptId ||
+    snapshot.activeRunId
+  ) {
+    return;
+  }
+  await runPromptAttempt(sessionId, snapshot.retryPromptErrorId, options);
 }
 
 function stop(sessionId: string): void {
@@ -326,7 +355,7 @@ async function updateMessage(
     const messagesForUI = [...truncatedMessages, updatedUserMessage];
     acpChatSessionActions.setMessages(sessionId, messagesForUI);
 
-    await submitMessage(sessionId, updatedUserMessage, options);
+    await runPromptAttempt(sessionId, updatedUserMessage, options);
   } catch (error) {
     acpChatSessionActions.setChatState(sessionId, ChatState.Idle);
     throw error;
@@ -337,7 +366,8 @@ export const acpChatSessionController: AcpChatSessionController = {
   createSession,
   loadSession,
   restoreSession,
-  submitMessage,
+  submitMessage: runPromptAttempt,
+  retryPrompt,
   stop,
   updateMessage,
 };
