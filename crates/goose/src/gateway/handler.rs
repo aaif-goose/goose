@@ -743,6 +743,7 @@ impl GatewayHandler {
                         "gateway stream: mcp notification #{event_count}"
                     );
                 }
+                Ok(AgentEvent::ReplyOutcome(_)) => {}
                 Ok(AgentEvent::HistoryReplaced(_)) => {
                     tracing::debug!(
                         session_id,

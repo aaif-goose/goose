@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "実行中ジョブを強制終了"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "前回の結果:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "キャンセル済み"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "失敗"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "成功"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "前回実行:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "ジョブ強制終了エラー"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "前回の実行はキャンセルされました"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "前回の実行は失敗しました"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "前回実行: {date}"

@@ -31,7 +31,7 @@ use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
-use crate::agents::AgentEvent;
+use crate::agents::{AgentEvent, ReplyOutcome};
 use crate::config::permission::PermissionManager;
 use crate::config::{extensions::name_to_key, get_extension_by_name};
 use crate::config::{Config, GooseMode};
@@ -1186,6 +1186,7 @@ impl StateMachineServices {
     ) -> BoxStream<'static, Result<AgentEvent>> {
         let session_id = session_config.id.clone();
         let services = Arc::clone(self);
+        let failure: Arc<StdMutex<Option<String>>> = Arc::new(StdMutex::new(None));
         let turn_end = TurnEnd {
             services: Arc::clone(self),
             turn_guard: Some(turn_guard),
@@ -1194,21 +1195,36 @@ impl StateMachineServices {
             let mut turn_end = turn_end;
             let turn_guard = turn_end.turn_guard.as_ref().expect("held until the turn ends");
             let mut run = run_first;
+            let mut machine_error = None;
             loop {
                 if run {
                     let mut stream = services
-                        .run_machine(session_config.clone(), cancel.clone())
+                        .run_machine(
+                            session_config.clone(),
+                            cancel.clone(),
+                            Arc::clone(&failure),
+                        )
                         .await?;
                     let mut has_confirmations = false;
                     while let Some(event) = stream.next().await {
-                        let event = event?;
+                        let Ok(event) = event else {
+                            let error = event.expect_err("stream item was not ok");
+                            {
+                                let mut slot = failure.lock().unwrap();
+                                if slot.is_none() {
+                                    *slot = Some(error.to_string());
+                                }
+                            }
+                            machine_error = Some(error);
+                            break;
+                        };
                         for request_id in services.tool_confirmation_request_ids(&event) {
                             turn_guard.state().register_request(request_id);
                             has_confirmations = true;
                         }
                         yield event;
                     }
-                    if !has_confirmations {
+                    if machine_error.is_some() || !has_confirmations {
                         break;
                     }
                 }
@@ -1222,7 +1238,19 @@ impl StateMachineServices {
                 run = true;
             }
             turn_guard.state().clear_confirmations();
+            let recorded_failure = failure.lock().unwrap().clone();
+            let outcome = if cancel.is_cancelled() {
+                ReplyOutcome::Cancelled
+            } else if let Some(message) = recorded_failure {
+                ReplyOutcome::Failed { message }
+            } else {
+                ReplyOutcome::Completed
+            };
+            yield AgentEvent::ReplyOutcome(outcome);
             turn_end.finish().await;
+            if let Some(error) = machine_error {
+                Err(error)?;
+            }
         };
         crate::session_context::with_session_id_stream(Some(session_id), Box::pin(events))
     }
@@ -1231,6 +1259,7 @@ impl StateMachineServices {
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
+        failure: Arc<StdMutex<Option<String>>>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let session_manager = self.session_manager.clone();
         let session_id = session_config.id.clone();
@@ -1287,7 +1316,7 @@ impl StateMachineServices {
         Ok(Box::pin(
             async_stream::try_stream! {
                 let (tx, mut rx) = mpsc::unbounded_channel::<AgentEvent>();
-                let emit = Emitter::new(tx, cancel.clone());
+                let emit = Emitter::with_failure(tx, cancel.clone(), failure);
                 let result = {
                     let run = crate::session_context::with_session_id(
                         Some(session_id.clone()),
@@ -2904,7 +2933,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 AgentEvent::McpNotification(_)
                 | AgentEvent::HistoryReplaced(_)
                 | AgentEvent::Usage(_)
-                | AgentEvent::MessageUsage { .. } => {}
+                | AgentEvent::MessageUsage { .. }
+                | AgentEvent::ReplyOutcome(_) => {}
             }
         }
         Ok(messages)

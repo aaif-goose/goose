@@ -3365,6 +3365,18 @@
   "scheduleDetailView.killRunningJob": {
     "defaultMessage": "실행 중인 작업 종료"
   },
+  "scheduleDetailView.lastResult": {
+    "defaultMessage": "마지막 결과:"
+  },
+  "scheduleDetailView.lastResultCancelled": {
+    "defaultMessage": "취소됨"
+  },
+  "scheduleDetailView.lastResultFailed": {
+    "defaultMessage": "실패"
+  },
+  "scheduleDetailView.lastResultSucceeded": {
+    "defaultMessage": "성공"
+  },
   "scheduleDetailView.lastRun": {
     "defaultMessage": "마지막 실행:"
   },
@@ -3589,6 +3601,12 @@
   },
   "schedulesView.killError": {
     "defaultMessage": "작업 종료 오류"
+  },
+  "schedulesView.lastResultCancelled": {
+    "defaultMessage": "마지막 실행 취소됨"
+  },
+  "schedulesView.lastResultFailed": {
+    "defaultMessage": "마지막 실행 실패"
   },
   "schedulesView.lastRun": {
     "defaultMessage": "마지막 실행: {date}"

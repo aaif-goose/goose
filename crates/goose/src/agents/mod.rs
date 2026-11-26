@@ -37,7 +37,7 @@ pub use execute_commands::{context_management_unsupported_message, COMPACT_TRIGG
 pub use extension::{ExtensionConfig, ExtensionError};
 pub use extension_manager::{ExtensionLoadResult, ExtensionManager};
 pub(crate) use large_response_handler::max_tool_response_size;
-pub use oi_kit_agent::events::AgentEvent;
+pub use oi_kit_agent::events::{AgentEvent, ReplyOutcome};
 pub use oi_kit_agent::mcp::Container;
 pub use oi_kit_agent::mcp::{
     container, malware_check as extension_malware_check, tool_schema_normalize,

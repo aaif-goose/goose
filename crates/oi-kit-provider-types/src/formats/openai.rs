@@ -1332,6 +1332,8 @@ where
         let mut last_seen_model: Option<String> = None;
         let mut last_response_id: Option<String> = None;
         let mut last_finish_reason: Option<String> = None;
+        let mut stream_completed = false;
+        let mut saw_chunk = false;
         let mut output_token_limit_reached = false;
         let mut output_token_limit_metadata_emitted = false;
         let mut usage_emitted = false;
@@ -1342,6 +1344,7 @@ where
             let line = strip_data_prefix(&response_str);
 
             if line.is_some_and(|l| l == "[DONE]") {
+                stream_completed = true;
                 break 'outer;
             }
 
@@ -1354,6 +1357,7 @@ where
             )? else {
                 continue  // metadata-only frame
             };
+            saw_chunk = true;
             if let Some(model) = &chunk.model {
                 last_seen_model = Some(model.clone());
             }
@@ -1378,6 +1382,9 @@ where
             }
 
             if let Some(reason) = chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
+                if !reason.is_empty() {
+                    stream_completed = true;
+                }
                 last_finish_reason = Some(reason);
             }
             let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref())
@@ -1419,6 +1426,7 @@ where
                             let response_str = response_chunk?;
                             if let Some(line) = strip_data_prefix(&response_str) {
                                 if line == "[DONE]" {
+                                    stream_completed = true;
                                     break 'outer;
                                 }
 
@@ -1435,6 +1443,9 @@ where
                                     last_response_id = Some(id.clone());
                                 }
                                 if let Some(reason) = tool_chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
+                                    if !reason.is_empty() {
+                                        stream_completed = true;
+                                    }
                                     last_finish_reason = Some(reason);
                                 }
 
@@ -1743,6 +1754,14 @@ where
             usage.response_id = last_response_id;
             usage.finish_reasons = last_finish_reason.map(|reason| vec![reason]);
             yield (None, Some(usage))
+        }
+
+        // A connection that closes after a partial delta, with no finish reason
+        // and no [DONE], is a failed stream — not a short successful answer.
+        if saw_chunk && !stream_completed {
+            Err(ProviderError::RequestFailed(
+                "Provider stream ended before a finish reason or [DONE]".to_string(),
+            ))?;
         }
     }
 }
@@ -5070,6 +5089,35 @@ data: [DONE]"#;
             found_error,
             "expected an error but stream completed successfully"
         );
+    }
+
+    #[tokio::test]
+    async fn test_stream_close_after_delta_without_finish_is_an_error() {
+        let lines = vec![content_chunk("hel")];
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut found_error = false;
+        while let Some(result) = messages.next().await {
+            if let Err(error) = result {
+                let err_str = error.to_string();
+                assert!(
+                    err_str.contains("ended before a finish reason"),
+                    "unexpected error text: {err_str}"
+                );
+                found_error = true;
+            }
+        }
+        assert!(
+            found_error,
+            "a closed stream must not look like a short answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_finish_reason_without_done_is_complete() -> anyhow::Result<()> {
+        let line = r#"data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}"#;
+        assert_eq!(run_streaming_test(line).await?.text, "ok");
+        Ok(())
     }
 
     #[test]
