@@ -1,10 +1,10 @@
 # New model check: agent instructions
 
-You check whether goose handles newly launched models correctly, and report the results in the channel. Follow these steps exactly. Don't add checks, and don't skip any.
+You check whether goose handles newly launched models correctly, and write the results as Markdown to the file `$REPORT`. Write to it even if you stop early. `$REPORT`, `$FIX_DIR` and `$FIX_BRANCH` are already set in your environment. Follow these steps exactly. Don't add checks, and don't skip any.
 
 You never call a real model. You use a fake API key: the provider rejects the request, but goose has already written the exact request to its log, and that request is what you check.
 
-If a setup command fails (the script, the download, the install), post the error and stop. The goose runs in step 4 are expected to end in an error; that's not a failure.
+If a setup command fails (the script, the download, the install), write the error to `$REPORT` and stop. The goose runs in step 4 are expected to end in an error; that's not a failure.
 
 ## 1. Find new models
 
@@ -23,17 +23,17 @@ If the download fails (some sandboxes block models.dev), build the same file fro
 scripts/new-model-check/build_models_dev.sh "$CATALOG"
 ```
 
-If both fail, post both errors and stop. Once you have the file, run:
+If both fail, write both errors to `$REPORT` and stop. Once you have the file, run:
 
 ```
 node scripts/new-model-check/check_new_models.mjs "$CATALOG" > new_models.json
 ```
 
-- Exit code 0: nothing new. Post `New model check: $START. No new models in the last 3 days.` and stop.
+- Exit code 0: nothing new. Write `New model check: $START. No new models in the last 3 days.` to `$REPORT` and stop.
 - Exit code 10: new models found. `new_models` in `new_models.json` lists them with their models.dev metadata. Continue with step 2.
-- Exit code 1: the script failed. Post the error and stop.
+- Exit code 1: the script failed. Write the error to `$REPORT` and stop.
 
-If `missing_providers` in `new_models.json` isn't empty, add "Not checked: <providers> (missing from models.dev)." to what you post. In a full report, put it under "Action needed".
+If `missing_providers` in `new_models.json` isn't empty, add "Not checked: <providers> (missing from models.dev)." to `$REPORT`. In a full report, put it under "Action needed".
 
 A model with `release_date_unclear: true` has only a release month in models.dev, so it may not be new. In the report, add "(release date unclear: models.dev says <release_date>)" to its PASS or FAIL line.
 
@@ -169,16 +169,16 @@ Copy the models.dev data into this folder as in step 2, then repeat the failing 
 - **Canary passes:** the fix is on main. Name the PR if you can find it. If `gh release list -R aaif-goose/goose -L 1` shows a newer release than the one you tested and it includes the fix, report that no action is needed, because stable will catch up soon. Otherwise, report that a patch release is needed.
 - **Canary fails too:** in your goose checkout, on the latest main, read that provider's request code and find why. Report the file and line, and describe the fix.
 
-  Then open a PR with the fix, but only if all of these hold:
+  Then prepare a PR with the fix, but only if all of these hold:
   - No open PR already fixes it. Search open PRs for the model and the provider first; if one exists, link it in the report instead.
   - The cause is clear, and the code change only touches that provider's code.
-  - The PR includes a test that fails before the fix and passes after.
+  - The fix includes a test that fails before the fix and passes after.
 
-  Link the PR in the report. If any condition doesn't hold, report your findings without opening a PR.
+  To prepare the PR, commit every fix on one branch from `origin/main`, with a clear commit message for each. Commit only the files your fix changes. Then run `git format-patch origin/main --stdout > "$FIX_DIR/fix.patch"`. Write the PR title as the first line of `$FIX_DIR/pr.md` and the PR description below it. Don't push or open the PR yourself: the workflow opens it from branch `$FIX_BRANCH`. If any condition doesn't hold, report your findings without preparing a PR.
 
 ## 9. Report
 
-Build the report only from `$R`, not from memory. Post one message per run, covering every new model you checked:
+Build the report only from `$R`, not from memory. Write one report per run to `$REPORT`, covering every new model you checked:
 
 ```
 New model check: 2026-11-20 09:53 UTC
@@ -201,8 +201,8 @@ Tested goose 1.60.1 (main 1.60.0-canary+42055e7)
 ```
 
 - The header has `$START` from step 1.
-- **Action needed** comes first. List every action, or write "None". An action is one of: a patch release, review a PR, a fix with no PR (say why), or look at a note.
-- **New models:** one PASS or FAIL line per model. A model with no FAIL is PASS; list any skipped or levels-unknown check below it. End a FAIL line with its action in bold: **No action.**, **Patch release.**, **Review PR <link>.** or **Needs a fix.** List each failed check below it, with the value sent and the value expected, and the cause's file and line if main fails too.
+- **Action needed** comes first. List every action, or write "None". An action is one of: a patch release, review an open PR, review this run's fix, a fix with no PR (say why), or look at a note.
+- **New models:** one PASS or FAIL line per model. A model with no FAIL is PASS; list any skipped or levels-unknown check below it. End a FAIL line with its action in bold: **No action.**, **Patch release.**, **Review PR <link>.** (an open PR you found), **Fix prepared, see Fix branch below.** (the fix you prepared) or **Needs a fix.** List each failed check below it, with the value sent and the value expected, and the cause's file and line if main fails too.
 - **Notes:** end each with its action. List every note whose action isn't "none" in "Action needed".
 - End with the goose version tested, and the canary version if you used it. If you built the models.dev data, add "models.dev data built from <sha>".
-- Before posting, check the report: every model in `new_models.json` is listed, every FAIL line and note ends with its action, and every action is in "Action needed".
+- Before you finish, check the report: every model in `new_models.json` is listed, every FAIL line and note ends with its action, and every action is in "Action needed".
