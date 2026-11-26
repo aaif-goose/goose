@@ -1412,6 +1412,7 @@ where
                     Some("tool_calls" | "length")
                 );
 
+                let mut stream_done = false;
                 if !is_complete {
                     let mut done = false;
                     while !done {
@@ -1419,7 +1420,8 @@ where
                             let response_str = response_chunk?;
                             if let Some(line) = strip_data_prefix(&response_str) {
                                 if line == "[DONE]" {
-                                    break 'outer;
+                                    stream_done = true;
+                                    break;
                                 }
 
                                 // A metadata frame here must NOT fall through to the
@@ -1640,7 +1642,11 @@ where
                 yield (
                     Some(msg),
                     usage,
-                )
+                );
+
+                if stream_done {
+                    break 'outer;
+                }
             } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_text().is_some() {
                 let mut content = Vec::new();
 
@@ -5704,6 +5710,186 @@ data: [DONE]"#;
             saw_thinking,
             "expected thinking content from merged reasoning fields"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_before_finish_reason_emits_buffered_tool_call(
+    ) -> anyhow::Result<()> {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":\"echo hi\"}"}}]},"finish_reason":null}]}"#,
+            "\n\n",
+            "data: [DONE]",
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut requests = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    if let MessageContentBlock::ToolRequest(req) = content {
+                        requests.push(req.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].id, "call_1");
+        let tool_call = requests[0]
+            .tool_call
+            .as_ref()
+            .expect("tool call should parse");
+        assert_eq!(tool_call.name, "shell");
+        assert_eq!(tool_call.arguments, Some(object!({"command": "echo hi"})));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_before_finish_reason_stops_at_done() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":"}}]},"finish_reason":null}]}"#,
+            "\n",
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"echo hi\"}"}}]},"finish_reason":null}]}"#,
+            "\n",
+            "data: [DONE]\n",
+            "data: {not valid json}",
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut requests = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    if let MessageContentBlock::ToolRequest(req) = content {
+                        requests.push(req.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].id, "call_1");
+        let tool_call = requests[0]
+            .tool_call
+            .as_ref()
+            .expect("tool call should parse");
+        assert_eq!(tool_call.name, "shell");
+        assert_eq!(tool_call.arguments, Some(object!({"command": "echo hi"})));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_after_finish_reason_tool_calls_unchanged() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":\"echo hi\"}"}}]},"finish_reason":null}]}"#,
+            "\n",
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+            "\n",
+            "data: [DONE]",
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut requests = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    if let MessageContentBlock::ToolRequest(req) = content {
+                        requests.push(req.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].id, "call_1");
+        let tool_call = requests[0]
+            .tool_call
+            .as_ref()
+            .expect("tool call should parse");
+        assert_eq!(tool_call.name, "shell");
+        assert_eq!(tool_call.arguments, Some(object!({"command": "echo hi"})));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_done_before_finish_reason_with_incomplete_arguments_surfaces_error(
+    ) -> anyhow::Result<()> {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"command\":\"echo hi"}}]},"finish_reason":null}]}"#,
+            "\n\n",
+            "data: [DONE]",
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut requests = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    if let MessageContentBlock::ToolRequest(req) = content {
+                        requests.push(req.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].id, "call_1");
+        let err = requests[0]
+            .tool_call
+            .as_ref()
+            .expect_err("incomplete arguments should surface parse error");
+        assert_eq!(err.code, ErrorCode::INVALID_PARAMS);
+        assert!(
+            err.message.contains("truncated"),
+            "unexpected error message: {}",
+            err.message
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_plain_text_ending_with_done_unchanged() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello "},"finish_reason":null}]}"#,
+            "\n",
+            r#"data: {"id":"x","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"world"},"finish_reason":null}]}"#,
+            "\n",
+            "data: [DONE]",
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut text = String::new();
+        let mut tool_calls = 0usize;
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    match content {
+                        MessageContentBlock::Text(t) => text.push_str(&t.text),
+                        MessageContentBlock::ToolRequest(_) => tool_calls += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text, "Hello world");
+        assert_eq!(tool_calls, 0);
         Ok(())
     }
 
