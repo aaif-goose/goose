@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { AudioLines, ChevronDown, ChevronRight, Folder, ListFilter } from 'lucide-react';
+import { AudioLines, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useConfig } from '../ConfigContext';
@@ -247,9 +247,8 @@ const SessionRow: React.FC<SessionRowProps> = ({
             onEditEnd={() => setIsEditing(false)}
           />
           {projectLabel && !isEditing && (
-            <span className="flex max-w-[40%] min-w-0 shrink-0 items-center gap-1 rounded-md bg-background-secondary px-1.5 text-xs text-text-secondary">
-              <Folder className="size-3 shrink-0" aria-hidden="true" />
-              <span className="truncate">{projectLabel}</span>
+            <span className="max-w-[40%] shrink-0 truncate rounded-md bg-background-secondary px-1.5 text-xs text-text-secondary">
+              {projectLabel}
             </span>
           )}
           {isLiveVoiceActive && (
