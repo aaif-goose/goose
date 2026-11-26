@@ -516,6 +516,12 @@ impl OpenAiProvider {
     /// [`ThinkingEffort`] mapped onto the request explicitly.
     const PROVIDERS_NEEDING_REASONING_EFFORT_MAPPING: &[&str] = &["meta"];
 
+    /// Providers whose reasoning models take an OpenAI-style `reasoning_effort`
+    /// restricted to the levels the canonical catalog records for the model
+    /// (Z.AI: `low`/`high`/`max` on GLM-5.3+), and whose message schema has
+    /// no `developer` role, only `system`.
+    const PROVIDERS_USING_CATALOG_REASONING_EFFORT: &[&str] = &["zai_coding_plan"];
+
     /// Maps the unified thinking effort onto Meta's Muse Spark
     /// `reasoning_effort` levels: `low`, `medium`, `high`, `xhigh`.
     ///
@@ -589,6 +595,29 @@ impl OpenAiProvider {
                     None => {
                         obj.remove("reasoning_effort");
                     }
+                }
+            }
+
+            if Self::PROVIDERS_USING_CATALOG_REASONING_EFFORT.contains(&self.name.as_str()) {
+                for message in obj
+                    .get_mut("messages")
+                    .and_then(|m| m.as_array_mut())
+                    .into_iter()
+                    .flatten()
+                {
+                    if message.get("role").and_then(|role| role.as_str()) == Some("developer") {
+                        message["role"] = serde_json::Value::String("system".to_string());
+                    }
+                }
+
+                let effort = model_config
+                    .thinking_effort()
+                    .and_then(|effort| {
+                        model_config.closest_thinking_effort(&self.name, Some(effort))
+                    })
+                    .filter(|effort| *effort != ThinkingEffort::Off);
+                if let Some(effort) = effort {
+                    obj.insert("reasoning_effort".to_string(), json!(effort.to_string()));
                 }
             }
         }
@@ -1338,6 +1367,77 @@ mod tests {
         let obj = result.as_object().unwrap();
 
         assert!(!obj.contains_key("reasoning_effort"));
+    }
+
+    #[test]
+    fn sanitize_zai_coding_plan_applies_catalog_reasoning_effort() {
+        let provider = make_provider("zai_coding_plan");
+        let payload = json!({
+            "model": "glm-5.3",
+            "messages": [{"role": "system", "content": "x"}]
+        });
+        let model_config = ModelConfig::new("glm-5.3").with_thinking_effort(ThinkingEffort::Low);
+
+        let result = provider.sanitize_request_for_compat(payload, &model_config);
+
+        assert_eq!(result["reasoning_effort"], json!("low"));
+        assert_eq!(result["messages"][0]["role"], json!("system"));
+    }
+
+    #[test]
+    fn sanitize_zai_coding_plan_snaps_efforts_to_the_models_catalog_levels() {
+        // GLM-5.3 cannot disable thinking, and accepts no `medium`: both must
+        // land on levels the catalog records rather than be sent as-is.
+        let provider = make_provider("zai_coding_plan");
+        let payload = json!({ "model": "glm-5.3", "messages": [] });
+
+        let off = provider.sanitize_request_for_compat(
+            payload.clone(),
+            &ModelConfig::new("glm-5.3").with_thinking_effort(ThinkingEffort::Off),
+        );
+        assert_eq!(off["reasoning_effort"], json!("low"));
+
+        let medium = provider.sanitize_request_for_compat(
+            payload,
+            &ModelConfig::new("glm-5.3").with_thinking_effort(ThinkingEffort::Medium),
+        );
+        assert_eq!(medium["reasoning_effort"], json!("high"));
+    }
+
+    #[test]
+    fn sanitize_zai_coding_plan_keeps_glm_5_4_on_system_role_and_max_effort() {
+        // Once the catalog marks glm-5.4 as a reasoning model, the generic
+        // OpenAI path treats it as an OpenAI one: `developer` role and effort
+        // mapped onto OpenAI's fallback levels. Z.AI accepts neither.
+        let provider = make_provider("zai_coding_plan");
+        let payload = json!({
+            "model": "glm-5.4",
+            "messages": [{"role": "developer", "content": "x"}],
+            "reasoning_effort": "high"
+        });
+        let mut model_config =
+            ModelConfig::new("glm-5.4").with_thinking_effort(ThinkingEffort::Max);
+        model_config.reasoning = Some(true);
+        assert!(model_config.openai_reasoning_for_model("glm-5.4"));
+
+        let result = provider.sanitize_request_for_compat(payload, &model_config);
+
+        assert_eq!(result["messages"][0]["role"], json!("system"));
+        assert_eq!(result["reasoning_effort"], json!("max"));
+    }
+
+    #[test]
+    fn sanitize_zai_coding_plan_omits_reasoning_effort_when_unset() {
+        let provider = make_provider("zai_coding_plan");
+        let payload = json!({ "model": "glm-5.4", "messages": [] });
+
+        let result = provider
+            .sanitize_request_for_compat(payload, &ModelConfig::new("glm-5.4"))
+            .as_object()
+            .unwrap()
+            .clone();
+
+        assert!(!result.contains_key("reasoning_effort"));
     }
 
     #[test]

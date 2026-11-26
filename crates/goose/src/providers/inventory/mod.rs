@@ -9,7 +9,7 @@ pub use resolver::{
 use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
 use super::canonical::{
     map_provider_name, map_to_canonical_model, maybe_get_canonical_model_with_variant_fallback,
-    CanonicalModelRegistry,
+    CanonicalModel, CanonicalModelRegistry,
 };
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
@@ -302,6 +302,7 @@ impl ProviderInventoryService {
             .contains(&descriptor.identity.inventory_key);
         let models = inventory_models_from_snapshot(
             snapshot.as_ref(),
+            Some(&descriptor.provider_id),
             &descriptor.identity.provider_family,
             &descriptor.static_models,
             descriptor.supports_refresh,
@@ -464,7 +465,11 @@ impl ProviderInventoryService {
         identity: &InventoryIdentity,
         model_ids: &[String],
     ) -> Result<()> {
-        let models = enrich_model_ids_with_canonical(&identity.provider_family, model_ids);
+        let models = enrich_model_ids_with_canonical(
+            Some(&identity.provider_id),
+            &identity.provider_family,
+            model_ids,
+        );
         let now = Utc::now();
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin().await?;
@@ -1062,6 +1067,7 @@ fn is_databricks_v2_model_service(provider_family: &str, model_id: &str) -> bool
 }
 
 fn enrich_model_ids_with_canonical(
+    provider_id: Option<&str>,
     provider_family: &str,
     model_ids: &[String],
 ) -> Vec<InventoryModel> {
@@ -1083,7 +1089,7 @@ fn enrich_model_ids_with_canonical(
     let mut seen_keys: HashSet<String> = HashSet::new();
 
     for id in model_ids {
-        let model = enriched_model(provider_family, id, None);
+        let model = enriched_model(provider_id, provider_family, id, None);
         let dedup_key = if is_databricks_v2_model_service(provider_family, id) {
             id
         } else {
@@ -1109,7 +1115,7 @@ fn enrich_model_ids_with_canonical(
             if !id.starts_with("goose-") {
                 continue;
             }
-            let candidate = enriched_model(provider_family, id, None);
+            let candidate = enriched_model(provider_id, provider_family, id, None);
             if let Some(&idx) = name_to_idx.get(&candidate.name) {
                 if !models[idx].id.starts_with("goose-") {
                     models[idx].id = candidate.id;
@@ -1134,13 +1140,19 @@ fn enrich_model_ids_with_canonical(
 }
 
 fn configured_models_to_inventory(
+    provider_id: Option<&str>,
     provider_family: &str,
     models: &[ModelInfo],
 ) -> Vec<InventoryModel> {
     let mut result: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     for model in models {
-        let enriched = enriched_model(provider_family, &model.name, model.context_limit);
+        let enriched = enriched_model(
+            provider_id,
+            provider_family,
+            &model.name,
+            model.context_limit,
+        );
         if seen_names.insert(enriched.name.clone()) {
             result.push(enriched);
         }
@@ -1162,40 +1174,99 @@ fn configured_models_to_inventory(
 
 fn inventory_models_from_snapshot(
     snapshot: Option<&InventorySnapshot>,
+    provider_id: Option<&str>,
     provider_family: &str,
     configured_models: &[ModelInfo],
     supports_refresh: bool,
 ) -> Vec<InventoryModel> {
     if !supports_refresh {
-        return configured_models_to_inventory(provider_family, configured_models);
+        return configured_models_to_inventory(provider_id, provider_family, configured_models);
     }
 
     match snapshot {
         Some(snapshot) if !snapshot.models.is_empty() || snapshot.last_updated_at.is_some() => {
-            snapshot.models.clone()
+            snapshot
+                .models
+                .iter()
+                .map(|stored| re_enriched(stored, provider_id, provider_family))
+                .collect()
         }
-        _ => configured_models_to_inventory(provider_family, configured_models),
+        _ => configured_models_to_inventory(provider_id, provider_family, configured_models),
     }
 }
 
+/// The snapshot records which models the API offered; their metadata is
+/// re-derived from the current catalog on every read, so a backend or catalog
+/// update applies without waiting for the next refresh. The stored row only
+/// fills in what the catalog does not know.
+fn re_enriched(
+    stored: &InventoryModel,
+    provider_id: Option<&str>,
+    provider_family: &str,
+) -> InventoryModel {
+    let enriched = enriched_model(
+        provider_id,
+        provider_family,
+        &stored.id,
+        stored.context_limit,
+    );
+    InventoryModel {
+        name: if enriched.name == stored.id {
+            stored.name.clone()
+        } else {
+            enriched.name
+        },
+        family: enriched.family.or_else(|| stored.family.clone()),
+        reasoning: enriched.reasoning.or(stored.reasoning),
+        recommended: stored.recommended,
+        ..enriched
+    }
+}
+
+/// The provider's own id names its catalog section exactly (`zai_coding_plan`
+/// → `zai-coding-plan`); the engine family is only a fallback for providers
+/// without a section, since a family-wide lookup mis-resolves models that
+/// other vendors in the family also serve.
+fn canonical_model_for_inventory(
+    provider_id: Option<&str>,
+    provider_family: &str,
+    model_id: &str,
+) -> Option<CanonicalModel> {
+    let registry = CanonicalModelRegistry::bundled().ok()?;
+    provider_id
+        .iter()
+        .copied()
+        .chain(std::iter::once(provider_family))
+        .find_map(|provider| {
+            let canonical_id = map_to_canonical_model(provider, model_id, &registry)?;
+            let (provider, model) = canonical_id.split_once('/')?;
+            registry.get(provider, model).cloned()
+        })
+}
+
+/// A variant borrows its base row's metadata but keeps its own id as the name,
+/// so the picker still lists it next to the base model. `None` when `model_id`
+/// is not a variant.
+fn variant_base_model(provider: &str, model_id: &str) -> Option<CanonicalModel> {
+    maybe_get_canonical_model_with_variant_fallback(provider, model_id)
+        .filter(|(_, is_variant_fallback)| *is_variant_fallback)
+        .map(|(model, _)| model)
+}
+
 fn enriched_model(
+    provider_id: Option<&str>,
     provider_family: &str,
     model_id: &str,
     fallback_context_limit: Option<usize>,
 ) -> InventoryModel {
-    // The registry guard is dropped inside the closure: the fallback below takes its own
-    // read lock, and a nested read can block behind a queued catalog refresh.
-    let canonical = CanonicalModelRegistry::bundled().ok().and_then(|registry| {
-        let canonical_id = map_to_canonical_model(provider_family, model_id, &registry)?;
-        let (provider, model) = canonical_id.split_once('/')?;
-        registry.get(provider, model).cloned()
-    });
-    // A variant borrows its base row's metadata but keeps its own id as the name,
-    // so the picker still lists it next to the base model.
+    // Both helpers drop the registry's read guard before returning: the
+    // variant fallback takes its own read lock, and a nested read can block
+    // behind a queued catalog refresh.
+    let canonical = canonical_model_for_inventory(provider_id, provider_family, model_id);
     let metadata = canonical.clone().or_else(|| {
-        maybe_get_canonical_model_with_variant_fallback(provider_family, model_id)
-            .filter(|(_, is_variant_fallback)| *is_variant_fallback)
-            .map(|(model, _)| model)
+        provider_id
+            .and_then(|provider| variant_base_model(provider, model_id))
+            .or_else(|| variant_base_model(provider_family, model_id))
     });
 
     InventoryModel {
@@ -1272,13 +1343,30 @@ mod tests {
     }
 
     #[test]
+    fn inventory_resolves_catalog_rows_by_provider_id_before_engine_family() {
+        // `zai_coding_plan` shares the `openai` family; a family-wide lookup
+        // infers glm-5.4 to zhipu's catalog section, which lacks the model, so
+        // the picker would learn neither its context limit nor that it reasons.
+        let ids = vec!["glm-5.4".to_string()];
+        let models = enrich_model_ids_with_canonical(Some("zai_coding_plan"), "openai", &ids);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].context_limit, Some(1_000_000));
+        assert_eq!(models[0].reasoning, Some(true));
+
+        // Providers without their own catalog section keep the family lookup.
+        let models = enrich_model_ids_with_canonical(Some("some_proxy"), "openai", &ids);
+        assert_eq!(models[0].reasoning, None);
+    }
+
+    #[test]
     fn openrouter_inventory_keeps_base_and_unlisted_variants() {
         let ids = vec![
             "deepseek/deepseek-v4-flash".to_string(),
             "deepseek/deepseek-v4-flash:batch".to_string(),
             "deepseek/deepseek-v4-flash:free".to_string(),
         ];
-        let models = enrich_model_ids_with_canonical("openrouter", &ids);
+        let models = enrich_model_ids_with_canonical(None, "openrouter", &ids);
         assert_eq!(
             models.iter().map(|model| &model.id).collect::<Vec<_>>(),
             ids.iter().collect::<Vec<_>>()
@@ -1376,6 +1464,7 @@ mod tests {
     #[test]
     fn configured_models_use_canonical_enrichment() {
         let models = configured_models_to_inventory(
+            None,
             "anthropic",
             &[ModelInfo::new("claude-sonnet-4-5").with_context_limit(0)],
         );
@@ -1387,7 +1476,7 @@ mod tests {
     #[test]
     fn vercel_inventory_enriches_gateway_model_ids() {
         let models =
-            enrich_model_ids_with_canonical("vercel", &["moonshotai/kimi-k2.5".to_string()]);
+            enrich_model_ids_with_canonical(None, "vercel", &["moonshotai/kimi-k2.5".to_string()]);
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].name, "Kimi K2.5");
@@ -1398,6 +1487,7 @@ mod tests {
     #[test]
     fn databricks_v2_inventory_prefers_goose_model_ids_for_duplicate_names() {
         let models = enrich_model_ids_with_canonical(
+            None,
             "databricks_v2",
             &[
                 "databricks-gpt-5-5".to_string(),
@@ -1423,7 +1513,7 @@ mod tests {
             "alpha.prod.claude-sonnet-4-5",
         ]
         .map(String::from);
-        let models = enrich_model_ids_with_canonical("databricks_v2", &model_ids);
+        let models = enrich_model_ids_with_canonical(None, "databricks_v2", &model_ids);
 
         let ids = models
             .iter()
@@ -1440,6 +1530,52 @@ mod tests {
     }
 
     #[test]
+    fn inventory_re_derives_snapshot_metadata_from_the_current_catalog() {
+        // A snapshot taken before the catalog knew glm-5.4 stored no reasoning
+        // flag; reading it must heal from the catalog without a new refresh,
+        // while keeping what the catalog still does not know (recommended).
+        let unknown = InventoryModel {
+            id: "some-fine-tune".to_string(),
+            name: "Some Fine Tune".to_string(),
+            family: None,
+            context_limit: Some(123_456),
+            reasoning: Some(true),
+            recommended: true,
+        };
+        let snapshot = InventorySnapshot {
+            models: vec![
+                InventoryModel {
+                    id: "glm-5.4".to_string(),
+                    name: "glm-5.4".to_string(),
+                    family: None,
+                    context_limit: None,
+                    reasoning: None,
+                    recommended: false,
+                },
+                unknown.clone(),
+            ],
+            last_updated_at: Some(Utc::now()),
+            last_refresh_attempt_at: None,
+            last_refresh_error: None,
+        };
+
+        let models = inventory_models_from_snapshot(
+            Some(&snapshot),
+            Some("zai_coding_plan"),
+            "openai",
+            &[],
+            true,
+        );
+
+        assert_eq!(models[0].context_limit, Some(1_000_000));
+        assert_eq!(models[0].reasoning, Some(true));
+        assert_eq!(models[1].name, unknown.name);
+        assert_eq!(models[1].context_limit, Some(123_456));
+        assert_eq!(models[1].reasoning, Some(true));
+        assert!(models[1].recommended);
+    }
+
+    #[test]
     fn inventory_uses_configured_models_before_first_successful_refresh() {
         let configured_models = [ModelInfo::new("claude-sonnet-4-5").with_context_limit(0)];
         let snapshot = InventorySnapshot {
@@ -1449,8 +1585,13 @@ mod tests {
             last_refresh_error: Some("auth failed".to_string()),
         };
 
-        let models =
-            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models, true);
+        let models = inventory_models_from_snapshot(
+            Some(&snapshot),
+            None,
+            "anthropic",
+            &configured_models,
+            true,
+        );
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "claude-sonnet-4-5");
@@ -1466,8 +1607,13 @@ mod tests {
             last_refresh_error: None,
         };
 
-        let models =
-            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models, true);
+        let models = inventory_models_from_snapshot(
+            Some(&snapshot),
+            None,
+            "anthropic",
+            &configured_models,
+            true,
+        );
 
         assert!(models.is_empty());
     }
@@ -1491,6 +1637,7 @@ mod tests {
 
         let models = inventory_models_from_snapshot(
             Some(&snapshot),
+            None,
             "chatgpt_codex",
             &configured_models,
             false,

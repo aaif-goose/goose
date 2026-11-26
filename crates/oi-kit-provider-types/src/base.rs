@@ -810,6 +810,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn zai_coding_plan_dynamic_models_resolve_catalog_metadata() {
+        let info = model_info_for_provider_model("zai_coding_plan", "glm-5.4");
+
+        assert_eq!(info.context_limit, Some(1_000_000));
+        assert!(info.reasoning);
+    }
+
     struct ModelInventoryProvider {
         models: Vec<String>,
     }

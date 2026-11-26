@@ -425,9 +425,14 @@ impl ModelConfig {
             .and_then(|s| s.parse::<ThinkingEffort>().ok())
     }
 
+    /// Z.AI's built-in providers serve the same GLM models over different wire
+    /// formats (`zai` speaks Anthropic, `zai_coding_plan` OpenAI-compatible),
+    /// so both take the effort levels the catalog records for the model.
+    const ZAI_PROVIDERS: &'static [&'static str] = &["zai", "zai_coding_plan"];
+
     pub fn thinking_effort_levels(&self, provider_name: &str) -> Option<Vec<ThinkingEffort>> {
-        if provider_name == "zai" {
-            if let Some(levels) = self.zai_catalog_effort_levels() {
+        if Self::ZAI_PROVIDERS.contains(&provider_name) {
+            if let Some(levels) = self.zai_catalog_effort_levels(provider_name) {
                 return Some(levels);
             }
         }
@@ -441,8 +446,8 @@ impl ModelConfig {
         None
     }
 
-    fn zai_catalog_effort_levels(&self) -> Option<Vec<ThinkingEffort>> {
-        let model = crate::canonical::maybe_get_canonical_model("zai", &self.model_name)?;
+    fn zai_catalog_effort_levels(&self, provider_name: &str) -> Option<Vec<ThinkingEffort>> {
+        let model = crate::canonical::maybe_get_canonical_model(provider_name, &self.model_name)?;
         let mut levels: Vec<ThinkingEffort> = model
             .reasoning_efforts?
             .iter()
@@ -630,6 +635,45 @@ mod tests {
                     .as_ref()
                     .and_then(|params| params.get("thinking_effort")),
                 Some(&serde_json::json!("high"))
+            );
+        }
+
+        #[test]
+        fn zai_providers_take_effort_levels_from_the_catalog() {
+            let expected = Some(vec![
+                ThinkingEffort::Low,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]);
+            for model in ["glm-5.3", "glm-5.3-flash", "glm-5.4"] {
+                assert_eq!(
+                    ModelConfig::new(model).thinking_effort_levels("zai_coding_plan"),
+                    expected,
+                    "{model}"
+                );
+            }
+            for model in ["glm-5.3", "glm-5.3-flash"] {
+                assert_eq!(
+                    ModelConfig::new(model).thinking_effort_levels("zai"),
+                    expected,
+                    "{model}"
+                );
+            }
+        }
+
+        #[test]
+        fn effort_levels_stay_name_based_outside_zai_providers() {
+            assert_eq!(
+                ModelConfig::new("glm-5.4").thinking_effort_levels("ollama_cloud"),
+                None
+            );
+            assert_eq!(
+                ModelConfig::new("glm-5.3").thinking_effort_levels("ollama_cloud"),
+                Some(vec![
+                    ThinkingEffort::Low,
+                    ThinkingEffort::High,
+                    ThinkingEffort::Max,
+                ])
             );
         }
 
