@@ -61,6 +61,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "ollama_cloud" => "ollama-cloud",
         "kimi_code" => "kimi-code-plan-cn",
         "muse_code" => "meta",
+        "zai_coding_plan" => "zai-coding-plan",
         _ => provider,
     }
 }
@@ -617,6 +618,18 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("kimi_code", "k3", &r),
             Some("kimi-code-plan-cn/k3".to_string())
+        );
+
+        // === Z.AI Coding Plan ===
+        // Undeclared dynamically-discovered models resolve through the provider mapping,
+        // not the glm-* -> zhipuai inference.
+        assert_eq!(
+            map_to_canonical_model("zai_coding_plan", "glm-5.3", &r),
+            Some("zai-coding-plan/glm-5.3".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("zai_coding_plan", "glm-5.4", &r),
+            Some("zai-coding-plan/glm-5.4".to_string())
         );
 
         // === GCP Vertex AI ===
