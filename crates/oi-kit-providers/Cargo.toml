@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-providers"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -36,8 +36,8 @@ anyhow = { workspace = true }
 async-stream = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
-oi-kit-provider-types = { version = "0.1.0-alpha.16", path = "../oi-kit-provider-types", default-features = false }
-oi-kit-local-inference = { version = "0.1.0-alpha.16", path = "../oi-kit-local-inference", default-features = false, optional = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.17", path = "../oi-kit-provider-types", default-features = false }
+oi-kit-local-inference = { version = "0.1.0-alpha.17", path = "../oi-kit-local-inference", default-features = false, optional = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
 rmcp = { workspace = true, features = ["server", "macros"] }
 serde = { workspace = true }

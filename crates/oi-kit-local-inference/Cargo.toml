@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-local-inference"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -32,9 +32,9 @@ chrono = { workspace = true }
 etcetera = { workspace = true }
 encoding_rs = { version = "0.8.35", default-features = false }
 futures = { workspace = true, optional = true }
-oi-kit-download-manager = { version = "0.1.0-alpha.16", path = "../oi-kit-download-manager", optional = true }
-oi-kit-provider-types = { version = "0.1.0-alpha.16", path = "../oi-kit-provider-types", default-features = false }
-goose-acp-types = { version = "0.1.0-alpha.16", path = "../goose-acp-types", default-features = false, optional = true }
+oi-kit-download-manager = { version = "0.1.0-alpha.17", path = "../oi-kit-download-manager", optional = true }
+oi-kit-provider-types = { version = "0.1.0-alpha.17", path = "../oi-kit-provider-types", default-features = false }
+goose-acp-types = { version = "0.1.0-alpha.17", path = "../goose-acp-types", default-features = false, optional = true }
 hf-hub = { version = "1.0.0", default-features = false, optional = true }
 include_dir = { workspace = true }
 llama-cpp-2 = { workspace = true }

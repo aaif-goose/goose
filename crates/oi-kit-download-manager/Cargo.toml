@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-download-manager"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

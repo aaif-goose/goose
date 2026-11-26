@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-bindings"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -35,8 +35,8 @@ uniffi = [
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"], optional = true }
 thiserror = { version = "2", optional = true }
-oi-kit-providers = { version = "0.1.0-alpha.16", path = "../oi-kit-providers", features = ["rustls-tls"], optional = true }
-oi-kit-context-management = { version = "0.1.0-alpha.16", path = "../oi-kit-context-management", optional = true }
+oi-kit-providers = { version = "0.1.0-alpha.17", path = "../oi-kit-providers", features = ["rustls-tls"], optional = true }
+oi-kit-context-management = { version = "0.1.0-alpha.17", path = "../oi-kit-context-management", optional = true }
 futures = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"], optional = true }

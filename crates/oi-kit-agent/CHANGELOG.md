@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.17](https://github.com/aaif-goose/goose/compare/oi-kit-v0.1.0-alpha.16...oi-kit-v0.1.0-alpha.17) - 2026-11-26
+
+### Other
+
+- *(deps)* bump jsonschema from 0.61.2 to 0.62.0 ([#13800](https://github.com/aaif-goose/goose/pull/13800))
+- Merge commit from fork
+
 ## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-11-16
 
 ### Added
