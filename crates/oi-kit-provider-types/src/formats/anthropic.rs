@@ -88,7 +88,8 @@ impl AnthropicFormatOptions {
             .unwrap_or(self.preserve_unsigned_thinking)
             || preserve_thinking_context;
         let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
-            == Some(ThinkingMode::AlwaysOnAdaptive);
+            == Some(ThinkingMode::AlwaysOnAdaptive)
+            || zai_effort_to_send(provider_name, model_config).is_some();
         let thinking_disabled = !always_on
             && (model_config.reasoning == Some(false)
                 || model_config.thinking_effort() == Some(ThinkingEffort::Off));
@@ -171,6 +172,20 @@ fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<Think
         return Some(ThinkingMode::AlwaysOnAdaptive);
     }
     None
+}
+
+fn zai_effort_to_send(provider_name: &str, model_config: &ModelConfig) -> Option<ThinkingEffort> {
+    if provider_name != "zai" {
+        return None;
+    }
+    let effort = if model_config.reasoning == Some(false) {
+        Some(ThinkingEffort::Off)
+    } else {
+        model_config.thinking_effort()
+    };
+    model_config
+        .closest_thinking_effort(provider_name, effort)
+        .filter(|level| *level != ThinkingEffort::Off)
 }
 
 /// Adaptive models run adaptive thinking when `thinking` is omitted, so turning
@@ -845,26 +860,34 @@ fn apply_thinking_config(
     options: AnthropicFormatOptions,
 ) {
     let obj = payload.as_object_mut().unwrap();
-    match thinking_type_for_provider(provider_name, model_config) {
-        ThinkingType::Adaptive => {
-            obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = adaptive_effort_wire(provider_name, model_config);
-            obj.insert("output_config".to_string(), json!({"effort": effort}));
-        }
-        ThinkingType::Enabled => {
-            let budget_tokens = thinking_budget_tokens(model_config)
-                .min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
-            if budget_tokens >= MIN_ANSWER_TOKENS {
-                obj.insert(
-                    "thinking".to_string(),
-                    json!({
-                        "type": "enabled",
-                        "budget_tokens": budget_tokens
-                    }),
-                );
+    if let Some(level) = zai_effort_to_send(provider_name, model_config) {
+        obj.insert("thinking".to_string(), json!({"type": "enabled"}));
+        obj.insert(
+            "output_config".to_string(),
+            json!({"effort": level.to_string()}),
+        );
+    } else {
+        match thinking_type_for_provider(provider_name, model_config) {
+            ThinkingType::Adaptive => {
+                obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
+                let effort = adaptive_effort_wire(provider_name, model_config);
+                obj.insert("output_config".to_string(), json!({"effort": effort}));
             }
+            ThinkingType::Enabled => {
+                let budget_tokens = thinking_budget_tokens(model_config)
+                    .min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
+                if budget_tokens >= MIN_ANSWER_TOKENS {
+                    obj.insert(
+                        "thinking".to_string(),
+                        json!({
+                            "type": "enabled",
+                            "budget_tokens": budget_tokens
+                        }),
+                    );
+                }
+            }
+            ThinkingType::Disabled => {}
         }
-        ThinkingType::Disabled => {}
     }
 
     if options.preserve_thinking_context && !options.thinking_disabled {
@@ -890,8 +913,12 @@ fn apply_thinking_config(
         }
     }
 
+    let can_disable_thinking = model_config
+        .thinking_effort_levels(provider_name)
+        .is_some_and(|levels| levels.contains(&ThinkingEffort::Off));
     if !obj.contains_key("thinking")
-        && requires_explicit_thinking_disable(provider_name, &model_config.model_name)
+        && (can_disable_thinking
+            || requires_explicit_thinking_disable(provider_name, &model_config.model_name))
     {
         obj.insert("thinking".to_string(), json!({"type": "disabled"}));
     }
