@@ -115,7 +115,7 @@ function GooseMessage({
                   {!isStreaming && !hideTimestamp && timestamp}
                 </div>
                 {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                  <div className="pt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
                     <MessageUsageStats
                       usage={message.metadata.usage}
                       operationLogs={message.metadata.operationLogs}
@@ -156,7 +156,7 @@ function GooseMessage({
                   </div>
                 )}
                 {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                  <div className="pt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
                     <MessageUsageStats
                       usage={message.metadata.usage}
                       operationLogs={message.metadata.operationLogs}
@@ -214,7 +214,7 @@ function GooseMessage({
                   {!isStreaming && !hideTimestamp && timestamp}
                 </div>
                 {!isStreaming && hasMessageDetails && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                  <div className="pt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
                     <MessageUsageStats
                       usage={message.metadata.usage}
                       operationLogs={message.metadata.operationLogs}
