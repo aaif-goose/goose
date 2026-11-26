@@ -872,6 +872,48 @@ mod tests {
         select.current_value.0.to_string()
     }
 
+    #[test_case("glm-5.3" ; "glm 5.3")]
+    #[test_case("glm-5.4" ; "glm 5.4")]
+    fn test_build_config_options_offers_catalog_effort_levels_for_zai_coding_plan(
+        model_name: &str,
+    ) {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let mode_state = build_mode_state(GooseMode::Auto).unwrap();
+        let model_state = model_selection(model_name, &[model_name]);
+        let mut model_config =
+            ModelConfig::new(model_name).with_thinking_effort(ThinkingEffort::Max);
+        model_config.reasoning = Some(true);
+        let options = build_config_options(
+            &mode_state,
+            &model_state,
+            &model_config,
+            "zai_coding_plan",
+            vec![SessionConfigSelectOption::new(
+                "zai_coding_plan",
+                "zai_coding_plan",
+            )],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        // GLM-5.3+ cannot disable thinking, so there is no `off`.
+        assert_eq!(select.current_value.0.as_ref(), "max");
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(vec![
+                SessionConfigSelectOption::new("low", "low"),
+                SessionConfigSelectOption::new("high", "high"),
+                SessionConfigSelectOption::new("max", "max"),
+            ])
+        );
+    }
+
     fn effort_capability(values: &[&str], current: &str) -> ThinkingEffortCapability {
         ThinkingEffortCapability {
             option_id: "effort".to_string(),
