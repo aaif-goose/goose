@@ -3,7 +3,7 @@ use futures::future::BoxFuture;
 use oi_kit_providers::{
     api_client::{ApiClient, AuthMethod, TlsConfig},
     base::{ProviderDescriptor, ProviderMetadata},
-    openrouter::OpenRouterProvider,
+    openrouter::{OpenRouterProvider, OPENROUTER_DEFAULT_HOST, OPENROUTER_MANAGEMENT_KEY},
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -50,7 +50,7 @@ async fn from_env(tls_config: Option<TlsConfig>) -> Result<OpenRouterProvider> {
     let api_key: String = config.get_secret("OPENROUTER_API_KEY")?;
     let host: String = config
         .get_param("OPENROUTER_HOST")
-        .unwrap_or_else(|_| "https://openrouter.ai".to_string());
+        .unwrap_or_else(|_| OPENROUTER_DEFAULT_HOST.to_string());
     let configured_parameters = configured_openrouter_parameters(config)?;
 
     let api_client = ApiClient::new_with_tls(host, AuthMethod::BearerToken(api_key), tls_config)?
@@ -59,11 +59,15 @@ async fn from_env(tls_config: Option<TlsConfig>) -> Result<OpenRouterProvider> {
         .with_header("X-Title", "goose")?
         .with_header("X-OpenRouter-Categories", "cli-agent,productivity")?;
 
-    Ok(OpenRouterProvider::new(
+    let provider = OpenRouterProvider::new(
         api_client,
         configured_parameters,
         Some(Box::new(crate::session_context::current_session_id)),
-    ))
+    );
+    match config.get_secret::<String>(OPENROUTER_MANAGEMENT_KEY) {
+        Ok(key) if !key.trim().is_empty() => provider.with_management_key(key),
+        _ => Ok(provider),
+    }
 }
 
 fn configured_openrouter_parameters(config: &Config) -> Result<Option<HashMap<String, Value>>> {

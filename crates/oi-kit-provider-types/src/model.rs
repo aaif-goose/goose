@@ -387,8 +387,9 @@ impl ModelConfig {
     }
 
     pub fn normalize_effort_suffix(&mut self) {
-        if !is_openai_responses_model(&self.model_name)
-            && !supports_xai_reasoning_effort(&self.model_name)
+        if self.model_name.contains("@preset/")
+            || (!is_openai_responses_model(&self.model_name)
+                && !supports_xai_reasoning_effort(&self.model_name))
         {
             return;
         }

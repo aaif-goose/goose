@@ -63,7 +63,6 @@ impl AcpConnection {
             .await
             .internal_err_ctx("Failed to get provider while forking ACP session")?;
         resume_saved_provider_session(&provider, goose_session.conversation.as_ref()).await;
-        let effort_support = agent_thinking_effort_support(&self.services, &goose_session.id).await;
 
         let acp_session_id = SessionId::new(new_session_id.clone());
         let mut meta = session_meta(&goose_session);
@@ -72,7 +71,7 @@ impl AcpConnection {
         }
 
         let (mode_state, config_options) =
-            build_session_setup_config(&self.provider_inventory, &goose_session, &effort_support)
+            build_session_setup_config(&self.provider_inventory, &goose_session, &self.services)
                 .await?;
 
         let mut response = ForkSessionResponse::new(acp_session_id.clone())

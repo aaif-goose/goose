@@ -422,12 +422,8 @@ impl AcpConnection {
             .await
             .internal_err_ctx("Failed to reload session")?;
 
-        let (mode_state, config_options) = build_session_setup_config(
-            &self.provider_inventory,
-            &session,
-            &agent_thinking_effort_support(&self.services, &session.id).await,
-        )
-        .await?;
+        let (mode_state, config_options) =
+            build_session_setup_config(&self.provider_inventory, &session, &self.services).await?;
 
         let mut response = LoadSessionResponse::new().modes(mode_state);
         if let Some(co) = config_options {

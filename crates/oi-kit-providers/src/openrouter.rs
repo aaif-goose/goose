@@ -7,25 +7,32 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::api_client::ApiClient;
+use crate::api_client::{ApiClient, AuthMethod};
 
 pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + Sync>;
-use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
+use crate::base::{
+    model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
+};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
 use crate::canonical::{maybe_get_canonical_model_with_variant_fallback, strip_openrouter_variant};
 use crate::conversation::message::Message;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
-use crate::formats::openai::create_request;
+use crate::formats::openai::{
+    create_request, create_request_for_model_with_options, OpenAiFormatOptions,
+};
 use crate::http_status::read_json_response;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{handle_status, stream_openai_compat};
 use crate::openrouter_format;
+use crate::openrouter_presets::{preset_slug, PresetCatalog};
 use crate::request_log::{start_log, LoggerHandleExt};
 use crate::retry::ProviderRetry;
 use rmcp::model::Tool;
 
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
+pub const OPENROUTER_MANAGEMENT_KEY: &str = "OPENROUTER_MANAGEMENT_KEY";
+pub const OPENROUTER_DEFAULT_HOST: &str = "https://openrouter.ai";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5.5";
 pub const OPENROUTER_DECISION_DEFAULT_MODEL: &str = "typesafe/jev-1.13";
@@ -72,6 +79,8 @@ pub struct OpenRouterProvider {
     session_id_provider: Option<OpenRouterSessionIdProvider>,
     #[serde(skip)]
     cached_models: tokio::sync::Mutex<Option<CachedModels>>,
+    #[serde(skip)]
+    presets: Option<PresetCatalog>,
 }
 
 impl OpenRouterProvider {
@@ -87,7 +96,35 @@ impl OpenRouterProvider {
             configured_parameters,
             session_id_provider,
             cached_models: tokio::sync::Mutex::new(None),
+            presets: None,
         }
+    }
+
+    pub fn with_management_key(mut self, key: String) -> Result<Self> {
+        // The management key only goes to OpenRouter, even with a custom inference host.
+        let client = ApiClient::new_with_tls(
+            OPENROUTER_DEFAULT_HOST.to_owned(),
+            AuthMethod::BearerToken(key),
+            None,
+        )?
+        .with_same_origin_redirects()?;
+        self.presets = Some(PresetCatalog::new(client));
+        Ok(self)
+    }
+
+    pub fn is_preset(model: &str) -> bool {
+        preset_slug(model).is_some()
+    }
+
+    async fn preset_info(&self, model: &str) -> Option<ModelInfo> {
+        if self
+            .configured_parameters
+            .as_ref()
+            .is_some_and(overrides_preset_routing)
+        {
+            return None;
+        }
+        self.presets.as_ref()?.model_info(model).await
     }
 
     async fn get_or_fetch_models(&self) -> Result<Arc<[OpenRouterModel]>, ProviderError> {
@@ -194,6 +231,12 @@ impl OpenRouterProvider {
         })
         .await
     }
+}
+
+fn overrides_preset_routing(params: &HashMap<String, Value>) -> bool {
+    ["provider", "models", "preset"]
+        .iter()
+        .any(|key| params.contains_key(*key))
 }
 
 fn is_mandatory_reasoning_error(error: &ProviderError) -> bool {
@@ -493,10 +536,11 @@ impl crate::base::ProviderDescriptor for OpenRouterProvider {
                     "OPENROUTER_HOST",
                     false,
                     false,
-                    Some("https://openrouter.ai"),
+                    Some(OPENROUTER_DEFAULT_HOST),
                     false,
                 ),
                 ConfigKey::new(OPENROUTER_PARAMETERS_CONFIG_KEY, false, false, None, false),
+                ConfigKey::new(OPENROUTER_MANAGEMENT_KEY, false, true, None, false),
             ],
         )
     }
@@ -566,6 +610,12 @@ impl Provider for OpenRouterProvider {
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .resolve(model, override_limit, || async {
+                if preset_slug(model).is_some() {
+                    return Ok(self
+                        .preset_info(model)
+                        .await
+                        .and_then(|info| info.context_limit));
+                }
                 let canonical = maybe_get_canonical_model_with_variant_fallback(&self.name, model);
                 let base = strip_openrouter_variant(model);
                 // Exact catalog rows outrank live exact IDs; base fallbacks come after both.
@@ -587,15 +637,38 @@ impl Provider for OpenRouterProvider {
     }
 
     async fn fetch_recommended_models(&self, toolshim: bool) -> Result<Vec<String>, ProviderError> {
-        let mut models: Vec<String> = self
-            .get_or_fetch_models()
-            .await?
-            .iter()
-            .filter(|model| toolshim || model.supports_tools)
-            .map(|model| model.id.clone())
-            .collect();
+        let (catalog, presets) = tokio::join!(self.get_or_fetch_models(), async {
+            match &self.presets {
+                Some(catalog) => catalog.list().await,
+                None => Vec::new(),
+            }
+        });
+        let mut models: Vec<String> = match catalog {
+            Ok(catalog) => catalog
+                .iter()
+                .filter(|model| toolshim || model.supports_tools)
+                .map(|model| model.id.clone())
+                .collect(),
+            Err(error) if presets.is_empty() => return Err(error),
+            Err(_) => OPENROUTER_KNOWN_MODELS
+                .iter()
+                .map(|model| (*model).to_owned())
+                .collect(),
+        };
+        models.extend(presets);
         models.sort();
+        models.dedup();
         Ok(models)
+    }
+
+    async fn fetch_model_info(&self, model: &str) -> Result<ModelInfo, ProviderError> {
+        Ok(if Self::is_preset(model) {
+            self.preset_info(model)
+                .await
+                .unwrap_or_else(|| ModelInfo::new(model))
+        } else {
+            model_info_for_provider_model(&self.name, model)
+        })
     }
 
     async fn stream(
@@ -611,23 +684,65 @@ impl Provider for OpenRouterProvider {
             .and_then(|provider| provider())
             .unwrap_or_default();
 
-        let mut merged_model;
-        let model_config = if let Some(params) = &self.configured_parameters {
-            merged_model = model_config.clone();
-            merge_openrouter_parameters(&mut merged_model, params.clone());
-            &merged_model
+        let is_preset = Self::is_preset(&model_config.model_name);
+        let preset = if is_preset
+            && !model_config
+                .request_params
+                .as_ref()
+                .is_some_and(overrides_preset_routing)
+        {
+            self.preset_info(&model_config.model_name).await
+        } else {
+            None
+        };
+        let mut configured_model;
+        let model_config = if self.configured_parameters.is_some() || is_preset {
+            configured_model = model_config.clone();
+            if let Some(params) = &self.configured_parameters {
+                merge_openrouter_parameters(&mut configured_model, params.clone());
+            }
+            if is_preset {
+                configured_model
+                    .reasoning
+                    .get_or_insert_with(|| preset.as_ref().is_some_and(|info| info.reasoning));
+                configured_model.supports_vision = configured_model
+                    .supports_vision
+                    .or_else(|| preset.as_ref().and_then(|info| info.supports_vision));
+            }
+            &configured_model
         } else {
             model_config
         };
 
-        let mut payload = create_request(
-            model_config,
-            system,
-            messages,
-            tools,
-            &ImageFormat::OpenAi,
-            true,
-        )?;
+        let routed_model = preset
+            .as_ref()
+            .and_then(|info| info.resolved_model.as_deref());
+        let mut payload = if is_preset {
+            create_request_for_model_with_options(
+                model_config,
+                &model_config.model_name,
+                routed_model.unwrap_or_default(),
+                system,
+                messages,
+                tools,
+                &ImageFormat::OpenAi,
+                true,
+                OpenAiFormatOptions {
+                    preserve_thinking_context: true,
+                    supports_vision: model_config.supports_vision.unwrap_or_default(),
+                    ..Default::default()
+                },
+            )?
+        } else {
+            create_request(
+                model_config,
+                system,
+                messages,
+                tools,
+                &ImageFormat::OpenAi,
+                true,
+            )?
+        };
 
         if !session_id.is_empty() {
             if let Some(obj) = payload.as_object_mut() {
@@ -646,7 +761,11 @@ impl Provider for OpenRouterProvider {
             apply_chat_payload_breakpoints(&mut payload);
         }
 
-        apply_gemini_compatibility(&model_config.model_name, &mut payload, messages);
+        apply_gemini_compatibility(
+            routed_model.unwrap_or(&model_config.model_name),
+            &mut payload,
+            messages,
+        );
         let sent_reasoning_disable =
             openrouter_format::apply_reasoning_config(&mut payload, model_config);
 
@@ -855,6 +974,167 @@ mod tests {
             "transforms must not be set unconditionally, got body: {}",
             body
         );
+    }
+
+    #[tokio::test]
+    async fn preset_discovery_resolves_pinned_route_and_streams_with_the_alias() {
+        use crate::conversation::token_usage::CostSource;
+        use wiremock::matchers::{body_partial_json, header, method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // This suffix would be parsed as a thinking effort on an ordinary model.
+        const MODEL: &str = "@preset/gpt-6-pro-high";
+        let inference = models_server(models_response(), 1).await;
+        let management = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/presets"))
+            .and(query_param("offset", "0"))
+            .and(header("authorization", "Bearer management-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{"slug": "archived", "status": "archived"}],
+                "total_count": 3
+            })))
+            .expect(1)
+            .mount(&management)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/presets"))
+            .and(query_param("offset", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [
+                    {"slug": "gpt-6-pro-high", "status": "active"},
+                    {"slug": "mixed-rates", "status": "active"}
+                ],
+                "total_count": 3
+            })))
+            .expect(1)
+            .mount(&management)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/presets/gpt-6-pro-high"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "status": "active",
+                    "designated_version": {
+                        "config": {
+                            "model": "test/base",
+                            "provider": {"only": ["pinned/region"]}
+                        }
+                    }
+                }
+            })))
+            .expect(1)
+            .mount(&management)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/presets/mixed-rates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "status": "active",
+                    "designated_version": {
+                        "config": {"models": ["test/base"]}
+                    }
+                }
+            })))
+            .expect(1)
+            .mount(&management)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models/test/base/endpoints"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "architecture": {"input_modalities": ["text", "image"]},
+                    "endpoints": [
+                        {
+                            "tag": "cheaper",
+                            "context_length": 32_768,
+                            "pricing": {"prompt": "0.00000001", "completion": "0.00000005"}
+                        },
+                        {
+                            "tag": "pinned/region",
+                            "context_length": 1_048_576,
+                            "supported_parameters": ["tools", "reasoning"],
+                            "pricing": {"prompt": "0.0000001", "completion": "0.0000005"}
+                        }
+                    ]
+                }
+            })))
+            .expect(2)
+            .mount(&management)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/chat/completions"))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_partial_json(json!({
+                "model": MODEL,
+                "reasoning": {"effort": "medium"},
+                "usage": {"include": true}
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(format!(
+                        "data: {}\n\ndata: [DONE]\n\n",
+                        json!({
+                            "id": "gen-test",
+                            "model": "test/base",
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": "OK"},
+                                "finish_reason": "stop"
+                            }],
+                            "usage": {"prompt_tokens": 2, "completion_tokens": 1, "cost": 0.001}
+                        })
+                    )),
+            )
+            .expect(1)
+            .mount(&inference)
+            .await;
+
+        let mut provider = provider_for(&inference);
+        provider.presets = Some(PresetCatalog::new(
+            ApiClient::new_with_tls(
+                management.uri(),
+                AuthMethod::BearerToken("management-key".to_owned()),
+                None,
+            )
+            .unwrap(),
+        ));
+        let models = provider.fetch_recommended_models(false).await.unwrap();
+        assert!(models.contains(&MODEL.to_string()));
+        assert!(models.contains(&MODEL_NOT_IN_CATALOG.to_string()));
+        assert!(!models.iter().any(|model| model == "@preset/archived"));
+
+        let info = provider.fetch_model_info(MODEL).await.unwrap();
+        assert_eq!(info.context_limit, Some(1_048_576));
+        assert_eq!(info.resolved_model.as_deref(), Some("test/base"));
+        assert_eq!(info.input_token_cost, Some(0.0000001));
+        assert_eq!(info.output_token_cost, Some(0.0000005));
+        assert_eq!(info.supports_vision, Some(true));
+        assert!(info.reasoning);
+
+        let mixed = provider
+            .fetch_model_info("@preset/mixed-rates")
+            .await
+            .unwrap();
+        assert_eq!(mixed.context_limit, Some(32_768));
+        assert_eq!(mixed.input_token_cost, None);
+        assert_eq!(mixed.output_token_cost, None);
+        assert!(!mixed.reasoning);
+        assert_eq!(provider.get_context_limit(MODEL, None).await, 1_048_576);
+        assert_eq!(
+            provider.get_context_limit(MODEL, Some(64_000)).await,
+            64_000
+        );
+
+        let config =
+            ModelConfig::new(MODEL).with_thinking_effort(crate::thinking::ThinkingEffort::Medium);
+        let (_, usage) = provider
+            .complete(&config, "system", &[Message::user().with_text("hi")], &[])
+            .await
+            .unwrap();
+        assert_eq!(usage.cost, Some(0.001));
+        assert_eq!(usage.cost_source, Some(CostSource::ProviderReported));
     }
 
     const MODEL_IN_CATALOG: &str = "anthropic/claude-sonnet-4.5";
