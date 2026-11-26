@@ -162,7 +162,7 @@ once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = { version = "3.1", default-features = false }
 oi-kit-context-management = { path = "../oi-kit-context-management" }
-oi-kit-providers = { path = "../oi-kit-providers", default-features = false }
+oi-kit-providers = { path = "../oi-kit-providers", default-features = false, features = ["bundled-catalog"] }
 oi-kit-download-manager = { path = "../oi-kit-download-manager" }
 goose-acp-types = { path = "../goose-acp-types" }
 oi-kit-agent = { path = "../oi-kit-agent", default-features = false }

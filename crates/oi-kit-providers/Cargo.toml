@@ -12,7 +12,8 @@ description.workspace = true
 workspace = true
 
 [features]
-default = []
+default = ["bundled-catalog"]
+bundled-catalog = ["oi-kit-provider-types/bundled-catalog"]
 local-inference = ["dep:oi-kit-local-inference"]
 local-inference-hf-hub = ["local-inference", "oi-kit-local-inference/hf-hub"]
 cuda = ["local-inference", "oi-kit-local-inference/cuda"]
