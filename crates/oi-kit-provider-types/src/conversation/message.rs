@@ -232,6 +232,8 @@ pub struct ActionRequired {
 pub struct ThinkingContentBlock {
     pub thinking: String,
     pub signature: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -601,9 +603,18 @@ impl MessageContentBlock {
     }
 
     pub fn thinking<S1: Into<String>, S2: Into<String>>(thinking: S1, signature: S2) -> Self {
+        Self::thinking_with_id(thinking, signature, None)
+    }
+
+    pub fn thinking_with_id<S1: Into<String>, S2: Into<String>>(
+        thinking: S1,
+        signature: S2,
+        id: Option<String>,
+    ) -> Self {
         MessageContentBlock::Thinking(ThinkingContentBlock {
             thinking: thinking.into(),
             signature: signature.into(),
+            id,
         })
     }
 
