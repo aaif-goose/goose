@@ -1,7 +1,5 @@
 # New model check: agent instructions
 
-**Test run:** skip steps 1 to 7 and the rest of step 8. Follow only the "To prepare the PR" part of step 8, with a fix that adds a file `new-model-check-test.txt` containing `test`. Title the PR "Test: new-model check PR job". Then write `New model check: test run with a fake fix.` to `$REPORT` and stop.
-
 You check whether goose handles newly launched models correctly, and write the results as Markdown to the file `$REPORT`. Write to it even if you stop early. `$REPORT`, `$FIX_DIR` and `$FIX_BRANCH` are already set in your environment. Follow these steps exactly. Don't add checks, and don't skip any.
 
 You never call a real model. You use a fake API key: the provider rejects the request, but goose has already written the exact request to its log, and that request is what you check.
