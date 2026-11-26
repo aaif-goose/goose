@@ -1,10 +1,10 @@
 use agent_client_protocol::schema::v1::{
-    Annotations as AcpAnnotations, ClientCapabilities, CloseSessionRequest, ContentBlock,
-    ContentChunk, EnvVariable, HttpHeader, ImageContent, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, Role as AcpRole, SessionConfigKind,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    Annotations as AcpAnnotations, CancelNotification, ClientCapabilities, CloseSessionRequest,
+    ContentBlock, ContentChunk, EnvVariable, HttpHeader, ImageContent, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, Role as AcpRole,
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
     TextContent, ToolCallContent, ToolCallStatus, ToolKind,
@@ -27,6 +27,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, watch, Mutex as TokioMutex};
@@ -57,6 +58,8 @@ const EFFORT_CONFIG_OPTION_ID: &str = "effort";
 
 /// Session request param holding the selected thinking effort.
 pub(super) const THINKING_EFFORT_PARAM: &str = "thinking_effort";
+
+const PROMPT_CANCEL_GRACE: Duration = Duration::from_secs(5);
 
 pub struct AcpProviderConfig {
     pub command: PathBuf,
@@ -1397,7 +1400,9 @@ impl AcpClientLoop {
                             handler.ok_or_else(agent_client_protocol::Error::internal_error)?;
 
                         if tx.is_closed() {
-                            return Err(agent_client_protocol::Error::internal_error());
+                            return responder.respond(RequestPermissionResponse::new(
+                                RequestPermissionOutcome::Cancelled,
+                            ));
                         }
 
                         tx.try_send(AcpUpdate::PermissionRequest {
@@ -1698,25 +1703,31 @@ async fn handle_requests(
                 content,
                 response_tx,
             } => {
+                if response_tx.is_closed() {
+                    continue;
+                }
                 *prompt_response_tx.lock().unwrap() = Some(response_tx.clone());
 
-                let response: Result<PromptResponse, _> = cx
-                    .send_request(PromptRequest::new(session_id, content))
-                    .block_task()
-                    .await;
+                let prompt = cx
+                    .send_request(PromptRequest::new(session_id.clone(), content))
+                    .block_task();
+                tokio::pin!(prompt);
 
-                match response {
-                    Ok(r) => {
+                tokio::select! {
+                    biased;
+                    response = &mut prompt => {
+                        let response: Result<PromptResponse, _> = response;
+                        let update = match response {
+                            Ok(r) => AcpUpdate::Complete(r.stop_reason, r.usage),
+                            Err(e) => AcpUpdate::Error(e),
+                        };
                         log_undelivered(
-                            response_tx.try_send(AcpUpdate::Complete(r.stop_reason, r.usage)),
+                            response_tx.try_send(update),
                             AGENT_METHOD_NAMES.session_prompt,
                         );
                     }
-                    Err(e) => {
-                        log_undelivered(
-                            response_tx.try_send(AcpUpdate::Error(e)),
-                            AGENT_METHOD_NAMES.session_prompt,
-                        );
+                    _ = response_tx.closed() => {
+                        cancel_abandoned_prompt(&cx, session_id, prompt).await;
                     }
                 }
 
@@ -1738,6 +1749,18 @@ async fn handle_requests(
     }
 
     Ok(())
+}
+
+async fn cancel_abandoned_prompt(
+    cx: &ConnectionTo<Agent>,
+    session_id: SessionId,
+    prompt: impl Future<Output = Result<PromptResponse, agent_client_protocol::Error>>,
+) {
+    if let Err(error) = cx.send_notification(CancelNotification::new(session_id)) {
+        tracing::debug!(method = AGENT_METHOD_NAMES.session_cancel, %error, "failed to send");
+        return;
+    }
+    let _ = tokio::time::timeout(PROMPT_CANCEL_GRACE, prompt).await;
 }
 
 async fn apply_session_config_options(
