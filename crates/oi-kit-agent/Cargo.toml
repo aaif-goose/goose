@@ -1,6 +1,6 @@
 [package]
 name = "oi-kit-agent"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -24,7 +24,7 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
 tokio-util = { workspace = true, features = ["compat"] }
 async-trait = { workspace = true }
-oi-kit-provider-types = { version = "0.1.0-alpha.16", path = "../oi-kit-provider-types", default-features = false }
+oi-kit-provider-types = { version = "0.1.0-alpha.17", path = "../oi-kit-provider-types", default-features = false }
 rmcp = { workspace = true, features = ["server"] }
 uuid = { workspace = true }
 serde_json = { workspace = true }
@@ -33,7 +33,7 @@ tracing = { workspace = true }
 tracing-futures = { workspace = true }
 serde.workspace = true
 regex = { workspace = true, features = ["unicode-perl"] }
-goose-acp-types = { version = "0.1.0-alpha.16", path = "../goose-acp-types", default-features = false }
+goose-acp-types = { version = "0.1.0-alpha.17", path = "../goose-acp-types", default-features = false }
 jsonschema = { version = "0.62", default-features = false }
 indoc.workspace = true
 
@@ -51,7 +51,7 @@ wasm-bindgen-test = "0.3.78"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 blake3 = { version = "1", default-features = false, features = ["std"] }
 indexmap = { version = "2.9", default-features = false, features = ["std"] }
-oi-kit-context-management = { version = "0.1.0-alpha.16", path = "../oi-kit-context-management", default-features = false }
+oi-kit-context-management = { version = "0.1.0-alpha.17", path = "../oi-kit-context-management", default-features = false }
 once_cell.workspace = true
 reqwest = { workspace = true, features = ["system-proxy", "json"] }
 rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "transport-streamable-http-client-unix-socket"] }
