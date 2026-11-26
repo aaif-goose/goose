@@ -1,0 +1,23 @@
+{
+  "name": "omniroute",
+  "engine": "openai",
+  "display_name": "OmniRoute",
+  "description": "Local OpenAI-compatible routing proxy that load-balances across multiple upstream providers and model combos",
+  "api_key_env": "OMNIROUTE_API_KEY",
+  "base_url": "${OMNIROUTE_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "OMNIROUTE_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:20128",
+      "description": "Base URL of the OmniRoute server (default: http://localhost:20128)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": true,
+  "skip_canonical_filtering": true
+}
