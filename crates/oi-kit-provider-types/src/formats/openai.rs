@@ -1332,6 +1332,8 @@ where
         let mut last_seen_model: Option<String> = None;
         let mut last_response_id: Option<String> = None;
         let mut last_finish_reason: Option<String> = None;
+        let mut saw_any_chunk = false;
+        let mut saw_done = false;
         let mut output_token_limit_reached = false;
         let mut output_token_limit_metadata_emitted = false;
         let mut usage_emitted = false;
@@ -1342,6 +1344,7 @@ where
             let line = strip_data_prefix(&response_str);
 
             if line.is_some_and(|l| l == "[DONE]") {
+                saw_done = true;
                 break 'outer;
             }
 
@@ -1354,6 +1357,7 @@ where
             )? else {
                 continue  // metadata-only frame
             };
+            saw_any_chunk = true;
             if let Some(model) = &chunk.model {
                 last_seen_model = Some(model.clone());
             }
@@ -1377,7 +1381,12 @@ where
                 }
             }
 
-            if let Some(reason) = chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
+            if let Some(reason) = chunk
+                .choices
+                .first()
+                .and_then(|c| c.finish_reason.clone())
+                .filter(|r| !r.is_empty())
+            {
                 last_finish_reason = Some(reason);
             }
             let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref())
@@ -1419,6 +1428,7 @@ where
                             let response_str = response_chunk?;
                             if let Some(line) = strip_data_prefix(&response_str) {
                                 if line == "[DONE]" {
+                                    saw_done = true;
                                     break 'outer;
                                 }
 
@@ -1434,7 +1444,12 @@ where
                                 if let Some(id) = &tool_chunk.id {
                                     last_response_id = Some(id.clone());
                                 }
-                                if let Some(reason) = tool_chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
+                                if let Some(reason) = tool_chunk
+                                    .choices
+                                    .first()
+                                    .and_then(|c| c.finish_reason.clone())
+                                    .filter(|r| !r.is_empty())
+                                {
                                     last_finish_reason = Some(reason);
                                 }
 
@@ -1694,6 +1709,12 @@ where
                 usage_emitted = true;
                 yield (None, usage)
             }
+        }
+
+        if saw_any_chunk && !saw_done && last_finish_reason.is_none() {
+            Err(ProviderError::stream_decode_error(
+                "OpenAI stream ended without a finish_reason or [DONE] sentinel",
+            ))?;
         }
 
         let filtered = think_filter.finish();
@@ -4039,6 +4060,88 @@ data: [DONE]
         );
         assert_usage_yielded_once(&result, 100, 20, 120);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_premature_eof_without_terminal_signal_errors() {
+        let lines = vec![
+            Ok(r#"data: {"id":"stub","object":"chat.completion.chunk","created":1794989442,"model":"stub-model","choices":[{"index":0,"delta":{"role":"assistant","content":"partial answer "},"finish_reason":null}]}"#.to_string()),
+        ];
+        let mut messages = std::pin::pin!(response_to_streaming_message(tokio_stream::iter(lines)));
+        let mut errors = Vec::new();
+        while let Some(item) = messages.next().await {
+            if let Err(err) = item {
+                errors.push(err);
+            }
+        }
+        assert_eq!(
+            errors.len(),
+            1,
+            "EOF without finish_reason or [DONE] must error"
+        );
+        let provider_err = errors[0]
+            .downcast_ref::<ProviderError>()
+            .expect("error should be ProviderError");
+        assert!(
+            matches!(provider_err, ProviderError::NetworkError(_)),
+            "expected stream decode NetworkError, got: {provider_err:?}"
+        );
+        assert!(
+            provider_err
+                .to_string()
+                .contains("ended without a finish_reason or [DONE]"),
+            "unexpected error message: {provider_err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_premature_eof_with_empty_finish_reason_errors() {
+        let lines = vec![
+            Ok(r#"data: {"id":"stub","object":"chat.completion.chunk","created":1794989442,"model":"stub-model","choices":[{"index":0,"delta":{"role":"assistant","content":"partial answer "},"finish_reason":""}]}"#.to_string()),
+        ];
+        let mut messages = std::pin::pin!(response_to_streaming_message(tokio_stream::iter(lines)));
+        let mut errors = Vec::new();
+        while let Some(item) = messages.next().await {
+            if let Err(err) = item {
+                errors.push(err);
+            }
+        }
+        assert_eq!(
+            errors.len(),
+            1,
+            "EOF with only empty finish_reason and no [DONE] must error"
+        );
+        assert!(
+            errors[0]
+                .to_string()
+                .contains("ended without a finish_reason or [DONE]"),
+            "unexpected error message: {}",
+            errors[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_eof_with_finish_reason_without_done_succeeds() -> anyhow::Result<()> {
+        let response_lines = r#"
+data: {"id":"stub","object":"chat.completion.chunk","created":1794989442,"model":"stub-model","choices":[{"index":0,"delta":{"role":"assistant","content":"complete answer"},"finish_reason":null}]}
+data: {"id":"stub","object":"chat.completion.chunk","created":1794989442,"model":"stub-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+"#;
+
+        let result = run_streaming_test(response_lines).await?;
+        assert!(result.has_text_content);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_eof_with_done_without_finish_reason_succeeds() -> anyhow::Result<()> {
+        let response_lines = r#"
+data: {"id":"stub","object":"chat.completion.chunk","created":1794989442,"model":"stub-model","choices":[{"index":0,"delta":{"role":"assistant","content":"complete answer"},"finish_reason":null}]}
+data: [DONE]
+"#;
+
+        let result = run_streaming_test(response_lines).await?;
+        assert!(result.has_text_content);
         Ok(())
     }
 
