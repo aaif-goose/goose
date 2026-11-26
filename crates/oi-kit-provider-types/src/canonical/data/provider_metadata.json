@@ -151,7 +151,7 @@
     "env": [
       "AIMLAPI_API_KEY"
     ],
-    "model_count": 158
+    "model_count": 157
   },
   {
     "id": "ainetcafe",
@@ -603,7 +603,7 @@
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_KEY"
     ],
-    "model_count": 30
+    "model_count": 18
   },
   {
     "id": "commandcode",
@@ -625,7 +625,7 @@
     "env": [
       "CONCENTRATE_API_KEY"
     ],
-    "model_count": 164
+    "model_count": 165
   },
   {
     "id": "confidential-ai",
@@ -802,7 +802,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 392
+    "model_count": 258
   },
   {
     "id": "empiriolabs",
@@ -813,7 +813,7 @@
     "env": [
       "EMPIRIOLABS_API_KEY"
     ],
-    "model_count": 63
+    "model_count": 62
   },
   {
     "id": "engy",
@@ -890,7 +890,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 33
+    "model_count": 35
   },
   {
     "id": "fortytwo",
@@ -1088,7 +1088,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 118
+    "model_count": 120
   },
   {
     "id": "humain",
@@ -1375,7 +1375,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 462
+    "model_count": 459
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1881,7 +1881,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 605
+    "model_count": 609
   },
   {
     "id": "nearai",
@@ -1992,7 +1992,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 52
+    "model_count": 41
   },
   {
     "id": "oathbreaker",
@@ -2025,7 +2025,7 @@
     "env": [
       "OCI_GENAI_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 10
   },
   {
     "id": "ofox",
@@ -2124,7 +2124,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 19
   },
   {
     "id": "paraloncloud",
@@ -2256,7 +2256,7 @@
     "env": [
       "PRIME_API_KEY"
     ],
-    "model_count": 71
+    "model_count": 73
   },
   {
     "id": "privatemode-ai",
@@ -2741,7 +2741,7 @@
     "env": [
       "TENCENT_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 19
+    "model_count": 22
   },
   {
     "id": "tencent-tokenhub",
@@ -3060,7 +3060,7 @@
     "env": [
       "ARK_CODING_PLAN_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 14
   },
   {
     "id": "vultr",
@@ -3203,7 +3203,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 19
+    "model_count": 20
   },
   {
     "id": "zai-coding-plan",
