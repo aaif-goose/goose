@@ -14,7 +14,8 @@ set -eu
 #   curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
 #
 # Environment variables:
-#   GOOSE_BIN_DIR  - Directory to which goose will be installed (default: $HOME/.local/bin)
+#   GOOSE_BIN_DIR  - Directory to which goose will be installed (default: $HOME/.local/bin,
+#                    or $USERPROFILE/goose on native Windows: Git Bash, MSYS2, Cygwin)
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
@@ -372,19 +373,59 @@ fi
 
 
 # --- 7) Check PATH and give instructions if needed ---
-if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
+# On native Windows the install directory can be a Windows path (the default is
+# built from $USERPROFILE), while PATH in Git Bash/MSYS2/Cygwin holds POSIX
+# paths. Compare against, and print, the form each shell expects.
+GOOSE_BIN_DIR_POSIX="$GOOSE_BIN_DIR"
+GOOSE_BIN_DIR_WIN="$GOOSE_BIN_DIR"
+if [ "$OS" = "windows" ] && command -v cygpath >/dev/null 2>&1; then
+  GOOSE_BIN_DIR_POSIX=$(cygpath -u "$GOOSE_BIN_DIR")
+  GOOSE_BIN_DIR_WIN=$(cygpath -w "$GOOSE_BIN_DIR")
+fi
+
+if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* && ":$PATH:" != *":$GOOSE_BIN_DIR_POSIX:"* ]]; then
   echo ""
   echo "Warning: goose installed, but $GOOSE_BIN_DIR is not in your PATH."
 
   if [ "$OS" = "windows" ]; then
+    # Keep the directory literal in the lines written to shell profiles: it goes
+    # inside single quotes there, so $, backticks and $() are not expanded later.
+    GOOSE_BIN_DIR_SH=$(printf '%s' "$GOOSE_BIN_DIR_POSIX" | sed "s/'/'\\\\''/g")
+    GOOSE_BIN_DIR_PS=$(printf '%s' "$GOOSE_BIN_DIR_WIN" | sed "s/'/''/g")
+    WINDOWS_EXPORT_LINE="export PATH='$GOOSE_BIN_DIR_SH':\"\$PATH\""
+    # The printed command passes that line to echo in double quotes. A "!" is
+    # moved out of them ("'!'") so a pasted command skips history expansion.
+    WINDOWS_EXPORT_ARG=$(printf '%s' "$WINDOWS_EXPORT_LINE" | sed -e 's/[\\$`"]/\\&/g' -e "s/!/\"'!'\"/g")
+    PS_PROFILE_LINE="\$env:PATH = '$GOOSE_BIN_DIR_PS;' + \$env:PATH"
+    PS_PROFILE_ARG=$(printf '%s' "$PS_PROFILE_LINE" | sed "s/'/''/g")
+
+    echo "To add goose to your PATH in Git Bash or MSYS2:"
+    echo ""
+    printf '    echo "%s" >> ~/.bashrc\n' "$WINDOWS_EXPORT_ARG"
+    # Login shells read the first of these files; Git for Windows creates a
+    # ~/.bash_profile that loads ~/.bashrc only when none of them exists.
+    for login_file in .bash_profile .bash_login .profile; do
+      if [ -f "$HOME/$login_file" ]; then
+        # Only an active line that sources ~/.bashrc counts, not a comment.
+        if ! grep -v '^[[:space:]]*#' "$HOME/$login_file" | grep -Eq '(^|[;&|{[:space:]])(source|\.)[[:space:]]+[^#]*bashrc'; then
+          printf '    echo "%s" >> ~/%s\n' "$WINDOWS_EXPORT_ARG" "$login_file"
+        fi
+        break
+      fi
+    done
+    echo "    source ~/.bashrc"
+    echo ""
     echo "To add goose to your PATH in PowerShell:"
     echo ""
-    echo "# Add to your PowerShell profile"
-    echo '$profilePath = $PROFILE'
-    echo 'if (!(Test-Path $profilePath)) { New-Item -Path $profilePath -ItemType File -Force }'
-    echo 'Add-Content -Path $profilePath -Value ''$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"'''
-    echo "# Reload profile or restart PowerShell"
-    echo '. $PROFILE'
+    echo "    if (!(Test-Path \$PROFILE)) { New-Item -Path \$PROFILE -ItemType File -Force }"
+    printf "    Add-Content -Path \$PROFILE -Value '%s'\n" "$PS_PROFILE_ARG"
+    echo "    . \$PROFILE"
+    echo ""
+    echo "Shell profiles only affect that shell. To make goose available in every new"
+    echo "terminal and in apps started outside of it, add it to your Windows user PATH"
+    echo "from PowerShell, then open a new terminal:"
+    echo ""
+    echo "    [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$GOOSE_BIN_DIR_PS', 'User')"
     echo ""
     echo "Alternatively, you can run:"
     echo "    goose configure"
