@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Padam sesi"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Padam pilihan"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Duplikasi sesi"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka dalam tetingkap baharu"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Pilih sesi"
+  },
   "sessions.cancel": {
     "defaultMessage": "Batal"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Padam Sesi"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Padam Sesi Dipilih"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Masukkan penerangan sesi"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Gagal memadam sesi \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sesi} other {# sesi}} berjaya dipadamkan"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sesi berjaya dipadam"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sesi} other {# sesi}} berjaya dipadamkan"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Gagal menduplikasi sesi: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Melebihi ambang pemadatan automatik: perbualan dipadatkan sebelum permintaan seterusnya dihantar."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Padam semua sesi"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Adakah anda pasti mahu memadamkan SEMUA sesi sembang secara kekal? Tindakan ini tidak boleh dibatalkan."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Padam Semua Sesi"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Adakah anda pasti mahu memadamkan {count, plural, one {# sesi} other {# sesi}}? Tindakan ini tidak boleh dibatalkan."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Gagal memadamkan sesi: {error}"
   }
 }

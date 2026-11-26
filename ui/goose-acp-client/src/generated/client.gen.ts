@@ -41,8 +41,12 @@ import type {
   DefaultsReadRequest_unstable,
   DefaultsReadResponse_unstable,
   DefaultsSaveRequest_unstable,
+  DeleteAllSessionsRequest_unstable,
+  DeleteAllSessionsResponse_unstable,
   DeleteRecipeRequest_unstable,
   DeleteScheduleRequest_unstable,
+  DeleteSessionsRequest_unstable,
+  DeleteSessionsResponse_unstable,
   DeleteSourceRequest_unstable,
   DiagnosticsGetRequest_unstable,
   DiagnosticsGetResponse_unstable,
@@ -207,6 +211,8 @@ import {
   zCustomProviderUpdateResponse_unstable,
   zDecodeRecipeResponse_unstable,
   zDefaultsReadResponse_unstable,
+  zDeleteAllSessionsResponse_unstable,
+  zDeleteSessionsResponse_unstable,
   zDiagnosticsGetResponse_unstable,
   zDictationConfigResponse_unstable,
   zDictationModelDownloadProgressResponse_unstable,
@@ -368,6 +374,30 @@ export class GooseExtClient {
       "_goose/unstable/session/working-dir/update",
       params,
     );
+  }
+
+  async sessionBatchDelete_unstable(
+    params: DeleteSessionsRequest_unstable,
+  ): Promise<DeleteSessionsResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/batch-delete",
+      params,
+    );
+    return zDeleteSessionsResponse_unstable.parse(
+      raw,
+    ) as DeleteSessionsResponse_unstable;
+  }
+
+  async sessionDeleteAll_unstable(
+    params: DeleteAllSessionsRequest_unstable,
+  ): Promise<DeleteAllSessionsResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/delete-all",
+      params,
+    );
+    return zDeleteAllSessionsResponse_unstable.parse(
+      raw,
+    ) as DeleteAllSessionsResponse_unstable;
   }
 
   async sessionSystemPromptSet_unstable(

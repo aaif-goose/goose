@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "刪除工作階段"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "刪除所選"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "複製工作階段"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新視窗中開啟"
   },
+  "sessions.action.select": {
+    "defaultMessage": "選取工作階段"
+  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "刪除工作階段"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "刪除所選工作階段"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "輸入工作階段描述"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "無法刪除工作階段「{name}」：{error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "已成功刪除 {count, plural, one {# 個工作階段} other {# 個工作階段}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "已成功刪除工作階段"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "已成功刪除 {count, plural, one {# 個工作階段} other {# 個工作階段}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "無法複製工作階段：{error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "已超過自動壓縮閾值：在送出下一個請求之前會先壓縮對話。"
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "刪除所有工作階段"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "確定要永久刪除所有聊天工作階段嗎？此動作無法復原。"
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "刪除所有工作階段"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "確定要刪除 {count, plural, one {# 個工作階段} other {# 個工作階段}}嗎？此動作無法復原。"
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "無法刪除工作階段：{error}"
   }
 }

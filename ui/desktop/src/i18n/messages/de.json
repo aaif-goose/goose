@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Sitzung löschen"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Auswahl löschen"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Sitzung duplizieren"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "In neuem Fenster öffnen"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Sitzung auswählen"
+  },
   "sessions.cancel": {
     "defaultMessage": "Abbrechen"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Sitzung löschen"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Ausgewählte Sitzungen löschen"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Sitzungsbeschreibung eingeben"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Sitzung \"{name}\" konnte nicht gelöscht werden: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# Sitzung} other {# Sitzungen}} erfolgreich gelöscht"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sitzung erfolgreich gelöscht"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# Sitzung} other {# Sitzungen}} erfolgreich gelöscht"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Sitzung konnte nicht dupliziert werden: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Auto-Verdichtungsschwelle überschritten: Das Gespräch wird verdichtet, bevor die nächste Anfrage gesendet wird."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Alle Sitzungen löschen"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Möchten Sie wirklich ALLE Chat-Sitzungen endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Alle Sitzungen löschen"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Möchten Sie wirklich {count, plural, one {# Sitzung} other {# Sitzungen}} löschen? Diese Aktion kann nicht rückgängig gemacht werden."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Sitzungen konnten nicht gelöscht werden: {error}"
   }
 }

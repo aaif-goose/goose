@@ -1901,6 +1901,9 @@ impl AcpConnection {
                 StartRunError::LiveVoiceInteractionExists => agent_client_protocol::Error::invalid_params()
                     .data("session already has an active Live run"),
                 StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
+                StartRunError::SessionDeleting => {
+                    agent_client_protocol::Error::invalid_params().data("session is being deleted")
+                }
             })?;
         Ok(())
     }
@@ -2346,11 +2349,14 @@ impl AcpConnection {
         #[cfg(feature = "otel")]
         let forward = opentelemetry::context::FutureExt::with_context(forward, trace_cx);
         let stream_result = forward.await;
-        self.clear_active_run(&session_id, &run_id).await;
-        Self::send_active_run_update(cx, &args.session_id, None)?;
         let usage_result = self
             .send_session_usage_updates(cx, &args.session_id, &session_id, &mut None)
             .await;
+        // Signal run completion only after the prompt's final session work;
+        // registration removal alone happens earlier in the prompt lifecycle.
+        self.runs().complete_agent_run(&session_id, &run_id);
+        self.clear_active_run(&session_id, &run_id).await;
+        Self::send_active_run_update(cx, &args.session_id, None)?;
         let outcome = stream_result?;
         let session = usage_result?;
 

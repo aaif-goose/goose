@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "세션 삭제"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "선택 항목 삭제"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "세션 복제"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "새 창에서 열기"
   },
+  "sessions.action.select": {
+    "defaultMessage": "세션 선택"
+  },
   "sessions.cancel": {
     "defaultMessage": "취소"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "세션 삭제"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "선택한 세션 삭제"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "세션 설명 입력"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "\"{name}\" 세션 삭제 실패: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, other {#개의 세션이 성공적으로 삭제되었습니다}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "세션이 삭제되었습니다."
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, other {#개의 세션이 성공적으로 삭제되었습니다}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "세션 복제 실패: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "자동 압축 임계값을 초과했습니다. 다음 요청을 보내기 전에 대화가 압축됩니다."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "모든 세션 삭제"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "모든 채팅 세션을 영구적으로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "모든 세션 삭제"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "{count, plural, other {#개의 세션}}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "세션 삭제 실패: {error}"
   }
 }

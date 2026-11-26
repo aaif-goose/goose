@@ -275,6 +275,24 @@ export async function acpDeleteSession(sessionId: string): Promise<void> {
   await client.connection.agent.request(methods.agent.session.delete, { sessionId });
 }
 
+export async function acpDeleteSessions(sessionIds: string[]): Promise<{
+  deletedCount: number;
+  deletedSessionIds: string[];
+}> {
+  const client = await getAcpClient();
+  const response = await client.goose.sessionBatchDelete_unstable({ sessionIds });
+  return response;
+}
+
+export async function acpDeleteAllSessions(): Promise<{
+  deletedCount: number;
+  deletedSessionIds: string[];
+}> {
+  const client = await getAcpClient();
+  const response = await client.goose.sessionDeleteAll_unstable({});
+  return response;
+}
+
 export async function acpCloseSession(sessionId: string): Promise<void> {
   const client = await getAcpClient();
   await client.connection.agent.request(methods.agent.session.close, { sessionId });

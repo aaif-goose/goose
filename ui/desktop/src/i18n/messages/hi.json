@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "सत्र हटाएँ"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "चयनित हटाएँ"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "डुप्लिकेट सत्र"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "नई विंडो में खोलें"
   },
+  "sessions.action.select": {
+    "defaultMessage": "सत्र चुनें"
+  },
   "sessions.cancel": {
     "defaultMessage": "रद्द करें"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "सत्र हटाएँ"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "चयनित सत्र हटाएँ"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "सत्र विवरण दर्ज करें"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "सत्र \"{name}\" हटाने में विफल: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# सत्र} other {# सत्र}} सफलतापूर्वक हटाए गए"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "सत्र सफलतापूर्वक हटा दिया गया"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# सत्र} other {# सत्र}} सफलतापूर्वक हटाए गए"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "सत्र की नकल करने में विफल: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "स्वतः-संकुचन सीमा पार हो गई: अगला अनुरोध भेजने से पहले वार्तालाप को संकुचित किया जाता है।"
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "सभी सत्र हटाएँ"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "क्या आप वाकई सभी चैट सत्रों को स्थायी रूप से हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।"
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "सभी सत्र हटाएँ"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "क्या आप वाकई {count, plural, one {# सत्र} other {# सत्र}} हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।"
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "सत्र हटाने में विफल: {error}"
   }
 }

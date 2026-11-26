@@ -575,6 +575,10 @@ impl SessionManager {
         self.storage.delete_session(id).await
     }
 
+    pub async fn delete_sessions(&self, ids: &[String]) -> Result<u64> {
+        self.storage.delete_sessions(ids).await
+    }
+
     pub async fn get_insights(&self) -> Result<SessionInsights> {
         self.storage
             .get_insights(&[SessionType::User, SessionType::Scheduled])
@@ -2639,6 +2643,43 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn delete_sessions(&self, session_ids: &[String]) -> Result<u64> {
+        if session_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let mut deleted_count: u64 = 0;
+        for session_id in session_ids {
+            sqlx::query("DELETE FROM messages WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+
+            sqlx::query("DELETE FROM usage_ledger WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+
+            sqlx::query("DELETE FROM session_tags WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+
+            let result = sqlx::query("DELETE FROM sessions WHERE id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+
+            deleted_count += result.rows_affected();
+        }
+
+        tx.commit().await?;
+        Ok(deleted_count)
+    }
+
     async fn get_insights(&self, types: &[SessionType]) -> Result<SessionInsights> {
         if types.is_empty() {
             return Ok(SessionInsights {
@@ -4655,6 +4696,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_sessions_batch_removes_only_selected() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let one = create_session_for_list_with_message(&sm, "/tmp/session-list", "one").await;
+        let two = create_session_for_list_with_message(&sm, "/tmp/session-list", "two").await;
+        let three = create_session_for_list_with_message(&sm, "/tmp/session-list", "three").await;
+        sm.set_session_tags(&two, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        let deleted = sm
+            .delete_sessions(&[one.clone(), two.clone()])
+            .await
+            .unwrap();
+        assert_eq!(deleted, 2);
+
+        assert!(sm.get_session(&one, false).await.is_err());
+        assert!(sm.get_session(&two, false).await.is_err());
+        assert!(sm.get_session(&three, false).await.is_ok());
+
+        let pool = sm.storage().pool().await.unwrap();
+        let deleted_messages: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id IN (?, ?)")
+                .bind(&one)
+                .bind(&two)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(deleted_messages, 0);
+        let deleted_tags: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM session_tags WHERE session_id IN (?, ?)")
+                .bind(&one)
+                .bind(&two)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(deleted_tags, 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_sessions_empty_batch_is_noop() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let one = create_session_for_list_with_message(&sm, "/tmp/session-list", "one").await;
+
+        let deleted = sm.delete_sessions(&[]).await.unwrap();
+        assert_eq!(deleted, 0);
+        assert!(sm.get_session(&one, false).await.is_ok());
     }
 
     #[tokio::test]

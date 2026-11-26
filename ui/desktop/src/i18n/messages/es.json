@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Eliminar sesión"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Eliminar selección"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Duplicar sesión"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Abrir en una ventana nueva"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Seleccionar sesión"
+  },
   "sessions.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Eliminar sesión"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Eliminar sesiones seleccionadas"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Ingresa la descripción de la sesión"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "No se pudo eliminar la sesión \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sesión eliminada con éxito} other {# sesiones eliminadas con éxito}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sesión eliminada correctamente"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sesión eliminada con éxito} other {# sesiones eliminadas con éxito}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "No se pudo duplicar la sesión: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Se superó el umbral de compactación automática: la conversación se compacta antes de enviar la siguiente solicitud."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Eliminar todas las sesiones"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "¿Seguro que quieres eliminar permanentemente TODAS las sesiones de chat? Esta acción no se puede deshacer."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Eliminar todas las sesiones"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "¿Seguro que quieres eliminar {count, plural, one {# sesión} other {# sesiones}}? Esta acción no se puede deshacer."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "No se pudieron eliminar las sesiones: {error}"
   }
 }

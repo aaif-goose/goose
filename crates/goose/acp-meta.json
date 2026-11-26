@@ -56,6 +56,16 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_goose/unstable/session/batch-delete",
+      "requestType": "DeleteSessionsRequest_unstable",
+      "responseType": "DeleteSessionsResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/session/delete-all",
+      "requestType": "DeleteAllSessionsRequest_unstable",
+      "responseType": "DeleteAllSessionsResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/session/system-prompt/set",
       "requestType": "SetSessionSystemPromptRequest_unstable",
       "responseType": "EmptyResponse"

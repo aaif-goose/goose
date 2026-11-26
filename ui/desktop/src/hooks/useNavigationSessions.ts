@@ -159,6 +159,9 @@ export function useNavigationSessions() {
 
   useEffect(() => {
     let fetchVersion = 0;
+    // Bulk deletes dispatch many SESSION_DELETED events in a burst; debounce
+    // the refetch so all of them share a single recent-sessions request.
+    let deletedRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
@@ -169,13 +172,17 @@ export function useNavigationSessions() {
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
-      const version = ++fetchVersion;
-      acpListRecentSessions(MAX_RECENT_SESSIONS)
-        .then((sessions) => {
-          if (version !== fetchVersion) return;
-          setRecentSessions(sessions.filter((session) => session.id !== sessionId));
-        })
-        .catch((error) => console.error('Failed to fetch sessions:', error));
+      if (deletedRefetchTimer) clearTimeout(deletedRefetchTimer);
+      deletedRefetchTimer = setTimeout(() => {
+        deletedRefetchTimer = null;
+        const version = ++fetchVersion;
+        acpListRecentSessions(MAX_RECENT_SESSIONS)
+          .then((sessions) => {
+            if (version !== fetchVersion) return;
+            setRecentSessions(sessions);
+          })
+          .catch((error) => console.error('Failed to fetch sessions:', error));
+      }, 300);
     };
 
     const handleSessionRenamed = (event: Event) => {

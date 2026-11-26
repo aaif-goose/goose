@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Elimina sessione"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Elimina selezionate"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Duplica sessione"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Apri in una nuova finestra"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Seleziona sessione"
+  },
   "sessions.cancel": {
     "defaultMessage": "Annulla"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Elimina sessione"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Elimina le sessioni selezionate"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Inserisci la descrizione della sessione"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Impossibile eliminare la sessione \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sessione eliminata con successo} other {# sessioni eliminate con successo}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sessione eliminata correttamente"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sessione eliminata con successo} other {# sessioni eliminate con successo}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Impossibile duplicare la sessione: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Soglia di compattazione automatica superata: la conversazione viene compattata prima dell'invio della prossima richiesta."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Elimina tutte le sessioni"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Vuoi davvero eliminare definitivamente TUTTE le sessioni di chat? Questa azione non può essere annullata."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Elimina tutte le sessioni"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Vuoi davvero eliminare {count, plural, one {# sessione} other {# sessioni}}? Questa azione non può essere annullata."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Impossibile eliminare le sessioni: {error}"
   }
 }

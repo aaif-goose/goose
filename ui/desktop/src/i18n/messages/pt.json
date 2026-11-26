@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Eliminar sessão"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Eliminar selecionadas"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Duplicar sessão"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Abrir numa nova janela"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Selecionar sessão"
+  },
   "sessions.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Eliminar sessão"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Eliminar sessões selecionadas"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Introduza a descrição da sessão"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Falha ao eliminar a sessão \"{name}\": {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {# sessão eliminada com sucesso} other {# sessões eliminadas com sucesso}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Sessão eliminada com êxito"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {# sessão eliminada com sucesso} other {# sessões eliminadas com sucesso}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Falha ao duplicar a sessão: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Limite de compactação automática ultrapassado: a conversa é compactada antes de o próximo pedido ser enviado."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Eliminar todas as sessões"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Tem a certeza de que pretende eliminar permanentemente TODAS as sessões de conversa? Esta ação não pode ser anulada."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Eliminar todas as sessões"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Tem a certeza de que pretende eliminar {count, plural, one {# sessão} other {# sessões}}? Esta ação não pode ser anulada."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Falha ao eliminar sessões: {error}"
   }
 }

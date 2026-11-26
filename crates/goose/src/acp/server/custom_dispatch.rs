@@ -118,6 +118,21 @@ impl AcpConnection {
         self.on_update_working_dir(req).await
     }
 
+    #[custom_method(DeleteSessionsRequest)]
+    async fn dispatch_delete_sessions(
+        &self,
+        req: DeleteSessionsRequest,
+    ) -> Result<DeleteSessionsResponse, agent_client_protocol::Error> {
+        self.on_delete_sessions(req).await
+    }
+
+    #[custom_method(DeleteAllSessionsRequest)]
+    async fn dispatch_delete_all_sessions(
+        &self,
+    ) -> Result<DeleteAllSessionsResponse, agent_client_protocol::Error> {
+        self.on_delete_all_sessions().await
+    }
+
     #[custom_method(SetSessionSystemPromptRequest)]
     async fn dispatch_set_session_system_prompt(
         &self,

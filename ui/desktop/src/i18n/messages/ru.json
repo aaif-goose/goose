@@ -3812,6 +3812,9 @@
   "sessions.action.delete": {
     "defaultMessage": "Удалить сеанс"
   },
+  "sessions.action.deleteSelected": {
+    "defaultMessage": "Удалить выбранные"
+  },
   "sessions.action.duplicate": {
     "defaultMessage": "Дублировать сеанс"
   },
@@ -3830,6 +3833,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Открыть в новом окне"
   },
+  "sessions.action.select": {
+    "defaultMessage": "Выбрать сеанс"
+  },
   "sessions.cancel": {
     "defaultMessage": "Отмена"
   },
@@ -3847,6 +3853,9 @@
   },
   "sessions.delete.title": {
     "defaultMessage": "Удалить сеанс"
+  },
+  "sessions.deleteSelected.title": {
+    "defaultMessage": "Удалить выбранные сеансы"
   },
   "sessions.edit.placeholder": {
     "defaultMessage": "Введите описание сеанса"
@@ -3902,8 +3911,14 @@
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Не удалось удалить сеанс «{name}»: {error}"
   },
+  "sessions.toast.batchDeleted": {
+    "defaultMessage": "{count, plural, one {Удалён # сеанс} few {Удалено # сеанса} many {Удалено # сеансов} other {Удалено # сеанса}}"
+  },
   "sessions.toast.deleted": {
     "defaultMessage": "Сеанс успешно удален"
+  },
+  "sessions.toast.deletedAll": {
+    "defaultMessage": "{count, plural, one {Удалён # сеанс} few {Удалено # сеанса} many {Удалено # сеансов} other {Удалено # сеанса}}"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "Не удалось дублировать сеанс: {error}"
@@ -4846,5 +4861,20 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Превышен порог автокомпактизации: разговор будет сжат перед отправкой следующего запроса."
+  },
+  "sessions.action.deleteAll": {
+    "defaultMessage": "Удалить все сеансы"
+  },
+  "sessions.deleteAll.message": {
+    "defaultMessage": "Вы действительно хотите безвозвратно удалить ВСЕ сеансы чата? Это действие нельзя отменить."
+  },
+  "sessions.deleteAll.title": {
+    "defaultMessage": "Удалить все сеансы"
+  },
+  "sessions.deleteSelected.message": {
+    "defaultMessage": "Вы действительно хотите удалить {count, plural, one {# сеанс} few {# сеанса} many {# сеансов} other {# сеанса}}? Это действие нельзя отменить."
+  },
+  "sessions.toast.batchDeleteFailed": {
+    "defaultMessage": "Не удалось удалить сеансы: {error}"
   }
 }
