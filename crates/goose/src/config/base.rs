@@ -1419,6 +1419,10 @@ impl Config {
         self.get_param::<bool>("OPENAI_STORE").ok()
     }
 
+    pub fn get_openai_daybreak(&self) -> bool {
+        self.get_param::<bool>("OPENAI_DAYBREAK").unwrap_or(false)
+    }
+
     fn legacy_thinking_effort(&self) -> Option<ThinkingEffort> {
         if let Ok(value) = self.get_param::<String>("CLAUDE_THINKING_TYPE") {
             if let Some(effort) = match value.to_lowercase().as_str() {

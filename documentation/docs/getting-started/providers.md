@@ -334,6 +334,7 @@ You can reach a [LiteLLM](https://docs.litellm.ai/) proxy in either of two waysâ
 | `OPENAI_PROJECT` | No | Project identifier for resource management |
 | `OPENAI_CUSTOM_HEADERS` | No | Additional headers to include in the request. Can be set via environment variable, configuration file, or CLI, in the format `HEADER_A=VALUE_A,HEADER_B=VALUE_B`. |
 | `OPENAI_STORE` | No | Whether to persist the generated Responses API response for later retrieval via API. Defaults to `false`. |
+| `OPENAI_DAYBREAK` | No | Set to `true` to send OpenAI's [Daybreak](https://developers.openai.com/api/docs/guides/daybreak) access program on every request, including subagents and background requests. goose picks `access_programs.cyber` from the model using the guide's model table; models not in the table get no field. Requires an API key from a Daybreak-enabled project. Defaults to `false`. |
 
 #### Example Configurations
 

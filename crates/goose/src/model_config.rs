@@ -118,7 +118,7 @@ fn materialize_model_config_inner(
     }
 
     if provider_name == oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME {
-        model = apply_openai_request_params(model);
+        model = apply_openai_request_params(config, model);
     }
 
     Ok(model)
@@ -150,15 +150,42 @@ pub async fn complete_one_shot(
     .await
 }
 
-fn apply_openai_request_params(mut model: ModelConfig) -> ModelConfig {
-    let config = Config::global();
+fn apply_openai_request_params(config: &Config, mut model: ModelConfig) -> ModelConfig {
     if let Some(store) = config.get_openai_store() {
         model = model.with_merged_request_params(HashMap::from([(
             "store".to_string(),
             serde_json::json!(store),
         )]));
     }
+    match daybreak_access_program(&model.model_name).filter(|_| config.get_openai_daybreak()) {
+        Some(cyber) => {
+            model = model.with_merged_request_params(HashMap::from([(
+                "access_programs".to_string(),
+                serde_json::json!({ "cyber": cyber }),
+            )]));
+        }
+        None => {
+            if let Some(params) = model.request_params.as_mut() {
+                params.remove("access_programs");
+                if params.is_empty() {
+                    model.request_params = None;
+                }
+            }
+        }
+    }
     model
+}
+
+/// The `access_programs.cyber` value each model accepts, from the model table in
+/// <https://developers.openai.com/api/docs/guides/daybreak>. Models not listed get no field.
+fn daybreak_access_program(model_name: &str) -> Option<&'static str> {
+    let (model, _) = oi_kit_providers::formats::openai::extract_reasoning_effort(model_name);
+    match model.to_lowercase().as_str() {
+        "gpt-6-sol" | "gpt-6-luna" | "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6.1-terra"
+        | "gpt-6.2-sol" | "gpt-6.2-astra" => Some("daybreak_blue"),
+        "gpt-6-cyber" | "gpt-5.6-cyber" | "gpt-5.5-cyber-preview" => Some("daybreak_red"),
+        _ => None,
+    }
 }
 
 fn base_model_config_from_user_config(
@@ -418,5 +445,132 @@ mod canonical_vision_tests {
         let model = apply_canonical_limits("my-custom-provider", ModelConfig::new("some-model"));
 
         assert_eq!(model.supports_vision, None);
+    }
+}
+
+#[cfg(test)]
+mod daybreak_tests {
+    use super::*;
+    use oi_kit_providers::formats::openai_responses::create_responses_request;
+
+    const OPENAI: &str = oi_kit_providers::openai::OPEN_AI_PROVIDER_NAME;
+
+    fn access_programs(model: &ModelConfig) -> Option<Value> {
+        model
+            .request_params
+            .as_ref()?
+            .get("access_programs")
+            .cloned()
+    }
+
+    /// A config backed only by a temp `config.yaml`, so the machine's own goose
+    /// config can't leak into the result.
+    fn isolated_config(yaml: &str) -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, yaml).unwrap();
+        let config = Config::new(&path, "goose-daybreak-test").unwrap();
+        (dir, config)
+    }
+
+    fn apply(yaml: &str, model: ModelConfig) -> ModelConfig {
+        let _guard = env_lock::lock_env([("OPENAI_DAYBREAK", None::<&str>)]);
+        let (_dir, config) = isolated_config(yaml);
+        apply_openai_request_params(&config, model)
+    }
+
+    #[test]
+    fn on_picks_the_value_from_the_model() {
+        for (model_name, cyber) in [
+            ("gpt-6.1-sol", "daybreak_blue"),
+            ("gpt-6-luna", "daybreak_blue"),
+            ("gpt-6.1-sol-high", "daybreak_blue"),
+            ("gpt-6-cyber", "daybreak_red"),
+            ("gpt-5.6-cyber", "daybreak_red"),
+            ("gpt-6-cyber-xhigh", "daybreak_red"),
+            ("GPT-6-Cyber", "daybreak_red"),
+        ] {
+            let model = apply("OPENAI_DAYBREAK: true\n", ModelConfig::new(model_name));
+            assert_eq!(
+                access_programs(&model),
+                Some(serde_json::json!({ "cyber": cyber })),
+                "{model_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn off_or_unset_sends_nothing() {
+        for yaml in ["OPENAI_DAYBREAK: false\n", "{}\n"] {
+            let model = apply(yaml, ModelConfig::new("gpt-6.1-sol"));
+            assert_eq!(access_programs(&model), None, "{yaml}");
+        }
+    }
+
+    #[test]
+    fn on_with_a_model_outside_the_table_sends_nothing() {
+        for model_name in ["gpt-4o", "gpt-5"] {
+            let model = apply("OPENAI_DAYBREAK: true\n", ModelConfig::new(model_name));
+            assert_eq!(access_programs(&model), None, "{model_name}");
+        }
+    }
+
+    #[test]
+    fn turning_it_off_removes_the_field_from_a_saved_config() {
+        let saved = apply("OPENAI_DAYBREAK: true\n", ModelConfig::new("gpt-6.1-sol"));
+        assert!(access_programs(&saved).is_some());
+
+        let resumed = apply("OPENAI_DAYBREAK: false\n", saved);
+        assert_eq!(access_programs(&resumed), None);
+    }
+
+    // The tests below go through the global config. Setting the env var keeps
+    // them independent of the machine's config.yaml, since env is read first.
+
+    #[test]
+    fn env_setting_reaches_the_request_body() {
+        let _guard = env_lock::lock_env([("OPENAI_DAYBREAK", Some("true"))]);
+        let model = materialize_model_config(OPENAI, ModelConfig::new("gpt-6.1-sol")).unwrap();
+        let body = create_responses_request(&model, "system", &[], &[]).unwrap();
+        assert_eq!(
+            body["access_programs"],
+            serde_json::json!({ "cyber": "daybreak_blue" })
+        );
+    }
+
+    #[test]
+    fn other_providers_ignore_it() {
+        let _guard = env_lock::lock_env([("OPENAI_DAYBREAK", Some("true"))]);
+        let model =
+            materialize_model_config("openrouter", ModelConfig::new("gpt-6.1-sol")).unwrap();
+        assert_eq!(access_programs(&model), None);
+    }
+
+    #[test]
+    fn subagents_get_the_value_for_their_own_model() {
+        let _guard = env_lock::lock_env([("OPENAI_DAYBREAK", Some("true"))]);
+        let parent = materialize_model_config(OPENAI, ModelConfig::new("gpt-6.1-sol")).unwrap();
+        assert_eq!(
+            access_programs(&parent),
+            Some(serde_json::json!({ "cyber": "daybreak_blue" }))
+        );
+
+        for (model_name, expected) in [
+            (
+                "gpt-6-cyber",
+                Some(serde_json::json!({ "cyber": "daybreak_red" })),
+            ),
+            ("gpt-4o", None),
+        ] {
+            let child = model_config_from_user_config_with_session_settings(
+                OPENAI,
+                model_name,
+                Some(&parent),
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(access_programs(&child), expected, "{model_name}");
+        }
     }
 }
