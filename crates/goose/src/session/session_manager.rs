@@ -641,6 +641,25 @@ impl SessionManager {
             .await
     }
 
+    pub(crate) async fn remove_trailing_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<bool> {
+        let pool = self.storage.pool().await?;
+        let result = sqlx::query(
+            "DELETE FROM messages WHERE message_id = ? AND id = (
+                SELECT id FROM messages WHERE session_id = ?
+                ORDER BY created_timestamp DESC, id DESC LIMIT 1
+            )",
+        )
+        .bind(message_id)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     async fn system_generated_name_update(
         &self,
         id: &str,

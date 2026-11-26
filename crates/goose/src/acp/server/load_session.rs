@@ -389,6 +389,11 @@ impl AcpConnection {
         session = self
             .prepare_session_for_activation(session, cwd, args.mcp_servers, true)
             .await?;
+        let retry_error_id = session
+            .conversation
+            .as_ref()
+            .and_then(StateMachineServices::retryable_prompt_error)
+            .map(str::to_owned);
 
         let replayed_from = replay_conversation_to_client(
             cx,
@@ -435,6 +440,9 @@ impl AcpConnection {
         }
 
         let mut meta = session_response_meta(&session, &extension_results);
+        if let Some(error_id) = retry_error_id {
+            meta.insert("retryPromptErrorId".to_string(), error_id.into());
+        }
         if replayed_from > 0 {
             meta.insert(
                 "replaySkipped".to_string(),

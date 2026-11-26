@@ -285,6 +285,8 @@ impl From<&crate::errors::ProviderError> for MessageErrorKind {
 pub struct ErrorContent {
     pub kind: MessageErrorKind,
     pub message: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub can_retry_prompt: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -638,6 +640,7 @@ impl MessageContentBlock {
         MessageContentBlock::Error(ErrorContent {
             kind,
             message: message.into(),
+            can_retry_prompt: false,
         })
     }
 
@@ -1323,7 +1326,22 @@ impl Message {
                  Please retry if you think this is a transient or recoverable error."
             ),
         };
-        Message::assistant().with_error(MessageErrorKind::from(err), text)
+        let can_retry_prompt = matches!(
+            err,
+            ProviderError::RateLimitExceeded { .. }
+                | ProviderError::ServerError(_)
+                | ProviderError::NetworkError(_)
+                | ProviderError::RequestFailed(_)
+                | ProviderError::ExecutionError(_)
+                | ProviderError::EndpointNotFound(_)
+        );
+        Message::assistant()
+            .with_content(MessageContentBlock::Error(ErrorContent {
+                kind: MessageErrorKind::from(err),
+                message: text,
+                can_retry_prompt,
+            }))
+            .with_metadata(MessageMetadata::user_only())
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {

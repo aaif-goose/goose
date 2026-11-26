@@ -35,7 +35,10 @@ use crate::agents::AgentEvent;
 use crate::config::permission::PermissionManager;
 use crate::config::{extensions::name_to_key, get_extension_by_name};
 use crate::config::{Config, GooseMode};
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
+use crate::conversation::message::{
+    ActionRequiredData, Message, MessageContent, MessageErrorKind, SystemNotificationType,
+};
+use crate::conversation::Conversation;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
@@ -1154,6 +1157,61 @@ impl StateMachineServices {
         )))
     }
 
+    pub(crate) fn retryable_prompt_error(conversation: &Conversation) -> Option<&str> {
+        let (error, history) = conversation.messages().split_last()?;
+        if !error.is_user_visible()
+            || !error.error().is_some_and(|error| {
+                error.can_retry_prompt || error.kind == MessageErrorKind::Authentication
+            })
+        {
+            return None;
+        }
+        // Inference can resume from the saved prompt or tool results. An assistant
+        // response here may contain partial output from the failed request.
+        let previous = history
+            .iter()
+            .rfind(|message| message.is_agent_visible() && !message.content.is_empty())?;
+        if previous.role != rmcp::model::Role::User
+            || !pending_tool_confirmations(conversation).is_empty()
+        {
+            return None;
+        }
+        error.id.as_deref()
+    }
+
+    pub(crate) async fn retry_prompt(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        error_id: &str,
+        cancel: CancellationToken,
+    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
+        let session_id = &session_config.id;
+        let turn_guard = self
+            .runtime
+            .confirmations
+            .session(session_id)
+            .try_start_turn()?;
+        let session = self.session_manager.get_session(session_id, true).await?;
+        if session
+            .conversation
+            .as_ref()
+            .and_then(Self::retryable_prompt_error)
+            != Some(error_id)
+            || cancel.is_cancelled()
+            || !self
+                .session_manager
+                .remove_trailing_message(session_id, error_id)
+                .await?
+        {
+            return Ok(None);
+        }
+        turn_guard.state().start_new_turn();
+        Ok(Some(Box::pin(
+            self.turn(session_config, cancel, turn_guard, true)
+                .try_filter_map(|event| async move { Ok(user_event(event)) }),
+        )))
+    }
+
     fn tool_confirmation_request_ids(&self, event: &AgentEvent) -> Vec<String> {
         let AgentEvent::Message(message) = event else {
             return Vec::new();
@@ -1287,17 +1345,27 @@ impl StateMachineServices {
         Ok(Box::pin(
             async_stream::try_stream! {
                 let (tx, mut rx) = mpsc::unbounded_channel::<AgentEvent>();
-                let emit = Emitter::new(tx, cancel.clone());
+                let emit = Emitter::new(tx.clone(), cancel.clone());
                 let result = {
                     let run = crate::session_context::with_session_id(
                         Some(session_id.clone()),
-                        run_goose(
-                            &machine,
-                            session_manager.as_ref(),
-                            &hook_manager,
-                            &tool_snapshot,
-                            &session_id,
-                            &emit,
+                        oi_kit_providers::retry::with_retry_progress(
+                            move |attempt, max_retries, delay| {
+                                let seconds = delay.as_secs() + u64::from(delay.subsec_nanos() > 0);
+                                let message = Message::assistant().with_system_notification(
+                                    SystemNotificationType::ProgressMessage,
+                                    format!("Retrying provider request in {seconds}s ({attempt}/{max_retries})"),
+                                );
+                                let _ = tx.send(AgentEvent::Message(message));
+                            },
+                            run_goose(
+                                &machine,
+                                session_manager.as_ref(),
+                                &hook_manager,
+                                &tool_snapshot,
+                                &session_id,
+                                &emit,
+                            ),
                         ),
                     );
                     tokio::pin!(run);

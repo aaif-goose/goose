@@ -8,7 +8,7 @@ import {
   acpChatSessionStore,
   type AcpChatSessionSnapshot,
 } from '../chatSessionStore';
-import { acpCancelPrompt, acpPromptSession } from '../prompt';
+import { acpCancelPrompt, acpPromptSession, acpRetryPrompt } from '../prompt';
 import {
   acpLoadSession,
   acpTruncateSessionConversation,
@@ -55,6 +55,7 @@ vi.mock('../sessions', () => ({
 vi.mock('../prompt', () => ({
   acpCancelPrompt: vi.fn(),
   acpPromptSession: vi.fn(),
+  acpRetryPrompt: vi.fn(),
 }));
 
 const SESSION_ID = 'session-1';
@@ -152,7 +153,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 
@@ -165,7 +167,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 
@@ -196,7 +199,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 });
@@ -258,6 +262,46 @@ describe('acpChatSessionController.submitMessage', () => {
     vi.mocked(acpPromptSession).mockResolvedValue({ stopReason: 'cancelled' } as never);
     vi.mocked(acpChatSessionActions.clearPromptCancellation).mockReturnValue(undefined);
     vi.mocked(acpChatSessionActions.finishPromptAttemptIfCurrent).mockReturnValue(true);
+  });
+
+  it('retries the saved failed turn without submitting a new user message', async () => {
+    const snapshot = {
+      ...snapshotWithActivePrompt(null),
+      retryPromptErrorId: 'rate-limit-error',
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(snapshot);
+    vi.mocked(acpRetryPrompt).mockResolvedValueOnce({ stopReason: 'end_turn' });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.retryPrompt(SESSION_ID, {
+      getCurrentSnapshot: () => snapshot,
+      onFinish,
+    });
+
+    expect(acpRetryPrompt).toHaveBeenCalledWith(SESSION_ID, 'rate-limit-error');
+    expect(acpPromptSession).not.toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith({ status: 'completed' });
+  });
+
+  it('offers another manual retry when a repeated turn fails again', async () => {
+    const snapshot = { ...snapshotWithActivePrompt(null), retryPromptErrorId: 'first-error' };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(snapshot);
+    vi.mocked(acpRetryPrompt).mockRejectedValueOnce({
+      code: -32000,
+      message: 'Authentication required',
+      data: { reason: 'turn_failed', retryPromptErrorId: 'second-error' },
+    });
+
+    await acpChatSessionController.retryPrompt(SESSION_ID, {
+      getCurrentSnapshot: () => snapshot,
+      onFinish: vi.fn(),
+    });
+
+    expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(String),
+      'second-error'
+    );
   });
 
   it('clears a pending cancellation barrier when the original prompt settles', async () => {

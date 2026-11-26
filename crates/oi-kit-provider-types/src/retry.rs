@@ -11,6 +11,29 @@ use gloo_timers::future::sleep;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::sleep;
 
+#[cfg(not(target_arch = "wasm32"))]
+type RetryProgress = Box<dyn Fn(usize, usize, Duration) + Send + Sync>;
+
+#[cfg(not(target_arch = "wasm32"))]
+tokio::task_local! {
+    static RETRY_PROGRESS: RetryProgress;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn with_retry_progress<F: Future>(
+    progress: impl Fn(usize, usize, Duration) + Send + Sync + 'static,
+    operation: F,
+) -> F::Output {
+    RETRY_PROGRESS.scope(Box::new(progress), operation).await
+}
+
+pub fn report_retry(attempt: usize, max_retries: usize, delay: Duration) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = RETRY_PROGRESS.try_with(|progress| progress(attempt, max_retries, delay));
+    #[cfg(target_arch = "wasm32")]
+    let _ = (attempt, max_retries, delay);
+}
+
 pub const DEFAULT_MAX_RETRIES: usize = 3;
 pub const DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 1000;
 pub const DEFAULT_BACKOFF_MULTIPLIER: f64 = 2.0;
@@ -149,6 +172,7 @@ where
                         _ => config.delay_for_attempt(attempts),
                     };
 
+                    report_retry(attempts, config.max_retries, delay);
                     sleep(delay).await;
                     continue;
                 }
@@ -258,6 +282,7 @@ impl<P: Provider> ProviderRetry for P {
                         if skip_backoff {
                             tracing::info!("Skipping backoff due to GOOSE_PROVIDER_SKIP_BACKOFF");
                         } else {
+                            report_retry(attempts, config.max_retries, delay);
                             tracing::info!("Backing off for {:?} before retry", delay);
                             sleep(delay).await;
                         }

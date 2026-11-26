@@ -345,13 +345,28 @@ pub(crate) async fn stream_response_from_provider(
         if !provider.manages_own_context() {
             let retry_config = provider.retry_config().transient_only();
             let mut attempts = 0;
+            let mut pending_usage = None;
 
             loop {
                 match stream.next().await {
-                    None => break,
-                    Some(Ok(item)) => {
+                    None => {
+                        stream = Box::pin(futures::stream::iter(
+                            pending_usage.map(|usage| Ok((None, Some(usage)))),
+                        ));
+                        break;
+                    }
+                    Some(Ok((None, usage))) => {
+                        if usage.is_some() {
+                            pending_usage = usage;
+                        }
+                    }
+                    Some(Ok((Some(message), usage))) => {
                         stream = Box::pin(
-                            futures::stream::once(std::future::ready(Ok(item))).chain(stream),
+                            futures::stream::once(std::future::ready(Ok((
+                                Some(message),
+                                usage.or(pending_usage),
+                            ))))
+                            .chain(stream),
                         );
                         break;
                     }
@@ -360,6 +375,7 @@ pub(crate) async fn stream_response_from_provider(
                             && attempts < retry_config.max_retries =>
                     {
                         attempts += 1;
+                        pending_usage = None;
                         let delay = match &error {
                             ProviderError::RateLimitExceeded {
                                 retry_delay: Some(provider_delay),
@@ -368,7 +384,7 @@ pub(crate) async fn stream_response_from_provider(
                             _ => retry_config.delay_for_attempt(attempts),
                         };
                         warn!(
-                            "Provider stream failed before its first item, retrying ({}/{}): {:?}",
+                            "Provider stream failed before output, retrying ({}/{}): {:?}",
                             attempts, retry_config.max_retries, error
                         );
 
@@ -377,6 +393,7 @@ pub(crate) async fn stream_response_from_provider(
                             .parse::<bool>()
                             .unwrap_or(false);
                         if !skip_backoff {
+                            oi_kit_providers::retry::report_retry(attempts, retry_config.max_retries, delay);
                             tokio::time::sleep(delay).await;
                         }
 
@@ -1340,6 +1357,25 @@ mod tests {
                 .as_concat_text(),
             "ok"
         );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_after_an_empty_stream_chunk_retries() {
+        let provider = Arc::new(SequencedProvider::new(vec![
+            Ok(vec![
+                Ok((None, None)),
+                Err(ProviderError::RateLimitExceeded {
+                    details: "Provider returned error".into(),
+                    retry_delay: Some(std::time::Duration::ZERO),
+                }),
+            ]),
+            Ok(vec![successful_item()]),
+        ]));
+        let calls = provider.calls.clone();
+        let mut stream = stream_for_test(provider).await;
+        let response = stream.next().await.unwrap().unwrap().0.unwrap();
+        assert_eq!(response.as_concat_text(), "ok");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 

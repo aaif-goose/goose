@@ -257,9 +257,10 @@ pub fn map_http_error_to_provider_error(
     map_http_error(status, payload, url, None)
 }
 
-/// Fold a 429's retry hint into the error so the agent's retry loop honors
-/// the server-requested delay. Non-429 errors pass through unchanged.
+/// Honor retry hints on rate limits and on forbidden responses that explicitly
+/// ask the client to retry.
 fn apply_retry_after(
+    status: StatusCode,
     err: ProviderError,
     headers: &HeaderMap,
     payload: Option<&Value>,
@@ -269,6 +270,15 @@ fn apply_retry_after(
             details,
             retry_delay: extract_retry_after(headers, payload),
         },
+        ProviderError::Authentication(details) if status == StatusCode::FORBIDDEN => {
+            match extract_retry_after(headers, payload) {
+                Some(delay) => ProviderError::RateLimitExceeded {
+                    details,
+                    retry_delay: Some(delay),
+                },
+                None => ProviderError::Authentication(details),
+            }
+        }
         other => other,
     }
 }
@@ -481,7 +491,7 @@ async fn handle_status_with_limit(
         let payload = serde_json::from_str::<Value>(&body).ok();
         let request_id = extract_request_id(&headers);
         let err = map_http_error(status, payload.clone(), &url, request_id.as_deref());
-        return Err(apply_retry_after(err, &headers, payload.as_ref()));
+        return Err(apply_retry_after(status, err, &headers, payload.as_ref()));
     }
     Ok(response)
 }
@@ -799,6 +809,21 @@ mod tests {
             parse_request_id_suffix(&text).as_deref(),
             Some("req_011CVendor")
         );
+    }
+
+    #[test]
+    fn forbidden_requires_a_retry_hint_to_be_treated_as_rate_limited() {
+        let status = StatusCode::FORBIDDEN;
+        let error = map_http_error_to_provider_error(status, None, "https://provider.test");
+        assert!(matches!(
+            apply_retry_after(status, error.clone(), &empty_headers(), None),
+            ProviderError::Authentication(_)
+        ));
+        assert!(matches!(
+            apply_retry_after(status, error, &headers_with_retry_after("3"), None),
+            ProviderError::RateLimitExceeded { retry_delay: Some(delay), .. }
+                if delay == Duration::from_secs(3)
+        ));
     }
 
     #[test]

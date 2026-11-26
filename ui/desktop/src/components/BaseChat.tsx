@@ -153,6 +153,8 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    retryFailedPrompt,
+    canRetryFailedPrompt,
     refreshSession,
     sessionLoadError,
     tokenState,
@@ -522,6 +524,18 @@ export default function BaseChat({
                   </div>
                 </SearchView>
 
+                {canRetryFailedPrompt && !isSubagentSession && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    disabled={acpRecovering}
+                    onClick={() => void retryFailedPrompt()}
+                  >
+                    {intl.formatMessage(i18n.retry)}
+                  </Button>
+                )}
                 <div className="block h-8" />
               </>
             ) : null}
