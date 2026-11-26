@@ -1653,9 +1653,9 @@ Here are some local providers we support:
 
 ## OpenRouter Presets
 
-Add an optional `OPENROUTER_MANAGEMENT_KEY` under Advanced settings for the OpenRouter provider, then refresh its model list. Use a [read-only management key](https://openrouter.ai/blog/announcements/scoped-management-keys/) scoped to the same workspace as your inference key. Active [OpenRouter presets](https://openrouter.ai/docs/guides/features/presets) appear as `@preset/<slug>` in the model picker.
+Add an optional `OPENROUTER_MANAGEMENT_KEY` under **Show options** in the OpenRouter provider setup, then refresh its model list. Use a [read-only management key](https://openrouter.ai/blog/announcements/scoped-management-keys/) scoped to the same workspace as your inference key. Active [OpenRouter presets](https://openrouter.ai/docs/guides/features/presets) appear as `@preset/<slug>` in the model picker.
 
-goose reads preset definitions directly from OpenRouter. Chat requests use `OPENROUTER_API_KEY` and honor `OPENROUTER_HOST` if configured. A proxy configured with `OPENROUTER_HOST` must accept the preset model ID and route to the same workspace.
+goose reads preset definitions directly from OpenRouter. Chat requests use `OPENROUTER_API_KEY` and honor `OPENROUTER_HOST` if configured. If you use a proxy, set `OPENROUTER_HOST` to its base URL. The proxy must accept the preset model ID and route to the same workspace.
 
 For presets with resolvable endpoints, goose uses the smallest context window across eligible routes and enables capabilities supported across those routes. It displays a per-token price when the eligible routes agree on that price. Session costs use the amount OpenRouter reports for each completed request. Dynamic routes and routes missing from the public endpoint catalog can still be selected.
 
