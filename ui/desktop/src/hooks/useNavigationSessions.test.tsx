@@ -80,6 +80,22 @@ function dispatchStatus(sessionId: string, streamState: 'idle' | 'loading' | 'st
   });
 }
 
+const reloadTriggers = {
+  'turn completion': () => {
+    dispatchStatus('session-1', 'streaming');
+    dispatchStatus('session-1', 'idle');
+  },
+  'another chat being archived': () => {
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_ARCHIVE_CHANGED, {
+          detail: { sessionId: 'archived-session', archived: true },
+        })
+      );
+    });
+  },
+};
+
 describe('useNavigationSessions session names', () => {
   const listRecent = vi.mocked(acpListRecentSessions);
   const getListItem = vi.mocked(acpGetSessionListItem);
@@ -131,48 +147,52 @@ describe('useNavigationSessions session names', () => {
     expect(listRecent.mock.calls.length).toBe(callsAfterFirstLoad);
   });
 
-  it('keeps a rename made while the session names reload', async () => {
-    const { result } = await renderWithSessions([listItem('session-1', 'Old name')]);
-    let finishReload!: (sessions: SessionListItem[]) => void;
-    listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
+  it.each(Object.entries(reloadTriggers))(
+    'keeps a rename during a reload after %s',
+    async (_, reload) => {
+      const { result } = await renderWithSessions([listItem('session-1', 'Old name')]);
+      let finishReload!: (sessions: SessionListItem[]) => void;
+      listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
 
-    dispatchStatus('session-1', 'streaming');
-    dispatchStatus('session-1', 'idle');
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent(AppEvents.SESSION_RENAMED, {
-          detail: { sessionId: 'session-1', newName: 'Renamed in Desktop', userInitiated: true },
-        })
+      reload();
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.SESSION_RENAMED, {
+            detail: { sessionId: 'session-1', newName: 'Renamed in Desktop', userInitiated: true },
+          })
+        );
+      });
+      await act(async () => finishReload([listItem('session-1', 'Old name')]));
+
+      expect(result.current.recentSessions[0].name).toBe('Renamed in Desktop');
+    }
+  );
+
+  it.each(Object.entries(reloadTriggers))(
+    'does not bring back a deleted chat during a reload after %s',
+    async (_, reload) => {
+      const { result } = await renderWithSessions([
+        listItem('session-1', 'First'),
+        listItem('session-2', 'Second'),
+      ]);
+      let finishReload!: (sessions: SessionListItem[]) => void;
+      listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
+
+      reload();
+      listRecent.mockResolvedValue([listItem('session-1', 'First')]);
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: 'session-2' } })
+        );
+      });
+      await act(async () => {});
+      await act(async () =>
+        finishReload([listItem('session-1', 'First'), listItem('session-2', 'Second')])
       );
-    });
-    await act(async () => finishReload([listItem('session-1', 'Old name')]));
 
-    expect(result.current.recentSessions[0].name).toBe('Renamed in Desktop');
-  });
-
-  it('does not bring back a session deleted while the session names reload', async () => {
-    const { result } = await renderWithSessions([
-      listItem('session-1', 'First'),
-      listItem('session-2', 'Second'),
-    ]);
-    let finishReload!: (sessions: SessionListItem[]) => void;
-    listRecent.mockImplementationOnce(() => new Promise((resolve) => (finishReload = resolve)));
-
-    dispatchStatus('session-1', 'streaming');
-    dispatchStatus('session-1', 'idle');
-    listRecent.mockResolvedValue([listItem('session-1', 'First')]);
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: 'session-2' } })
-      );
-    });
-    await act(async () => {});
-    await act(async () =>
-      finishReload([listItem('session-1', 'First'), listItem('session-2', 'Second')])
-    );
-
-    expect(result.current.recentSessions.map((session) => session.id)).toEqual(['session-1']);
-  });
+      expect(result.current.recentSessions.map((session) => session.id)).toEqual(['session-1']);
+    }
+  );
 
   it('keeps an archived chat out of the sidebar even while it is open, until restored', async () => {
     const session = listItem('session-1', 'First');

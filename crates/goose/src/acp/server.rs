@@ -3732,6 +3732,77 @@ print(\"hello, world\")
         );
     }
 
+    #[tokio::test]
+    async fn archive_preserves_active_runs_on_the_shared_backend() {
+        let root = tempfile::tempdir().unwrap();
+        let services = StateMachineServices::with_config(acp_services_config(
+            Arc::new(SessionManager::new(root.path().to_path_buf())),
+            root.path().to_path_buf(),
+            true,
+            GoosePlatform::GooseDesktop,
+        ));
+        let live_voice = Arc::new(LiveVoiceService::from_config(services.runtime.runs.clone()));
+        let connection = AcpConnection::new(AcpConnectionOptions {
+            provider_factory: Arc::new(|_| Box::pin(async { Err(anyhow::anyhow!("unused")) })),
+            builtin_selection: AcpBuiltinSelection::default(),
+            config_dir: root.path().to_path_buf(),
+            services: services.clone(),
+            additional_source_roots: Vec::new(),
+            session_cwd: None,
+            live_voice,
+        })
+        .await
+        .unwrap();
+        let session = services
+            .session_manager
+            .create_session(
+                root.path().to_path_buf(),
+                "Test chat".into(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let request = ArchiveSessionRequest {
+            session_id: session.id.clone(),
+        };
+
+        let runs = &services.runtime.runs;
+        let cancel = CancellationToken::new();
+        assert!(runs
+            .start_prompt_run(&session.id, "run".into(), cancel.clone())
+            .is_ok());
+        let error = connection
+            .on_archive_session(request.clone())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, agent_client_protocol::ErrorCode::InvalidParams);
+        assert!(!cancel.is_cancelled());
+        assert!(runs.remove_agent_run(&session.id, "run"));
+
+        assert!(runs.start_live(&session.id));
+        assert!(connection
+            .on_archive_session(request.clone())
+            .await
+            .is_err());
+        assert!(runs.is_active(&session.id));
+        runs.finish_live(&session.id);
+        let saved = services
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert!(saved.archived_at.is_none());
+
+        connection.on_archive_session(request).await.unwrap();
+        let saved = services
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert!(saved.archived_at.is_some());
+    }
+
     #[test]
     fn test_goose_custom_notifications_capability_reads_client_meta() {
         let mut goose_meta = serde_json::Map::new();

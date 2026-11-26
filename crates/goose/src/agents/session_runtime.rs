@@ -80,7 +80,7 @@ impl SessionRuntime {
 
     /// Held while a session is attached or released, so a release never clears a session
     /// that was attached while it ran.
-    pub(super) async fn lock_lifetime(&self, session_id: &str) -> LifetimeGuard<'_> {
+    pub(crate) async fn lock_lifetime(&self, session_id: &str) -> LifetimeGuard<'_> {
         let lock = self
             .lifetimes
             .lock()
@@ -189,7 +189,7 @@ impl SessionRuntime {
 
     /// A Live conversation runs without a turn, and a prompt registers its run before
     /// its turn starts.
-    fn is_busy(&self, session_id: &str) -> bool {
+    pub(super) fn is_busy(&self, session_id: &str) -> bool {
         self.confirmations.has_active_turn(session_id) || self.runs.is_active(session_id)
     }
 
@@ -209,7 +209,7 @@ impl SessionRuntime {
     }
 }
 
-pub(super) struct LifetimeGuard<'a> {
+pub(crate) struct LifetimeGuard<'a> {
     runtime: &'a SessionRuntime,
     session_id: String,
     _held: tokio::sync::OwnedMutexGuard<()>,

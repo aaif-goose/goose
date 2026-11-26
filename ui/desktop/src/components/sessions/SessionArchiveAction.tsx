@@ -29,7 +29,7 @@ const messages = defineMessages({
 
 interface SessionArchiveActionProps {
   session: SessionListItem;
-  disabled?: boolean;
+  disabled: boolean;
 }
 
 export function SessionArchiveAction({ session, disabled }: SessionArchiveActionProps) {
@@ -67,7 +67,7 @@ export function SessionArchiveAction({ session, disabled }: SessionArchiveAction
         </span>
         <button
           type="button"
-          disabled={pending}
+          disabled={disabled || pending}
           className="rounded px-1 py-0.5 text-text-secondary hover:text-text-primary hover:underline disabled:opacity-50"
           onClick={(event) => {
             event.stopPropagation();

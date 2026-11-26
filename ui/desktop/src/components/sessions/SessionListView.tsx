@@ -737,7 +737,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
       >
         <div>
           <h3 className="text-base break-words line-clamp-2 w-full mb-1">{displayName}</h3>
-          {session.archivedAt && <SessionArchiveAction session={session} />}
+          {session.archivedAt && <SessionArchiveAction session={session} disabled={false} />}
           {session.sessionType === 'acp' && (
             <span className="text-xs text-text-tertiary bg-background-secondary px-2 py-0.5 rounded-full">
               {intl.formatMessage(i18n.acpBadge)}

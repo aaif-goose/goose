@@ -68,9 +68,8 @@ export function useNavigationSessions() {
     [recentSessions]
   );
   const lastSessionIdRef = useRef<string | null>(null);
-  // Bumped by each status refresh and by every rename or deletion, so a list
-  // response that started earlier cannot undo a newer change.
-  const statusRefreshVersionRef = useRef(0);
+  // A list response that started before a mutation must not undo it.
+  const mutationVersionRef = useRef(0);
 
   const activeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const currentSessionId =
@@ -84,10 +83,11 @@ export function useNavigationSessions() {
 
   const fetchSessions = useCallback(async (preserveDrafts = false) => {
     const fetchId = ++latestFetchIdRef.current;
+    const version = mutationVersionRef.current;
     setIsLoadingSessions(true);
     try {
       const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS);
-      if (fetchId === latestFetchIdRef.current) {
+      if (fetchId === latestFetchIdRef.current && version === mutationVersionRef.current) {
         setRecentSessions((prev) =>
           preserveDrafts ? mergeWithEmptyLocals(prev, sessions) : sessions
         );
@@ -138,10 +138,10 @@ export function useNavigationSessions() {
 
       const pollForUpdates = async () => {
         pollCount++;
-        const version = statusRefreshVersionRef.current;
+        const version = mutationVersionRef.current;
         try {
           const listed = await acpListRecentSessions(MAX_RECENT_SESSIONS);
-          if (version === statusRefreshVersionRef.current) {
+          if (version === mutationVersionRef.current) {
             setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
           }
         } catch (error) {
@@ -167,21 +167,18 @@ export function useNavigationSessions() {
   }, []);
 
   useEffect(() => {
-    let fetchVersion = 0;
-
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
-      statusRefreshVersionRef.current++;
+      const version = ++mutationVersionRef.current;
 
       setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
 
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
-      const version = ++fetchVersion;
       acpListRecentSessions(MAX_RECENT_SESSIONS)
         .then((sessions) => {
-          if (version !== fetchVersion) return;
+          if (version !== mutationVersionRef.current) return;
           setRecentSessions(sessions.filter((session) => session.id !== sessionId));
         })
         .catch((error) => console.error('Failed to fetch sessions:', error));
@@ -191,7 +188,7 @@ export function useNavigationSessions() {
       const { sessionId, newName, userInitiated } = (
         event as CustomEvent<{ sessionId: string; newName: string; userInitiated?: boolean }>
       ).detail;
-      statusRefreshVersionRef.current++;
+      mutationVersionRef.current++;
 
       setRecentSessions((prev) =>
         prev.map((session) =>
@@ -206,8 +203,7 @@ export function useNavigationSessions() {
       const { sessionId, archived } = (
         event as CustomEvent<{ sessionId: string; archived: boolean }>
       ).detail;
-      statusRefreshVersionRef.current++;
-      fetchVersion++;
+      mutationVersionRef.current++;
       if (archived) {
         setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
       }
@@ -227,6 +223,7 @@ export function useNavigationSessions() {
 
   useEffect(() => {
     const streamStates = new Map<string, string>();
+    let latestRefreshId = 0;
 
     const handleStatusUpdate = (event: Event) => {
       const { sessionId, streamState } = (
@@ -242,10 +239,11 @@ export function useNavigationSessions() {
         (previousStreamState === 'streaming' || previousStreamState === 'loading');
       if (!turnOrLoadFinished) return;
 
-      const version = ++statusRefreshVersionRef.current;
+      const refreshId = ++latestRefreshId;
+      const version = mutationVersionRef.current;
       acpListRecentSessions(MAX_RECENT_SESSIONS)
         .then((listed) => {
-          if (version !== statusRefreshVersionRef.current) return;
+          if (refreshId !== latestRefreshId || version !== mutationVersionRef.current) return;
           setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
         })
         .catch((error) => console.error('Failed to refresh sessions:', error));
