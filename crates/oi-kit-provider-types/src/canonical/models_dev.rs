@@ -151,6 +151,14 @@ fn process_model(
                     .map(str::to_owned)
                     .collect()
             }),
+        reasoning_toggle: model_data
+            .get("reasoning_options")
+            .and_then(|v| v.as_array())
+            .is_some_and(|options| {
+                options
+                    .iter()
+                    .any(|option| option.get("type").and_then(Value::as_str) == Some("toggle"))
+            }),
         thinking_mode: get_thinking_mode(&canonical_id, model_data),
         tool_call: model_data
             .get("tool_call")
@@ -234,6 +242,7 @@ mod tests {
                 attachment: None,
                 reasoning: None,
                 reasoning_efforts: None,
+                reasoning_toggle: false,
                 thinking_mode: None,
                 tool_call: false,
                 temperature: None,
@@ -280,6 +289,14 @@ mod tests {
             registry.get("openai", "future").unwrap().reasoning_efforts,
             Some(vec!["low".to_string(), "max".to_string()])
         );
+    }
+
+    #[test]
+    fn parses_reasoning_toggle() {
+        let json = r#"{"zai":{"models":{"switchable":{"name":"Switchable","reasoning":true,"reasoning_options":[{"type":"toggle"},{"type":"effort","values":["high","max"]}]},"always_on":{"name":"Always on","reasoning":true,"reasoning_options":[{"type":"effort","values":["low","max"]}]}}}}"#;
+        let registry = from_models_dev(json).unwrap();
+        assert!(registry.get("zai", "switchable").unwrap().reasoning_toggle);
+        assert!(!registry.get("zai", "always_on").unwrap().reasoning_toggle);
     }
 
     #[test]

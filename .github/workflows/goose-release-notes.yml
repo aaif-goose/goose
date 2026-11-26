@@ -71,7 +71,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-notes-${{ github.event.workflow_run.head_branch || inputs.tag }}
+  group: >-
+    ${{
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+      && format('release-notes-{0}', github.event.workflow_run.head_branch || inputs.tag)
+      || format('release-notes-rejected-{0}', github.run_id)
+    }}
   cancel-in-progress: true
 
 jobs:
@@ -82,7 +89,9 @@ jobs:
     # For workflow_dispatch: only run if tag is not 'stable'
     if: |
       (github.event_name == 'workflow_dispatch' && inputs.tag != 'stable') ||
-      (github.event_name == 'workflow_run' && 
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch != 'stable')
 

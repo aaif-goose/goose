@@ -286,19 +286,12 @@ impl DatabricksV2Provider {
             .any(|family| name.contains(family))
     }
 
-    fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
-        if !model_config.is_reasoning_model()
-            || !(model_config.is_glm_5_3_reasoning_model()
-                || model_config.is_kimi_k3_reasoning_model())
-        {
+    fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<ThinkingEffort> {
+        if !model_config.is_reasoning_model() {
             return None;
         }
-
-        Some(match model_config.thinking_effort() {
-            Some(ThinkingEffort::Off | ThinkingEffort::Low) => "low",
-            Some(ThinkingEffort::Medium | ThinkingEffort::High) => "high",
-            Some(ThinkingEffort::Max) | None => "max",
-        })
+        model_config
+            .closest_thinking_effort(DATABRICKS_V2_PROVIDER_NAME, model_config.thinking_effort())
     }
 
     fn name_looks_chat_capable(name: &str) -> bool {
@@ -787,7 +780,9 @@ mod tests {
             ] {
                 let mut config = ModelConfig::new(model).with_default_thinking_effort(effort);
                 assert_eq!(
-                    DatabricksV2Provider::always_on_reasoning_effort(&config),
+                    DatabricksV2Provider::always_on_reasoning_effort(&config)
+                        .map(|effort| effort.to_string())
+                        .as_deref(),
                     Some(expected)
                 );
                 config.reasoning = Some(false);

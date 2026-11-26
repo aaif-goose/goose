@@ -300,7 +300,7 @@ pub(super) fn build_config_options(
         .map(|m| SessionConfigSelectOption::new(m.id.clone(), m.name.clone()))
         .collect();
     let (thinking_effort_options, current_thinking_effort) =
-        build_thinking_effort_choices(model_config, effort_support);
+        build_thinking_effort_choices(provider_selection, model_config, effort_support);
     vec![
         SessionConfigOption::select(
             "provider",
@@ -336,9 +336,10 @@ pub(super) fn build_config_options(
 /// A provider that manages its own reasoning decides the menu: it mirrors the
 /// agent's effort selector verbatim, or honestly offers nothing when the agent
 /// has no such knob for the current model. Only providers that leave effort to
-/// goose fall back to the model-name based values, which the ACP sentinel model
-/// name can never satisfy.
+/// goose fall back to the model's own effort levels (catalog or model name),
+/// which the ACP sentinel model name can never satisfy.
 fn build_thinking_effort_choices(
+    provider_name: &str,
     model_config: &ModelConfig,
     effort_support: &ThinkingEffortSupport,
 ) -> (Vec<SessionConfigSelectOption>, String) {
@@ -361,14 +362,14 @@ fn build_thinking_effort_choices(
             )
         }
         ThinkingEffortSupport::Unspecified => (
-            thinking_effort_values(model_config)
+            thinking_effort_values(provider_name, model_config)
                 .iter()
                 .map(|effort| {
                     let effort = effort.to_string();
                     SessionConfigSelectOption::new(effort.clone(), effort)
                 })
                 .collect(),
-            current_thinking_effort_value(model_config),
+            current_thinking_effort_value(provider_name, model_config),
         ),
     }
 }
@@ -386,18 +387,13 @@ fn capability_thinking_effort_value(
         .unwrap_or_default()
 }
 
-fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffort] {
+fn thinking_effort_values(provider_name: &str, model_config: &ModelConfig) -> Vec<ThinkingEffort> {
     if !model_config.is_reasoning_model() {
-        &[ThinkingEffort::Off]
-    } else if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model()
-    {
-        &[
-            ThinkingEffort::Low,
-            ThinkingEffort::High,
-            ThinkingEffort::Max,
-        ]
+        vec![ThinkingEffort::Off]
+    } else if let Some(levels) = model_config.thinking_effort_levels(provider_name) {
+        levels
     } else {
-        &[
+        vec![
             ThinkingEffort::Off,
             ThinkingEffort::Low,
             ThinkingEffort::Medium,
@@ -407,7 +403,7 @@ fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffor
     }
 }
 
-fn current_thinking_effort_value(model_config: &ModelConfig) -> String {
+fn current_thinking_effort_value(provider_name: &str, model_config: &ModelConfig) -> String {
     if !model_config.is_reasoning_model() {
         return "off".to_string();
     }
@@ -415,16 +411,9 @@ fn current_thinking_effort_value(model_config: &ModelConfig) -> String {
     let configured = model_config
         .thinking_effort()
         .or_else(|| Config::global().get_goose_thinking_effort());
-    if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model() {
-        return match configured {
-            Some(ThinkingEffort::Off | ThinkingEffort::Low) => ThinkingEffort::Low,
-            Some(ThinkingEffort::Medium | ThinkingEffort::High) => ThinkingEffort::High,
-            Some(ThinkingEffort::Max) | None => ThinkingEffort::Max,
-        }
-        .to_string();
-    }
-
-    configured
+    model_config
+        .closest_thinking_effort(provider_name, configured)
+        .or(configured)
         .map(|effort| effort.to_string())
         .unwrap_or_else(|| "off".to_string())
 }
@@ -843,6 +832,44 @@ mod tests {
                 SessionConfigSelectOption::new("max", "max"),
             ])
         );
+    }
+
+    #[test_case(Some(ThinkingEffort::Off) => "off".to_string() ; "off stays off")]
+    #[test_case(Some(ThinkingEffort::Max) => "max".to_string() ; "max stays max")]
+    #[test_case(Some(ThinkingEffort::Low) => "high".to_string() ; "low maps to the lowest level")]
+    fn test_build_config_options_offers_catalog_effort_levels_for_zai(
+        effort: Option<ThinkingEffort>,
+    ) -> String {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let mode_state = build_mode_state(GooseMode::Auto).unwrap();
+        let model_state = model_selection("glm-5.2", &["glm-5.2"]);
+        let mut model_config = ModelConfig::new("glm-5.2").with_default_thinking_effort(effort);
+        model_config.reasoning = Some(true);
+        let options = build_config_options(
+            &mode_state,
+            &model_state,
+            &model_config,
+            "zai",
+            vec![SessionConfigSelectOption::new("zai", "zai")],
+            &ThinkingEffortSupport::Unspecified,
+        );
+        let option = options
+            .iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = &option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+
+        assert_eq!(
+            select.options,
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(vec![
+                SessionConfigSelectOption::new("off", "off"),
+                SessionConfigSelectOption::new("high", "high"),
+                SessionConfigSelectOption::new("max", "max"),
+            ])
+        );
+        select.current_value.0.to_string()
     }
 
     fn effort_capability(values: &[&str], current: &str) -> ThinkingEffortCapability {

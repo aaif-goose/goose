@@ -158,6 +158,12 @@ module.exports = [
       '@typescript-eslint/no-var-requires': 'warn', // Downgrade to warning for Electron main process
       'no-undef': 'error',
       'no-useless-catch': 'warn',
+      'no-restricted-imports': ['error', {
+        paths: [
+          { name: 'dotenv', message: 'Do not load .env files in the desktop app.' },
+          { name: 'dotenv/config', message: 'Do not load .env files in the desktop app.' },
+        ],
+      }],
       'custom/no-window-location-href': 'error'
     },
     settings: {
