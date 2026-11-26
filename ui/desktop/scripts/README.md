@@ -22,3 +22,42 @@ Then launch Goose again and your deeplinks should work from the latest launched 
 node scripts/unregister-deeplink-protocols.js
 ```
 
+# Building the Goose ACP client
+
+`build-goose-acp-client.js` builds `@aaif/goose-acp-client` (`ui/goose-acp-client`).
+Both `postinstall` and `start-gui` call it. It skips unchanged builds by hashing the
+ACP schemas, generator, handwritten sources, TypeScript configuration, package
+manifest, and workspace lockfile. Generated sources are build outputs and are excluded.
+
+A failed build or an input change during the build leaves no stamp, so the next
+launch rebuilds. An unreadable or non-object stamp counts as a miss. The stamp lives in
+`ui/goose-acp-client/node_modules/.cache`. A missing `dist/index.js`, or any other output
+that a `src` file compiles to (`.js` or `.d.ts`), also triggers a build.
+
+Builds are serialized with a lock in the same directory, held from the freshness check
+until the stamp is written. The ACP package's own `build` and `build:ts` (and so `prepack` and the Justfile's
+`build-acp-client`) take the same lock and remove the stamp before writing `dist`, so
+building it directly cannot leave an old stamp vouching for new output.
+
+`package`, `make`, and `scripts/build-windows.ps1` always force a rebuild. The input
+list is maintained manually, so packaging must not rely on it to detect every change.
+A forced build fails if its inputs change while it runs.
+
+To force a development rebuild:
+
+```bash
+pnpm run build-goose-acp-client:force
+```
+
+`GOOSE_ACP_CLIENT_FORCE_BUILD=1` has the same effect. Use either option if generated
+sources or files in `dist` were edited or partially deleted.
+
+# Vite directories
+
+`node_modules/.vite` is Vite's dependency cache and survives client builds.
+`vite.renderer.config.mts` excludes `@aaif/goose-acp-client` from `optimizeDeps`, so
+Vite reads the client build directly.
+
+The package-root `.vite` directory contains Electron Forge's build output. The Vite
+plugin clears it in its `preStart` and `prePackage` hooks, so a separate cleanup step
+is unnecessary.
