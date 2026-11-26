@@ -32,8 +32,15 @@ let githubUpdateInfo: {
   downloadUrl?: string;
   releaseUrl?: string;
   downloadPath?: string;
-  extractedPath?: string;
 } = {};
+
+// Both the settings button and the Restart-now notification can start an install. A second swap
+// script racing the first would move the freshly installed app aside, so only one may start.
+let githubInstallStarted = false;
+
+// Electron stops delivering a notification's click once the object is garbage collected, so the
+// latest Restart-now notification is kept alive until the user acts on it.
+let restartNotification: Notification | null = null;
 
 // Store update state
 let lastUpdateState: { updateAvailable: boolean; latestVersion?: string } | null = null;
@@ -241,9 +248,9 @@ export function registerUpdateIpcHandlers() {
 
         if (result.success && result.downloadPath) {
           githubUpdateInfo.downloadPath = result.downloadPath;
-          githubUpdateInfo.extractedPath = result.extractedPath;
           trackUpdateDownloadCompleted(true, githubUpdateInfo.latestVersion, 'github-fallback');
           sendStatusToWindow('update-downloaded', { version: githubUpdateInfo.latestVersion });
+          showRestartNotification(githubUpdateInfo.latestVersion, restartIntoGithubUpdate);
           return { success: true, error: null };
         } else {
           const errorMsg = result.error || 'Download failed';
@@ -277,32 +284,7 @@ export function registerUpdateIpcHandlers() {
   ipcMain.handle('install-update', async () => {
     try {
       if (isUsingGitHubFallback) {
-        log.info('Installing update from GitHub fallback...');
-
-        const downloadPath = githubUpdateInfo.downloadPath;
-        if (!downloadPath) {
-          throw new Error('Update file path not found. Please download the update first.');
-        }
-
-        try {
-          await fs.access(downloadPath);
-        } catch {
-          throw new Error('Update file not found. Please download the update first.');
-        }
-
-        trackUpdateInstallInitiated(
-          githubUpdateInfo.latestVersion || 'unknown',
-          'github-fallback',
-          'auto_swap_and_relaunch'
-        );
-
-        const result = await githubUpdater.installUpdate(downloadPath);
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to install update');
-        }
-
-        log.info('Quitting app so the update swap can complete...');
-        setTimeout(() => app.quit(), 0);
+        await installGithubUpdate();
       } else {
         // Use electron-updater's built-in install
         trackUpdateInstallInitiated(
@@ -649,20 +631,69 @@ export function setupAutoUpdater() {
     log.info('Update downloaded:', info);
     trackUpdateDownloadCompleted(true, info.version, 'electron-updater');
     sendStatusToWindow('update-downloaded', info);
-
-    // Show native notification
-    const notification = new Notification({
-      title: 'Update Ready',
-      body: `Version ${info.version} will be installed when you quit Goose. Click to install now.`,
-    });
-    notification.show();
-
-    // Optional: Add click handler to install immediately
-    notification.on('click', () => {
+    showRestartNotification(info.version, () => {
       trackUpdateInstallInitiated(info.version, 'electron-updater', 'quit_and_install');
       autoUpdater.quitAndInstall(false, true);
     });
   });
+}
+
+function showRestartNotification(version: string, restart: () => void) {
+  restartNotification = new Notification({
+    title: 'Update Ready',
+    body: `Version ${version} has been downloaded. Click to restart Goose now and install it.`,
+  });
+  restartNotification.on('click', restart);
+  restartNotification.show();
+}
+
+function restartIntoGithubUpdate() {
+  installGithubUpdate().catch((error) =>
+    log.error('Error installing update from notification:', error)
+  );
+}
+
+async function installGithubUpdate(): Promise<void> {
+  if (githubInstallStarted) {
+    log.info('GitHub update install already started');
+    return;
+  }
+
+  githubInstallStarted = true;
+  try {
+    log.info('Installing update from GitHub fallback...');
+
+    const downloadPath = githubUpdateInfo.downloadPath;
+    if (!downloadPath) {
+      throw new Error('Update file path not found. Please download the update first.');
+    }
+
+    try {
+      await fs.access(downloadPath);
+    } catch {
+      throw new Error('Update file not found. Please download the update first.');
+    }
+
+    trackUpdateInstallInitiated(
+      githubUpdateInfo.latestVersion || 'unknown',
+      'github-fallback',
+      'auto_swap_and_relaunch'
+    );
+
+    const result = await githubUpdater.installUpdate(downloadPath);
+    if (!result.success) {
+      if (result.needsPermission) {
+        new Notification({ title: 'Update needs permission', body: result.error }).show();
+      }
+      throw new Error(result.error || 'Failed to install update');
+    }
+  } catch (error) {
+    githubInstallStarted = false;
+    throw error;
+  }
+
+  log.info('Quitting app so the update swap can complete...');
+  setTimeout(() => app.quit(), 0);
 }
 
 interface UpdaterEvent {
@@ -703,9 +734,9 @@ async function githubAutoDownload(
 
     if (downloadResult.success && downloadResult.downloadPath) {
       githubUpdateInfo.downloadPath = downloadResult.downloadPath;
-      githubUpdateInfo.extractedPath = downloadResult.extractedPath;
       trackUpdateDownloadCompleted(true, latestVersion, 'github-fallback');
       sendStatusToWindow('update-downloaded', { version: latestVersion });
+      showRestartNotification(latestVersion, restartIntoGithubUpdate);
     } else {
       trackUpdateDownloadCompleted(false, latestVersion, 'github-fallback', downloadResult.error);
       log.error(
