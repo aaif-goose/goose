@@ -6,6 +6,7 @@ use oi_kit_provider_types::conversation::message::Message;
 use oi_kit_provider_types::conversation::token_usage::ProviderUsage;
 use oi_kit_provider_types::errors::ProviderError;
 use oi_kit_provider_types::model::ModelConfig;
+use oi_kit_provider_types::thinking::ThinkingEffort;
 
 /// The single completion call compaction needs. Implementations decide model
 /// selection, fallbacks and session plumbing.
@@ -25,6 +26,7 @@ pub trait TokenEstimator: Send + Sync {
     async fn count_text_tokens(&self, text: &str) -> usize;
 }
 
+/// Summary requests are one-off, so they run without thinking or prompt-cache writes.
 pub struct ProviderModel {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
@@ -34,7 +36,9 @@ impl ProviderModel {
     pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
         Self {
             provider,
-            model_config,
+            model_config: model_config
+                .with_thinking_effort(ThinkingEffort::Off)
+                .with_prompt_cache_disabled(),
         }
     }
 }

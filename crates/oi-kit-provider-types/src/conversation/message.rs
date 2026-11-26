@@ -818,6 +818,17 @@ impl MessageUsage {
     }
 }
 
+/// Operation whose notes on a tool response message map a tool call id to the
+/// summary the model sees in place of that result, or to null when the result
+/// was considered and kept. The stored result is kept for the user.
+pub const TOOL_RESULT_SUMMARY_OPERATION: &str = "tool_pair_compaction";
+
+pub fn summarized_tool_result_text(summary: &str) -> String {
+    format!(
+        "[This tool result was summarized to save context. Run the tool again if you need the full output.]\n{summary}"
+    )
+}
+
 /// Notes an operation left on a message, keyed by operation name. Nested rather
 /// than free-form so metadata that is not shaped like notes fails to load
 /// instead of being silently ignored.
@@ -1006,12 +1017,39 @@ impl Message {
             .content
             .iter()
             .filter_map(|c| c.filter_for_audience(Role::Assistant))
+            .map(|content| self.with_tool_result_summary(content))
             .collect();
 
         Message {
             content: filtered_content,
             ..self.clone()
         }
+    }
+
+    fn with_tool_result_summary(&self, content: MessageContentBlock) -> MessageContentBlock {
+        let MessageContentBlock::ToolResponse(response) = &content else {
+            return content;
+        };
+        let Some(summary) = self
+            .metadata
+            .operation_note(TOOL_RESULT_SUMMARY_OPERATION, &response.id)
+            .and_then(serde_json::Value::as_str)
+        else {
+            return content;
+        };
+        let mut result = CallToolResult::success(vec![ContentBlock::text(
+            summarized_tool_result_text(summary),
+        )]);
+        result.is_error = response
+            .tool_result
+            .as_ref()
+            .ok()
+            .and_then(|result| result.is_error);
+        MessageContentBlock::ToolResponse(ToolResponse {
+            id: response.id.clone(),
+            tool_result: Ok(result),
+            metadata: response.metadata.clone(),
+        })
     }
 
     pub fn user_visible_content(&self) -> Message {
