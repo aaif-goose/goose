@@ -4071,7 +4071,7 @@ dependencies = [
  "jsonschema",
  "keyring",
  "libc",
- "lru 0.19.0",
+ "lru 0.19.2",
  "minijinja",
  "mockall",
  "nanoid",
@@ -5128,7 +5128,7 @@ dependencies = [
  "iroh-base",
  "iroh-dns",
  "iroh-metrics",
- "lru 0.19.0",
+ "lru 0.19.2",
  "n0-error",
  "n0-future",
  "noq",
@@ -5678,9 +5678,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.19.0"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9f71e3591c7ec44d3e563e87bf14ddc2bada8519dca046e5b0e560cd004e2d"
+checksum = "d4e2a1b977b42ee8b53a2a4adbd1183431c493f1d1960b7ccd893e2f0b9407ba"
 dependencies = [
  "hashbrown 0.17.1",
 ]
