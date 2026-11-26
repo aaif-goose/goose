@@ -31,6 +31,7 @@ use goose::agents::platform_extensions::developer::shell::{
 };
 use goose::agents::AgentEvent;
 use goose::agents::SUBAGENT_TOOL_REQUEST_TYPE;
+use goose::output_token_limit::OutputTokenLimitTracker;
 use goose::permission::Permission;
 use goose::providers::base::{Provider, ProviderUsage};
 use goose::utils::safe_truncate;
@@ -129,6 +130,20 @@ pub(crate) fn derive_extension_name_from_command(cmd: &str, args: &[String]) -> 
 struct JsonOutput {
     messages: Vec<Message>,
     metadata: JsonMetadata,
+}
+
+/// Output-limit markers often arrive as empty messages of their own, and then
+/// they are the only record in structured output that the provider stopped early.
+fn json_output_messages(conversation: &Conversation) -> Vec<Message> {
+    conversation
+        .messages()
+        .iter()
+        .filter(|message| message.metadata.user_visible)
+        .map(Message::user_visible_content)
+        .filter(|message| {
+            !message.content.is_empty() || message.metadata.output_token_limit_reached
+        })
+        .collect()
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1380,6 +1395,7 @@ impl CliSession {
         let mut markdown_buffer = streaming_buffer::MarkdownBuffer::new();
         let mut prompted_credits_urls: HashSet<String> = HashSet::new();
         let mut thinking_header_shown = false;
+        let mut output_limit = OutputTokenLimitTracker::default();
         let run_started = Instant::now();
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
@@ -1532,7 +1548,7 @@ impl CliSession {
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
                                 } else if !is_json_mode {
-                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
+                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, &mut output_limit, self.debug);
                                     maybe_open_credits_top_up_url(
                                         &message,
                                         interactive,
@@ -1542,6 +1558,7 @@ impl CliSession {
                             }
                         }
                         Some(Ok(AgentEvent::Usage(usage))) => {
+                            output_limit.reset();
                             last_usage = Some(usage);
                         }
                         Some(Ok(AgentEvent::MessageUsage { .. })) => {}
@@ -1557,6 +1574,7 @@ impl CliSession {
                             );
                         }
                         Some(Ok(AgentEvent::HistoryReplaced(updated_conversation))) => {
+                            output_limit.reset();
                             self.messages = updated_conversation;
                         }
                         Some(Err(e)) => {
@@ -1648,7 +1666,7 @@ impl CliSession {
                 },
             };
             let json_output = JsonOutput {
-                messages: self.messages.user_visible_messages(),
+                messages: json_output_messages(&self.messages),
                 metadata,
             };
             println!("{}", serde_json::to_string_pretty(&json_output)?);
@@ -1943,9 +1961,9 @@ impl CliSession {
             console::style(format!("{} messages restored", messages.len())).dim()
         );
 
-        // Render each message
-        for message in &messages {
-            output::render_message(message, self.debug);
+        let mut output_limit = OutputTokenLimitTracker::default();
+        for message in self.messages.iter() {
+            output::render_message_with_state(message, self.debug, &mut output_limit);
         }
 
         println!();
@@ -2797,6 +2815,33 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
     use test_case::test_case;
+
+    #[test]
+    fn json_output_keeps_a_separate_output_limit_marker() {
+        let mut marker = Message::assistant()
+            .with_id("chatcmpl-marker")
+            .with_visibility(true, false);
+        marker.metadata.output_token_limit_reached = true;
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("question"),
+            Message::assistant()
+                .with_id("chatcmpl-reasoning")
+                .with_thinking("reasoning until the budget runs out", ""),
+            Message::assistant().with_id("empty"),
+            marker,
+        ]);
+
+        let messages = json_output_messages(&conversation);
+
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("chatcmpl-reasoning"), Some("chatcmpl-marker")]
+        );
+        assert!(messages[2].metadata.output_token_limit_reached);
+    }
 
     #[test]
     fn only_headless_terminal_failures_are_propagated() {

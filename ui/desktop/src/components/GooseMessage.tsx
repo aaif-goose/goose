@@ -14,6 +14,7 @@ import {
   getElicitationContent,
   type Message,
   type NotificationEvent,
+  type OutputTokenLimitKind,
 } from '../types/message';
 import ToolCallConfirmation from './ToolCallConfirmation';
 import ElicitationRequest from './ElicitationRequest';
@@ -26,6 +27,13 @@ import {
   STREAMING_RENDER_COOLDOWN_MS,
   useThrottledStreamingText,
 } from '../hooks/useThrottledStreamingText';
+
+const OUTPUT_TOKEN_LIMIT_NOTICES: Record<OutputTokenLimitKind, string> = {
+  partial: "Response reached the model's output-token limit and may be incomplete.",
+  empty: "Response reached the model's output-token limit before returning content.",
+  reasoning:
+    "Reasoning used the model's output-token budget before producing an answer. Resend your message or run /compact to continue.",
+};
 
 const MAX_STREAMING_MARKDOWN_LENGTH = 16_000;
 const LARGE_STREAMING_RENDER_COOLDOWN_MS = 250;
@@ -86,9 +94,10 @@ function GooseMessage({
   const hasElicitation = elicitationContent !== undefined;
   const hasMessageDetails =
     message.metadata.usage != null || (message.metadata.operationLogs?.length ?? 0) > 0;
-  const outputTokenLimitNotice = isOutputTokenLimitFallback
-    ? "Response reached the model's output-token limit before returning content."
-    : "Response reached the model's output-token limit and may be incomplete.";
+  const outputTokenLimitNotice =
+    OUTPUT_TOKEN_LIMIT_NOTICES[
+      message.metadata.outputTokenLimitKind ?? (isOutputTokenLimitFallback ? 'empty' : 'partial')
+    ];
   const elicitationData =
     elicitationContent?.data.actionType === 'elicitation'
       ? (elicitationContent.data as typeof elicitationContent.data & {

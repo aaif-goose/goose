@@ -47,6 +47,17 @@ fn is_thinking_only_turn(messages: &[Message]) -> bool {
     produced_thinking
 }
 
+/// Asking the model to continue cannot help once the provider says the output
+/// budget ran out; clients warn instead and leave resending or compacting to
+/// the user.
+fn reached_output_token_limit(messages: &[Message]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .take_while(|message| message.role == Role::Assistant)
+        .any(|message| message.metadata.output_token_limit_reached)
+}
+
 pub struct ThinkingRecoveryOperation;
 
 #[async_trait]
@@ -62,7 +73,10 @@ impl Operation<Session, GooseEffect> for ThinkingRecoveryOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        if !ends_turn(messages) || !is_thinking_only_turn(messages) {
+        if !ends_turn(messages)
+            || !is_thinking_only_turn(messages)
+            || reached_output_token_limit(messages)
+        {
             return not_applicable();
         }
 

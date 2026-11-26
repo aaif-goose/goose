@@ -33,6 +33,7 @@ pub mod model_config;
 pub mod oauth;
 #[cfg(feature = "otel")]
 pub mod otel;
+pub mod output_token_limit;
 pub mod permission;
 pub mod plugins;
 #[cfg(feature = "telemetry")]

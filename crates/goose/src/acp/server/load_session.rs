@@ -22,16 +22,19 @@ fn replay_audience_annotations(audience: &[Role]) -> Annotations {
 }
 
 fn messages_for_acp_replay(conversation: &Conversation) -> Vec<Message> {
+    let mut output_limit = OutputTokenLimitTracker::default();
     conversation
         .messages()
         .iter()
-        .filter(|message| message.is_user_visible())
-        .map(Message::user_visible_content)
-        .map(|mut message| {
-            populate_output_token_limit_content(&mut message);
-            message
+        .filter_map(|message| {
+            let limit = output_limit.observe(message);
+            if !message.is_user_visible() {
+                return None;
+            }
+            let mut message = message.user_visible_content();
+            populate_output_token_limit_content(&mut message, limit);
+            (!message.content.is_empty()).then_some(message)
         })
-        .filter(|message| !message.content.is_empty())
         .collect()
 }
 
@@ -631,7 +634,7 @@ mod tests {
         );
         assert_eq!(
             messages[1].as_concat_text(),
-            "Response stopped because the model reached its output-token limit."
+            "Response reached the model's output-token limit and may be incomplete."
         );
         assert!(messages[1].metadata.output_token_limit_reached);
         assert!(conversation.messages()[2].content.is_empty());

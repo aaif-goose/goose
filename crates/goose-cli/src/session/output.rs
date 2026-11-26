@@ -8,6 +8,7 @@ use goose::conversation::message::{
     ActionRequiredData, Message, MessageContent, SystemNotificationContent, SystemNotificationType,
     ToolNameParts, ToolRequest, ToolResponse,
 };
+use goose::output_token_limit::{OutputTokenLimit, OutputTokenLimitTracker};
 use goose::providers::canonical_cost::estimate_model_cost;
 #[cfg(target_os = "windows")]
 use goose::subprocess::SubprocessExt;
@@ -15,7 +16,7 @@ use goose::utils::safe_truncate;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use oi_kit_agent::final_output::FINAL_OUTPUT_TOOL_NAME;
 use oi_kit_providers::conversation::token_usage::Usage;
-use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
+use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -31,6 +32,10 @@ pub const DEFAULT_CLI_LIGHT_THEME: &str = "GitHub";
 pub const DEFAULT_CLI_DARK_THEME: &str = "zenburn";
 const OUTPUT_TOKEN_LIMIT_WARNING: &str =
     "Warning: Response reached the model's output-token limit and may be incomplete.";
+const EMPTY_OUTPUT_TOKEN_LIMIT_WARNING: &str =
+    "Warning: Response reached the model's output-token limit before returning content.";
+const REASONING_OUTPUT_TOKEN_LIMIT_WARNING: &str =
+    "Warning: Reasoning used the model's output-token budget before producing an answer. Resend your message or run /compact to continue.";
 
 fn accent<T: Display>(value: T) -> StyledObject<T> {
     style(value).cyan()
@@ -310,6 +315,15 @@ fn is_final_output_request(req: &ToolRequest) -> bool {
 }
 
 pub fn render_message(message: &Message, debug: bool) {
+    render_message_with_state(message, debug, &mut OutputTokenLimitTracker::default());
+}
+
+pub fn render_message_with_state(
+    message: &Message,
+    debug: bool,
+    output_limit: &mut OutputTokenLimitTracker,
+) {
+    let limit = output_limit.observe(message);
     if !message.is_user_visible() {
         return;
     }
@@ -370,8 +384,8 @@ pub fn render_message(message: &Message, debug: bool) {
         }
     }
 
-    if reached_output_token_limit(&message) {
-        render_output_token_limit_warning();
+    if let Some(limit) = limit {
+        println!("\n{}", warning(output_token_limit_warning(limit)));
     }
     let _ = std::io::stdout().flush();
 }
@@ -382,8 +396,10 @@ pub fn render_message_streaming(
     message: &Message,
     buffer: &mut MarkdownBuffer,
     thinking_header_shown: &mut bool,
+    output_limit: &mut OutputTokenLimitTracker,
     debug: bool,
 ) {
+    let limit = output_limit.observe(message);
     if !message.is_user_visible() {
         return;
     }
@@ -472,19 +488,19 @@ pub fn render_message_streaming(
         }
     }
 
-    if reached_output_token_limit(&message) {
+    if let Some(limit) = limit {
         flush_markdown_buffer(buffer, theme);
-        render_output_token_limit_warning();
+        println!("\n{}", warning(output_token_limit_warning(limit)));
     }
     let _ = std::io::stdout().flush();
 }
 
-fn reached_output_token_limit(message: &Message) -> bool {
-    message.role == Role::Assistant && message.metadata.output_token_limit_reached
-}
-
-fn render_output_token_limit_warning() {
-    println!("\n{}", warning(OUTPUT_TOKEN_LIMIT_WARNING));
+fn output_token_limit_warning(limit: OutputTokenLimit) -> &'static str {
+    match limit {
+        OutputTokenLimit::Partial => OUTPUT_TOKEN_LIMIT_WARNING,
+        OutputTokenLimit::Empty => EMPTY_OUTPUT_TOKEN_LIMIT_WARNING,
+        OutputTokenLimit::Reasoning => REASONING_OUTPUT_TOKEN_LIMIT_WARNING,
+    }
 }
 
 fn render_credits_exhausted_notification(notification: &SystemNotificationContent) {
@@ -2111,6 +2127,21 @@ mod tests {
             get_credits_top_up_url(&message).as_deref(),
             Some("https://router.tetrate.ai/billing")
         );
+    }
+
+    #[test]
+    fn output_token_limit_warning_names_each_limit_kind() {
+        let cases = [
+            (OutputTokenLimit::Partial, OUTPUT_TOKEN_LIMIT_WARNING),
+            (OutputTokenLimit::Empty, EMPTY_OUTPUT_TOKEN_LIMIT_WARNING),
+            (
+                OutputTokenLimit::Reasoning,
+                REASONING_OUTPUT_TOKEN_LIMIT_WARNING,
+            ),
+        ];
+        for (limit, expected) in cases {
+            assert_eq!(output_token_limit_warning(limit), expected);
+        }
     }
 
     #[test]

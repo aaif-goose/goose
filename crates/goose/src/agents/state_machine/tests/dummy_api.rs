@@ -45,6 +45,7 @@ enum ApiResponse {
     },
     NoChoices,
     OutputLimit,
+    ReasoningOutputLimit(String),
     ContextLimitError(String),
     ServerError(String),
     HttpError(u16),
@@ -406,6 +407,13 @@ impl<'a> ApiRuleBuilder<'a> {
         self.configured(ApiResponse::OutputLimit)
     }
 
+    pub(super) fn reasoning_output_limit(
+        self,
+        reasoning: impl Into<String>,
+    ) -> ConfiguredResponse<'a> {
+        self.configured(ApiResponse::ReasoningOutputLimit(reasoning.into()))
+    }
+
     pub(super) fn empty_server_error(self) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::EmptyServerError)
     }
@@ -604,6 +612,9 @@ impl DummyApiState {
             }
             ApiResponse::NoChoices => sse_response(no_choices_events(&id, model)),
             ApiResponse::OutputLimit => sse_response(output_limit_events(&meta(0))),
+            ApiResponse::ReasoningOutputLimit(reasoning) => sse_response(
+                reasoning_output_limit_events(&meta(reasoning.chars().count() as i64), &reasoning),
+            ),
             ApiResponse::ContextLimitError(message) => ResponseTemplate::new(400).set_body_json(
                 context_limit_error(format!("context_length_exceeded: {message}")),
             ),
@@ -805,6 +816,43 @@ fn no_choices_events(id: &str, model: &str) -> String {
 
 fn output_limit_events(meta: &ResponseMeta) -> String {
     let mut events = String::new();
+    push_event(
+        &mut events,
+        json!({
+            "id": meta.id,
+            "object": "chat.completion.chunk",
+            "model": meta.model,
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "length"
+            }]
+        }),
+    );
+    if meta.include_usage {
+        push_event(&mut events, usage_event(meta));
+    }
+    events.push_str("data: [DONE]\n\n");
+    events
+}
+
+fn reasoning_output_limit_events(meta: &ResponseMeta, reasoning: &str) -> String {
+    let mut events = String::new();
+    for chunk in split_reply(reasoning) {
+        push_event(
+            &mut events,
+            json!({
+                "id": meta.id,
+                "object": "chat.completion.chunk",
+                "model": meta.model,
+                "choices": [{
+                    "index": 0,
+                    "delta": { "reasoning_content": chunk },
+                    "finish_reason": null
+                }]
+            }),
+        );
+    }
     push_event(
         &mut events,
         json!({

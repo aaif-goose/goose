@@ -330,6 +330,24 @@ pub enum MessageContentBlock {
     Error(ErrorContent),
 }
 
+impl MessageContentBlock {
+    pub fn is_visible_output(&self) -> bool {
+        match self {
+            MessageContentBlock::Text(text) => !text.text.trim().is_empty(),
+            MessageContentBlock::Image(_)
+            | MessageContentBlock::Document(_)
+            | MessageContentBlock::ToolRequest(_) => true,
+            MessageContentBlock::Thinking(_)
+            | MessageContentBlock::RedactedThinking(_)
+            | MessageContentBlock::ToolResponse(_)
+            | MessageContentBlock::ToolConfirmationRequest(_)
+            | MessageContentBlock::ActionRequired(_)
+            | MessageContentBlock::SystemNotification(_)
+            | MessageContentBlock::Error(_) => false,
+        }
+    }
+}
+
 impl fmt::Display for MessageContentBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1191,6 +1209,28 @@ impl Message {
             .filter_map(|c| c.as_text())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    pub fn has_visible_output(&self) -> bool {
+        self.content
+            .iter()
+            .any(MessageContentBlock::is_visible_output)
+    }
+
+    pub fn has_thinking_content(&self) -> bool {
+        self.content.iter().any(|content| match content {
+            MessageContentBlock::Thinking(thinking) => {
+                !thinking.thinking.trim().is_empty() || !thinking.signature.is_empty()
+            }
+            MessageContentBlock::RedactedThinking(thinking) => !thinking.data.is_empty(),
+            _ => false,
+        })
+    }
+
+    pub fn reasoning_consumed_output_budget(&self) -> bool {
+        self.metadata.output_token_limit_reached
+            && self.has_thinking_content()
+            && !self.has_visible_output()
     }
 
     /// Check if the message is a tool call
@@ -2229,6 +2269,39 @@ mod tests {
         let message: Message = serde_json::from_str(clean_json).unwrap();
 
         assert_eq!(message.as_concat_text(), "Hello world 世界 🌍");
+    }
+
+    #[test]
+    fn reasoning_consumed_output_budget_requires_thinking_without_visible_output() {
+        let mut thinking_only = Message::assistant().with_thinking("internal reasoning", "");
+        thinking_only.metadata.output_token_limit_reached = true;
+        assert!(thinking_only.reasoning_consumed_output_budget());
+
+        let mut partial_answer = Message::assistant()
+            .with_thinking("internal reasoning", "")
+            .with_text("Partial answer");
+        partial_answer.metadata.output_token_limit_reached = true;
+        assert!(!partial_answer.reasoning_consumed_output_budget());
+
+        let mut empty_limit = Message::assistant();
+        empty_limit.metadata.output_token_limit_reached = true;
+        assert!(!empty_limit.reasoning_consumed_output_budget());
+
+        let mut empty_thinking = Message::assistant().with_thinking("   ", "");
+        empty_thinking.metadata.output_token_limit_reached = true;
+        assert!(!empty_thinking.has_thinking_content());
+        assert!(!empty_thinking.reasoning_consumed_output_budget());
+
+        let mut encrypted_reasoning = Message::assistant().with_thinking("", "encrypted-payload");
+        encrypted_reasoning.metadata.output_token_limit_reached = true;
+        assert!(encrypted_reasoning.reasoning_consumed_output_budget());
+
+        let mut redacted = Message::assistant().with_redacted_thinking("redacted-payload");
+        redacted.metadata.output_token_limit_reached = true;
+        assert!(redacted.reasoning_consumed_output_budget());
+
+        let empty_redacted = Message::assistant().with_redacted_thinking("");
+        assert!(!empty_redacted.has_thinking_content());
     }
 
     #[test]
