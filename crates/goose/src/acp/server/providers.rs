@@ -1216,6 +1216,30 @@ impl AcpConnection {
     ) -> Result<CanonicalModelInfoResponse, agent_client_protocol::Error> {
         use oi_kit_providers::model::ModelConfig;
 
+        use oi_kit_providers::openrouter::{OpenRouterProvider, OPENROUTER_PROVIDER_NAME};
+
+        if req.provider == OPENROUTER_PROVIDER_NAME && OpenRouterProvider::is_preset(&req.model) {
+            let model_info = match self.create_provider(&req.provider).await {
+                Ok(provider) => provider.fetch_model_info(&req.model).await.ok(),
+                Err(_) => None,
+            }
+            .and_then(|info| {
+                Some(CanonicalModelInfoDto {
+                    provider: req.provider,
+                    model: req.model,
+                    context_limit: info.context_limit?,
+                    max_output_tokens: None,
+                    reasoning: info.reasoning,
+                    input_token_cost: info.input_token_cost,
+                    output_token_cost: info.output_token_cost,
+                    cache_read_token_cost: info.cache_read_token_cost,
+                    cache_write_token_cost: info.cache_write_token_cost,
+                    currency: info.currency.unwrap_or_else(|| "$".to_string()),
+                })
+            });
+            return Ok(CanonicalModelInfoResponse { model_info });
+        }
+
         let config_info =
             crate::providers::canonical_cost::configured_model_info(&req.provider, &req.model);
         // Config-declared prices carry the config's currency; without them the

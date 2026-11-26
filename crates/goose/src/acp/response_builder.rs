@@ -1,5 +1,6 @@
 use crate::agents::{ExtensionLoadResult, StateMachineServices};
 use crate::config::{Config, GooseMode};
+use crate::model_config::apply_openrouter_preset_capabilities;
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
 use crate::session::session_manager::SessionUsageTotals;
 use crate::session::Session;
@@ -233,22 +234,10 @@ pub(super) fn build_mode_state(
     ))
 }
 
-/// The provider decides whether goose owns the effort menu; a session without a
-/// live provider keeps the model-name based path.
-pub(super) async fn agent_thinking_effort_support(
-    services: &StateMachineServices,
-    session_id: &str,
-) -> ThinkingEffortSupport {
-    match services.provider(session_id).await {
-        Ok(provider) => provider.thinking_effort_support(),
-        Err(_) => ThinkingEffortSupport::Unspecified,
-    }
-}
-
 pub(super) async fn build_session_setup_config(
     provider_inventory: &ProviderInventoryService,
     session: &Session,
-    effort_support: &ThinkingEffortSupport,
+    services: &StateMachineServices,
 ) -> Result<(SessionModeState, Option<Vec<SessionConfigOption>>), agent_client_protocol::Error> {
     let mode_state = build_mode_state(session.goose_mode)?;
 
@@ -264,16 +253,24 @@ pub(super) async fn build_session_setup_config(
     else {
         return Ok((mode_state, None));
     };
-    let model_state = build_model_state(model_config.model_name.as_str(), &inventory);
+    let mut model_config = model_config.clone();
+    let effort_support = match services.provider(&session.id).await {
+        Ok(provider) => {
+            apply_openrouter_preset_capabilities(provider.as_ref(), &mut model_config).await;
+            provider.thinking_effort_support()
+        }
+        Err(_) => ThinkingEffortSupport::Unspecified,
+    };
+    let model_state = build_model_state(&model_config.model_name, &inventory);
     let provider_selection = session_provider_selection(session);
     let provider_options = build_provider_options(Some(provider_name)).await;
     let config_options = build_config_options(
         &mode_state,
         &model_state,
-        model_config,
+        &model_config,
         provider_selection,
         provider_options,
-        effort_support,
+        &effort_support,
     );
     Ok((mode_state, Some(config_options)))
 }

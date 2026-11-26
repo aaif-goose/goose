@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use oi_kit_providers::conversation::token_usage::ProviderUsage;
 use oi_kit_providers::errors::ProviderError;
 use oi_kit_providers::model::ModelConfig;
+use oi_kit_providers::openrouter::{OpenRouterProvider, OPENROUTER_PROVIDER_NAME};
 use oi_kit_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde_json::Value;
@@ -73,6 +74,20 @@ pub fn model_config_from_user_config_with_session_settings(
         .with_default_thinking_effort(config.get_goose_thinking_effort());
 
     Ok(apply_canonical_limits(provider_name, model))
+}
+
+pub(crate) async fn apply_openrouter_preset_capabilities(
+    provider: &dyn Provider,
+    model: &mut ModelConfig,
+) {
+    if provider.get_name() == OPENROUTER_PROVIDER_NAME
+        && OpenRouterProvider::is_preset(&model.model_name)
+    {
+        if let Ok(info) = provider.fetch_model_info(&model.model_name).await {
+            model.reasoning.get_or_insert(info.reasoning);
+            model.supports_vision = model.supports_vision.or(info.supports_vision);
+        }
+    }
 }
 
 pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Result<ModelConfig> {

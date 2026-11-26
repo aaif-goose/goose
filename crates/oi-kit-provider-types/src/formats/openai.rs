@@ -1911,7 +1911,7 @@ pub fn create_request_for_model_with_options(
 /// certain models (e.g. `gpt-5-pro` only accepts `high`; older o-series
 /// models reject `none` and `xhigh`).
 pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
-    if !is_openai_responses_model(model_name) {
+    if model_name.contains("@preset/") || !is_openai_responses_model(model_name) {
         return (model_name.to_string(), None);
     }
 

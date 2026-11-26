@@ -162,28 +162,26 @@ export function CostTracker({
 
   // Build tooltip content
   const getTooltipContent = (): string => {
-    if (pricingFailed) {
-      return intl.formatMessage(i18n.pricingUnavailable, { model: `${currentProvider}/${currentModel}` });
+    const total =
+      accumulatedCost == null
+        ? null
+        : intl.formatMessage(i18n.totalSessionCost, { cost: `${currency}${totalCost.toFixed(4)}` });
+    const inputRate = costInfo?.inputTokenCost;
+    const outputRate = costInfo?.outputTokenCost;
+    if (inputRate == null || outputRate == null) {
+      return (
+        total ??
+        intl.formatMessage(i18n.pricingUnavailable, { model: `${currentProvider}/${currentModel}` })
+      );
     }
 
-    if (accumulatedCost != null) {
-      return intl.formatMessage(i18n.totalSessionCost, { cost: `${currency}${totalCost.toFixed(4)}` })
-        + `\n` + intl.formatMessage(i18n.inputOutputTooltip, {
-          inputTokens: inputTokens.toLocaleString(),
-          inputCost: `${currency}${((inputTokens * (costInfo?.inputTokenCost || 0)) / 1_000_000).toFixed(6)}`,
-          outputTokens: outputTokens.toLocaleString(),
-          outputCost: `${currency}${((outputTokens * (costInfo?.outputTokenCost || 0)) / 1_000_000).toFixed(6)}`,
-        });
-    }
-
-    const inputCostStr = `${currency}${((inputTokens * (costInfo?.inputTokenCost || 0)) / 1_000_000).toFixed(6)}`;
-    const outputCostStr = `${currency}${((outputTokens * (costInfo?.outputTokenCost || 0)) / 1_000_000).toFixed(6)}`;
-    return intl.formatMessage(i18n.inputOutputTooltip, {
+    const breakdown = intl.formatMessage(i18n.inputOutputTooltip, {
       inputTokens: inputTokens.toLocaleString(),
-      inputCost: inputCostStr,
+      inputCost: `${currency}${((inputTokens * inputRate) / 1_000_000).toFixed(6)}`,
       outputTokens: outputTokens.toLocaleString(),
-      outputCost: outputCostStr,
+      outputCost: `${currency}${((outputTokens * outputRate) / 1_000_000).toFixed(6)}`,
     });
+    return total ? `${total}\n${breakdown}` : breakdown;
   };
 
   return (

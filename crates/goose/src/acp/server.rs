@@ -1,10 +1,9 @@
 use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
 pub(super) use crate::acp::response_builder::{
-    agent_thinking_effort_support, build_config_options, build_mode_state, build_model_state,
-    build_provider_options, build_session_info, build_session_setup_config,
-    send_session_setup_notifications, session_meta, session_provider_selection,
-    session_response_meta, should_refresh_inventory_for_session_init,
+    build_config_options, build_mode_state, build_model_state, build_provider_options,
+    build_session_info, build_session_setup_config, send_session_setup_notifications, session_meta,
+    session_provider_selection, session_response_meta, should_refresh_inventory_for_session_init,
 };
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
@@ -2475,11 +2474,16 @@ impl AcpConnection {
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = provider.get_name().to_string();
-        let current_model_config = self
+        let mut current_model_config = self
             .services
             .model_config_for_session(&session_id.0)
             .await
             .internal_err_ctx("Failed to resolve model config")?;
+        crate::model_config::apply_openrouter_preset_capabilities(
+            provider.as_ref(),
+            &mut current_model_config,
+        )
+        .await;
         let current_model = current_model_config.model_name.clone();
         let goose_mode = self
             .services

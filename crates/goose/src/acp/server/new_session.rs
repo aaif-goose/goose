@@ -11,7 +11,6 @@ use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use oi_kit_providers::model::ModelConfig;
-use oi_kit_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::warn;
@@ -94,11 +93,7 @@ impl AcpConnection {
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
-            .build_new_session_response(
-                &reloaded_session,
-                &extension_results,
-                &super::agent_thinking_effort_support(&self.services, &reloaded_session.id).await,
-            )
+            .build_new_session_response(&reloaded_session, &extension_results)
             .await?;
         Ok(response)
     }
@@ -228,10 +223,9 @@ impl AcpConnection {
         &self,
         session: &Session,
         extension_results: &[ExtensionLoadResult],
-        effort_support: &ThinkingEffortSupport,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let (mode_state, config_options) =
-            super::build_session_setup_config(&self.provider_inventory, session, effort_support)
+            super::build_session_setup_config(&self.provider_inventory, session, &self.services)
                 .await?;
 
         let mut response =
