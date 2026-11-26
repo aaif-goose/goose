@@ -5,18 +5,22 @@ on:
     - cron: "0 9 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+env:
+  FIX_BRANCH: new-model-fix-${{ github.run_id }}
 
 concurrency:
   group: new-model-check
   cancel-in-progress: false
 
 jobs:
-  check:
+  check-new-models:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      has_fix: ${{ steps.fix.outputs.has_fix }}
     env:
       GOOSE_PROVIDER: anthropic
       GOOSE_MODEL: claude-opus-5-5
@@ -26,9 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          repository: aaif-goose/goose
-          ref: lifei/check-new-models
           fetch-depth: 0
+
+      - name: Set paths
+        run: |
+          echo "REPORT=$RUNNER_TEMP/new-model-check-report.md" >> "$GITHUB_ENV"
+          echo "FIX_DIR=$RUNNER_TEMP/fix" >> "$GITHUB_ENV"
 
       - name: Install goose
         run: |
@@ -42,20 +49,65 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run the check
-        env:
-          REPORT: ${{ runner.temp }}/new-model-check-report.md
         run: |
-          goose run --with-builtin developer --text "You are in a checkout of https://github.com/aaif-goose/goose on branch lifei/check-new-models. Run goose's new-model check by following scripts/new-model-check/instructions.md exactly. Wherever the instructions say to post a message, write that message as Markdown to $REPORT instead; this includes the error messages for setup failures and the short message when there are no new models."
+          mkdir -p "$FIX_DIR"
+          goose run --with-builtin developer --text "Follow scripts/new-model-check/instructions.md exactly."
+
+      - name: Find fix
+        id: fix
+        run: |
+          if [ -s "$FIX_DIR/fix.patch" ]; then
+            echo "has_fix=true" >> "$GITHUB_OUTPUT"
+            printf '\nFix branch: %s\n' "$FIX_BRANCH" >> "$REPORT"
+          fi
 
       - name: Show report
         if: always()
-        env:
-          REPORT: ${{ runner.temp }}/new-model-check-report.md
         run: cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: new-model-check-report
-          path: ${{ runner.temp }}/new-model-check-report.md
+          path: ${{ env.REPORT }}
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: steps.fix.outputs.has_fix == 'true'
+        with:
+          name: new-model-check-fix
+          path: ${{ env.FIX_DIR }}
+          if-no-files-found: error
+
+  open-fix-pr:
+    needs: check-new-models
+    if: needs.check-new-models.outputs.has_fix == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: new-model-check-fix
+          path: fix
+
+      - name: Set git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Open PR
+        run: |
+          git checkout -b "$FIX_BRANCH"
+          git am fix/fix.patch
+          git push origin "$FIX_BRANCH"
+          gh pr create --base main --head "$FIX_BRANCH" \
+            --title "$(head -n 1 fix/pr.md)" \
+            --body "$(tail -n +2 fix/pr.md)"
