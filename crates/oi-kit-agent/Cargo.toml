@@ -62,6 +62,7 @@ tokio-stream.workspace = true
 url.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+goose-test-support = { path = "../goose-test-support" }
 rmcp = { workspace = true, features = ["macros", "transport-io"] }
 serial_test.workspace = true
 tempfile.workspace = true

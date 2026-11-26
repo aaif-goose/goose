@@ -6581,6 +6581,7 @@ dependencies = [
  "blake3",
  "futures",
  "goose-acp-types",
+ "goose-test-support",
  "indexmap 2.14.2",
  "indoc",
  "js-sys",

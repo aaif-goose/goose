@@ -108,13 +108,43 @@ pub trait ExtensionHost<C: ExtensionSpec>: Send + Sync {
 pub trait ExtensionAuth: Send + Sync {
     fn credential_store(&self, name: &str) -> Box<dyn CredentialStore>;
 
+    /// Without `rejected`, authorizes from stored credentials only and never
+    /// asks the user; a [`StoredCredentialsError`] tells the connector why they
+    /// could not be used. With it, recovers from that refusal, interactively if
+    /// the stored credentials cannot.
     async fn authorize(
         &self,
         uri: &str,
         name: &str,
         static_client: Option<&StaticOAuthClientConfig>,
-        challenge: Option<String>,
+        rejected: Option<RejectedRequest>,
     ) -> anyhow::Result<AuthorizationManager>;
+}
+
+/// A request the MCP server refused.
+pub struct RejectedRequest {
+    /// The `WWW-Authenticate` challenge from the refusal, if any.
+    pub challenge: Option<String>,
+    /// Access tokens the server refused on the connection that made the
+    /// request, oldest first; empty when its requests went out
+    /// unauthenticated.
+    pub refused_tokens: Vec<String>,
+}
+
+/// Why stored credentials could not authorize a connection on their own. Any
+/// other error from [`ExtensionAuth::authorize`] lets the connection proceed
+/// unauthenticated.
+#[derive(Debug, thiserror::Error)]
+pub enum StoredCredentialsError {
+    /// Only a new authorization can replace the stored credentials, so the
+    /// connector authorizes even when the server also accepts anonymous
+    /// clients.
+    #[error("stored credentials need a new authorization")]
+    NeedAuthorization,
+    /// The credentials are kept and the connection fails: an authorization
+    /// could not finish either, since it uses the same token endpoint.
+    #[error("the authorization server is failing")]
+    AuthorizationServerFailing(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// OAuth client credentials registered with the authorization server out of

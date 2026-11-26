@@ -145,6 +145,7 @@ enum SecretMutation<T> {
 
 pub(crate) enum SecretUpdate<V, R> {
     Write(V, R),
+    Delete(R),
     Unchanged(R),
 }
 
@@ -1150,6 +1151,10 @@ impl Config {
             match update(current) {
                 SecretUpdate::Write(updated, result) => {
                     values.insert(key.to_string(), serde_json::to_value(updated)?);
+                    Ok(SecretMutation::Write(result))
+                }
+                SecretUpdate::Delete(result) => {
+                    values.remove(key);
                     Ok(SecretMutation::Write(result))
                 }
                 SecretUpdate::Unchanged(result) => Ok(SecretMutation::Unchanged(result)),

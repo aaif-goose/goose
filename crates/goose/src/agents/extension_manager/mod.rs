@@ -15,7 +15,7 @@ use crate::agents::extension::{
     name_to_key, ExtensionConfig, ExtensionError, ExtensionResult, TransportConfig,
 };
 use crate::agents::extension_runtime::{
-    self, ExtensionAuth, ExtensionHost, ExtensionSpec, StaticOAuthClientConfig,
+    self, ExtensionAuth, ExtensionHost, ExtensionSpec, RejectedRequest, StaticOAuthClientConfig,
     TraceContextInjector,
 };
 use crate::agents::services::GoosePlatform;
@@ -224,15 +224,9 @@ impl ExtensionAuth for GooseAuth {
         uri: &str,
         name: &str,
         static_client: Option<&StaticOAuthClientConfig>,
-        challenge: Option<String>,
+        rejected: Option<RejectedRequest>,
     ) -> Result<AuthorizationManager> {
-        crate::oauth::oauth_flow_with_challenge(
-            &uri.to_string(),
-            &name.to_string(),
-            static_client,
-            challenge,
-        )
-        .await
+        crate::oauth::oauth_flow(uri, name, static_client, rejected).await
     }
 }
 
