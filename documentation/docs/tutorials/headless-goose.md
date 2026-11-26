@@ -299,13 +299,6 @@ export GOOSE_MODEL=gpt-4o
 export GOOSE_CLI_MIN_PRIORITY=0.2  # Reduce verbose output
 ```
 
-### Advanced Configuration
-
-```bash
-# Security and permissions
-export GOOSE_ALLOWLIST=https://company.com/allowed-extensions.json
-```
-
 ## The Future of Automated Development
 
 goose's headless mode represents more than just a feature -- it's a shift toward truly automated development workflows powered by AI. We can remove human intervention in routine tasks so teams can focus on high-value work while AI handles the repetitive, time-consuming operations that slow us down.

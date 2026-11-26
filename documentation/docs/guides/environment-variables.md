@@ -310,7 +310,7 @@ These variables control security features, credential storage, and anonymous usa
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOOSE_ALLOWLIST` | Controls which extensions can be loaded | URL for [allowed extensions](/docs/guides/allowlist) list | Unset |
+| `GOOSE_ALLOWLIST` | Restricts extension installation links opened in Desktop | URL for the [Desktop extension install allowlist](/docs/guides/allowlist) | Unset |
 | `GOOSE_DISABLE_KEYRING` | Disables the system keyring for secret storage | Set to any value (e.g., "1", "true", "yes") to disable. The actual value doesn't matter, only whether the variable is set. | Unset (keyring enabled) |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false |
 | `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (lower = stricter) | Float between 0.01 and 1.0 | 0.8 |
