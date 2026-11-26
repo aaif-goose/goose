@@ -5,7 +5,7 @@ The new-model check runs every day on GitHub (`.github/workflows/new-model-check
 ## 1. Find the latest run
 
 ```
-gh run list -R aaif-goose/goose --workflow new-model-check.yml --branch main -L 1 --json databaseId,status,conclusion,createdAt,url
+gh run list -R aaif-goose/goose --workflow new-model-check.yml --branch lifei/new-model-check-action -L 1 --json databaseId,status,conclusion,createdAt,url
 ```
 
 - If there's no run, post "No new model check run found." and stop.
