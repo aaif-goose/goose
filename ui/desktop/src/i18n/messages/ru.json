@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Навыки"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Вид истории чатов"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Чаты"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Группировать по проектам"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Загрузка чатов…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Обновлено"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "По последней активности"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Нет недавних чатов"

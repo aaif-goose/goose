@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Kemahiran"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Paparan sejarah sembang"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Sembang"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Kumpulkan mengikut projek"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Memuatkan sembang…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Dikemas kini"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "Terbaharu dahulu"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Tiada sembang terkini"

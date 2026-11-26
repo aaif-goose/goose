@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Keterampilan"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Tampilan riwayat chat"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Obrolan"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Kelompokkan menurut proyek"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Memuat obrolan…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Diperbarui"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "Terbaru dahulu"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Tidak ada obrolan terbaru"

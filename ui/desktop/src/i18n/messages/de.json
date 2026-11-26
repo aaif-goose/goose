@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Skills"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Ansicht des Chatverlaufs"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Nach Projekt gruppieren"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Chats werden geladen…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Aktualisiert"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "Neueste zuerst"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Keine aktuellen Chats"

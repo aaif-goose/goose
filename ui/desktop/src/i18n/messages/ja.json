@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "スキル"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "チャット履歴の表示"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "チャット"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "プロジェクトごとにグループ化"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "チャットを読み込み中…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "更新"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "最近の順"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "最近のチャットはありません"
