@@ -67,8 +67,14 @@ The goose CLI and desktop apps are under active and continuous development. To g
 
         <DesktopAutoUpdateSteps />
         
-        **To manually download and install updates:**
-        1. <LinuxDesktopInstallButtons/>
+        If you installed goose from the Snap Store, it updates automatically. To update it manually, run:
+
+        ```sh
+        sudo snap refresh goose
+        ```
+
+        **To manually download and install updates for DEB, RPM, or Flatpak:**
+        1. <LinuxDesktopInstallButtons includeSnap={false}/>
 
         #### For Debian/Ubuntu-based distributions
         2. In a terminal, navigate to the downloaded DEB file
@@ -76,7 +82,13 @@ The goose CLI and desktop apps are under active and continuous development. To g
         4. Launch goose from the app menu
       </TabItem>
       <TabItem value="cli" label="goose CLI">
-        You can update goose by running:
+        If you installed goose from the Snap Store, it updates automatically. To update it manually, run:
+
+        ```sh
+        sudo snap refresh goose
+        ```
+
+        If you installed the CLI using the installation script, run:
 
         ```sh
         goose update
