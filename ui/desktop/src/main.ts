@@ -1241,6 +1241,7 @@ const createChat = async (
 
     mainWindow = new BrowserWindow({
       show: false,
+      autoHideMenuBar: process.platform === 'linux',
       titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
       trafficLightPosition: process.platform === 'darwin' ? { x: 20, y: 16 } : undefined,
       vibrancy: process.platform === 'darwin' ? 'window' : undefined,
@@ -2985,6 +2986,7 @@ async function appMain() {
       );
       const appWindow = new BrowserWindow({
         title: formatAppName(gooseApp.name),
+        autoHideMenuBar: process.platform === 'linux',
         width: gooseApp.width ?? 800,
         height: gooseApp.height ?? 600,
         resizable: gooseApp.resizable ?? true,
