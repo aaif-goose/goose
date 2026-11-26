@@ -174,7 +174,7 @@ Copy the models.dev data into this folder as in step 2, then repeat the failing 
   - The cause is clear, and the code change only touches that provider's code.
   - The fix includes a test that fails before the fix and passes after.
 
-  To prepare the PR, commit every fix on one branch from `origin/main`, with a clear commit message for each. Then run `git format-patch origin/main --stdout > "$FIX_DIR/fix.patch"`. Write the PR title as the first line of `$FIX_DIR/pr.md` and the PR description below it. Don't push or open the PR yourself: the workflow opens it from branch `$FIX_BRANCH`. If any condition doesn't hold, report your findings without preparing a PR.
+  To prepare the PR, commit every fix on one branch from `origin/main`, with a clear commit message for each. Commit only the files your fix changes. Then run `git format-patch origin/main --stdout > "$FIX_DIR/fix.patch"`. Write the PR title as the first line of `$FIX_DIR/pr.md` and the PR description below it. Don't push or open the PR yourself: the workflow opens it from branch `$FIX_BRANCH`. If any condition doesn't hold, report your findings without preparing a PR.
 
 ## 9. Report
 

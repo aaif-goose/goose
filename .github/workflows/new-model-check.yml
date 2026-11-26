@@ -43,6 +43,8 @@ jobs:
           GOOSE_BIN_DIR="$RUNNER_TEMP/agent-bin" GOOSE_VERSION= CANARY=false CONFIGURE=false bash "$RUNNER_TEMP/download_cli.sh"
           echo "$RUNNER_TEMP/agent-bin" >> "$GITHUB_PATH"
 
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d  # v10.4.0
+
       - name: Set git identity
         run: |
           git config --global user.name "github-actions[bot]"
