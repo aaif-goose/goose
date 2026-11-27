@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "code_execution";
 
-const INSTRUCTIONS: &str = "Discover exact Goose tool names with list_functions and inspect unfamiliar parameters with get_function_details. Write JavaScript defining async function run() and execute it with execute_javascript. Call tools using await tools.call(\"extension__tool_name\", { ... }); no imports or generated namespaces are needed. Await every tool call and batch independent operations with Promise.all. Return or log only information needed for the next step. JavaScript contexts are isolated, with no filesystem, shell, network, packages, or environment access; use discovered tools for authorized external operations.";
+const INSTRUCTIONS: &str = "Discover exact Goose tool names with list_functions and inspect unfamiliar parameters with get_function_details. Write JavaScript defining async function run() and execute it with execute_javascript. Call tools using await tools.call(\"extension__tool_name\", { ... }); no imports or generated namespaces are needed. Pass file contents to `write` as double-quoted strings, not template literals or shell heredocs. Await every tool call and batch independent operations with Promise.all. Return or log only information needed for the next step. JavaScript contexts are isolated, with no filesystem, shell, network, packages, or environment access; use discovered tools for authorized external operations.";
 
 pub struct CodeExecutionClient {
     info: InitializeResult,
