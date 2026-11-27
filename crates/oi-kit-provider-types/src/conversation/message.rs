@@ -687,7 +687,14 @@ impl MessageContentBlock {
                 let texts: Vec<String> = result
                     .content
                     .iter()
-                    .filter_map(|content| content.as_text().map(|t| t.text.to_string()))
+                    .filter_map(|content| match content {
+                        ContentBlock::Text(text) => Some(text.text.to_string()),
+                        ContentBlock::Resource(resource) => {
+                            Some(extract_text_from_resource(&resource.resource))
+                                .filter(|text| !text.is_empty())
+                        }
+                        _ => None,
+                    })
                     .collect();
                 if !texts.is_empty() {
                     return Some(texts.join("\n"));
@@ -1778,6 +1785,57 @@ mod tests {
             panic!("expected tool response");
         };
         assert_eq!(response.tool_result.unwrap(), expected);
+    }
+
+    fn tool_response_text(content: Vec<ContentBlock>) -> Option<String> {
+        MessageContentBlock::tool_response("tool-1", Ok(CallToolResult::success(content)))
+            .as_tool_response_text()
+    }
+
+    #[test]
+    fn test_tool_response_text_joins_text_blocks() {
+        assert_eq!(
+            tool_response_text(vec![
+                ContentBlock::text("first"),
+                ContentBlock::text("second")
+            ]),
+            Some("first\nsecond".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_response_text_includes_text_resource() {
+        assert_eq!(
+            tool_response_text(vec![ContentBlock::embedded_text(
+                "file:///notes.md",
+                "resource body"
+            )]),
+            Some("resource body".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_response_text_keeps_block_order_and_skips_empty_resource() {
+        assert_eq!(
+            tool_response_text(vec![
+                ContentBlock::text("before"),
+                ContentBlock::embedded_text("file:///notes.md", "resource body"),
+                ContentBlock::embedded_text("file:///empty.md", ""),
+                ContentBlock::text("after"),
+            ]),
+            Some("before\nresource body\nafter".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_response_text_describes_binary_blob_resource() {
+        let blob = base64::engine::general_purpose::STANDARD.encode([0x89, b'P', b'N', b'G']);
+        assert_eq!(
+            tool_response_text(vec![ContentBlock::resource(
+                ResourceContents::blob(blob, "file:///image.png").with_mime_type("image/png")
+            )]),
+            Some("[Binary content (image/png) - 4 bytes]".to_string())
+        );
     }
 
     #[test]
