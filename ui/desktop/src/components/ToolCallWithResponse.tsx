@@ -60,10 +60,35 @@ const i18n = defineMessages({
 });
 
 interface ToolGraphNode {
+  index: number;
   tool: string;
   description: string;
   depends_on: number[];
 }
+
+const parseToolGraph = (value: unknown): ToolGraphNode[] =>
+  Array.isArray(value)
+    ? value.flatMap((node: unknown, index) => {
+        if (!node || typeof node !== 'object' || Array.isArray(node)) return [];
+        const fields = node as Record<string, unknown>;
+        return [
+          {
+            index,
+            tool: typeof fields.tool === 'string' ? fields.tool : 'unknown',
+            description: typeof fields.description === 'string' ? fields.description : '',
+            depends_on: Array.isArray(fields.depends_on)
+              ? fields.depends_on.filter((dep): dep is number => Number.isInteger(dep) && dep >= 0)
+              : [],
+          },
+        ];
+      })
+    : [];
+
+const formatToolGraphNode = (node: ToolGraphNode) => {
+  const deps =
+    node.depends_on.length > 0 ? ` (uses ${node.depends_on.map((d) => d + 1).join(', ')})` : '';
+  return `${node.index + 1}. ${node.tool}: ${node.description}${deps}`;
+};
 
 type UiMeta = {
   ui?: {
@@ -376,7 +401,7 @@ interface SubagentToolRequestData {
   subagent_id: string;
   tool_call: {
     name: string;
-    arguments?: { tool_graph?: ToolGraphNode[] };
+    arguments?: { tool_graph?: unknown };
   };
 }
 
@@ -408,22 +433,12 @@ const formatSubagentToolCall = (data: SubagentToolRequestData): string => {
   const parts = toolCallName.split('__').reverse();
   const toolName = parts[0] || 'unknown';
   const extensionName = parts.slice(1).reverse().join('__') || '';
-  const toolGraph = toolCall.arguments?.tool_graph;
+  const toolGraph = parseToolGraph(toolCall.arguments?.tool_graph);
 
-  if (
-    ['execute_javascript', 'execute_typescript'].includes(toolName) &&
-    toolGraph &&
-    toolGraph.length > 0
-  ) {
+  if (['execute_javascript', 'execute_typescript'].includes(toolName) && toolGraph.length > 0) {
     const plural = toolGraph.length === 1 ? '' : 's';
     const header = `[subagent:${shortId}] ${toolGraph.length} tool call${plural} | ${toolName}`;
-    const lines = toolGraph.map((node, idx) => {
-      const deps =
-        node.depends_on && node.depends_on.length > 0
-          ? ` (uses ${node.depends_on.map((d) => d + 1).join(', ')})`
-          : '';
-      return `  ${idx + 1}. ${node.tool}: ${node.description}${deps}`;
-    });
+    const lines = toolGraph.map((node) => `  ${formatToolGraphNode(node)}`);
     return [header, ...lines].join('\n');
   }
 
@@ -658,7 +673,7 @@ function ToolCallView({
     >
       {(() => {
         const code = toolCall.arguments?.code as unknown as string | undefined;
-        const toolGraph = toolCall.arguments?.tool_graph as unknown as ToolGraphNode[] | undefined;
+        const toolGraph = toolCall.arguments?.tool_graph;
 
         if (
           [
@@ -671,7 +686,7 @@ function ToolCallView({
         ) {
           return (
             <div className="border-t border-border-primary">
-              <CodeModeView toolGraph={toolGraph} code={code} />
+              <CodeModeView toolGraph={parseToolGraph(toolGraph)} code={code} />
             </div>
           );
         }
@@ -778,31 +793,19 @@ function ToolDetailsView({ toolCall, isStartExpanded }: ToolDetailsViewProps) {
 }
 
 interface CodeModeViewProps {
-  toolGraph?: ToolGraphNode[];
+  toolGraph: ToolGraphNode[];
   code?: string;
 }
 
 function CodeModeView({ toolGraph, code }: CodeModeViewProps) {
   const intl = useIntl();
-  const renderGraph = () => {
-    const graph = toolGraph ?? [];
-    if (graph.length === 0) return null;
-
-    const lines: string[] = [];
-
-    graph.forEach((node, index) => {
-      const deps =
-        node.depends_on.length > 0 ? ` (uses ${node.depends_on.map((d) => d + 1).join(', ')})` : '';
-      lines.push(`${index + 1}. ${node.tool}: ${node.description}${deps}`);
-    });
-
-    return lines.join('\n');
-  };
 
   return (
     <div className="px-4 py-2">
-      {toolGraph && (
-        <pre className="font-mono text-xs text-textSubtle whitespace-pre-wrap">{renderGraph()}</pre>
+      {toolGraph.length > 0 && (
+        <pre className="font-mono text-xs text-textSubtle whitespace-pre-wrap">
+          {toolGraph.map(formatToolGraphNode).join('\n')}
+        </pre>
       )}
       {code && (
         <div className="border-t border-border-primary -mx-4 mt-2">
