@@ -904,6 +904,31 @@ fn test_new_session_uses_current_config_mode() {
 }
 
 #[test]
+fn test_new_session_persists_scheduled_job_id() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let response = conn
+            .cx()
+            .send_request(
+                NewSessionRequest::new(work_dir.path()).meta(serde_json::Map::from_iter([
+                    ("client".to_string(), "goose-desktop".into()),
+                    ("scheduledJobId".to_string(), "daily-recipe".into()),
+                ])),
+            )
+            .block_task()
+            .await
+            .unwrap();
+        let session = SessionManager::new(data_root.path().to_path_buf())
+            .get_session(&response.session_id.0, false)
+            .await
+            .unwrap();
+        assert_eq!(session.schedule_id.as_deref(), Some("daily-recipe"));
+    });
+}
+
+#[test]
 fn test_new_session_response_precedes_available_commands() {
     run_test(async {
         let data_root = tempfile::tempdir().unwrap();

@@ -172,6 +172,7 @@ describe('ACP sessions', () => {
     await acpNewSession('/tmp', undefined, {
       recipeDeeplink: 'goose://recipe?url=example',
       recipeParameterScopeId: 'scope-1',
+      scheduledJobId: 'daily-recipe',
     });
 
     expect(client.connection.agent.request).toHaveBeenCalledWith(methods.agent.session.new, {
@@ -181,6 +182,7 @@ describe('ACP sessions', () => {
         client: 'goose-desktop',
         recipeDeeplink: 'goose://recipe?url=example',
         recipeParameterScopeId: 'scope-1',
+        scheduledJobId: 'daily-recipe',
       },
     });
   });
