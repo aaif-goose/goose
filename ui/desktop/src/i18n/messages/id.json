@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Tidak dapat memuat gambar"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Gambar yang dimuat dengan Baca Gambar diperkecil ke lebar atau tinggi maksimum ini sebelum dikirim ke model. Dimensi asli tetap tersedia untuk pemotongan."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Dimensi maksimum (piksel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Pemrosesan gambar"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Batal"
   },

@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Não foi possível carregar a imagem"
   },
+  "imageSettings.description": {
+    "defaultMessage": "As imagens carregadas com Ler imagem são reduzidas para esta largura ou altura máxima antes de serem enviadas ao modelo. As dimensões originais continuam disponíveis para recorte."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Dimensão máxima (pixels)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Processamento de imagens"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Cancelar"
   },

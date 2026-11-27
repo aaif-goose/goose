@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Impossibile caricare l'immagine"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Le immagini caricate con Leggi immagine vengono ridimensionate a questa larghezza o altezza massima prima di essere inviate al modello. Le dimensioni originali restano disponibili per il ritaglio."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Dimensione massima (pixel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Elaborazione delle immagini"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Annulla"
   },

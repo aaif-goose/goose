@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "無法載入圖片"
   },
+  "imageSettings.description": {
+    "defaultMessage": "使用「讀取影像」載入的影像在傳送給模型之前，會縮小至此最大寬度或高度。原始尺寸仍可用於裁剪。"
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "最大尺寸（像素）"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "影像處理"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "取消"
   },

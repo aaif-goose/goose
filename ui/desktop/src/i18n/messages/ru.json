@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Не удалось загрузить изображение"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Изображения, загруженные с помощью «Прочитать изображение», уменьшаются до этой максимальной ширины или высоты перед отправкой модели. Исходные размеры остаются доступными для обрезки."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Максимальный размер (пиксели)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Обработка изображений"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Отмена"
   },

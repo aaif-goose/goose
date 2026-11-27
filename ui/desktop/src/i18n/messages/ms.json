@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Tidak dapat memuatkan imej"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Imej yang dimuatkan dengan Baca Imej dikecilkan kepada lebar atau tinggi maksimum ini sebelum dihantar kepada model. Dimensi asal kekal tersedia untuk pemangkasan."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Dimensi maksimum (piksel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Pemprosesan imej"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Batal"
   },

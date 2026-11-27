@@ -1538,6 +1538,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Unable to load image"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Images loaded with Read Image are downscaled to this maximum width or height before being sent to the model. Original dimensions remain available for cropping."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Maximum dimension (pixels)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Image processing"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Cancel"
   },

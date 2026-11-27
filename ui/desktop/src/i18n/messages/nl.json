@@ -1538,6 +1538,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Afbeelding kan niet worden geladen"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Afbeeldingen die met Afbeelding lezen worden geladen, worden vóór verzending naar het model verkleind tot deze maximale breedte of hoogte. De oorspronkelijke afmetingen blijven beschikbaar voor bijsnijden."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Maximale afmeting (pixels)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Afbeeldingsverwerking"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "Annuleren"
   },

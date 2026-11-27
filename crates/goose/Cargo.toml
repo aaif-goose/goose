@@ -247,6 +247,7 @@ image = { version = "0.24.9", default-features = false, features = ["png", "jpeg
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
 boa_engine = { version = "0.22", default-features = false, optional = true, features = ["fuzz"] }
+exif = { version = "0.6.1", package = "kamadak-exif" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "jobapi2", "minwinbase", "processthreadsapi", "sddl", "securitybaseapi", "synchapi", "winbase", "winerror"] }

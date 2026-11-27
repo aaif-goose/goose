@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine;
+use exif::{In, Tag};
 use image::GenericImageView;
 use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
 use schemars::JsonSchema;
@@ -10,8 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::edit::resolve_path;
+use crate::config::Config;
 
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+const DEFAULT_MAX_IMAGE_DIMENSION: u32 = 1024;
+const MAX_IMAGE_DIMENSION_CONFIG_KEY: &str = "GOOSE_READ_IMAGE_MAX_DIMENSION";
 
 fn visible_text(text: impl Into<String>) -> ContentBlock {
     ContentBlock::Text(
@@ -96,9 +100,14 @@ struct LoadedImage {
 
 impl LoadedImage {
     fn summary(&self, source: &str) -> String {
-        let crop_note = if self.cropped {
+        let processing_note = if self.cropped {
             format!(
-                " Cropped from {}x{} to {}x{}.",
+                " Original image was {}x{}; returned crop is {}x{}.",
+                self.original_width, self.original_height, self.width, self.height
+            )
+        } else if (self.original_width, self.original_height) != (self.width, self.height) {
+            format!(
+                " Downscaled from {}x{} to {}x{}.",
                 self.original_width, self.original_height, self.width, self.height
             )
         } else {
@@ -106,7 +115,7 @@ impl LoadedImage {
         };
 
         format!(
-            "Loaded image from {source} ({} bytes, {}, {}x{}).{crop_note}",
+            "Loaded image from {source} ({} bytes, {}, {}x{}).{processing_note}",
             self.bytes_len, self.mime_type, self.width, self.height
         )
     }
@@ -116,8 +125,24 @@ async fn load_image(
     params: &ImageReadParams,
     working_dir: Option<&Path>,
 ) -> Result<LoadedImage, String> {
+    let max_dimension = Config::global()
+        .get_param(MAX_IMAGE_DIMENSION_CONFIG_KEY)
+        .unwrap_or(DEFAULT_MAX_IMAGE_DIMENSION);
+    load_image_with_max_dimension(params, working_dir, max_dimension).await
+}
+
+async fn load_image_with_max_dimension(
+    params: &ImageReadParams,
+    working_dir: Option<&Path>,
+    max_dimension: u32,
+) -> Result<LoadedImage, String> {
     if params.source.trim().is_empty() {
         return Err("source cannot be empty".to_string());
+    }
+    if max_dimension == 0 {
+        return Err(format!(
+            "{MAX_IMAGE_DIMENSION_CONFIG_KEY} must be greater than zero"
+        ));
     }
 
     let bytes = load_image_bytes(&params.source, working_dir).await?;
@@ -130,8 +155,10 @@ async fn load_image(
     let image = image::load_from_memory_with_format(&bytes, format)
         .map_err(|error| format!("failed to decode image: {error}"))?;
     let (original_width, original_height) = image.dimensions();
+    let orientation = exif_orientation(&bytes, format);
 
-    let Some(crop) = &params.crop else {
+    if params.crop.is_none() && original_width <= max_dimension && original_height <= max_dimension
+    {
         return Ok(LoadedImage {
             data: base64::prelude::BASE64_STANDARD.encode(&bytes),
             mime_type: mime_type.to_string(),
@@ -142,27 +169,68 @@ async fn load_image(
             original_height,
             cropped: false,
         });
-    };
+    }
 
-    validate_crop(crop, original_width, original_height)?;
-    let cropped = image.crop_imm(crop.x, crop.y, crop.width, crop.height);
-    let mut cropped_bytes = Cursor::new(Vec::new());
-    cropped
-        .write_to(&mut cropped_bytes, image::ImageFormat::Png)
-        .map_err(|error| format!("failed to encode cropped image: {error}"))?;
-    let cropped_bytes = cropped_bytes.into_inner();
-    ensure_image_size(cropped_bytes.len() as u64)?;
+    let (processed, cropped) = if let Some(crop) = &params.crop {
+        validate_crop(crop, original_width, original_height)?;
+        (
+            image.crop_imm(crop.x, crop.y, crop.width, crop.height),
+            true,
+        )
+    } else {
+        (image, false)
+    };
+    let processed = apply_orientation(processed, orientation);
+    let (processed_width, processed_height) = processed.dimensions();
+    let processed = if processed_width > max_dimension || processed_height > max_dimension {
+        processed.thumbnail(max_dimension, max_dimension)
+    } else {
+        processed
+    };
+    let (width, height) = processed.dimensions();
+    let mut processed_bytes = Cursor::new(Vec::new());
+    processed
+        .write_to(&mut processed_bytes, format)
+        .map_err(|error| format!("failed to encode image: {error}"))?;
+    let processed_bytes = processed_bytes.into_inner();
+    ensure_image_size(processed_bytes.len() as u64)?;
 
     Ok(LoadedImage {
-        data: base64::prelude::BASE64_STANDARD.encode(&cropped_bytes),
-        mime_type: "image/png".to_string(),
-        bytes_len: cropped_bytes.len(),
-        width: crop.width,
-        height: crop.height,
+        data: base64::prelude::BASE64_STANDARD.encode(&processed_bytes),
+        mime_type: mime_type.to_string(),
+        bytes_len: processed_bytes.len(),
+        width,
+        height,
         original_width,
         original_height,
-        cropped: true,
+        cropped,
     })
+}
+
+fn exif_orientation(bytes: &[u8], format: image::ImageFormat) -> Option<u32> {
+    if format != image::ImageFormat::Jpeg {
+        return None;
+    }
+
+    exif::Reader::new()
+        .read_from_container(&mut Cursor::new(bytes))
+        .ok()?
+        .get_field(Tag::Orientation, In::PRIMARY)?
+        .value
+        .get_uint(0)
+}
+
+fn apply_orientation(image: image::DynamicImage, orientation: Option<u32>) -> image::DynamicImage {
+    match orientation {
+        Some(2) => image.fliph(),
+        Some(3) => image.rotate180(),
+        Some(4) => image.flipv(),
+        Some(5) => image.rotate90().fliph(),
+        Some(6) => image.rotate90(),
+        Some(7) => image.rotate90().flipv(),
+        Some(8) => image.rotate270(),
+        _ => image,
+    }
 }
 
 async fn load_image_bytes(source: &str, working_dir: Option<&Path>) -> Result<Vec<u8>, String> {
@@ -382,6 +450,167 @@ mod local_file_tests {
         assert_eq!(
             error,
             "unsupported image format; read_image only supports png, jpeg, gif, and webp. To read text files, use the shell tool (for example, cat or type)."
+        );
+    }
+
+    fn write_test_image(path: &Path, width: u32, height: u32, format: image::ImageFormat) {
+        let image = image::DynamicImage::new_rgb8(width, height);
+        let mut bytes = Cursor::new(Vec::new());
+        image.write_to(&mut bytes, format).unwrap();
+        std::fs::write(path, bytes.into_inner()).unwrap();
+    }
+
+    fn add_exif_orientation(path: &Path, orientation: u16) {
+        let mut jpeg = std::fs::read(path).unwrap();
+        assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
+
+        let mut app1 = vec![
+            0xff, 0xe1, 0x00, 0x22, b'E', b'x', b'i', b'f', 0x00, 0x00, b'I', b'I', 0x2a, 0x00,
+            0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+        ];
+        app1.extend_from_slice(&orientation.to_le_bytes());
+        app1.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        jpeg.splice(2..2, app1);
+        std::fs::write(path, jpeg).unwrap();
+    }
+
+    #[tokio::test]
+    async fn oversized_image_is_downscaled_without_changing_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.jpg");
+        write_test_image(&path, 2000, 1000, image::ImageFormat::Jpeg);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: None,
+            },
+            None,
+            1024,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(loaded.mime_type, "image/jpeg");
+        assert_eq!((loaded.width, loaded.height), (1024, 512));
+        assert_eq!(
+            (loaded.original_width, loaded.original_height),
+            (2000, 1000)
+        );
+        let output = base64::prelude::BASE64_STANDARD
+            .decode(loaded.data)
+            .unwrap();
+        assert_eq!(
+            image::guess_format(&output).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+    }
+
+    #[tokio::test]
+    async fn crop_coordinates_use_original_dimensions_before_downscaling() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.png");
+        write_test_image(&path, 1600, 1200, image::ImageFormat::Png);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: Some(CropParams {
+                    x: 800,
+                    y: 400,
+                    width: 600,
+                    height: 300,
+                }),
+            },
+            None,
+            256,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(loaded.mime_type, "image/png");
+        assert_eq!((loaded.width, loaded.height), (256, 128));
+        assert_eq!(
+            (loaded.original_width, loaded.original_height),
+            (1600, 1200)
+        );
+        assert!(loaded.cropped);
+    }
+
+    #[tokio::test]
+    async fn crop_below_max_dimension_is_not_upscaled() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.png");
+        write_test_image(&path, 1600, 1200, image::ImageFormat::Png);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: Some(CropParams {
+                    x: 100,
+                    y: 100,
+                    width: 256,
+                    height: 128,
+                }),
+            },
+            None,
+            1024,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!((loaded.width, loaded.height), (256, 128));
+    }
+
+    #[tokio::test]
+    async fn jpeg_exif_orientation_is_applied_before_downscaling() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("oriented.jpg");
+        write_test_image(&path, 2000, 1000, image::ImageFormat::Jpeg);
+        add_exif_orientation(&path, 6);
+
+        let loaded = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: None,
+            },
+            None,
+            1024,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!((loaded.width, loaded.height), (512, 1024));
+        assert_eq!(
+            (loaded.original_width, loaded.original_height),
+            (2000, 1000)
+        );
+
+        let output = base64::prelude::BASE64_STANDARD
+            .decode(loaded.data)
+            .unwrap();
+        let decoded =
+            image::load_from_memory_with_format(&output, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!(decoded.dimensions(), (512, 1024));
+        assert_eq!(exif_orientation(&output, image::ImageFormat::Jpeg), None);
+    }
+
+    #[tokio::test]
+    async fn zero_max_dimension_is_rejected() {
+        let error = load_image_with_max_dimension(
+            &ImageReadParams {
+                source: "unused.png".to_string(),
+                crop: None,
+            },
+            None,
+            0,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "GOOSE_READ_IMAGE_MAX_DIMENSION must be greater than zero"
         );
     }
 }

@@ -1460,6 +1460,15 @@
   "imagePreview.unableToLoad": {
     "defaultMessage": "Resim yüklenemiyor"
   },
+  "imageSettings.description": {
+    "defaultMessage": "Görüntü Oku ile yüklenen görüntüler, modele gönderilmeden önce bu maksimum genişliğe veya yüksekliğe küçültülür. Orijinal boyutlar kırpma için kullanılabilir durumda kalır."
+  },
+  "imageSettings.maximumDimension": {
+    "defaultMessage": "Maksimum boyut (piksel)"
+  },
+  "imageSettings.title": {
+    "defaultMessage": "Görüntü işleme"
+  },
   "importRecipeForm.cancel": {
     "defaultMessage": "İptal"
   },
