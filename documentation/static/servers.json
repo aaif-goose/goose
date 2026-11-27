@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -128,6 +128,18 @@
     ]
   },
   {
+    "id": "cash-app",
+    "name": "Cash App",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "type": "streamable-http",
+    "url": "https://connect.squareup.com/v2/mcp/cash-app",
+    "link": "",
+    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
+    "is_builtin": false,
+    "endorsed": true,
+    "environmentVariables": []
+  },
+  {
     "id": "chrome-devtools-mcp",
     "name": "Chrome DevTools",
     "description": "Control and inspect a live Chrome browser",
@@ -154,6 +166,17 @@
         "required": true
       }
     ]
+  },
+  {
+    "id": "code_execution",
+    "name": "Code Mode",
+    "description": "Execute JavaScript code to interact with MCP tools efficiently",
+    "command": "",
+    "link": "https://github.com/aaif-goose/goose/tree/main/crates/goose/src/agents/platform_extensions/code_execution.rs",
+    "installation_notes": "This is a built-in platform extension that comes with goose. No installation required.",
+    "is_builtin": true,
+    "endorsed": true,
+    "environmentVariables": []
   },
   {
     "id": "computercontroller",
@@ -211,15 +234,16 @@
     ]
   },
   {
-    "id": "code_execution",
-    "name": "Code Mode",
-    "description": "Execute JavaScript code to interact with MCP tools efficiently",
-    "command": "",
-    "link": "https://github.com/aaif-goose/goose/tree/main/crates/goose/src/agents/platform_extensions/code_execution.rs",
-    "installation_notes": "This is a built-in platform extension that comes with goose. No installation required.",
-    "is_builtin": true,
-    "endorsed": true,
-    "environmentVariables": []
+    "id": "dev.to",
+    "name": "Dev.to",
+    "description": "Access Dev.to articles and content (requires local server setup)",
+    "url": "http://localhost:3000/mcp",
+    "link": "https://github.com/nickytonline/dev-to-mcp",
+    "installation_notes": "This is a local extension. You must first clone, install, and run the Dev.to MCP server locally before adding this extension.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
   },
   {
     "id": "developer",
@@ -231,18 +255,6 @@
     "is_builtin": true,
     "endorsed": true,
     "environmentVariables": []
-  },
-  {
-    "id": "dev.to",
-    "name": "Dev.to",
-    "description": "Access Dev.to articles and content (requires local server setup)",
-    "url": "http://localhost:3000/mcp",
-    "link": "https://github.com/nickytonline/dev-to-mcp",
-    "installation_notes": "This is a local extension. You must first clone, install, and run the Dev.to MCP server locally before adding this extension.",
-    "is_builtin": false,
-    "endorsed": false,
-    "environmentVariables": [],
-    "type": "streamable-http"
   },
   {
     "id": "elevenlabs-mcp",
@@ -313,18 +325,6 @@
     "environmentVariables": []
   },
   {
-    "id": "glif",
-    "name": "Glif",
-    "description": "Generate images, video, and audio with Glif's media-generation agent",
-    "url": "https://glif.app/api/mcp",
-    "link": "https://glif.app/mcp",
-    "installation_notes": "Hosted remote server. Sign in with your Glif account via OAuth on first connect.",
-    "is_builtin": false,
-    "endorsed": false,
-    "environmentVariables": [],
-    "type": "streamable-http"
-  },
-  {
     "id": "github-mcp",
     "name": "GitHub",
     "description": "GitHub repository management and operations",
@@ -352,6 +352,18 @@
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": []
+  },
+  {
+    "id": "glif",
+    "name": "Glif",
+    "description": "Generate images, video, and audio with Glif's media-generation agent",
+    "url": "https://glif.app/api/mcp",
+    "link": "https://glif.app/mcp",
+    "installation_notes": "Hosted remote server. Sign in with your Glif account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
   },
   {
     "id": "goose-docs",
@@ -465,6 +477,18 @@
     ]
   },
   {
+    "id": "neighborhood",
+    "name": "Neighborhood",
+    "description": "Discover nearby restaurants, browse menus, and place takeout orders through natural conversation. Sellers are US-based.",
+    "type": "streamable-http",
+    "url": "https://connect.squareup.com/v2/mcp/neighborhood",
+    "link": "",
+    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
+    "is_builtin": false,
+    "endorsed": true,
+    "environmentVariables": []
+  },
+  {
     "id": "neon",
     "name": "Neon",
     "description": "Manage Neon Postgres databases, projects, and branches",
@@ -556,17 +580,6 @@
     "environmentVariables": []
   },
   {
-    "id": "pngmeta",
-    "name": "PNG Metadata",
-    "description": "Read and write PNG metadata (tEXt, iTXt, zTXt chunks and XMP)",
-    "command": "uvx --from pngmeta[mcp] pngmeta-mcp",
-    "link": "https://github.com/james-see/pngmeta",
-    "installation_notes": "Install using uvx. Requires pngmeta[mcp] extra.",
-    "is_builtin": false,
-    "endorsed": false,
-    "environmentVariables": []
-  },
-  {
     "id": "playwright",
     "name": "Playwright",
     "description": "Interact with web pages through structured accessibility snapshots using Playwright",
@@ -575,6 +588,17 @@
     "installation_notes": "Install using npx package manager.",
     "is_builtin": false,
     "endorsed": true,
+    "environmentVariables": []
+  },
+  {
+    "id": "pngmeta",
+    "name": "PNG Metadata",
+    "description": "Read and write PNG metadata (tEXt, iTXt, zTXt chunks and XMP)",
+    "command": "uvx --from pngmeta[mcp] pngmeta-mcp",
+    "link": "https://github.com/james-see/pngmeta",
+    "installation_notes": "Install using uvx. Requires pngmeta[mcp] extra.",
+    "is_builtin": false,
+    "endorsed": false,
     "environmentVariables": []
   },
   {
@@ -590,6 +614,23 @@
       {
         "name": "PROMPTS_API_KEY",
         "description": "API Key to save and list private prompts on prompts.chat",
+        "required": false
+      }
+    ]
+  },
+  {
+    "id": "quantset-mcp",
+    "name": "QuantSet",
+    "description": "Global stock market, financial statements for 36,000+ companies, 127M+ SEC EDGAR XBRL facts, 4,899 ETF look-throughs, consensus estimates, 40-factor stock screening, and prices across 67 countries",
+    "command": "npx -y @quantset/mcp",
+    "link": "https://github.com/quantset/quantset-js/tree/main/mcp",
+    "installation_notes": "Install using npx (`npx -y @quantset/mcp`) or connect via remote Streamable HTTP at https://api.quantset.dev/mcp. Works immediately with zero signup using QUANTSET_API_KEY=mw_demo.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "QUANTSET_API_KEY",
+        "description": "QuantSet API key (optional — defaults to mw_demo free sandbox; get 250 free credits at https://quantset.dev/signup)",
         "required": false
       }
     ]
@@ -635,6 +676,28 @@
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": []
+  },
+  {
+    "id": "scholar-sidekick",
+    "name": "Scholar Sidekick",
+    "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
+    "command": "npx -y scholar-sidekick-mcp@latest",
+    "link": "https://github.com/mlava/scholar-sidekick-mcp",
+    "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "SCHOLAR_API_KEY",
+        "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
+        "required": false
+      },
+      {
+        "name": "RAPIDAPI_KEY",
+        "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
+        "required": false
+      }
+    ]
   },
   {
     "id": "selenium-mcp",
@@ -758,52 +821,5 @@
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": []
-  },
-  {
-    "id": "neighborhood",
-    "name": "Neighborhood",
-    "description": "Discover nearby restaurants, browse menus, and place takeout orders through natural conversation. Sellers are US-based.",
-    "type": "streamable-http",
-    "url": "https://connect.squareup.com/v2/mcp/neighborhood",
-    "link": "",
-    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
-    "is_builtin": false,
-    "endorsed": true,
-    "environmentVariables": []
-  },
-  {
-    "id": "cash-app",
-    "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
-    "type": "streamable-http",
-    "url": "https://connect.squareup.com/v2/mcp/cash-app",
-    "link": "",
-    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
-    "is_builtin": false,
-    "endorsed": true,
-    "environmentVariables": []
-  },
-  {
-  "id": "scholar-sidekick",
-  "name": "Scholar Sidekick",
-  "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
-  "command": "npx -y scholar-sidekick-mcp@latest",
-  "link": "https://github.com/mlava/scholar-sidekick-mcp",
-  "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
-  "is_builtin": false,
-  "endorsed": false,
-  "environmentVariables": [
-    {
-      "name": "SCHOLAR_API_KEY",
-      "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
-      "required": false
-    },
-    {
-      "name": "RAPIDAPI_KEY",
-      "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
-      "required": false
-    }
-  ]
-}
-
+  }
 ]
