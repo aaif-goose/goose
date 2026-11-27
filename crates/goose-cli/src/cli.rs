@@ -546,7 +546,10 @@ enum SessionCommand {
         #[arg(short = 'l', long = "limit", help = "Limit the number of results")]
         limit: Option<usize>,
     },
-    #[command(about = "Remove sessions. Runs interactively if no ID, name, or regex is provided.")]
+    #[command(
+        about = "Remove sessions. Prompts interactively unless a target and --yes are provided.",
+        long_about = "Remove one or more saved sessions. Runs interactively to pick sessions if no ID, name, or regex is provided, and asks for confirmation before deleting unless -y/--yes is passed. Non-interactive removal requires an explicit target (--session-id, --name, or --regex) and --yes."
+    )]
     Remove {
         #[command(flatten)]
         identifier: Option<Identifier>,
@@ -556,6 +559,12 @@ enum SessionCommand {
             help = "Regex for removing matched sessions (optional)"
         )]
         regex: Option<String>,
+        #[arg(
+            short = 'y',
+            long,
+            help = "Skip deletion confirmation prompt (does not select sessions)"
+        )]
+        yes: bool,
     },
     #[command(about = "Export a session")]
     Export {
@@ -1851,13 +1860,17 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
         } => {
             handle_session_list(format, ascending, working_dir, limit).await?;
         }
-        SessionCommand::Remove { identifier, regex } => {
+        SessionCommand::Remove {
+            identifier,
+            regex,
+            yes,
+        } => {
             let (session_id, name) = if let Some(id) = identifier {
                 (id.session_id, id.name)
             } else {
                 (None, None)
             };
-            handle_session_remove(session_id, name, regex).await?;
+            handle_session_remove(session_id, name, regex, yes).await?;
         }
         SessionCommand::Export {
             identifier,
@@ -3120,6 +3133,94 @@ mod tests {
             }
             _ => panic!("expected serve command"),
         }
+    }
+
+    #[test]
+    fn session_remove_accepts_short_and_long_yes_flag() {
+        let short_cli = Cli::try_parse_from([
+            "goose",
+            "session",
+            "remove",
+            "--session-id",
+            "20261127_1",
+            "-y",
+        ])
+        .expect("parse short -y failed");
+        match short_cli.command {
+            Some(Command::Session {
+                command:
+                    Some(SessionCommand::Remove {
+                        identifier,
+                        regex,
+                        yes,
+                    }),
+                ..
+            }) => {
+                assert!(yes);
+                assert!(regex.is_none());
+                assert_eq!(
+                    identifier.and_then(|id| id.session_id).as_deref(),
+                    Some("20261127_1")
+                );
+            }
+            _ => panic!("expected session remove command"),
+        }
+
+        let long_cli =
+            Cli::try_parse_from(["goose", "session", "remove", "--name", "demo", "--yes"])
+                .expect("parse long --yes failed");
+        match long_cli.command {
+            Some(Command::Session {
+                command:
+                    Some(SessionCommand::Remove {
+                        identifier,
+                        regex,
+                        yes,
+                    }),
+                ..
+            }) => {
+                assert!(yes);
+                assert!(regex.is_none());
+                assert_eq!(identifier.and_then(|id| id.name).as_deref(), Some("demo"));
+            }
+            _ => panic!("expected session remove command"),
+        }
+
+        let no_yes_cli = Cli::try_parse_from(["goose", "session", "remove", "-r", "^project-"])
+            .expect("parse without --yes failed");
+        match no_yes_cli.command {
+            Some(Command::Session {
+                command:
+                    Some(SessionCommand::Remove {
+                        identifier,
+                        regex,
+                        yes,
+                    }),
+                ..
+            }) => {
+                assert!(!yes);
+                assert!(identifier.is_none());
+                assert_eq!(regex.as_deref(), Some("^project-"));
+            }
+            _ => panic!("expected session remove command"),
+        }
+    }
+
+    #[test]
+    fn session_remove_help_mentions_yes_and_non_interactive_requirements() {
+        let mut cmd = Cli::command();
+        let session = cmd.find_subcommand_mut("session").expect("session command");
+        let remove = session
+            .find_subcommand_mut("remove")
+            .expect("remove command");
+        let mut buffer = Vec::new();
+
+        remove.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(help.contains("-y"));
+        assert!(help.contains("--yes"));
+        assert!(help.contains("Non-interactive removal requires"));
     }
 
     #[cfg(feature = "local-inference")]

@@ -298,6 +298,7 @@ Remove one or more saved sessions.
 - **`--session-id <session_id>`**: Remove a specific session by its session ID
 - **`-n, --name <name>`**: Remove a specific session by its name
 - **`-r, --regex <pattern>`**: Remove sessions matching a regex pattern
+- **`-y, --yes`**: Skip the deletion confirmation prompt (does not select sessions; required with a target for non-interactive removal)
 - **`--path <path>`**: Remove a specific session by its file path (legacy)
 
 **Usage:**
@@ -305,21 +306,24 @@ Remove one or more saved sessions.
 # Interactive removal (prompts you to choose sessions)
 goose session remove
 
-# Remove a specific session by ID
+# Remove a specific session by ID (prompts for confirmation)
 goose session remove --session-id 20251108_3
 
-# Remove a specific session by name
-goose session remove -n my-project
+# Remove a specific session by ID without confirmation (e.g., in scripts)
+goose session remove --session-id 20251108_3 --yes
 
-# Remove all sessions starting with "project-"
-goose session remove -r "project-.*"
+# Remove a specific session by name without confirmation
+goose session remove -n my-project -y
+
+# Remove all sessions starting with "project-" without confirmation
+goose session remove -r "project-.*" --yes
 
 # Remove all sessions containing "migration"
 goose session remove -r ".*migration.*"
 ```
 
 :::caution
-Session removal is permanent and cannot be undone. goose will show which sessions will be removed and ask for confirmation before deleting.
+Session removal is permanent and cannot be undone. goose shows which sessions will be removed and asks for confirmation before deleting unless `-y`/`--yes` is passed. In non-interactive environments, you must pass both an explicit target (`--session-id`, `--name`, or `--regex`) and `--yes`; `--yes` alone never deletes all sessions.
 :::
 
 ---

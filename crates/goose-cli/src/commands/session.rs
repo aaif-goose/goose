@@ -9,11 +9,45 @@ use goose::session::{
 use goose::utils::safe_truncate;
 use regex::Regex;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::path::PathBuf;
 
 const TRUNCATED_DESC_LENGTH: usize = 60;
+
+fn is_interactive_terminal() -> bool {
+    io::stdin().is_terminal() && io::stderr().is_terminal()
+}
+
+struct SessionRemoveOptions {
+    session_id: Option<String>,
+    name: Option<String>,
+    regex_string: Option<String>,
+    yes: bool,
+    interactive: bool,
+}
+
+fn validate_non_interactive_remove(has_target: bool, yes: bool) -> Result<()> {
+    match (has_target, yes) {
+        (false, false) => anyhow::bail!(
+            "Non-interactive session removal requires a target (--session-id, --name, or --regex) and --yes"
+        ),
+        (false, true) => anyhow::bail!(
+            "Non-interactive session removal requires a target (--session-id, --name, or --regex); --yes does not select sessions"
+        ),
+        (true, false) => anyhow::bail!(
+            "Non-interactive session removal requires --yes to confirm deletion"
+        ),
+        (true, true) => Ok(()),
+    }
+}
+
+fn confirm_interactive_session_removal() -> Result<bool> {
+    confirm("Are you sure you want to delete these sessions?")
+        .initial_value(false)
+        .interact()
+        .map_err(Into::into)
+}
 
 fn display_path_with_tilde(path: &Path) -> String {
     #[cfg(not(target_os = "windows"))]
@@ -25,7 +59,15 @@ fn display_path_with_tilde(path: &Path) -> String {
     path.display().to_string()
 }
 
-async fn remove_sessions(session_manager: &SessionManager, sessions: Vec<Session>) -> Result<()> {
+async fn remove_sessions<C>(
+    session_manager: &SessionManager,
+    sessions: Vec<Session>,
+    yes: bool,
+    confirm_deletion: C,
+) -> Result<()>
+where
+    C: FnOnce() -> Result<bool>,
+{
     println!("The following sessions will be removed:");
     for session in &sessions {
         println!(
@@ -36,9 +78,7 @@ async fn remove_sessions(session_manager: &SessionManager, sessions: Vec<Session
         );
     }
 
-    let should_delete = confirm("Are you sure you want to delete these sessions?")
-        .initial_value(false)
-        .interact()?;
+    let should_delete = yes || confirm_deletion()?;
 
     if should_delete {
         for session in sessions {
@@ -96,57 +136,94 @@ fn prompt_interactive_session_removal(sessions: &[Session]) -> Result<Vec<Sessio
     Ok(selected_sessions)
 }
 
-pub async fn handle_session_remove(
-    session_id: Option<String>,
-    name: Option<String>,
-    regex_string: Option<String>,
-) -> Result<()> {
-    let session_manager = SessionManager::instance();
+async fn handle_session_remove_with<S, C>(
+    session_manager: &SessionManager,
+    options: SessionRemoveOptions,
+    select_sessions: S,
+    confirm_deletion: C,
+) -> Result<()>
+where
+    S: FnOnce(&[Session]) -> Result<Vec<Session>>,
+    C: FnOnce() -> Result<bool>,
+{
+    let has_target =
+        options.session_id.is_some() || options.name.is_some() || options.regex_string.is_some();
 
-    let matched_sessions: Vec<Session>;
+    if !options.interactive {
+        validate_non_interactive_remove(has_target, options.yes)?;
+    }
 
-    if let Some(id_val) = session_id {
+    let matched_sessions: Vec<Session> = if let Some(id_val) = options.session_id {
         match session_manager.get_session(&id_val, false).await {
-            Ok(session) => matched_sessions = vec![session],
+            Ok(session) => vec![session],
             Err(_) => return Err(anyhow::anyhow!("Session ID '{}' not found.", id_val)),
         }
-    } else if let Some(name_val) = name {
+    } else if let Some(name_val) = options.name {
         let all_sessions = session_manager.list_all_sessions().await?;
         if let Some(session) = all_sessions.into_iter().find(|s| s.name == name_val) {
-            matched_sessions = vec![session];
+            vec![session]
         } else {
             return Err(anyhow::anyhow!(
                 "Session with name '{}' not found.",
                 name_val
             ));
         }
-    } else if let Some(regex_val) = regex_string {
+    } else if let Some(regex_val) = options.regex_string {
         let session_regex = Regex::new(&regex_val)
             .with_context(|| format!("Invalid regex pattern '{}'", regex_val))?;
 
         let visible_sessions = session_manager.list_sessions().await?;
-        matched_sessions = visible_sessions
+        let matched: Vec<Session> = visible_sessions
             .into_iter()
             .filter(|session| session_regex.is_match(&session.id))
             .collect();
 
-        if matched_sessions.is_empty() {
+        if matched.is_empty() {
             println!("Regex string '{}' does not match any sessions", regex_val);
             return Ok(());
         }
+        matched
     } else {
         let visible_sessions = session_manager.list_sessions().await?;
         if visible_sessions.is_empty() {
             return Err(anyhow::anyhow!("No sessions found."));
         }
-        matched_sessions = prompt_interactive_session_removal(&visible_sessions)?;
-    }
+        select_sessions(&visible_sessions)?
+    };
 
     if matched_sessions.is_empty() {
         return Ok(());
     }
 
-    remove_sessions(&session_manager, matched_sessions).await
+    remove_sessions(
+        session_manager,
+        matched_sessions,
+        options.yes,
+        confirm_deletion,
+    )
+    .await
+}
+
+pub async fn handle_session_remove(
+    session_id: Option<String>,
+    name: Option<String>,
+    regex_string: Option<String>,
+    yes: bool,
+) -> Result<()> {
+    let session_manager = SessionManager::instance();
+    handle_session_remove_with(
+        &session_manager,
+        SessionRemoveOptions {
+            session_id,
+            name,
+            regex_string,
+            yes,
+            interactive: is_interactive_terminal(),
+        },
+        prompt_interactive_session_removal,
+        confirm_interactive_session_removal,
+    )
+    .await
 }
 
 pub async fn handle_session_rename(session_id: String, new_name: String) -> Result<()> {
@@ -565,5 +642,354 @@ mod diagnostics_output_tests {
 
         assert!(open_diagnostics_output(&output).is_err());
         assert_eq!(fs::read_to_string(target).unwrap(), "preserve");
+    }
+}
+
+#[cfg(test)]
+mod session_remove_tests {
+    use super::*;
+    use goose::config::GooseMode;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tempfile::TempDir;
+
+    async fn create_test_session(manager: &SessionManager, id: &str, name: &str) -> Session {
+        manager
+            .create_session_with_id(
+                id,
+                PathBuf::from("/tmp/goose-test"),
+                name.to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn unexpected_selector(_: &[Session]) -> Result<Vec<Session>> {
+        panic!("interactive session picker should not run")
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_by_id_with_yes_deletes_only_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "first").await;
+        create_test_session(&manager, "20261127_2", "second").await;
+
+        let confirmed = AtomicBool::new(false);
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: Some("20261127_1".to_string()),
+                name: None,
+                regex_string: None,
+                yes: true,
+                interactive: false,
+            },
+            unexpected_selector,
+            || {
+                confirmed.store(true, Ordering::SeqCst);
+                Ok(false)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!confirmed.load(Ordering::SeqCst));
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_by_name_with_yes_deletes_only_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "target-name").await;
+        create_test_session(&manager, "20261127_2", "keep-name").await;
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: Some("target-name".to_string()),
+                regex_string: None,
+                yes: true,
+                interactive: false,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should be skipped when --yes is set"),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_by_regex_with_yes_deletes_matching_sessions_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_10", "match-a").await;
+        create_test_session(&manager, "20261127_11", "match-b").await;
+        create_test_session(&manager, "20261128_20", "keep-c").await;
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: Some("^20261127_".to_string()),
+                yes: true,
+                interactive: false,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should be skipped when --yes is set"),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_10", false).await.is_err());
+        assert!(manager.get_session("20261127_11", false).await.is_err());
+        assert!(manager.get_session("20261128_20", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_rejects_missing_yes_even_with_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "kept").await;
+
+        let err = handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: Some("20261127_1".to_string()),
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: false,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should not run in non-interactive mode"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("--yes"));
+        assert!(manager.get_session("20261127_1", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_rejects_missing_target_even_with_yes() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "kept-1").await;
+        create_test_session(&manager, "20261127_2", "kept-2").await;
+
+        let err = handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: None,
+                yes: true,
+                interactive: false,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should not run without a target"),
+        )
+        .await
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("--session-id"));
+        assert!(msg.contains("--name"));
+        assert!(msg.contains("--regex"));
+        assert!(manager.get_session("20261127_1", false).await.is_ok());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn non_interactive_remove_rejects_missing_target_and_yes() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "kept").await;
+
+        let err = handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: false,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should not run in non-interactive mode"),
+        )
+        .await
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("--session-id"));
+        assert!(msg.contains("--yes"));
+        assert!(manager.get_session("20261127_1", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn interactive_remove_by_id_without_yes_prompts_and_handles_cancel_and_confirm() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "target").await;
+
+        let confirmed = AtomicBool::new(false);
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: Some("20261127_1".to_string()),
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: true,
+            },
+            unexpected_selector,
+            || {
+                confirmed.store(true, Ordering::SeqCst);
+                Ok(false)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(confirmed.load(Ordering::SeqCst));
+        assert!(manager.get_session("20261127_1", false).await.is_ok());
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: Some("20261127_1".to_string()),
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: true,
+            },
+            unexpected_selector,
+            || Ok(true),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn interactive_remove_by_id_with_yes_skips_confirmation() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "target").await;
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: Some("20261127_1".to_string()),
+                name: None,
+                regex_string: None,
+                yes: true,
+                interactive: true,
+            },
+            unexpected_selector,
+            || panic!("confirmation prompt should be skipped when --yes is set"),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn interactive_remove_without_target_uses_picker_for_cancel_and_confirm() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "pick-me").await;
+        create_test_session(&manager, "20261127_2", "keep-me").await;
+
+        let pick_first = |sessions: &[Session]| -> Result<Vec<Session>> {
+            Ok(sessions
+                .iter()
+                .filter(|s| s.id == "20261127_1")
+                .cloned()
+                .collect())
+        };
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: true,
+            },
+            pick_first,
+            || Ok(false),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_1", false).await.is_ok());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
+
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: None,
+                yes: false,
+                interactive: true,
+            },
+            pick_first,
+            || Ok(true),
+        )
+        .await
+        .unwrap();
+
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn interactive_remove_without_target_with_yes_retains_picker_and_skips_confirmation() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        create_test_session(&manager, "20261127_1", "pick-me").await;
+        create_test_session(&manager, "20261127_2", "keep-me").await;
+
+        let picker_called = AtomicBool::new(false);
+        handle_session_remove_with(
+            &manager,
+            SessionRemoveOptions {
+                session_id: None,
+                name: None,
+                regex_string: None,
+                yes: true,
+                interactive: true,
+            },
+            |sessions| {
+                picker_called.store(true, Ordering::SeqCst);
+                Ok(sessions
+                    .iter()
+                    .filter(|s| s.id == "20261127_1")
+                    .cloned()
+                    .collect())
+            },
+            || panic!("confirmation prompt should be skipped when --yes is set"),
+        )
+        .await
+        .unwrap();
+
+        assert!(picker_called.load(Ordering::SeqCst));
+        assert!(manager.get_session("20261127_1", false).await.is_err());
+        assert!(manager.get_session("20261127_2", false).await.is_ok());
     }
 }
