@@ -237,14 +237,15 @@ impl AcpConnection {
         &self,
         req: ArchiveSessionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.services
-            .session_manager
-            .update(&req.session_id)
-            .archived_at(Some(chrono::Utc::now()))
-            .apply()
+        let archived = self
+            .services
+            .archive_session_if_idle(&req.session_id)
             .await
             .internal_err()?;
-        self.services.release_session(&req.session_id).await;
+        if !archived {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("This chat is still running. Wait for it to finish and try again."));
+        }
         Ok(EmptyResponse {})
     }
 

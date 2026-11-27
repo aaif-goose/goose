@@ -48,6 +48,7 @@ import { acpChatSessionActions } from '../../acp/chatSessionStore';
 import { cancelAcpPermissionRequestsForSession } from '../../acp/permissionRequests';
 import { cancelAcpElicitationRequestsForSession } from '../../acp/elicitationRequests';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
+import { SessionArchiveAction } from './SessionArchiveAction';
 
 const i18n = defineMessages({
   editSessionTitle: { id: 'sessions.edit.title', defaultMessage: 'Edit Session Description' },
@@ -440,6 +441,14 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     };
   }, [loadSessions, debouncedSearchTerm, includeAcpSessions]);
 
+  useEffect(() => {
+    const handleArchiveChanged = () => void loadSessions();
+    window.addEventListener(AppEvents.SESSION_ARCHIVE_CHANGED, handleArchiveChanged);
+    return () => {
+      window.removeEventListener(AppEvents.SESSION_ARCHIVE_CHANGED, handleArchiveChanged);
+    };
+  }, [loadSessions]);
+
   // Timing logic to prevent flicker between skeleton and content on initial load
   useEffect(() => {
     if (!isLoading && showSkeleton) {
@@ -728,6 +737,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
       >
         <div>
           <h3 className="text-base break-words line-clamp-2 w-full mb-1">{displayName}</h3>
+          {session.archivedAt && <SessionArchiveAction session={session} disabled={false} />}
           {session.sessionType === 'acp' && (
             <span className="text-xs text-text-tertiary bg-background-secondary px-2 py-0.5 rounded-full">
               {intl.formatMessage(i18n.acpBadge)}

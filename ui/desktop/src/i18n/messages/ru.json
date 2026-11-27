@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Архивировать чат"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Удалить сеанс"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Действия с чатом"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Открыть в новом окне"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Восстановить чат"
+  },
+  "sessions.archived": {
+    "defaultMessage": "В архиве"
   },
   "sessions.cancel": {
     "defaultMessage": "Отмена"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Поиск по истории..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Не удалось архивировать чат: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Скопировано в буфер обмена"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Сеанс успешно импортирован"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Не удалось восстановить чат: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Не удалось обновить описание сеанса: {error}"

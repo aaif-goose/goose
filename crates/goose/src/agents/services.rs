@@ -700,6 +700,20 @@ impl StateMachineServices {
         self.release(session_id).await;
     }
 
+    pub(crate) async fn archive_session_if_idle(&self, session_id: &str) -> Result<bool> {
+        let _lifetime = self.runtime.lock_lifetime(session_id).await;
+        if self.runtime.is_busy(session_id) {
+            return Ok(false);
+        }
+        self.session_manager
+            .update(session_id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await?;
+        self.release(session_id).await;
+        Ok(true)
+    }
+
     /// Releases the session unless a connection has it open.
     pub async fn release_session_if_closed(&self, session_id: &str) {
         let _lifetime = self.runtime.lock_lifetime(session_id).await;

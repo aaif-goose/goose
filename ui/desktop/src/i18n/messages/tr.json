@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Sohbeti arşivle"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Oturumu sil"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Sohbet işlemleri"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Yeni pencerede aç"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Sohbeti geri yükle"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Arşivlendi"
   },
   "sessions.cancel": {
     "defaultMessage": "İptal"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Arama geçmişi..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Sohbet arşivlenemedi: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Panoya kopyalandı"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Oturum başarıyla içe aktarıldı"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Sohbet geri yüklenemedi: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Oturum açıklaması güncellenemedi: {error}"

@@ -3809,6 +3809,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "チャットをアーカイブ"
+  },
   "sessions.action.delete": {
     "defaultMessage": "セッションを削除"
   },
@@ -3827,8 +3830,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "チャットの操作"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "新しいウィンドウで開く"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "チャットを復元"
+  },
+  "sessions.archived": {
+    "defaultMessage": "アーカイブ済み"
   },
   "sessions.cancel": {
     "defaultMessage": "キャンセル"
@@ -3896,6 +3908,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "履歴を検索..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "チャットをアーカイブできませんでした: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "クリップボードにコピーしました"
   },
@@ -3922,6 +3937,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "セッションをインポートしました"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "チャットを復元できませんでした: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "セッションの説明を更新できませんでした: {error}"

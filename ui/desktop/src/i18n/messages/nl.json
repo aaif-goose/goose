@@ -3914,6 +3914,9 @@
   "sessions.acpBadge": {
     "defaultMessage": "ACP"
   },
+  "sessions.action.archive": {
+    "defaultMessage": "Chat archiveren"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Sessie verwijderen"
   },
@@ -3932,8 +3935,17 @@
   "sessions.action.exportMarkdown": {
     "defaultMessage": "Markdown"
   },
+  "sessions.action.menu": {
+    "defaultMessage": "Chatacties"
+  },
   "sessions.action.openNewWindow": {
     "defaultMessage": "In een nieuw venster openen"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Chat herstellen"
+  },
+  "sessions.archived": {
+    "defaultMessage": "Gearchiveerd"
   },
   "sessions.cancel": {
     "defaultMessage": "Annuleren"
@@ -4001,6 +4013,9 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Zoek in de geschiedenis..."
   },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Kan chat niet archiveren: {error}"
+  },
   "sessions.toast.copied": {
     "defaultMessage": "Naar het klembord gekopieerd"
   },
@@ -4027,6 +4042,9 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sessie geïmporteerd"
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Kan chat niet herstellen: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Omschrijving van de sessie bijwerken mislukt: {error}"

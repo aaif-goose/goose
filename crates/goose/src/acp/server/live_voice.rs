@@ -66,10 +66,12 @@ impl AcpConnection {
             .ok_or_else(agent_client_protocol::Error::invalid_params)?;
         let session_id = req.session_id.clone();
         let session = self.load_live_voice_session(&session_id).await?;
-        let reservation = self
-            .live_voice
-            .reserve_interaction(&session_id, session.goose_mode)
-            .map_err(map_live_voice_error)?;
+        let reservation = {
+            let _lifetime = self.services.runtime.lock_lifetime(&session_id).await;
+            self.live_voice
+                .reserve_interaction(&session_id, session.goose_mode)
+                .map_err(map_live_voice_error)?
+        };
         let transcript_publisher = Self::live_transcript_publisher(cx, &req.session_id);
         self.open_live_session(&req.session_id)
             .await
