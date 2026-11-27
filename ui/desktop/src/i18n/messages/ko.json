@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "스킬"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "채팅 기록 보기"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "채팅"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "프로젝트별로 그룹화"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "채팅 불러오는 중…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "업데이트됨"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "최신순"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "최근 채팅 없음"

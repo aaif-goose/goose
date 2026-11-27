@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "कौशल"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "चैट इतिहास का दृश्य"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "चैट"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "प्रोजेक्ट के अनुसार समूहित करें"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "चैट लोड हो रही हैं…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "अपडेट किया गया"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "सबसे हाल की चैट पहले"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "कोई हालिया चैट नहीं"

@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "技能"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "聊天記錄檢視"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "交談"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "依專案分組"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "正在載入聊天…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "更新時間"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "最近的聊天優先"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "沒有最近的交談"

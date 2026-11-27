@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Kỹ năng"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Chế độ xem lịch sử trò chuyện"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Cuộc trò chuyện"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Nhóm theo dự án"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Đang tải cuộc trò chuyện…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Đã cập nhật"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "Gần đây nhất trước"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Không có cuộc trò chuyện gần đây"

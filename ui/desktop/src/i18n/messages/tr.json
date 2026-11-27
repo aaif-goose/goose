@@ -2384,8 +2384,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Beceriler"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Sohbet geçmişi görünümü"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Sohbetler"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Projeye göre grupla"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Sohbetler yükleniyor…"
@@ -2404,6 +2410,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Güncellendi"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "En yeni önce"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Son sohbet yok"

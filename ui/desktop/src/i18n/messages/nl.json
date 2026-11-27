@@ -2477,8 +2477,14 @@
   "navigation.itemSkills": {
     "defaultMessage": "Vaardigheden"
   },
+  "navigationPanel.chatHistoryView": {
+    "defaultMessage": "Weergave van chatgeschiedenis"
+  },
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
+  },
+  "navigationPanel.groupByProject": {
+    "defaultMessage": "Groeperen op project"
   },
   "navigationPanel.loadingChats": {
     "defaultMessage": "Bezig met laden van chats…"
@@ -2497,6 +2503,9 @@
   },
   "navigationPanel.metaUpdated": {
     "defaultMessage": "Bijgewerkt"
+  },
+  "navigationPanel.mostRecentFirst": {
+    "defaultMessage": "Meest recente eerst"
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Geen recente chats"

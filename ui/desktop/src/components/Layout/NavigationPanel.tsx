@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { AudioLines, ChevronDown, ChevronRight } from 'lucide-react';
+import { AudioLines, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useConfig } from '../ConfigContext';
@@ -15,11 +15,21 @@ import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
 import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
+import { sessionActivityAt } from '../../utils/dateUtils';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { cn } from '../../utils';
-import type { ProjectGroup } from '../../utils/projectSessions';
+import { normalizeProjectPath } from '../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../i18n';
+
+const CHAT_HISTORY_VIEW_KEY = 'navigation_chat_history_view';
 
 type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
 
@@ -32,6 +42,18 @@ const i18n = defineMessages({
   chats: {
     id: 'navigationPanel.chats',
     defaultMessage: 'Chats',
+  },
+  chatHistoryView: {
+    id: 'navigationPanel.chatHistoryView',
+    defaultMessage: 'Chat history view',
+  },
+  groupByProject: {
+    id: 'navigationPanel.groupByProject',
+    defaultMessage: 'Group by project',
+  },
+  mostRecentFirst: {
+    id: 'navigationPanel.mostRecentFirst',
+    defaultMessage: 'Most recent first',
   },
   noChats: {
     id: 'navigationPanel.noChats',
@@ -115,6 +137,7 @@ const NavRow: React.FC<NavRowProps> = ({ item, active, onClick }) => {
 
 interface SessionRowProps {
   session: SessionListItem;
+  projectLabel?: string;
   active: boolean;
   isLiveVoiceActive: boolean;
   status: SessionStatus | undefined;
@@ -171,6 +194,7 @@ const SessionTooltipContent: React.FC<SessionTooltipContentProps> = ({ session, 
 
 const SessionRow: React.FC<SessionRowProps> = ({
   session,
+  projectLabel,
   active,
   isLiveVoiceActive,
   status,
@@ -222,6 +246,11 @@ const SessionRow: React.FC<SessionRowProps> = ({
             onEditStart={() => setIsEditing(true)}
             onEditEnd={() => setIsEditing(false)}
           />
+          {projectLabel && !isEditing && (
+            <span className="max-w-[40%] shrink-0 truncate rounded-md bg-background-secondary px-1.5 text-xs text-text-secondary">
+              {projectLabel}
+            </span>
+          )}
           {isLiveVoiceActive && (
             <AudioLines
               className="w-3.5 h-3.5 flex-shrink-0 text-blue-500"
@@ -311,6 +340,25 @@ export const Navigation: React.FC<{
 
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [showChatsByRecency, setShowChatsByRecency] = useState(
+    () => localStorage.getItem(CHAT_HISTORY_VIEW_KEY) === 'recent'
+  );
+
+  const chronologicalSessions = useMemo(() => {
+    if (!showChatsByRecency) return recentSessions;
+    return recentSessions
+      .map((session) => {
+        const timestamp = Date.parse(sessionActivityAt(session));
+        return { session, timestamp: Number.isNaN(timestamp) ? -Infinity : timestamp };
+      })
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .map(({ session }) => session);
+  }, [recentSessions, showChatsByRecency]);
+
+  const projectLabels = useMemo(
+    () => new Map(recentSessionsByProject.map(({ path, label }) => [path, label])),
+    [recentSessionsByProject]
+  );
 
   const toggleProjectCollapsed = useCallback((path: string) => {
     setCollapsedProjects((prev) => {
@@ -325,6 +373,27 @@ export const Navigation: React.FC<{
   }, []);
 
   if (!isNavExpanded) return null;
+
+  function renderSessionRow(session: SessionListItem) {
+    const projectPath = normalizeProjectPath(session.workingDir);
+    return (
+      <SessionRow
+        key={session.id}
+        session={session}
+        projectLabel={
+          showChatsByRecency && projectPath ? projectLabels.get(projectPath) : undefined
+        }
+        active={session.id === activeSessionId}
+        isLiveVoiceActive={session.id === activeLiveVoiceSessionId}
+        status={sessionStatuses.get(session.id)}
+        onClick={() => {
+          clearUnread(session.id);
+          handleSessionClick(session.id);
+        }}
+        onRenamed={fetchSessions}
+      />
+    );
+  }
 
   return (
     <motion.div
@@ -350,25 +419,57 @@ export const Navigation: React.FC<{
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col mt-3">
-        <button
-          onClick={() => setIsChatsExpanded((v) => !v)}
-          className="flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors self-start"
-        >
-          {isChatsExpanded ? (
-            <ChevronDown className="w-3 h-3" />
-          ) : (
-            <ChevronRight className="w-3 h-3" />
+        <div className="flex items-center justify-between pr-3">
+          <button
+            type="button"
+            onClick={() => setIsChatsExpanded((v) => !v)}
+            aria-expanded={isChatsExpanded}
+            className="flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
+          >
+            {isChatsExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            <span>{intl.formatMessage(i18n.chats)}</span>
+          </button>
+          {isChatsExpanded && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                type="button"
+                aria-label={intl.formatMessage(i18n.chatHistoryView)}
+                title={intl.formatMessage(i18n.chatHistoryView)}
+                className="rounded-md p-1 text-text-secondary hover:bg-background-secondary hover:text-text-primary data-[state=open]:bg-background-secondary"
+              >
+                <ListFilter className="size-3.5" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuRadioGroup
+                  value={showChatsByRecency ? 'recent' : 'project'}
+                  onValueChange={(view) => {
+                    setShowChatsByRecency(view === 'recent');
+                    localStorage.setItem(CHAT_HISTORY_VIEW_KEY, view);
+                  }}
+                >
+                  <DropdownMenuRadioItem value="project">
+                    {intl.formatMessage(i18n.groupByProject)}
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="recent">
+                    {intl.formatMessage(i18n.mostRecentFirst)}
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          <span>{intl.formatMessage(i18n.chats)}</span>
-        </button>
+        </div>
         {isChatsExpanded && (
           <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 mt-1">
             {recentSessions.length === 0 ? (
               <div className="px-3 py-2 text-xs text-text-secondary">
                 {intl.formatMessage(isLoadingSessions ? i18n.loadingChats : i18n.noChats)}
               </div>
-            ) : recentSessionsByProject.length > 1 ? (
-              recentSessionsByProject.map((group: ProjectGroup) => {
+            ) : !showChatsByRecency && recentSessionsByProject.length > 1 ? (
+              recentSessionsByProject.map((group) => {
                 const isCollapsed = collapsedProjects.has(group.path);
                 return (
                   <React.Fragment key={group.path}>
@@ -385,39 +486,12 @@ export const Navigation: React.FC<{
                       )}
                       <span className="truncate">{group.label}</span>
                     </button>
-                    {!isCollapsed &&
-                      group.sessions.map((session) => (
-                        <SessionRow
-                          key={session.id}
-                          session={session}
-                          active={session.id === activeSessionId}
-                          isLiveVoiceActive={session.id === activeLiveVoiceSessionId}
-                          status={sessionStatuses.get(session.id)}
-                          onClick={() => {
-                            clearUnread(session.id);
-                            handleSessionClick(session.id);
-                          }}
-                          onRenamed={fetchSessions}
-                        />
-                      ))}
+                    {!isCollapsed && group.sessions.map(renderSessionRow)}
                   </React.Fragment>
                 );
               })
             ) : (
-              recentSessions.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeSessionId}
-                  isLiveVoiceActive={session.id === activeLiveVoiceSessionId}
-                  status={sessionStatuses.get(session.id)}
-                  onClick={() => {
-                    clearUnread(session.id);
-                    handleSessionClick(session.id);
-                  }}
-                  onRenamed={fetchSessions}
-                />
-              ))
+              chronologicalSessions.map(renderSessionRow)
             )}
           </div>
         )}
