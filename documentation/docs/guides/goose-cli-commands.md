@@ -427,6 +427,7 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 - **`-i, --instructions <FILE>`**: Path to instruction file containing commands. Use `-` for stdin
 - **`-t, --text <TEXT>`**: Input text to provide to goose directly
 - **`--system <TEXT>`**: Provide additional system instructions to customize the agent's behavior
+- **`--system-file <FILE>`**: Read the additional system instructions from a file. Cannot be combined with `--system` or `--recipe`
 - **`--recipe <RECIPE_FILE_NAME> <OPTIONS>`**: Load a custom recipe in current session
 - **`--params <KEY=VALUE>`**: Key-value parameters to pass to the recipe file. Can be specified multiple times
 - **`--sub-recipe <RECIPE>`**: Specify sub-recipes to include alongside the main recipe. Can be specified multiple times
