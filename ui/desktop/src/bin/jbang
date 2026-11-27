@@ -3,11 +3,11 @@
 # Enable strict mode to exit on errors and unset variables
 set -euo pipefail
 
-# Set log file
-LOG_FILE="/tmp/mcp.log"
-
-# Clear the log file at the start
-> "$LOG_FILE"
+# Give each launch its own log file. A shared path lets one user's file block
+# another user's launcher and lets concurrent launches truncate each other's log.
+LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/goose-mcp-jbang.XXXXXX" 2>/dev/null) || LOG_FILE=/dev/null
+# A relative TMPDIR gives a relative path, which breaks after the cd calls below.
+[[ "${LOG_FILE}" == /* ]] || LOG_FILE="${PWD}/${LOG_FILE}"
 
 # Function for logging
 log() {
@@ -18,7 +18,7 @@ log() {
 # Trap errors and log them before exiting
 trap 'log "An error occurred. Exiting with status $?."' ERR
 
-log "Starting jbang setup script."
+log "Starting jbang setup script. Log file: $LOG_FILE"
 
 if [ -n "${GOOSE_PATH_ROOT:-}" ]; then
     RESOLVED_GOOSE_CONFIG_DIR="${GOOSE_PATH_ROOT}/config"
