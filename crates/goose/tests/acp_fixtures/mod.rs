@@ -368,8 +368,53 @@ pub async fn serve_agent_in_process(
     (transport, handle)
 }
 
+/// One ACP server's shared state: a single `StateMachineServices`, and with it
+/// a single session store and active-run registry. A test that needs two
+/// clients to see the same server starts one of these instead of one server per
+/// client.
+pub struct TestAcpServer {
+    services: Arc<goose::agents::StateMachineServices>,
+    provider_factory: AcpProviderFactory,
+    builtins: Vec<String>,
+    config_dir: PathBuf,
+}
+
+impl TestAcpServer {
+    /// The permission manager every connection to this server shares.
+    #[allow(dead_code)]
+    pub fn permission_manager(&self) -> Arc<PermissionManager> {
+        Arc::clone(&self.services.permission_manager)
+    }
+
+    /// Serves one more client, the way the HTTP transport serves another
+    /// connection: a fresh `AcpConnection` over the same shared services.
+    #[allow(dead_code)]
+    pub async fn serve_client(&self) -> (DuplexTransport, JoinHandle<()>) {
+        let live_voice = Arc::new(goose::acp::server::LiveVoiceService::from_config(
+            self.services.runtime.runs.clone(),
+        ));
+        let connection = AcpConnection::new(AcpConnectionOptions {
+            provider_factory: self.provider_factory.clone(),
+            builtin_selection: goose::acp::server::AcpBuiltinSelection {
+                explicit: self.builtins.clone(),
+                ..Default::default()
+            },
+            config_dir: self.config_dir.clone(),
+            services: Arc::clone(&self.services),
+            additional_source_roots: Vec::new(),
+            session_cwd: None,
+            live_voice,
+        })
+        .await
+        .unwrap();
+        serve_agent_in_process(Arc::new(connection)).await
+    }
+}
+
+/// Builds a test ACP server without serving anyone yet, so a test can connect
+/// more than one client to it.
 #[allow(dead_code)]
-pub async fn spawn_acp_server_in_process(
+pub async fn start_test_acp_server(
     openai_base_url: &str,
     builtins: &[String],
     data_root: &std::path::Path,
@@ -377,7 +422,7 @@ pub async fn spawn_acp_server_in_process(
     provider_factory: Option<AcpProviderFactory>,
     current_model: &str,
     disable_session_naming: bool,
-) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
+) -> TestAcpServer {
     fs::create_dir_all(data_root).unwrap();
     // TODO: Paths::in_state_dir is global, ignoring per-test data_root
     fs::create_dir_all(Paths::in_state_dir("logs")).unwrap();
@@ -418,26 +463,37 @@ pub async fn spawn_acp_server_in_process(
     );
     services_config.scheduler_service = Some(Arc::new(FixtureScheduler::new()));
     let services = goose::agents::StateMachineServices::with_config(services_config);
-    let live_voice = Arc::new(goose::acp::server::LiveVoiceService::from_config(
-        services.runtime.runs.clone(),
-    ));
-    let connection = AcpConnection::new(AcpConnectionOptions {
-        provider_factory,
-        builtin_selection: goose::acp::server::AcpBuiltinSelection {
-            explicit: builtins.to_vec(),
-            ..Default::default()
-        },
-        config_dir: data_root.to_path_buf(),
+
+    TestAcpServer {
         services,
-        additional_source_roots: Vec::new(),
-        session_cwd: None,
-        live_voice,
-    })
-    .await
-    .unwrap();
-    let connection = Arc::new(connection);
-    let permission_manager = connection.permission_manager();
-    let (transport, handle) = serve_agent_in_process(connection).await;
+        provider_factory,
+        builtins: builtins.to_vec(),
+        config_dir: data_root.to_path_buf(),
+    }
+}
+
+#[allow(dead_code)]
+pub async fn spawn_acp_server_in_process(
+    openai_base_url: &str,
+    builtins: &[String],
+    data_root: &std::path::Path,
+    goose_mode: GooseMode,
+    provider_factory: Option<AcpProviderFactory>,
+    current_model: &str,
+    disable_session_naming: bool,
+) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
+    let server = start_test_acp_server(
+        openai_base_url,
+        builtins,
+        data_root,
+        goose_mode,
+        provider_factory,
+        current_model,
+        disable_session_naming,
+    )
+    .await;
+    let permission_manager = server.permission_manager();
+    let (transport, handle) = server.serve_client().await;
 
     (transport, handle, permission_manager)
 }
