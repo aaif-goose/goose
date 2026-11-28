@@ -804,6 +804,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "qrsteward",
+    "name": "QRSteward",
+    "description": "Create and manage printed dynamic QR codes: bulk creation, editable destinations, replaceable PDFs and scan reports by campaign (requires a QRSteward account)",
+    "url": "https://mcp.qrsteward.com/mcp",
+    "link": "https://github.com/qrsteward/qr-code-mcp-server",
+    "installation_notes": "Remote server with OAuth sign-in. Goose opens a browser to sign in to your QRSteward account.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
