@@ -16,6 +16,104 @@ enum ClassifierType {
     Prompt,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct ClassifierSettings {
+    enabled: bool,
+    model_name: Option<String>,
+    endpoint: Option<String>,
+    token: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct ScannerSettings {
+    command: ClassifierSettings,
+    prompt: ClassifierSettings,
+    model_mapping: Option<String>,
+}
+
+impl ScannerSettings {
+    pub(crate) fn current() -> Self {
+        let config = Config::global();
+        let command_enabled =
+            crate::security::get_override("SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE")
+                .unwrap_or_else(|| {
+                    config
+                        .get_param::<bool>("SECURITY_COMMAND_CLASSIFIER_ENABLED")
+                        .unwrap_or(false)
+                });
+        let prompt_enabled = config
+            .get_param::<bool>("SECURITY_PROMPT_CLASSIFIER_ENABLED")
+            .unwrap_or(false);
+
+        let command = Self::classifier_settings(config, "COMMAND", command_enabled);
+        let prompt = Self::classifier_settings(config, "PROMPT", prompt_enabled);
+        let uses_model_mapping = command.model_name.is_some()
+            || prompt.model_name.is_some()
+            || (command.enabled && command.endpoint.is_none());
+
+        Self {
+            command,
+            prompt,
+            model_mapping: if uses_model_mapping {
+                std::env::var("SECURITY_ML_MODEL_MAPPING").ok()
+            } else {
+                None
+            },
+        }
+    }
+
+    fn classifier_settings(config: &Config, prefix: &str, enabled: bool) -> ClassifierSettings {
+        if !enabled {
+            return ClassifierSettings {
+                enabled,
+                model_name: None,
+                endpoint: None,
+                token: None,
+            };
+        }
+
+        let non_empty_param = |suffix: &str| {
+            config
+                .get_param::<String>(&format!("SECURITY_{}_CLASSIFIER_{}", prefix, suffix))
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        };
+
+        let model_name = non_empty_param("MODEL");
+        let endpoint = non_empty_param("ENDPOINT");
+        let token = if model_name.is_none() && endpoint.is_some() {
+            // Desktop and CLI can share settings without sharing the process's secrets cache.
+            config
+                .get_secret_uncached::<String>(&format!("SECURITY_{}_CLASSIFIER_TOKEN", prefix))
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        } else {
+            None
+        };
+
+        ClassifierSettings {
+            enabled,
+            model_name,
+            endpoint,
+            token,
+        }
+    }
+
+    pub(crate) fn command_enabled(&self) -> bool {
+        self.command.enabled
+    }
+
+    pub(crate) fn prompt_enabled(&self) -> bool {
+        self.prompt.enabled
+    }
+
+    pub(crate) fn ml_enabled(&self) -> bool {
+        self.command.enabled || self.prompt.enabled
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScanResult {
     pub is_malicious: bool,
@@ -47,9 +145,11 @@ impl PromptInjectionScanner {
         }
     }
 
-    pub fn with_ml_detection() -> Result<Self> {
-        let command_classifier = Self::create_classifier(ClassifierType::Command).ok();
-        let prompt_classifier = Self::create_classifier(ClassifierType::Prompt).ok();
+    pub(crate) fn with_ml_detection(settings: &ScannerSettings) -> Result<Self> {
+        let command_classifier =
+            Self::create_classifier(ClassifierType::Command, &settings.command).ok();
+        let prompt_classifier =
+            Self::create_classifier(ClassifierType::Prompt, &settings.prompt).ok();
 
         if command_classifier.is_none() && prompt_classifier.is_none() {
             anyhow::bail!("ML detection enabled but no classifiers could be initialized");
@@ -62,51 +162,29 @@ impl PromptInjectionScanner {
         })
     }
 
-    fn create_classifier(classifier_type: ClassifierType) -> Result<ClassificationClient> {
-        let config = Config::global();
+    fn create_classifier(
+        classifier_type: ClassifierType,
+        settings: &ClassifierSettings,
+    ) -> Result<ClassificationClient> {
         let prefix = match classifier_type {
             ClassifierType::Command => "COMMAND",
             ClassifierType::Prompt => "PROMPT",
         };
 
-        let enabled = match classifier_type {
-            ClassifierType::Command => {
-                crate::security::get_override("SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE")
-                    .unwrap_or_else(|| {
-                        config
-                            .get_param::<bool>("SECURITY_COMMAND_CLASSIFIER_ENABLED")
-                            .unwrap_or(false)
-                    })
-            }
-            ClassifierType::Prompt => config
-                .get_param::<bool>("SECURITY_PROMPT_CLASSIFIER_ENABLED")
-                .unwrap_or(false),
-        };
-
-        if !enabled {
+        if !settings.enabled {
             anyhow::bail!("{} classifier not enabled", prefix);
         }
 
-        let model_name = config
-            .get_param::<String>(&format!("SECURITY_{}_CLASSIFIER_MODEL", prefix))
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-
-        let endpoint = config
-            .get_param::<String>(&format!("SECURITY_{}_CLASSIFIER_ENDPOINT", prefix))
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-        let token = config
-            .get_secret::<String>(&format!("SECURITY_{}_CLASSIFIER_TOKEN", prefix))
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-
-        if let Some(model) = model_name {
-            return ClassificationClient::from_model_name(&model, None);
+        if let Some(model) = &settings.model_name {
+            return ClassificationClient::from_model_name(model, None);
         }
 
-        if let Some(endpoint_url) = endpoint {
-            return ClassificationClient::from_endpoint(endpoint_url, None, token);
+        if let Some(endpoint_url) = &settings.endpoint {
+            return ClassificationClient::from_endpoint(
+                endpoint_url.clone(),
+                None,
+                settings.token.clone(),
+            );
         }
 
         if classifier_type == ClassifierType::Command {
@@ -437,6 +515,34 @@ mod tests {
     use rmcp::object;
     use wiremock::matchers::{body_string_contains, method};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn direct_classifier_settings_see_credentials_written_by_another_config() -> Result<()> {
+        const TOKEN_KEY: &str = "SECURITY_ROTATION_TEST_CLASSIFIER_TOKEN";
+        let directory = tempfile::tempdir()?;
+        let config_path = directory.path().join("config.yaml");
+        let secrets_path = directory.path().join("secrets.yaml");
+        let reader = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        let writer = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        writer.set_param(
+            "SECURITY_ROTATION_TEST_CLASSIFIER_ENDPOINT",
+            "https://classifier.example",
+        )?;
+        writer.set_secret(TOKEN_KEY, &"initial-test-token")?;
+        assert_eq!(
+            reader.get_secret::<String>(TOKEN_KEY)?,
+            "initial-test-token"
+        );
+
+        let before = ScannerSettings::classifier_settings(&reader, "ROTATION_TEST", true);
+        assert_eq!(before.token.as_deref(), Some("initial-test-token"));
+
+        writer.set_secret(TOKEN_KEY, &"rotated-test-token")?;
+        let after = ScannerSettings::classifier_settings(&reader, "ROTATION_TEST", true);
+        assert_eq!(after.token.as_deref(), Some("rotated-test-token"));
+        assert!(before != after);
+        Ok(())
+    }
 
     async fn classifier_with_confidence(
         injection_confidence: f32,
