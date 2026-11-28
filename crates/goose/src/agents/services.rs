@@ -352,7 +352,7 @@ pub struct StateMachineServices {
     pub disable_session_naming: bool,
     pub runtime: SessionRuntime,
     session_detach_grace_secs: AtomicU64,
-    detached_releases: StdMutex<HashMap<String, CancellationToken>>,
+    detached_releases: StdMutex<HashMap<String, Arc<CancellationToken>>>,
 
     pub extension_manager: Arc<ExtensionManager>,
     pub platform_extensions: PlatformExtensions,
@@ -668,7 +668,7 @@ impl StateMachineServices {
 
     fn schedule_detached_release(self: &Arc<Self>, session_id: String, grace: Duration) {
         let services = Arc::clone(self);
-        let token = CancellationToken::new();
+        let token = Arc::new(CancellationToken::new());
         services
             .detached_releases
             .lock()
@@ -678,11 +678,27 @@ impl StateMachineServices {
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = tokio::time::sleep(grace) => {
-                    services
-                        .detached_releases
-                        .lock()
-                        .expect("detached releases poisoned")
-                        .remove(&session_id);
+                    // The release needs this task's token to still be the pending one: a
+                    // reattach after the deadline removed or replaced it, and any newer
+                    // detach owns the session's grace now.
+                    let still_pending = {
+                        let mut pending = services
+                            .detached_releases
+                            .lock()
+                            .expect("detached releases poisoned");
+                        if pending
+                            .get(&session_id)
+                            .is_some_and(|stored| Arc::ptr_eq(stored, &token))
+                        {
+                            pending.remove(&session_id);
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if !still_pending {
+                        return;
+                    }
                     let _lifetime = services.runtime.lock_lifetime(&session_id).await;
                     if !services.runtime.is_open(&session_id)
                         && !services.runtime.is_busy(&session_id)
