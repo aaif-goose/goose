@@ -120,8 +120,7 @@ pub fn json_escape_control_chars_in_string(s: &str) -> String {
     r
 }
 
-/// Detect whether a raw tool-arguments string looks truncated (the model hit
-/// its output-token limit mid-JSON). Returns true when the string has
+/// Detect whether a raw tool-arguments string looks incomplete. Returns true when the string has
 /// unbalanced or unclosed structural delimiters — whether the cut-off happened
 /// mid-value (e.g. `{"path":"/a` with no closing quote) or after a nested
 /// closer but before the outer object closed (e.g. `{"items":[1,2]` where the
@@ -169,8 +168,7 @@ pub fn looks_truncated(args: &str) -> bool {
 /// Build an actionable error message for tool arguments that could not be
 /// parsed. `args` is the raw, accumulated arguments string from the provider.
 ///
-/// The message distinguishes truncation (likely from the output token limit)
-/// from other malformation, and includes a snippet of where parsing broke.
+/// Providers can report output token limits separately using their stop reason.
 pub fn truncation_error_message(args: &str) -> Option<String> {
     if args.is_empty() {
         return None;
@@ -181,10 +179,9 @@ pub fn truncation_error_message(args: &str) -> Option<String> {
     }
 
     let trimmed = args.trim_end();
-    let is_truncated = looks_truncated(trimmed);
+    let len = trimmed.chars().count();
 
     let snippet = {
-        let len = trimmed.chars().count();
         if len > 80 {
             let s: String = trimmed
                 .chars()
@@ -200,16 +197,9 @@ pub fn truncation_error_message(args: &str) -> Option<String> {
         }
     };
 
-    let guidance = if is_truncated {
-        "The model's response was truncated — it hit the output token limit while generating this tool call. \
-         Try increasing max_tokens for this provider or breaking the task into smaller steps."
-    } else {
-        "The model produced malformed tool arguments. Try resending your message or breaking the task into smaller steps."
-    };
-
     Some(format!(
-        "{guidance}\nReceived {} characters; cut off at: {snippet}",
-        trimmed.chars().count()
+        "The model produced malformed tool arguments. Try resending your message or breaking the task into smaller steps.\n\
+         Received {len} characters. Argument preview: {snippet}"
     ))
 }
 
@@ -463,16 +453,13 @@ mod tests {
     }
 
     #[test]
-    fn test_truncation_error_message_truncated() {
+    fn test_truncation_error_message_incomplete_json() {
         let truncated = r##"{"path":"/report.md","content":"# Big report that got cut"##;
         let msg =
             truncation_error_message(truncated).expect("truncated args should produce an error");
-        assert!(msg.contains("truncated"), "msg: {msg}");
-        assert!(
-            msg.contains("max_tokens") || msg.contains("smaller steps"),
-            "msg: {msg}"
-        );
-        assert!(msg.contains("cut off at:"), "msg: {msg}");
+        assert!(msg.contains("malformed tool arguments"), "msg: {msg}");
+        assert!(!msg.contains("output token limit"), "msg: {msg}");
+        assert!(msg.ends_with(truncated), "msg: {msg}");
     }
 
     #[test]

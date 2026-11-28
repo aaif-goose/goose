@@ -3088,7 +3088,8 @@ mod tests {
                     message: msg,
                     data: None,
                 }) => {
-                    assert!(msg.contains("tool arguments") || msg.contains("truncated"));
+                    assert!(msg.contains("malformed tool arguments"));
+                    assert!(!msg.contains("output token limit"));
                 }
                 _ => panic!("Expected InvalidParameters error"),
             }
