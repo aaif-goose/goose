@@ -290,6 +290,18 @@
     "type": "streamable-http"
   },
   {
+    "id": "expiryregister",
+    "name": "ExpiryRegister",
+    "description": "Track business expiry and renewal dates with named owners and email reminders that escalate to the next contact until someone acknowledges (requires an ExpiryRegister account)",
+    "url": "https://mcp.expiryregister.com/mcp",
+    "link": "https://github.com/expiryregister/expiryregister-mcp-server",
+    "installation_notes": "Remote server with OAuth sign-in. Goose opens a browser to sign in to your ExpiryRegister account.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "fetch",
     "name": "Fetch",
     "description": "Web content fetching and processing capabilities",
