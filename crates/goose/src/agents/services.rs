@@ -352,6 +352,7 @@ pub struct StateMachineServices {
     pub disable_session_naming: bool,
     pub runtime: SessionRuntime,
     session_detach_grace_secs: AtomicU64,
+    detached_releases: StdMutex<HashMap<String, CancellationToken>>,
 
     pub extension_manager: Arc<ExtensionManager>,
     pub platform_extensions: PlatformExtensions,
@@ -576,6 +577,7 @@ impl StateMachineServices {
             disable_session_naming: config.disable_session_naming,
             runtime: SessionRuntime::new(config.max_sessions),
             session_detach_grace_secs: AtomicU64::new(config.session_detach_grace.as_secs()),
+            detached_releases: StdMutex::new(HashMap::new()),
             hook_manager: config.hooks.unwrap_or_else(|| {
                 crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref())
             }),
@@ -617,6 +619,7 @@ impl StateMachineServices {
     pub async fn attach_session(&self, session_id: &str, connection: u64, attachment: Attachment) {
         let evicted = {
             let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.cancel_detached_release(session_id);
             self.extension_manager
                 .attach_client(session_id, attachment.client.clone());
             self.runtime.attach(session_id, connection, attachment);
@@ -665,13 +668,41 @@ impl StateMachineServices {
 
     fn schedule_detached_release(self: &Arc<Self>, session_id: String, grace: Duration) {
         let services = Arc::clone(self);
+        let token = CancellationToken::new();
+        services
+            .detached_releases
+            .lock()
+            .expect("detached releases poisoned")
+            .insert(session_id.clone(), token.clone());
         tokio::spawn(async move {
-            tokio::time::sleep(grace).await;
-            let _lifetime = services.runtime.lock_lifetime(&session_id).await;
-            if !services.runtime.is_open(&session_id) && !services.runtime.is_busy(&session_id) {
-                services.release(&session_id).await;
+            tokio::select! {
+                _ = token.cancelled() => {}
+                _ = tokio::time::sleep(grace) => {
+                    services
+                        .detached_releases
+                        .lock()
+                        .expect("detached releases poisoned")
+                        .remove(&session_id);
+                    let _lifetime = services.runtime.lock_lifetime(&session_id).await;
+                    if !services.runtime.is_open(&session_id)
+                        && !services.runtime.is_busy(&session_id)
+                    {
+                        services.release(&session_id).await;
+                    }
+                }
             }
         });
+    }
+
+    fn cancel_detached_release(&self, session_id: &str) {
+        if let Some(token) = self
+            .detached_releases
+            .lock()
+            .expect("detached releases poisoned")
+            .remove(session_id)
+        {
+            token.cancel();
+        }
     }
 
     pub(crate) async fn start_prompt_run(
@@ -687,6 +718,7 @@ impl StateMachineServices {
             self.runtime
                 .runs
                 .start_prompt_run(session_id, run_id, cancel_token)?;
+            self.cancel_detached_release(session_id);
             self.extension_manager
                 .attach_client(session_id, attachment.client.clone());
             self.runtime.attach(session_id, connection, attachment);
@@ -743,6 +775,7 @@ impl StateMachineServices {
     }
 
     async fn release(&self, session_id: &str) {
+        self.cancel_detached_release(session_id);
         self.runtime.forget(session_id);
         self.session_manager
             .action_required()
@@ -1826,6 +1859,32 @@ mod tests {
 
             tokio::time::sleep(Duration::from_secs(61)).await;
 
+            assert!(!services.runtime.is_open("s"));
+            assert_ne!(services.extension_manager.client("s").name, "first");
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_reattached_session_gets_a_full_grace_from_its_latest_detach() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(60, Ordering::Relaxed);
+            services.attach_session("s", 1, attachment("first")).await;
+
+            services.detach_connection(1).await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            services.attach_session("s", 2, attachment("first")).await;
+            services.detach_connection(2).await;
+
+            tokio::time::sleep(Duration::from_secs(31)).await;
+            assert_eq!(
+                services.extension_manager.client("s").name,
+                "first",
+                "the first detach's stale timer no longer releases the session"
+            );
+
+            tokio::time::sleep(Duration::from_secs(30)).await;
             assert!(!services.runtime.is_open("s"));
             assert_ne!(services.extension_manager.client("s").name, "first");
         }
