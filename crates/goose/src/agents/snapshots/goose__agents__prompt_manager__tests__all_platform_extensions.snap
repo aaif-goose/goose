@@ -98,9 +98,9 @@ responsible for managing your context window, and to minimize unnecessary turns 
 cost the user money.
 
 For editing software, prefer the flow of using tree to understand the codebase structure
-and file sizes. When you need to search, prefer rg which correctly respects gitignored
-content. Then use cat or sed to gather the context you need, always reading before editing.
-Use write and edit to efficiently make changes. Test and verify as appropriate.
+and file sizes. When you need to search, prefer rg or grep, depending on availability. Then use cat or sed to
+gather the context you need, always reading before editing. Use write and edit to
+efficiently make changes. Test and verify as appropriate.
 
 When running Python scripts or commands, always use `python3` instead of `python`.
 
