@@ -128,6 +128,14 @@ pub(crate) fn coerce_tool_arguments(
     Some(coerced)
 }
 
+fn normalize_provider_message_role(mut message: Message) -> Message {
+    // A provider reply must not become a user-command kickoff.
+    if message.role == rmcp::model::Role::User && !message.is_tool_response() {
+        message.role = rmcp::model::Role::Assistant;
+    }
+    message
+}
+
 pub(crate) async fn toolshim_postprocess(
     response: Message,
     toolshim_tools: &[Tool],
@@ -451,9 +459,9 @@ pub(crate) async fn stream_response_from_provider(
             }
 
             if let Some(msg) = accumulated_message {
-                let processed = toolshim_postprocess(msg, &toolshim_tools)
-                    .await?
-                    .with_generated_id_if_missing();
+                let processed = toolshim_postprocess(msg, &toolshim_tools).await?;
+                let processed =
+                    normalize_provider_message_role(processed).with_generated_id_if_missing();
                 if capture_message_content {
                     let output_messages = gen_ai_telemetry::output_message_json(&processed);
                     span.record("gen_ai.output.messages", output_messages.as_str());
@@ -468,6 +476,7 @@ pub(crate) async fn stream_response_from_provider(
             let mut output_message: Option<Message> = None;
             while let Some(result) = stream.next().await {
                 let (message, mut usage) = result?;
+                let message = message.map(normalize_provider_message_role);
 
                 if let Some(message) = message.as_ref() {
                     timer.observe(message);
@@ -1318,6 +1327,103 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[test_case::test_case(false; "normal")]
+    #[test_case::test_case(true; "toolshim")]
+    #[tokio::test]
+    async fn provider_message_roles_preserve_tool_responses(toolshim: bool) {
+        let _env =
+            env_lock::lock_env([("GOOSE_TOOLSHIM_BACKEND", Some("unavailable-test-backend"))]);
+        let tool_response = Message::user().with_tool_response(
+            "tool-id",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text("tool output"),
+            ])),
+        );
+        for mut expected in [
+            Message::user().with_text("A normal provider reply"),
+            Message::assistant().with_text("A normal provider reply"),
+            tool_response.clone(),
+            tool_response.with_text("A normal provider reply"),
+        ] {
+            expected.id = Some("provider-message".into());
+            expected.metadata.output_token_limit_reached = true;
+            let mut usage = ProviderUsage::new("role-model".into(), Usage::default());
+            usage.response_id = Some("provider-response".into());
+            let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![Ok((
+                Some(expected.clone()),
+                Some(usage),
+            ))])]));
+            if !expected.is_tool_response() {
+                expected.role = rmcp::model::Role::Assistant;
+            }
+            let mut stream = stream_response_from_provider(
+                provider,
+                ModelConfig::new("test-model").with_toolshim(toolshim),
+                "session",
+                "system",
+                &[Message::user().with_text("hi")],
+                &[],
+                &[],
+            )
+            .await
+            .unwrap();
+            let mut output = Vec::new();
+            let mut output_usage = None;
+            while let Some(item) = stream.next().await {
+                let (message, usage) = item.unwrap();
+                output.extend(message);
+                output_usage = usage.or(output_usage);
+            }
+            assert_eq!(output.len(), 1);
+            assert_eq!(
+                serde_json::to_value(&output[0]).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            let usage = output_usage.unwrap();
+            assert_eq!(usage.model, "role-model");
+            assert_eq!(usage.response_id.as_deref(), Some("provider-response"));
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_message_roles_preserve_chunked_tool_response() {
+        let _env =
+            env_lock::lock_env([("GOOSE_TOOLSHIM_BACKEND", Some("unavailable-test-backend"))]);
+        let first = Message::user()
+            .with_text("Tool status")
+            .with_id("provider-message".to_string());
+        let tool_result =
+            rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text(
+                "tool output",
+            )]);
+        let last = Message::user().with_tool_response("tool-id", Ok(tool_result.clone()));
+        let expected = first.clone().with_tool_response("tool-id", Ok(tool_result));
+        let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![
+            Ok((Some(first), None)),
+            Ok((Some(last), None)),
+        ])]));
+        let stream = stream_response_from_provider(
+            provider,
+            ModelConfig::new("test-model").with_toolshim(true),
+            "session",
+            "system",
+            &[Message::user().with_text("hi")],
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+        let output: Vec<_> = stream
+            .filter_map(|item| async { item.unwrap().0 })
+            .collect()
+            .await;
+        assert_eq!(output.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&output[0]).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
     }
 
     #[tokio::test]
