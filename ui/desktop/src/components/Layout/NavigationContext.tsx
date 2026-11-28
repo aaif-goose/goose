@@ -23,7 +23,7 @@ interface NavigationContextValue {
   isNavExpanded: boolean;
   setIsNavExpanded: (expanded: boolean) => void;
   navWidth: number;
-  setNavWidth: (width: number) => void;
+  setNavWidth: (width: number, persist: boolean) => void;
 }
 
 const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -46,17 +46,17 @@ interface NavigationProviderProps {
 
 export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children }) => {
   const [isNavExpanded, setIsNavExpandedState] = useState<boolean>(() => {
-    const stored = localStorage.getItem('navigation_expanded');
+    const stored = window.electron.getRendererStorage('navigation_expanded');
     return stored !== 'false';
   });
 
   const setIsNavExpanded = useCallback((expanded: boolean) => {
     setIsNavExpandedState(expanded);
-    localStorage.setItem('navigation_expanded', String(expanded));
+    window.electron.setRendererStorage('navigation_expanded', String(expanded));
   }, []);
 
   const [navWidth, setNavWidthState] = useState<number>(() => {
-    const stored = localStorage.getItem('navigation_width');
+    const stored = window.electron.getRendererStorage('navigation_width');
     if (stored) {
       const parsed = parseInt(stored, 10);
       if (!isNaN(parsed) && parsed >= MIN_NAV_WIDTH && parsed <= MAX_NAV_WIDTH) {
@@ -66,10 +66,12 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     return NAV_DIMENSIONS.NAV_WIDTH;
   });
 
-  const setNavWidth = useCallback((width: number) => {
+  const setNavWidth = useCallback((width: number, persist: boolean) => {
     const clamped = Math.min(MAX_NAV_WIDTH, Math.max(MIN_NAV_WIDTH, width));
     setNavWidthState(clamped);
-    localStorage.setItem('navigation_width', String(clamped));
+    if (persist) {
+      window.electron.setRendererStorage('navigation_width', String(clamped));
+    }
   }, []);
 
   const isNavExpandedRef = useRef(isNavExpanded);

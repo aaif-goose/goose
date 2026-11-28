@@ -1,4 +1,10 @@
-import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+import type {
+  IpcMainEvent,
+  IpcMainInvokeEvent,
+  OpenDialogOptions,
+  OpenDialogReturnValue,
+  Session,
+} from 'electron';
 import {
   app,
   App,
@@ -8,7 +14,6 @@ import {
   ipcMain,
   Menu,
   MenuItem,
-  net,
   Notification,
   powerMonitor,
   powerSaveBlocker,
@@ -19,7 +24,6 @@ import {
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
 import { fetchAllowlistContent, parseAllowlistCommands } from './allowlistFetcher';
-import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -27,12 +31,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync, spawn, execFile } from 'child_process';
 import { connectRemoteBackend } from './remoteBackends';
-import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
+import {
+  installScopedCertificateVerifier,
+  normalizeFingerprint,
+  type ScopedCertificateTrust,
+} from './backendCertificateVerifier';
 import { configureProxy } from './proxy';
 import { startGooseServe } from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
 import { GooseServeLeaseRegistry, type GooseServeLease } from './gooseServeLeaseRegistry';
-import { normalizeAcpHttpBaseUrl } from './acp/url';
+import { httpBaseFromAcpWebSocketUrl, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde, sanitizeGoosePathRoot } from './utils/pathUtils';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
@@ -57,14 +65,28 @@ import './utils/recipeHash';
 import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { openExternalUrl } from './utils/openExternalUrl';
-import { buildCSP, leaseBackendOrigin, shouldApplyRendererCsp } from './utils/csp';
+import { buildCSP, installRendererCsp } from './utils/csp';
 import { resolveWorkingDir } from './utils/workingDir';
 import {
   DesktopFileAccess,
+  isAppRendererUrl,
   isAuthorizedFileAccessRequest,
   readSelectedRecipe,
 } from './desktopFileAccess';
 import { getWindowIconFilename } from './utils/windowIcon';
+import {
+  migrateRendererStorage,
+  readLegacyRendererStorage,
+  RENDERER_STORAGE_KEYS,
+  type RendererStorage,
+  type RendererStorageKey,
+} from './rendererStorage';
+import {
+  appendStoredMessage,
+  CHAT_HISTORY_KEY,
+  pruneStoredMessageHistory,
+} from './utils/localMessageStorage';
+import { addSharedDictionaryWord, copySharedDictionaryWords } from './spellCheckerDictionary';
 
 const windowIconPath = path.join(__dirname, '../images', getWindowIconFilename(process.platform));
 
@@ -181,6 +203,7 @@ function translateMenuLabels(items: MenuItem[]): void {
 
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const CHAT_HISTORY_FILE = path.join(app.getPath('userData'), 'chat-input-history.json');
 const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 const validLanguageSettings = new Set<Settings['language']>([
   'system',
@@ -234,9 +257,15 @@ function getSettings(): Settings {
 }
 
 function updateSettings(modifier: (settings: Settings) => void): void {
-  const settings = getSettings();
+  const settings = { ...getSettings() };
   modifier(settings);
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  writePrivateFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+function writePrivateFile(filePath: string, contents: string): void {
+  const temporaryPath = `${filePath}.tmp`;
+  fsSync.writeFileSync(temporaryPath, contents, { mode: 0o600 });
+  fsSync.renameSync(temporaryPath, filePath);
 }
 
 function getConfiguredGooseLocale(): string | undefined {
@@ -304,109 +333,48 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.electron.goose');
 }
 
-// Certificate trust for active backend leases. Renderer requests and
-// main-process net.fetch both pin to the exact cert fingerprint. Each backend
-// lease owns a trust record so old windows keep working after settings change.
-interface BackendCertificateTrust {
-  hostname: string;
-  fingerprint: string | null;
-}
+let backendPartitionCounter = 0;
+const windowCertTrusts = new Map<number, ScopedCertificateTrust>();
 
-interface BackendCertificateTrustRegistration {
-  trust: BackendCertificateTrust;
-  release: () => void;
-}
-
-const trustedBackendCertificates = new Set<BackendCertificateTrust>();
-
-function normalizeHostname(hostname: string): string {
-  return hostname.toLowerCase();
-}
-
-function normalizeFingerprint(fp: string): string {
-  if (fp.startsWith('sha256/')) {
-    const b64 = fp.slice('sha256/'.length);
-    const buf = Buffer.from(b64, 'base64');
-    return Array.from(buf)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join(':')
-      .toUpperCase();
-  }
-  return fp.toUpperCase();
-}
-
-function trustBackendCertificate(
+function createBackendCertificateTrust(
   hostname: string,
   fingerprint: string | null
-): BackendCertificateTrustRegistration {
-  const trust: BackendCertificateTrust = {
-    hostname: normalizeHostname(hostname),
+): ScopedCertificateTrust {
+  return {
+    hostname: hostname.toLowerCase(),
     fingerprint: fingerprint ? normalizeFingerprint(fingerprint) : null,
   };
-  trustedBackendCertificates.add(trust);
-  return {
-    trust,
-    release: () => {
-      trustedBackendCertificates.delete(trust);
-    },
-  };
 }
 
-function getBackendCertificateTrusts(hostname: string): BackendCertificateTrust[] {
-  const normalizedHostname = normalizeHostname(hostname);
-  return [...trustedBackendCertificates].filter((trust) => trust.hostname === normalizedHostname);
-}
-
-function verifyBackendCertificate(hostname: string, fingerprint: string): boolean {
-  const normalizedFingerprint = normalizeFingerprint(fingerprint);
-  const trusts = getBackendCertificateTrusts(hostname);
-  if (trusts.length === 0) {
-    return false;
-  }
-
-  if (trusts.some((trust) => trust.fingerprint === normalizedFingerprint)) {
-    return true;
-  }
-
-  const tofuTrust = trusts.find((trust) => trust.fingerprint === null);
-  if (tofuTrust) {
-    // TOFU: pin the certificate from the first successful handshake.
-    tofuTrust.fingerprint = normalizedFingerprint;
-    return true;
-  }
-
-  return false;
-}
-
-function isTrustedHost(hostname: string): boolean {
-  return getBackendCertificateTrusts(hostname).length > 0;
-}
-
-// Renderer requests: pin to the exact cert once known.
-app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
+app.on('certificate-error', (event, webContents, url, _error, certificate, callback) => {
   const parsed = new URL(url);
-  if (!isTrustedHost(parsed.hostname)) {
+  const win = BrowserWindow.fromWebContents(webContents);
+  const trust = win ? windowCertTrusts.get(win.id) : undefined;
+
+  const lease = win && gooseServeLeases.get(win.id);
+  if (
+    !trust ||
+    trust.hostname !== parsed.hostname.toLowerCase() ||
+    !lease ||
+    (parsed.origin !== new URL(lease.acpUrl).origin &&
+      parsed.origin !== new URL(httpBaseFromAcpWebSocketUrl(lease.acpUrl)).origin)
+  ) {
     callback(false);
     return;
   }
 
   event.preventDefault();
-  callback(verifyBackendCertificate(parsed.hostname, certificate.fingerprint));
+  const fp = normalizeFingerprint(certificate.fingerprint);
+  if (trust.fingerprint === null) {
+    trust.fingerprint = fp;
+    callback(true);
+    return;
+  }
+  callback(trust.fingerprint === fp);
 });
 
 app.whenReady().then(() => {
   appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
-});
-
-// Main-process net.fetch and renderer WebSockets: pin to the exact cert once known.
-app.whenReady().then(() => {
-  installBackendCertificateVerifiers(
-    [session.defaultSession, session.fromPartition('persist:goose')],
-    {
-      has: isTrustedHost,
-      verify: verifyBackendCertificate,
-    }
-  );
 });
 
 if (process.env.ENABLE_PLAYWRIGHT) {
@@ -797,6 +765,55 @@ function getAppUrl(): URL {
     : pathToFileURL(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
 }
 
+const LEGACY_RENDERER_PARTITION = 'persist:goose';
+let rendererStorageMigration: Promise<void> | undefined;
+
+function ensureRendererStorageMigrated(): Promise<void> {
+  rendererStorageMigration ??= (async () => {
+    const { rendererStorageMigrated, rendererStorage } = getSettings();
+    const storedHistory = rendererStorage?.[CHAT_HISTORY_KEY];
+    if (rendererStorageMigrated && storedHistory === undefined) {
+      return;
+    }
+    try {
+      const values = rendererStorageMigrated
+        ? new Map<string, string>()
+        : await readLegacyRendererStorage(
+            session.fromPartition(LEGACY_RENDERER_PARTITION),
+            getAppUrl()
+          );
+      const history = storedHistory === undefined ? values.get(CHAT_HISTORY_KEY) : storedHistory;
+      if (history !== undefined && !fsSync.existsSync(CHAT_HISTORY_FILE)) {
+        writePrivateFile(CHAT_HISTORY_FILE, pruneStoredMessageHistory(history) ?? '[]');
+      }
+      updateSettings((settings) => {
+        if (!rendererStorageMigrated) {
+          migrateRendererStorage(settings, values);
+        }
+        delete settings.rendererStorage?.[CHAT_HISTORY_KEY];
+      });
+    } catch (error) {
+      log.error('Failed to migrate renderer storage', error);
+    }
+  })();
+  return rendererStorageMigration;
+}
+
+function addCustomSpellingWord(windowSession: Session, word: string): void {
+  if (process.platform === 'darwin') {
+    windowSession.addWordToSpellCheckerDictionary(word);
+    return;
+  }
+  const chatSessions = BrowserWindow.getAllWindows()
+    .filter((window) => gooseServeLeases.get(window.id))
+    .map((window) => window.webContents.session);
+  addSharedDictionaryWord(session.fromPartition(LEGACY_RENDERER_PARTITION), chatSessions, word);
+}
+
+function getRendererThemeConfig({ theme, useSystemTheme }: Settings) {
+  return { GOOSE_THEME: theme, GOOSE_USE_SYSTEM_THEME: useSystemTheme };
+}
+
 // Parse command line arguments
 const parseArgs = () => {
   let dirPath = null;
@@ -1000,6 +1017,7 @@ const createChat = async (
   app: App,
   options: CreateChatOptions = {}
 ): Promise<BrowserWindow | undefined> => {
+  await ensureRendererStorageMigrated();
   const {
     initialMessage,
     initialMessageNoAutoSubmit,
@@ -1067,26 +1085,33 @@ const createChat = async (
   let workingDir = resolveWorkingDir(externalBackend?.workingDir, dir, os.homedir());
   let gooseServeLease: GooseServeLease | null = null;
 
+  const partitionKey = ++backendPartitionCounter;
+  const windowPartition = `persist:goose-${partitionKey}`;
+  const windowSession = session.fromPartition(windowPartition);
+  await configureProxy(windowSession, windowSession);
+  let windowCertTrust: ScopedCertificateTrust | null;
+
   if (externalBackend) {
-    let externalCertificateTrust: BackendCertificateTrustRegistration | null = null;
+    let externalCertTrust: ScopedCertificateTrust | null = null;
 
     try {
       const externalBaseUrl = normalizeAcpHttpBaseUrl(externalBackend.url);
       const externalBase = new URL(externalBaseUrl);
       if (externalBase.protocol === 'https:') {
-        externalCertificateTrust = trustBackendCertificate(
+        externalCertTrust = createBackendCertificateTrust(
           externalBase.hostname,
           externalBackend.certFingerprint ?? null
         );
+        installScopedCertificateVerifier(windowSession, externalCertTrust);
       }
 
       const externalBackendCheck = await connectRemoteBackend({
         baseUrl: externalBaseUrl,
         serverSecret,
-        pinnedHostname: externalBackend.certFingerprint ? externalBase.hostname : null,
+        hasCertificatePin: Boolean(externalBackend.certFingerprint),
+        session: windowSession,
       });
       if (!externalBackendCheck.ok) {
-        externalCertificateTrust?.release();
         log.error(`External backend check failed: ${externalBackendCheck.failure}`);
         const canDisableExternalBackend = externalBackend.source === 'settings';
         const response = dialog.showMessageBoxSync({
@@ -1119,15 +1144,9 @@ const createChat = async (
         throw new Error('External backend check did not resolve an ACP endpoint');
       }
 
-      const originLease = leaseBackendOrigin(resolvedAcpUrl);
-      const leaseCertificateTrust = externalCertificateTrust;
-      externalCertificateTrust = null;
-      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
-        originLease.release();
-        leaseCertificateTrust?.release();
-      });
+      windowCertTrust = externalCertTrust;
+      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret);
     } catch (error) {
-      externalCertificateTrust?.release();
       log.error('External ACP backend is misconfigured', error);
       const canDisableExternalBackend = externalBackend.source === 'settings';
       const response = dialog.showMessageBoxSync({
@@ -1155,7 +1174,8 @@ const createChat = async (
       return;
     }
   } else {
-    const localCertificateTrust = trustBackendCertificate('127.0.0.1', null);
+    const localCertTrust = createBackendCertificateTrust('127.0.0.1', null);
+    installScopedCertificateVerifier(windowSession, localCertTrust);
 
     const loginShellPath = await getLoginShellPath(log);
 
@@ -1173,7 +1193,7 @@ const createChat = async (
         resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
         logger: log,
         diagnosticsDir: STARTUP_LOGS_DIR,
-        readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
+        readinessFetch: windowSession.fetch.bind(windowSession) as unknown as typeof globalThis.fetch,
       });
       if (!gooseServeResult.certFingerprint) {
         await gooseServeResult.cleanup();
@@ -1184,15 +1204,15 @@ const createChat = async (
 
       const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
       if (
-        localCertificateTrust.trust.fingerprint &&
-        localCertificateTrust.trust.fingerprint !== localCertFingerprint
+        localCertTrust.fingerprint &&
+        localCertTrust.fingerprint !== localCertFingerprint
       ) {
         await gooseServeResult.cleanup();
         throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
       }
-      localCertificateTrust.trust.fingerprint = localCertFingerprint;
+      localCertTrust.fingerprint = localCertFingerprint;
+      windowCertTrust = localCertTrust;
     } catch (error) {
-      localCertificateTrust.release();
       log.error('goose serve failed to start', error);
       dialog.showMessageBoxSync({
         type: 'error',
@@ -1210,14 +1230,6 @@ const createChat = async (
     }
 
     workingDir = gooseServeResult.workingDir;
-    const cleanupGooseServe = gooseServeResult.cleanup;
-    gooseServeResult.cleanup = async () => {
-      try {
-        await cleanupGooseServe();
-      } finally {
-        localCertificateTrust.release();
-      }
-    };
     gooseServeLease = gooseServeLeases.create(gooseServeResult, serverSecret);
   }
 
@@ -1234,6 +1246,17 @@ const createChat = async (
   let mainWindowState: ReturnType<typeof windowStateKeeper>;
   let mainWindow: BrowserWindow;
   try {
+    if (process.platform !== 'darwin') {
+      await copySharedDictionaryWords(
+        session.fromPartition(LEGACY_RENDERER_PARTITION),
+        windowSession
+      ).catch((error) => log.error('Failed to load the shared spelling dictionary', error));
+    }
+    const backendCsp =
+      externalBackend && gooseServeLease
+        ? { enabled: true, url: httpBaseFromAcpWebSocketUrl(gooseServeLease.acpUrl) }
+        : undefined;
+    installRendererCsp(windowSession, getAppUrl(), () => buildCSP(backendCsp));
     mainWindowState = windowStateKeeper({
       defaultWidth: 940,
       defaultHeight: 800,
@@ -1267,6 +1290,7 @@ const createChat = async (
         additionalArguments: [
           JSON.stringify({
             ...appConfig,
+            ...getRendererThemeConfig(settings),
             GOOSE_LOCALE: getConfiguredGooseLocale(),
             GOOSE_WORKING_DIR: workingDir,
             GOOSE_EXTERNAL_BACKEND: externalBackend !== null,
@@ -1284,7 +1308,7 @@ const createChat = async (
               process.env.SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE,
           }),
         ],
-        partition: 'persist:goose',
+        session: windowSession,
       },
     });
   } catch (error) {
@@ -1294,11 +1318,17 @@ const createChat = async (
 
   if (gooseServeLease) {
     const lease = gooseServeLease;
+    const windowId = mainWindow.id;
     mainWindow.once('closed', () => {
-      void gooseServeLeases.releaseWindow(mainWindow.id);
+      windowCertTrusts.delete(windowId);
+      void gooseServeLeases.releaseWindow(windowId);
     });
-    gooseServeLeases.attachWindow(mainWindow.id, lease);
+    gooseServeLeases.attachWindow(windowId, lease);
     gooseServeLease = null;
+  }
+
+  if (windowCertTrust) {
+    windowCertTrusts.set(mainWindow.id, windowCertTrust);
   }
 
   if (!app.isPackaged) {
@@ -1332,8 +1362,7 @@ const createChat = async (
         menu.append(
           new MenuItem({
             label: menuT('Add to dictionary'),
-            click: () =>
-              mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+            click: () => addCustomSpellingWord(windowSession, params.misspelledWord),
           })
         );
       }
@@ -1542,10 +1571,11 @@ const createLauncher = () => {
       additionalArguments: [
         JSON.stringify({
           ...appConfig,
+          ...getRendererThemeConfig(getSettings()),
           GOOSE_LOCALE: getConfiguredGooseLocale(),
         }),
       ],
-      partition: 'persist:goose',
+      partition: LEGACY_RENDERER_PARTITION,
     },
     skipTaskbar: true,
     alwaysOnTop: true,
@@ -1917,8 +1947,71 @@ ipcMain.handle('list-git-worktree-dirs', async (_event, dir: string) => {
 });
 
 ipcMain.handle('get-setting', (_event, key: SettingKey) => {
-  const settings = getSettings();
-  return settings[key];
+  return validSettingKeys.has(key) ? getSettings()[key] : undefined;
+});
+
+const rendererStorageKeys = new Set<string>([...RENDERER_STORAGE_KEYS, CHAT_HISTORY_KEY]);
+
+function isAppStorageRequest(event: IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  return (
+    frame !== null && frame === event.sender.mainFrame && isAppRendererUrl(frame.url, getAppUrl())
+  );
+}
+
+function updateRendererStorage(modifier: (storage: RendererStorage) => void): void {
+  try {
+    updateSettings((settings) => modifier((settings.rendererStorage ??= {})));
+  } catch (error) {
+    log.error('Failed to save renderer storage', error);
+  }
+}
+
+function updateChatHistory(update: (stored: string | null) => string | null): string | null {
+  let next: string | null = null;
+  try {
+    const current = fsSync.existsSync(CHAT_HISTORY_FILE)
+      ? fsSync.readFileSync(CHAT_HISTORY_FILE, 'utf8')
+      : null;
+    next = update(current);
+    if (next !== null && next !== current) {
+      writePrivateFile(CHAT_HISTORY_FILE, next);
+    }
+  } catch (error) {
+    log.error('Failed to access chat input history', error);
+  }
+  return next;
+}
+
+ipcMain.on('renderer-storage:get', (event, key: RendererStorageKey) => {
+  if (!isAppStorageRequest(event) || !rendererStorageKeys.has(key)) {
+    event.returnValue = null;
+    return;
+  }
+  event.returnValue =
+    key === CHAT_HISTORY_KEY
+      ? updateChatHistory(pruneStoredMessageHistory)
+      : (getSettings().rendererStorage?.[key] ?? null);
+});
+
+ipcMain.on('renderer-storage:set', (event, key: RendererStorageKey, value: string | null) => {
+  if (isAppStorageRequest(event) && rendererStorageKeys.has(key)) {
+    if (key === CHAT_HISTORY_KEY) {
+      if (value === null) updateChatHistory(() => '[]');
+    } else if (value === null || typeof value === 'string') {
+      updateRendererStorage((storage) => {
+        storage[key] = value;
+      });
+    }
+  }
+  event.returnValue = null;
+});
+
+ipcMain.on('renderer-storage:append-message', (event, content: string) => {
+  if (isAppStorageRequest(event) && typeof content === 'string') {
+    updateChatHistory((current) => appendStoredMessage(current, content));
+  }
+  event.returnValue = null;
 });
 
 // Valid setting keys for runtime validation
@@ -1954,10 +2047,9 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
     return;
   }
 
-  const settings = getSettings();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (settings as any)[key] = value;
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  updateSettings((settings) => {
+    Object.assign(settings, { [key]: value });
+  });
 
   if (key === 'language') {
     appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
@@ -2425,8 +2517,12 @@ async function appMain() {
     }
   });
 
-  const rendererSession = session.fromPartition('persist:goose');
+  const rendererSession = session.fromPartition(LEGACY_RENDERER_PARTITION);
   await configureProxy(session.defaultSession, rendererSession);
+  installRendererCsp(rendererSession, getAppUrl(), () =>
+    buildCSP(getExternalBackendForCsp(getSettings()))
+  );
+  await ensureRendererStorageMigrated();
 
   // Ensure Windows shims are available before any MCP processes are spawned
   await ensureWinShims();
@@ -2443,22 +2539,6 @@ async function appMain() {
       // Default behavior for other permissions
       callback(true);
     }
-  });
-
-  // Add CSP headers to the renderer's own documents, recomputed on every
-  // response so external backend settings take effect without restarting the app.
-  rendererSession.webRequest.onHeadersReceived((details, callback) => {
-    if (!shouldApplyRendererCsp(details.resourceType)) {
-      callback({});
-      return;
-    }
-    const currentSettings = getSettings();
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': buildCSP(getExternalBackendForCsp(currentSettings)),
-      },
-    });
   });
 
   // Migrate old settings format if needed (one-time migration)
@@ -2984,6 +3064,8 @@ async function appMain() {
         undefined,
         app.getPath('home')
       );
+      const launchingCertTrust = windowCertTrusts.get(launchingWindowId);
+
       const appWindow = new BrowserWindow({
         title: formatAppName(gooseApp.name),
         autoHideMenuBar: process.platform === 'linux',
@@ -3000,21 +3082,28 @@ async function appMain() {
           additionalArguments: [
             JSON.stringify({
               ...appConfig,
+              ...getRendererThemeConfig(getSettings()),
               GOOSE_LOCALE: getConfiguredGooseLocale(),
               GOOSE_WORKING_DIR: workingDir,
               GOOSE_VERSION: version,
             }),
           ],
-          partition: 'persist:goose',
+          session: launchingWindow.webContents.session,
         },
       });
 
-      gooseServeLeases.attachWindow(appWindow.id, launchingGooseServeLease);
+      const appWindowId = appWindow.id;
+      if (launchingCertTrust) {
+        windowCertTrusts.set(appWindowId, launchingCertTrust);
+      }
+
+      gooseServeLeases.attachWindow(appWindowId, launchingGooseServeLease);
 
       appWindows.set(gooseApp.name, appWindow);
 
       appWindow.on('closed', () => {
-        void gooseServeLeases.releaseWindow(appWindow.id);
+        windowCertTrusts.delete(appWindowId);
+        void gooseServeLeases.releaseWindow(appWindowId);
         appWindows.delete(gooseApp.name);
       });
 

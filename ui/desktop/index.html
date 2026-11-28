@@ -8,62 +8,13 @@
     />
     <title>Goose</title>
     <script>
-      // Initialize theme before any content loads
       (function () {
-        function initializeTheme() {
-          try {
-            if (window.localStorage) {
-              const useSystemTheme = localStorage.getItem('use_system_theme') === 'true';
-              const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-              const savedTheme = localStorage.getItem('theme');
-              const isDark = useSystemTheme
-                ? systemPrefersDark
-                : savedTheme
-                  ? savedTheme === 'dark'
-                  : systemPrefersDark;
-
-              if (isDark) {
-                document.documentElement.classList.add('dark');
-                document.documentElement.style.colorScheme = 'dark';
-              } else {
-                document.documentElement.classList.remove('dark');
-                document.documentElement.style.colorScheme = 'light';
-              }
-            } else {
-              const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-              if (systemPrefersDark) {
-                document.documentElement.classList.add('dark');
-                document.documentElement.style.colorScheme = 'dark';
-              } else {
-                document.documentElement.classList.remove('dark');
-                document.documentElement.style.colorScheme = 'light';
-              }
-            }
-          } catch (error) {
-            console.warn(
-              'Failed to initialize theme from localStorage, using system preference:',
-              error
-            );
-            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            if (systemPrefersDark) {
-              document.documentElement.classList.add('dark');
-              document.documentElement.style.colorScheme = 'dark';
-            } else {
-              document.documentElement.classList.remove('dark');
-              document.documentElement.style.colorScheme = 'light';
-            }
-          }
-        }
-
-        // Run immediately
-        initializeTheme();
-
-        // Retry after DOM is ready if initial attempt failed
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(initializeTheme, 50);
-          });
-        }
+        const useSystemTheme = window.appConfig?.get('GOOSE_USE_SYSTEM_THEME') !== false;
+        const isDark = useSystemTheme
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          : window.appConfig?.get('GOOSE_THEME') === 'dark';
+        document.documentElement.classList.toggle('dark', isDark);
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
       })();
     </script>
     <link href="./src/styles/main.css" rel="stylesheet" />

@@ -1,3 +1,5 @@
+import type { RendererStorage } from '../rendererStorage';
+
 export type RecentModel = {
   provider: string;
   model: string;
@@ -58,9 +60,11 @@ export interface Settings {
   seenAnnouncementIds: string[];
   recentModels: RecentModel[];
   showThinking: ShowThinking;
+  rendererStorage?: RendererStorage;
+  rendererStorageMigrated: boolean;
 }
 
-export type SettingKey = keyof Settings;
+export type SettingKey = Exclude<keyof Settings, 'rendererStorage' | 'rendererStorageMigrated'>;
 
 export const defaultKeyboardShortcuts: DefaultKeyboardShortcuts = {
   focusWindow: 'CommandOrControl+Alt+G',
@@ -100,6 +104,7 @@ export const defaultSettings: Settings = {
   seenAnnouncementIds: [],
   recentModels: [],
   showThinking: 'collapsed',
+  rendererStorageMigrated: false,
 };
 
 export function getKeyboardShortcuts(settings: Settings): KeyboardShortcuts {

@@ -1,3 +1,5 @@
+import type { Session } from 'electron';
+import { isAppRendererUrl } from '../desktopFileAccess';
 import type { ExternalBackendConfig } from './settings';
 
 const DEFAULT_CONNECT_SOURCES = [
@@ -15,31 +17,10 @@ const DEFAULT_CONNECT_SOURCES = [
   'https://objects.githubusercontent.com',
 ];
 
-export interface BackendOriginLease {
-  release: () => void;
-}
+type BackendCspConfig = Pick<ExternalBackendConfig, 'enabled' | 'url'>;
 
-interface LeasedBackendOrigin {
-  origin: string;
-  insecure: boolean;
-}
-
-const leasedBackendOrigins = new Set<LeasedBackendOrigin>();
-
-// A redirected backend serves ACP from an origin the settings do not name, so
-// the renderer needs it in connect-src for as long as a window uses it.
-export function leaseBackendOrigin(acpUrl: string): BackendOriginLease {
-  const url = new URL(acpUrl);
-  const leased: LeasedBackendOrigin = { origin: url.origin, insecure: url.protocol === 'ws:' };
-  leasedBackendOrigins.add(leased);
-  return { release: () => leasedBackendOrigins.delete(leased) };
-}
-
-export function buildConnectSrc(externalBackend?: ExternalBackendConfig): string {
-  const sources = [
-    ...DEFAULT_CONNECT_SOURCES,
-    ...[...leasedBackendOrigins].map((leased) => leased.origin),
-  ];
+export function buildConnectSrc(externalBackend?: BackendCspConfig): string {
+  const sources = [...DEFAULT_CONNECT_SOURCES];
 
   if (externalBackend?.enabled && externalBackend.url) {
     try {
@@ -59,19 +40,14 @@ export function buildConnectSrc(externalBackend?: ExternalBackendConfig): string
  * Returns true when upgrade-insecure-requests should be included in the CSP.
  *
  * The directive is omitted when the user has configured an external backend
- * that uses plain HTTP, or when a leased backend was resolved to plain HTTP,
- * because Chromium would silently rewrite those requests to HTTPS. The remote
- * server typically does not speak TLS, so the upgraded requests fail with
- * "Failed to fetch".
+ * that uses plain HTTP, because Chromium would silently rewrite those requests
+ * to HTTPS. The remote server typically does not speak TLS, so the upgraded
+ * requests fail with "Failed to fetch".
  *
  * Loopback addresses (127.0.0.1 / localhost) are exempt from the upgrade
  * per the CSP spec, which is why the built-in local backend is unaffected.
  */
-export function shouldUpgradeInsecureRequests(externalBackend?: ExternalBackendConfig): boolean {
-  if ([...leasedBackendOrigins].some((leased) => leased.insecure)) {
-    return false;
-  }
-
+export function shouldUpgradeInsecureRequests(externalBackend?: BackendCspConfig): boolean {
   if (!externalBackend?.enabled || !externalBackend.url) {
     return true;
   }
@@ -91,7 +67,7 @@ export function shouldApplyRendererCsp(resourceType: string): boolean {
   return resourceType !== 'subFrame';
 }
 
-export function buildCSP(externalBackend?: ExternalBackendConfig): string {
+export function buildCSP(externalBackend?: BackendCspConfig): string {
   const connectSrc = buildConnectSrc(externalBackend);
   const upgradeDirective = shouldUpgradeInsecureRequests(externalBackend)
     ? 'upgrade-insecure-requests;'
@@ -113,4 +89,23 @@ export function buildCSP(externalBackend?: ExternalBackendConfig): string {
     "worker-src 'self';" +
     upgradeDirective
   );
+}
+
+export function installRendererCsp(
+  rendererSession: Session,
+  appUrl: URL,
+  getPolicy: () => string
+): void {
+  rendererSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!shouldApplyRendererCsp(details.resourceType) || !isAppRendererUrl(details.url, appUrl)) {
+      callback({});
+      return;
+    }
+    const responseHeaders = Object.fromEntries(
+      Object.entries(details.responseHeaders ?? {}).filter(
+        ([name]) => name.toLowerCase() !== 'content-security-policy'
+      )
+    );
+    callback({ responseHeaders: { ...responseHeaders, 'Content-Security-Policy': [getPolicy()] } });
+  });
 }
