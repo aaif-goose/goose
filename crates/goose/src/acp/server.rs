@@ -1910,9 +1910,7 @@ impl AcpConnection {
             self.services.discard_pending_steers(session_id);
         }
 
-        if self.closed_session_ids.lock().await.contains(session_id) {
-            self.services.release_session_if_closed(session_id).await;
-        }
+        self.services.release_session_if_closed(session_id).await;
     }
 
     async fn require_active_run(
