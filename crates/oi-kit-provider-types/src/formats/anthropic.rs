@@ -1088,11 +1088,53 @@ where
             .map(|index| index as i32)
     }
 
+    fn incomplete_tool_arguments_message(arguments: &str, reached_token_limit: bool) -> String {
+        let guidance = if reached_token_limit {
+            "The model's response was truncated — it hit the output token limit while generating this tool call. \
+             Try increasing max_tokens for this provider or breaking the task into smaller steps."
+        } else {
+            "A tool call was not completed before the stream ended. \
+             Try resending your message or breaking the task into smaller steps."
+        };
+        let len = arguments.chars().count();
+        let tail: String = arguments
+            .chars()
+            .rev()
+            .take(80)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        format!("{guidance}\nReceived {len} characters of arguments; cut off at: …{tail}")
+    }
+
+    fn tool_request_message(
+        id: String,
+        index: i32,
+        request: Result<CallToolRequestParams, ErrorData>,
+        message_id: Option<String>,
+    ) -> Message {
+        let mut message = Message::new(
+            Role::Assistant,
+            chrono::Utc::now().timestamp(),
+            vec![MessageContentBlock::tool_request_with_provider_index(
+                id, request, None, index,
+            )],
+        );
+        message.id = message_id;
+        message
+    }
+
     try_stream! {
         struct StreamingToolCall {
             id: String,
             name: String,
             arguments: String,
+        }
+
+        enum HeldContent {
+            Message(Message),
+            MalformedToolCall { id: String, index: i32, arguments: String },
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
@@ -1198,7 +1240,7 @@ where
                                     let mut message = Message::assistant()
                                         .with_redacted_thinking(data);
                                     message.id = message_id.clone();
-                                    if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
+                                    if held.is_empty() { yield (Some(message), None); } else { held.push(HeldContent::Message(message)); }
                                 } else {
                                     tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
                                 }
@@ -1214,7 +1256,7 @@ where
                             Ok(ContentBlockDelta::TextDelta { text }) => {
                                 let mut message = Message::assistant().with_text(&text);
                                 message.id = message_id.clone();
-                                if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
+                                if held.is_empty() { yield (Some(message), None); } else { held.push(HeldContent::Message(message)); }
                             }
                             Ok(ContentBlockDelta::InputJsonDelta { partial_json }) => {
                                 if let Some(call) = block_index(&event.data)
@@ -1247,48 +1289,21 @@ where
                             let mut message = Message::assistant()
                                 .with_thinking(state.text, state.signature);
                             message.id = message_id.clone();
-                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(HeldContent::Message(message)); }
                         }
                     }
                     if let Some(index) = block_index(&event.data) {
                         if let Some(call) = accumulated_tool_calls.remove(&index) {
                             let StreamingToolCall { id, name, arguments } = call;
-                            let parsed_args = if arguments.is_empty() {
-                                json!({})
-                            } else {
-                                match crate::json::parse_tool_arguments(&arguments) {
-                                    Some(parsed) => parsed,
-                                    None => {
-                                        let message_text = crate::json::truncation_error_message(&arguments)
-                                            .unwrap_or_else(|| {
-                                                format!("Could not parse tool arguments: {arguments}")
-                                            });
-                                        let error = ErrorData::new(
-                                            ErrorCode::INVALID_PARAMS,
-                                            message_text,
-                                            None,
-                                        );
-                                        let mut message = Message::new(
-                                            Role::Assistant,
-                                            chrono::Utc::now().timestamp(),
-                                            vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
-                                        );
-                                        message.id = message_id.clone();
-                                        if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
-                                        continue;
-                                    }
+                            let content = match crate::json::parse_tool_arguments(&arguments) {
+                                Some(parsed) => {
+                                    let request = CallToolRequestParams::new(name).with_arguments(object(parsed));
+                                    HeldContent::Message(tool_request_message(id, index, Ok(request), message_id.clone()))
                                 }
+                                // Anthropic reports the stop reason after the content block closes.
+                                None => HeldContent::MalformedToolCall { id, index, arguments },
                             };
-
-                            let tool_call = CallToolRequestParams::new(name).with_arguments(object(parsed_args));
-
-                            let mut message = Message::new(
-                                rmcp::model::Role::Assistant,
-                                chrono::Utc::now().timestamp(),
-                                vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
-                            );
-                            message.id = message_id.clone();
-                            held.push(message);
+                            held.push(content);
                         }
                     }
                     continue;
@@ -1346,7 +1361,7 @@ where
                                 "The provider ended the response with: {details}"
                             ));
                             message.id = message_id.clone();
-                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(HeldContent::Message(message)); }
                         }
                     }
                     continue;
@@ -1376,43 +1391,40 @@ where
             Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
         }
 
-        for message in held {
+        let reached_token_limit = stop_reason.as_deref() == Some("max_tokens");
+        for content in held {
+            let message = match content {
+                HeldContent::Message(message) => message,
+                HeldContent::MalformedToolCall { id, index, arguments } => {
+                    let details = if reached_token_limit {
+                        incomplete_tool_arguments_message(&arguments, reached_token_limit)
+                    } else {
+                        crate::json::truncation_error_message(&arguments)
+                            .unwrap_or_else(|| format!("Could not parse tool arguments: {arguments}"))
+                    };
+                    let error = ErrorData::new(ErrorCode::INVALID_PARAMS, details, None);
+                    tool_request_message(id, index, Err(error), message_id.clone())
+                }
+            };
             yield (Some(message), None);
         }
 
         // A tool_use block left open at stream end never received its
         // content_block_stop, so its args are truncated rather than complete.
         if !accumulated_tool_calls.is_empty() {
-            let truncated_by_limit = stop_reason.as_deref() == Some("max_tokens");
             let mut indices: Vec<i32> = accumulated_tool_calls.keys().copied().collect();
             indices.sort();
             for index in indices {
                 if let Some(StreamingToolCall { id, arguments: args, .. }) = accumulated_tool_calls.remove(&index) {
-                    let guidance = if truncated_by_limit {
-                        "The model's response was truncated — it hit the output token limit while generating this tool call. \
-                         Try increasing max_tokens for this provider or breaking the task into smaller steps."
-                    } else {
-                        "A tool call was not completed before the stream ended. \
-                         Try resending your message or breaking the task into smaller steps."
-                    };
-                    let snippet_len = args.chars().count();
-                    let tail: String = args.chars().rev().take(80).collect::<Vec<_>>().into_iter().rev().collect();
-                    let message_text = format!(
-                        "{guidance}\nReceived {snippet_len} characters of arguments; cut off at: …{tail}"
-                    );
+                    let message_text = incomplete_tool_arguments_message(&args, reached_token_limit);
                     let error = ErrorData::new(ErrorCode::INVALID_PARAMS, message_text, None);
-                    let mut message = Message::new(
-                        Role::Assistant,
-                        chrono::Utc::now().timestamp(),
-                        vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
-                    );
-                    message.id = message_id.clone();
+                    let message = tool_request_message(id, index, Err(error), message_id.clone());
                     yield (Some(message), None);
                 }
             }
         }
 
-        if stop_reason.as_deref() == Some("max_tokens") {
+        if reached_token_limit {
             let mut message = Message::assistant();
             message.id = message_id.clone();
             message.metadata.output_token_limit_reached = true;
@@ -3191,10 +3203,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_streaming_truncated_tool_args_in_content_block_stop() {
-        // Block is closed by content_block_stop, but the concatenated deltas form
-        // truncated JSON (each fragment is valid; together they're unterminated).
-        let events = concat!(
+    async fn test_streaming_closed_tool_args_error_uses_stop_reason() {
+        let tool_block = concat!(
             r##"data: {"type":"message_start","message":{"id":"msg_t","role":"assistant","content":[],"model":"glm-4.7","usage":{"input_tokens":10,"output_tokens":0}}}"##,
             "\n",
             r##"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_t","name":"write","input":{}}}"##,
@@ -3204,30 +3214,35 @@ mod tests {
             r##"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"content\":\"# Very long markdown"}}"##,
             "\n",
             r#"data: {"type":"content_block_stop","index":0}"#,
-            "\n",
-            r#"data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}"#,
-            "\n",
-            r#"data: {"type":"message_stop"}"#,
         );
 
-        let parts = collect_stream(events).await;
-        assert_eq!(
-            parts.tool_errors.len(),
-            1,
-            "expected one tool error, got: {:?}",
-            parts.tool_errors
-        );
-        let msg = &parts.tool_errors[0];
-        assert!(
-            msg.contains("truncated") || msg.contains("output token limit"),
-            "expected actionable truncation message, got: {}",
-            msg
-        );
-        assert!(
-            msg.contains("max_tokens") || msg.contains("smaller steps"),
-            "expected guidance to increase max_tokens or break up the task, got: {}",
-            msg
-        );
+        for (stop_reason, reached_token_limit) in [("max_tokens", true), ("tool_use", false)] {
+            let delta = json!({
+                "type": "message_delta",
+                "delta": {"stop_reason": stop_reason},
+                "usage": {"output_tokens": 4096},
+            });
+            let events =
+                format!("{tool_block}\ndata: {delta}\ndata: {{\"type\":\"message_stop\"}}");
+            let parts = collect_stream(&events).await;
+            assert!(parts.tool_calls.is_empty());
+            assert_eq!(parts.tool_errors.len(), 1);
+            let message = &parts.tool_errors[0];
+            assert_eq!(message.contains("output token limit"), reached_token_limit);
+            assert_eq!(message.contains("max_tokens"), reached_token_limit);
+            assert_eq!(
+                message.contains("malformed tool arguments"),
+                !reached_token_limit
+            );
+            assert_eq!(
+                parts.output_token_limit_message_ids,
+                if reached_token_limit {
+                    vec![Some("msg_t".to_string())]
+                } else {
+                    vec![]
+                }
+            );
+        }
     }
 
     #[tokio::test]
