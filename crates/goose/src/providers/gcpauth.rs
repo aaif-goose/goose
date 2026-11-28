@@ -4,7 +4,7 @@ use base64::Engine;
 use ring::rand::SystemRandom;
 use ring::signature::{RsaKeyPair, RSA_PKCS1_SHA256};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fmt, io};
@@ -63,6 +63,26 @@ enum AdcCredentials {
     /// Credentials for the GCP native default account
     #[serde(skip)]
     DefaultAccount(String),
+}
+
+#[derive(Debug)]
+enum AdcSource {
+    File(PathBuf),
+    Metadata(String),
+}
+
+fn absolute_credentials_path(path: impl AsRef<Path>) -> Result<PathBuf, AuthError> {
+    std::path::absolute(path)
+        .map_err(|error| AuthError::Credentials(format!("Invalid credential path: {error}")))
+}
+
+impl AdcSource {
+    async fn load(&self, fs_ops: &impl FilesystemOps) -> Result<AdcCredentials, AuthError> {
+        match self {
+            Self::File(path) => AdcCredentials::load_from_file(fs_ops, path).await,
+            Self::Metadata(base_url) => AdcCredentials::load_from_metadata_server(base_url).await,
+        }
+    }
 }
 
 /// Credentials for an authorized user account.
@@ -126,7 +146,7 @@ pub trait FilesystemOps {
     ///
     /// # Returns
     /// * `Result<String, io::Error>` - The contents of the file or an error
-    async fn read_to_string(&self, path: String) -> Result<String, io::Error>;
+    async fn read_to_string(&self, path: &Path) -> Result<String, io::Error>;
 }
 
 /// A trait that defines operations for accessing environment variables.
@@ -158,7 +178,7 @@ pub struct RealEnvOps;
 
 #[async_trait]
 impl FilesystemOps for RealFilesystemOps {
-    async fn read_to_string(&self, path: String) -> Result<String, io::Error> {
+    async fn read_to_string(&self, path: &Path) -> Result<String, io::Error> {
         tokio::fs::read_to_string(path).await
     }
 }
@@ -177,22 +197,17 @@ impl AdcCredentials {
     /// 1. GOOGLE_APPLICATION_CREDENTIALS environment variable
     /// 2. Default gcloud credentials path (~/.config/gcloud/application_default_credentials.json)
     /// 3. Metadata server if running in GCP
-    async fn load() -> Result<Self, AuthError> {
-        Self::load_impl(
-            &RealFilesystemOps,
-            &RealEnvOps,
-            "http://metadata.google.internal",
-        )
-        .await
-    }
-
     async fn load_impl(
         fs_ops: &impl FilesystemOps,
         env_ops: &impl EnvOps,
         metadata_base_url: &str,
-    ) -> Result<Self, AuthError> {
+    ) -> Result<(AdcSource, Self), AuthError> {
         match env_ops.get_var("GOOGLE_APPLICATION_CREDENTIALS") {
-            Ok(cred_path) => return Self::load_from_file(fs_ops, &cred_path).await,
+            Ok(cred_path) => {
+                let source = AdcSource::File(absolute_credentials_path(&cred_path)?);
+                let credentials = source.load(fs_ops).await?;
+                return Ok((source, credentials));
+            }
             Err(env::VarError::NotPresent) => {}
             Err(error) => {
                 return Err(AuthError::Credentials(format!(
@@ -203,14 +218,18 @@ impl AdcCredentials {
         }
 
         // Try default gcloud credentials path
-        if let Ok(cred_path) = Self::get_default_credentials_path(env_ops) {
-            match fs_ops.read_to_string(cred_path.clone()).await {
-                Ok(content) => return Self::parse_file_contents(&content),
+        if let Ok(default_path) = Self::get_default_credentials_path(env_ops) {
+            let path = absolute_credentials_path(default_path)?;
+            match fs_ops.read_to_string(&path).await {
+                Ok(content) => {
+                    return Ok((AdcSource::File(path), Self::parse_file_contents(&content)?))
+                }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => {
                     return Err(AuthError::Credentials(format!(
                         "Failed to read credentials from {}: {}",
-                        cred_path, error
+                        path.display(),
+                        error
                     )));
                 }
             }
@@ -218,7 +237,7 @@ impl AdcCredentials {
 
         // Try metadata server if running on GCP
         if let Ok(creds) = Self::load_from_metadata_server(metadata_base_url).await {
-            return Ok(creds);
+            return Ok((AdcSource::Metadata(metadata_base_url.to_owned()), creds));
         }
 
         Err(AuthError::Credentials(
@@ -226,9 +245,13 @@ impl AdcCredentials {
         ))
     }
 
-    async fn load_from_file(fs_ops: &impl FilesystemOps, path: &str) -> Result<Self, AuthError> {
-        let content = fs_ops.read_to_string(path.to_string()).await.map_err(|e| {
-            AuthError::Credentials(format!("Failed to read credentials from {}: {}", path, e))
+    async fn load_from_file(fs_ops: &impl FilesystemOps, path: &Path) -> Result<Self, AuthError> {
+        let content = fs_ops.read_to_string(path).await.map_err(|e| {
+            AuthError::Credentials(format!(
+                "Failed to read credentials from {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         Self::parse_file_contents(&content)
@@ -239,7 +262,7 @@ impl AdcCredentials {
             .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
     }
 
-    fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
+    fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<PathBuf, AuthError> {
         let (env_var, subpath) = if cfg!(windows) {
             ("APPDATA", "gcloud\\application_default_credentials.json")
         } else {
@@ -251,12 +274,7 @@ impl AdcCredentials {
 
         env_ops
             .get_var(env_var)
-            .map(|dir| {
-                PathBuf::from(dir)
-                    .join(subpath)
-                    .to_string_lossy()
-                    .into_owned()
-            })
+            .map(|dir| PathBuf::from(dir).join(subpath))
             .map_err(|_| {
                 AuthError::Credentials("Could not determine user home directory".to_string())
             })
@@ -345,6 +363,7 @@ struct TokenResponse {
 /// ```
 #[derive(Debug)]
 pub struct GcpAuth {
+    source: AdcSource,
     /// The loaded credentials (service account or authorized user)
     credentials: RwLock<AdcCredentials>,
     /// HTTP client for making token exchange requests
@@ -369,15 +388,33 @@ impl GcpAuth {
     /// # Returns
     /// * `Result<Self, AuthError>` - A new GcpAuth instance or an error if initialization fails
     pub async fn new() -> Result<Self, AuthError> {
+        Self::new_impl(
+            &RealFilesystemOps,
+            &RealEnvOps,
+            "http://metadata.google.internal",
+        )
+        .await
+    }
+
+    pub(super) async fn new_impl(
+        fs_ops: &impl FilesystemOps,
+        env_ops: &impl EnvOps,
+        metadata_base_url: &str,
+    ) -> Result<Self, AuthError> {
+        let (source, credentials) =
+            AdcCredentials::load_impl(fs_ops, env_ops, metadata_base_url).await?;
         Ok(Self {
-            credentials: RwLock::new(AdcCredentials::load().await?),
+            source,
+            credentials: RwLock::new(credentials),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),
         })
     }
 
+    /// Reloads the initially selected source, allowing replacement credentials at the same path.
+    /// A missing or invalid file is an error, never a reason to discover another identity.
     pub async fn refresh_credentials(&self) -> Result<(), AuthError> {
-        let reloaded = AdcCredentials::load().await?;
+        let reloaded = self.source.load(&RealFilesystemOps).await?;
         *self.credentials.write().await = reloaded;
         *self.cached_token.write().await = None;
         Ok(())
@@ -612,9 +649,12 @@ impl GcpAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_lc_rs::encoding::AsDer;
+    use aws_lc_rs::rsa::{KeyPair, KeySize};
     use mockall::predicate::eq;
+    use pkcs8::der::Decode;
     use serde_json::Value;
-    use tokio::time::sleep;
+    use std::sync::LazyLock;
     use wiremock::matchers::{header, method, path};
     // Only import what we need
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -625,7 +665,7 @@ mod tests {
 
         #[async_trait]
         impl FilesystemOps for FilesystemOpsMock {
-            async fn read_to_string(&self, path: String) -> Result<String, std::io::Error>;
+            async fn read_to_string(&self, path: &Path) -> Result<String, std::io::Error>;
         }
     }
 
@@ -659,71 +699,29 @@ mod tests {
         }
     }
 
-    fn default_credentials_path(home: &str) -> String {
-        if cfg!(windows) {
-            format!("{home}/gcloud/application_default_credentials.json")
+    fn default_credentials_path(home: impl AsRef<Path>) -> PathBuf {
+        let suffix = if cfg!(windows) {
+            "gcloud\\application_default_credentials.json"
         } else {
-            format!("{home}/.config/gcloud/application_default_credentials.json")
-        }
+            ".config/gcloud/application_default_credentials.json"
+        };
+        std::path::absolute(home.as_ref().join(suffix)).unwrap()
     }
 
-    // Test fixtures for credentials
+    static SERVICE_ACCOUNT_TEST_KEY: LazyLock<String> = LazyLock::new(|| {
+        let key_pair = KeyPair::generate(KeySize::Rsa2048).unwrap();
+        let pkcs8_der = key_pair.as_der().unwrap();
+        let key = pkcs8::PrivateKeyInfoRef::from_der(pkcs8_der.as_ref()).unwrap();
+        pem::encode(&pem::Pem::new(
+            "RSA PRIVATE KEY",
+            key.private_key.as_bytes(),
+        ))
+    });
+
     fn mock_service_account() -> ServiceAccountCredentials {
         ServiceAccountCredentials {
             client_email: "test@test.com".to_string(),
-            // This is a generated test credential
-            private_key: "-----BEGIN RSA PRIVATE KEY-----
-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
------END RSA PRIVATE KEY-----"
-                .to_string(),
+            private_key: SERVICE_ACCOUNT_TEST_KEY.clone(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
         }
     }
@@ -740,6 +738,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     // Helper function to create a test GcpAuth instance with credentials
     async fn create_test_auth_with_creds(creds: AdcCredentials) -> GcpAuth {
         GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(creds),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),
@@ -749,6 +748,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_token_caching() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(Some(CachedToken {
@@ -772,6 +772,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_token_expiration() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(Some(CachedToken {
@@ -810,6 +811,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_concurrent_token_access() {
         let auth = Arc::new(GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(Some(CachedToken {
@@ -840,60 +842,48 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
 
     #[tokio::test]
     async fn test_token_refresh_race_condition() {
+        let tokens = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "refreshed",
+                "expires_in": 3600,
+            })))
+            .expect(1)
+            .mount(&tokens)
+            .await;
+
+        let credentials = ServiceAccountCredentials {
+            token_uri: format!("{}/token", tokens.uri()),
+            ..mock_service_account()
+        };
         let auth = Arc::new(GcpAuth {
-            credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
+            credentials: RwLock::new(AdcCredentials::ServiceAccount(credentials)),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(Some(CachedToken {
                 token: AuthToken {
                     token_type: "Bearer".to_string(),
-                    token_value: "about_to_expire".to_string(),
+                    token_value: "expired".to_string(),
                 },
-                expires_at: Instant::now() + Duration::from_millis(100),
+                expires_at: Instant::now(),
             }))),
         });
 
         let mut handles = vec![];
-
-        for i in 0..5 {
-            let auth_clone = Arc::clone(&auth);
-            handles.push(tokio::spawn(async move {
-                sleep(Duration::from_millis(i * 50)).await;
-                let result = auth_clone.get_token().await;
-                match result {
-                    Ok(token) => {
-                        // Should be the cached token since we can't actually exchange tokens in tests
-                        assert_eq!(
-                            token.token_value, "about_to_expire",
-                            "Expected cached token, got: {}",
-                            token.token_value
-                        );
-                    }
-                    Err(e) => {
-                        match e {
-                            AuthError::TokenExchange(err) => {
-                                // This is expected - we can't actually exchange tokens in tests
-                                assert!(
-                                    err.contains("invalid_scope") || err.contains("400"),
-                                    "Unexpected error message: {}",
-                                    err
-                                );
-                            }
-                            other => panic!("Unexpected error type: {:?}", other),
-                        }
-                    }
-                }
-            }));
+        for _ in 0..5 {
+            let auth = Arc::clone(&auth);
+            handles.push(tokio::spawn(async move { auth.get_token().await.unwrap() }));
         }
-
-        // Wait for all handles
         for handle in handles {
-            handle.await.unwrap();
+            assert_eq!(handle.await.unwrap().token_value, "refreshed");
         }
     }
 
     #[tokio::test]
     async fn test_authorized_user_token() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::AuthorizedUser(mock_authorized_user())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),
@@ -911,6 +901,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_service_account_jwt_creation() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),
@@ -925,6 +916,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     #[tokio::test]
     async fn test_service_account_jwt_creation_with_pkcs8_key() {
         let auth = GcpAuth {
+            source: AdcSource::File(PathBuf::from("unused-test-credentials.json")),
             credentials: RwLock::new(AdcCredentials::ServiceAccount(mock_service_account())),
             client: reqwest::Client::new(),
             cached_token: Arc::new(RwLock::new(None)),
@@ -1008,7 +1000,9 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq("/path/to/credentials.json".to_string())) // Convert to String
+            .with(eq(
+                absolute_credentials_path("/path/to/credentials.json").unwrap()
+            ))
             .times(1)
             .return_once(move |_| Ok(creds_content.to_string()));
 
@@ -1020,7 +1014,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         .await;
 
         assert!(result.is_ok());
-        if let Ok(AdcCredentials::ServiceAccount(sa)) = result {
+        if let Ok((_, AdcCredentials::ServiceAccount(sa))) = result {
             assert_eq!(sa.client_email, "test@example.com");
             assert!(sa.private_key.contains("test...key"));
         } else {
@@ -1056,16 +1050,12 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         "refresh_token": "test_refresh"
     }"#;
 
-        let expected_path = if cfg!(windows) {
-            "/home/testuser/gcloud/application_default_credentials.json".to_string()
-        } else {
-            "/home/testuser/.config/gcloud/application_default_credentials.json".to_string()
-        };
+        let expected_path = default_credentials_path("/home/testuser");
 
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq(expected_path.clone())) // Use clone() to avoid borrowing issues
+            .with(eq(expected_path.clone()))
             .times(1)
             .return_once(move |_| Ok(creds_content.to_string()));
 
@@ -1076,7 +1066,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         )
         .await;
 
-        if let Ok(AdcCredentials::AuthorizedUser(au)) = result {
+        if let Ok((_, AdcCredentials::AuthorizedUser(au))) = result {
             assert_eq!(au.client_id, "test_client");
             assert_eq!(au.client_secret, "test_secret");
             assert_eq!(au.refresh_token, "test_refresh");
@@ -1142,7 +1132,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             AdcCredentials::load_impl(&context.fs_mock, &context.env_mock, &mock_server.uri())
                 .await;
 
-        if let Ok(AdcCredentials::DefaultAccount(base_url)) = result {
+        if let Ok((_, AdcCredentials::DefaultAccount(base_url))) = result {
             assert_eq!(base_url, mock_server.uri());
         } else {
             panic!("Expected DefaultAccount credentials");
@@ -1240,7 +1230,9 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq("/path/to/credentials.json".to_string()))
+            .with(eq(
+                absolute_credentials_path("/path/to/credentials.json").unwrap()
+            ))
             .times(1)
             .return_once(move |_| file_result);
 
@@ -1305,17 +1297,225 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .times(1)
             .return_once(|_| Err(env::VarError::NotPresent));
 
+        let context = context.with_metadata_server().await;
         let result = AdcCredentials::load_impl(
             &context.fs_mock,
             &context.env_mock,
-            "http://metadata.example.com",
+            &context.mock_server.as_ref().unwrap().uri(),
         )
         .await;
         assert!(matches!(result, Err(AuthError::Credentials(_))));
     }
 
-    // Note: there is intentionally no test that exercises refresh_credentials() end to end.
-    // Doing so would require pointing GOOGLE_APPLICATION_CREDENTIALS at a temp file via
-    // std::env::set_var, which is unsafe in the 2024 edition and races with any other thread
-    // reading the environment. We don't mutate process-global env state in tests for that.
+    fn file_environment(directory: &std::path::Path, explicit: bool) -> MockEnvOpsMock {
+        let mut env = MockEnvOpsMock::new();
+        let home = directory.to_string_lossy().into_owned();
+        let path = default_credentials_path(directory);
+        env.expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(move |_| {
+                if explicit {
+                    Ok(path.to_str().unwrap().to_owned())
+                } else {
+                    Err(env::VarError::NotPresent)
+                }
+            });
+        if !explicit {
+            env.expect_get_var()
+                .with(eq(if cfg!(windows) { "APPDATA" } else { "HOME" }))
+                .times(1)
+                .return_once(move |_| Ok(home));
+        }
+        env
+    }
+
+    fn user_credentials(client_id: &str, token_uri: &str) -> String {
+        serde_json::json!({
+            "type": "authorized_user",
+            "client_id": client_id,
+            "client_secret": "test-secret",
+            "refresh_token": "test-refresh",
+            "token_uri": token_uri,
+        })
+        .to_string()
+    }
+
+    #[test_case::test_case(false; "well_known_file")]
+    #[test_case::test_case(true; "explicit_file")]
+    #[tokio::test]
+    async fn refresh_missing_file_preserves_source_and_cache(explicit: bool) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = default_credentials_path(directory.path());
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&path, user_credentials("original", "http://unused.invalid"))
+            .await
+            .unwrap();
+        let metadata = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&metadata)
+            .await;
+        let auth = GcpAuth::new_impl(
+            &RealFilesystemOps,
+            &file_environment(directory.path(), explicit),
+            &metadata.uri(),
+        )
+        .await
+        .unwrap();
+        *auth.cached_token.write().await = Some(CachedToken {
+            token: AuthToken {
+                token_type: "Bearer".into(),
+                token_value: "original-token".into(),
+            },
+            expires_at: Instant::now() + Duration::from_secs(3600),
+        });
+
+        tokio::fs::remove_file(&path).await.unwrap();
+        assert!(matches!(
+            auth.refresh_credentials().await,
+            Err(AuthError::Credentials(_))
+        ));
+        assert!(matches!(&*auth.credentials.read().await,
+            AdcCredentials::AuthorizedUser(user) if user.client_id == "original"));
+        assert_eq!(
+            auth.get_token().await.unwrap().token_value,
+            "original-token"
+        );
+        assert!(metadata.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_reloads_replacement_file_and_invalidates_cached_token() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = default_credentials_path(directory.path());
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        let tokens = MockServer::start().await;
+        for account in ["original", "replacement"] {
+            Mock::given(method("POST"))
+                .and(wiremock::matchers::body_string_contains(format!(
+                    "client_id={account}"
+                )))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": account, "expires_in": 3600,
+                })))
+                .expect(1)
+                .mount(&tokens)
+                .await;
+        }
+        tokio::fs::write(&path, user_credentials("original", &tokens.uri()))
+            .await
+            .unwrap();
+        let metadata = MockServer::start().await;
+        let auth = GcpAuth::new_impl(
+            &RealFilesystemOps,
+            &file_environment(directory.path(), false),
+            &metadata.uri(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(auth.get_token().await.unwrap().token_value, "original");
+
+        tokio::fs::write(&path, "invalid json").await.unwrap();
+        assert!(auth.refresh_credentials().await.is_err());
+        assert_eq!(auth.get_token().await.unwrap().token_value, "original");
+        tokio::fs::write(&path, user_credentials("replacement", &tokens.uri()))
+            .await
+            .unwrap();
+        auth.refresh_credentials().await.unwrap();
+        assert_eq!(auth.get_token().await.unwrap().token_value, "replacement");
+        assert!(metadata.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_metadata_source_ignores_new_file_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let metadata = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(header("Metadata-Flavor", "Google"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "metadata-token", "expires_in": 3600,
+            })))
+            .expect(5)
+            .mount(&metadata)
+            .await;
+        let auth = GcpAuth::new_impl(
+            &RealFilesystemOps,
+            &file_environment(directory.path(), false),
+            &metadata.uri(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            auth.get_token().await.unwrap().token_value,
+            "metadata-token"
+        );
+        let path = default_credentials_path(directory.path());
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(path, user_credentials("new-file", "http://unused.invalid"))
+            .await
+            .unwrap();
+        auth.refresh_credentials().await.unwrap();
+        assert!(auth.cached_token.read().await.is_none());
+        assert_eq!(
+            auth.get_token().await.unwrap().token_value,
+            "metadata-token"
+        );
+        auth.cached_token.write().await.as_mut().unwrap().expires_at =
+            Instant::now() - Duration::from_secs(1);
+        assert_eq!(
+            auth.get_token().await.unwrap().token_value,
+            "metadata-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn selected_relative_file_path_is_anchored_at_creation() {
+        let mut fs = MockFilesystemOpsMock::new();
+        let mut env = MockEnvOpsMock::new();
+        env.expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(|_| Ok("relative-credentials.json".into()));
+        let expected = std::env::current_dir()
+            .unwrap()
+            .join("relative-credentials.json");
+        fs.expect_read_to_string()
+            .with(eq(expected.clone()))
+            .times(1)
+            .return_once(|_| Ok(user_credentials("original", "http://unused.invalid")));
+        let auth = GcpAuth::new_impl(&fs, &env, "http://unused.invalid")
+            .await
+            .unwrap();
+        assert!(matches!(auth.source, AdcSource::File(path) if path == expected));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn selected_adc_file_preserves_non_utf8_path_at_read() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let expected = Path::new("/fixture")
+            .join(OsStr::from_bytes(b"workspace-\xff"))
+            .join("selection.json");
+        let source = AdcSource::File(expected.clone());
+        let mut fs = MockFilesystemOpsMock::new();
+        fs.expect_read_to_string()
+            .with(eq(expected))
+            .times(1)
+            .return_once(|_| Err(io::ErrorKind::NotFound.into()));
+
+        assert!(matches!(
+            source.load(&fs).await,
+            Err(AuthError::Credentials(_))
+        ));
+    }
 }
