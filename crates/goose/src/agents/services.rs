@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -285,6 +286,8 @@ pub struct StateMachineServicesConfig {
     pub providers: Arc<ProviderManager>,
     /// Sessions kept loaded before the least recently used idle one is released.
     pub max_sessions: usize,
+    /// How long a session stays loaded after its last connection went away.
+    pub session_detach_grace: Duration,
     /// `None` reads them from config at the start of every turn.
     pub turn_settings: Option<TurnSettings>,
     /// `None` loads the enabled plugins' hooks.
@@ -324,6 +327,10 @@ impl StateMachineServicesConfig {
             max_sessions: Config::global()
                 .get_goose_max_active_agents()
                 .unwrap_or(DEFAULT_MAX_SESSIONS),
+            session_detach_grace: Config::global()
+                .get_goose_session_detach_grace_seconds()
+                .map(Duration::from_secs)
+                .unwrap_or(DEFAULT_SESSION_DETACH_GRACE),
             turn_settings: None,
             hooks: None,
         }
@@ -331,6 +338,10 @@ impl StateMachineServicesConfig {
 }
 
 const DEFAULT_MAX_SESSIONS: usize = 100;
+
+/// How long a session whose last connection went away stays loaded with its extensions
+/// before they are stopped, so a client that reconnects right away does not restart them.
+const DEFAULT_SESSION_DETACH_GRACE: Duration = Duration::from_secs(300);
 
 pub struct StateMachineServices {
     pub session_manager: Arc<SessionManager>,
@@ -340,6 +351,7 @@ pub struct StateMachineServices {
     pub goose_platform: GoosePlatform,
     pub disable_session_naming: bool,
     pub runtime: SessionRuntime,
+    session_detach_grace_secs: AtomicU64,
 
     pub extension_manager: Arc<ExtensionManager>,
     pub platform_extensions: PlatformExtensions,
@@ -563,6 +575,7 @@ impl StateMachineServices {
             goose_platform: config.goose_platform,
             disable_session_naming: config.disable_session_naming,
             runtime: SessionRuntime::new(config.max_sessions),
+            session_detach_grace_secs: AtomicU64::new(config.session_detach_grace.as_secs()),
             hook_manager: config.hooks.unwrap_or_else(|| {
                 crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref())
             }),
@@ -629,15 +642,36 @@ impl StateMachineServices {
         }
     }
 
-    /// For a connection that went away without closing: its sessions keep running.
-    pub async fn detach_connection(&self, connection: u64) {
+    /// For a connection that went away without closing: a session it was the last to
+    /// hold stays loaded for the detach grace so a quick reconnect keeps its extensions,
+    /// then releases unless it is running or was reattached meanwhile.
+    pub async fn detach_connection(self: &Arc<Self>, connection: u64) {
         for session_id in self.runtime.sessions_for_connection(connection) {
             let _lifetime = self.runtime.lock_lifetime(&session_id).await;
             if let Some(latest) = self.runtime.detach(&session_id, connection) {
                 self.extension_manager
                     .attach_client(&session_id, latest.client);
+            } else if !self.runtime.is_busy(&session_id) {
+                let grace =
+                    Duration::from_secs(self.session_detach_grace_secs.load(Ordering::Relaxed));
+                if grace.is_zero() {
+                    self.release(&session_id).await;
+                } else {
+                    self.schedule_detached_release(session_id, grace);
+                }
             }
         }
+    }
+
+    fn schedule_detached_release(self: &Arc<Self>, session_id: String, grace: Duration) {
+        let services = Arc::clone(self);
+        tokio::spawn(async move {
+            tokio::time::sleep(grace).await;
+            let _lifetime = services.runtime.lock_lifetime(&session_id).await;
+            if !services.runtime.is_open(&session_id) && !services.runtime.is_busy(&session_id) {
+                services.release(&session_id).await;
+            }
+        });
     }
 
     pub(crate) async fn start_prompt_run(
@@ -1573,6 +1607,7 @@ mod tests {
     mod session_lru {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::time::Duration;
         use tempfile::TempDir;
 
         use goose_test_support::mcp::McpFixtureServer;
@@ -1615,6 +1650,13 @@ mod tests {
 
         fn serve_eviction_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
             EVICTION_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        static DETACH_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_detached_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            DETACH_STARTS.fetch_add(1, Ordering::SeqCst);
             serve_fixture(read, write);
         }
 
@@ -1735,6 +1777,116 @@ mod tests {
 
             assert!(!services.runtime.is_attached("s", 1));
             assert!(!services.runtime.is_attached("s", 2));
+        }
+
+        #[tokio::test]
+        async fn a_connection_that_goes_away_releases_its_idle_session() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(0, Ordering::Relaxed);
+            services.attach_session("s", 1, attachment("first")).await;
+
+            services.detach_connection(1).await;
+
+            assert!(!services.runtime.is_open("s"));
+            assert_ne!(services.extension_manager.client("s").name, "first");
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_detached_session_released_after_the_grace_keeps_a_quick_reattach() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(60, Ordering::Relaxed);
+            services.attach_session("s", 1, attachment("first")).await;
+
+            services.detach_connection(1).await;
+            assert!(!services.runtime.is_open("s"));
+
+            services.attach_session("s", 2, attachment("second")).await;
+            tokio::time::sleep(Duration::from_secs(61)).await;
+
+            assert!(services.runtime.is_attached("s", 2));
+            assert_eq!(services.extension_manager.client("s").name, "second");
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_detached_session_releases_once_the_grace_passes() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(60, Ordering::Relaxed);
+            services.attach_session("s", 1, attachment("first")).await;
+
+            services.detach_connection(1).await;
+
+            tokio::time::sleep(Duration::from_secs(61)).await;
+
+            assert!(!services.runtime.is_open("s"));
+            assert_ne!(services.extension_manager.client("s").name, "first");
+        }
+
+        #[tokio::test]
+        async fn a_detached_session_with_an_active_run_releases_when_the_run_clears() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(0, Ordering::Relaxed);
+            services.attach_session("s", 1, attachment("first")).await;
+            let turn = services.hold_turn_for_test("s");
+
+            services.detach_connection(1).await;
+            assert_eq!(services.extension_manager.client("s").name, "first");
+
+            drop(turn);
+            services.release_session_if_closed("s").await;
+
+            assert!(!services.runtime.is_open("s"));
+            assert_ne!(services.extension_manager.client("s").name, "first");
+        }
+
+        #[tokio::test]
+        async fn an_abandoned_sessions_extension_process_stops_once_released() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services
+                .session_detach_grace_secs
+                .store(0, Ordering::Relaxed);
+            let session_id = session_with_fixture(
+                &services,
+                &temp_dir,
+                "detached_fixture",
+                serve_detached_fixture,
+            )
+            .await;
+            services
+                .attach_session(&session_id, 1, attachment("client"))
+                .await;
+            use_session(&services, &session_id).await;
+            let starts_before = DETACH_STARTS.load(Ordering::SeqCst);
+
+            services.detach_connection(1).await;
+            assert!(services
+                .extension_manager
+                .runtime()
+                .slots(&session_id)
+                .await
+                .is_empty());
+
+            services
+                .attach_session(&session_id, 2, attachment("client"))
+                .await;
+            use_session(&services, &session_id).await;
+            assert_eq!(
+                DETACH_STARTS.load(Ordering::SeqCst) - starts_before,
+                1,
+                "the abandoned session's extension process stopped and started again"
+            );
         }
 
         #[tokio::test]

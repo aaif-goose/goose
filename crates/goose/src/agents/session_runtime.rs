@@ -189,7 +189,7 @@ impl SessionRuntime {
 
     /// A Live conversation runs without a turn, and a prompt registers its run before
     /// its turn starts.
-    fn is_busy(&self, session_id: &str) -> bool {
+    pub(super) fn is_busy(&self, session_id: &str) -> bool {
         self.confirmations.has_active_turn(session_id) || self.runs.is_active(session_id)
     }
 

@@ -1367,6 +1367,7 @@ impl Config {
 config_value!(GOOSE_PROMPT_EDITOR, Option<String>);
 config_value!(GOOSE_PROMPT_EDITOR_ALWAYS, Option<bool>);
 config_value!(GOOSE_MAX_ACTIVE_AGENTS, usize);
+config_value!(GOOSE_SESSION_DETACH_GRACE_SECONDS, u64);
 config_value!(GOOSE_DISABLE_SESSION_NAMING, bool);
 
 impl Config {
