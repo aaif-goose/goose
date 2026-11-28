@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, type RenderOptions, screen } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  type RenderOptions,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import ModelsBottomBar from './ModelsBottomBar';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 
@@ -14,11 +21,13 @@ let mockCurrentProvider: string | null = 'config-provider';
 const mockGetProviders = vi.fn();
 const mockOnModelChanged = vi.fn();
 const mockPreventCloseAutoFocus = vi.fn();
+const mockChangeModel = vi.fn();
 
 vi.mock('../../../ModelAndProviderContext', () => ({
   useModelAndProvider: () => ({
     currentModel: mockCurrentModel,
     currentProvider: mockCurrentProvider,
+    changeModel: mockChangeModel,
   }),
 }));
 
@@ -35,6 +44,10 @@ vi.mock('../modelInterface', () => ({
 
 vi.mock('../predefinedModelsUtils', () => ({
   getModelDisplayName: (model: string) => `Display ${model}`,
+}));
+
+vi.mock('../../../../acp/providers', () => ({
+  acpReadThinkingEffort: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../ui/dropdown-menu', () => ({
@@ -70,10 +83,12 @@ vi.mock('../../../ui/dropdown-menu', () => ({
   DropdownMenuItem: ({
     children,
     onSelect,
+    onClick,
   }: {
     children: React.ReactNode;
     onSelect?: () => void;
-  }) => <button onClick={onSelect}>{children}</button>,
+    onClick?: () => void;
+  }) => <button onClick={onClick ?? onSelect}>{children}</button>,
   DropdownMenuSeparator: () => null,
 }));
 
@@ -95,6 +110,8 @@ describe('ModelsBottomBar', () => {
     mockCurrentModel = 'config-model';
     mockCurrentProvider = 'config-provider';
     mockGetProviders.mockResolvedValue([]);
+    mockChangeModel.mockResolvedValue(true);
+    vi.mocked(window.electron.getSetting).mockResolvedValue(undefined);
   });
 
   it('shows a loading placeholder while the active session model is still loading', async () => {
@@ -254,5 +271,78 @@ describe('ModelsBottomBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
     expect(screen.getByTestId('switch-model-modal')).toBeInTheDocument();
     expect(mockPreventCloseAutoFocus).toHaveBeenCalledOnce();
+  });
+
+  it('isolates the current model alias from its provider', async () => {
+    const model = 'نموذج تجريبي';
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel={model}
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        disabled={false}
+      />
+    );
+
+    const provider = await screen.findByText('Config Provider', { exact: true });
+    const label = screen.getByTitle(`Display ${model}`);
+    expect(label.tagName).toBe('BDI');
+    expect(label).toHaveAttribute('dir', 'auto');
+    expect(label).toHaveTextContent(`Display ${model}`);
+    expect(provider.tagName).toBe('BDI');
+    expect(provider).toHaveAttribute('dir', 'auto');
+    expect(provider.parentElement).toHaveClass('flex-shrink-0');
+    expect(label).not.toContainElement(provider);
+  });
+
+  it.each([
+    ['ordinary', 'remote-model'],
+    ['RTL', 'نموذج محلي'],
+    ['bidi controls', 'demo-\u2067نموذج\u2069'],
+    ['long', 'Example model ' + 'padding-'.repeat(80)],
+  ])('keeps the provider separate and routes the raw %s recent model', async (_, model) => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue([
+      { model, provider: 'recent-provider' },
+    ]);
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="safe-model"
+        sessionProvider="safe-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        disabled={false}
+      />
+    );
+
+    const provider = await screen.findByText('recent-provider', { exact: true });
+    const label = screen.getByTitle(`Display ${model}`);
+    expect(label.tagName).toBe('BDI');
+    expect(label).toHaveAttribute('dir', 'auto');
+    expect(label).toHaveClass('min-w-0', 'truncate');
+    expect(label).toHaveTextContent(`Display ${model}`);
+    expect(provider.tagName).toBe('BDI');
+    expect(provider).toHaveAttribute('dir', 'auto');
+    expect(provider.parentElement).toHaveClass('flex-shrink-0');
+    expect(provider.parentElement).not.toHaveClass('truncate');
+    expect(label).not.toContainElement(provider);
+
+    const item = provider.closest('button')!;
+    expect(within(item).getByTitle(`Display ${model}`)).toBe(label);
+    expect(item).toHaveAccessibleName(`Display ${model}— recent-provider`);
+    fireEvent.click(item);
+    await waitFor(() =>
+      expect(mockChangeModel).toHaveBeenCalledWith('session-123', {
+        name: model,
+        provider: 'recent-provider',
+      })
+    );
+    expect(mockOnModelChanged).toHaveBeenCalledWith({ model, provider: 'recent-provider' });
   });
 });
