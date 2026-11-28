@@ -1,0 +1,547 @@
+#!/usr/bin/env node
+
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
+
+import { getProjectIssues, readCoreTeam } from "./github_manager.mjs";
+
+const issueDetailQuery = `
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      issue(number: $number) {
+        labels(first: 20) { nodes { name } }
+        assignees(first: 100) {
+          pageInfo { hasNextPage }
+          nodes { login }
+        }
+        comments(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            author { login __typename }
+            createdAt
+          }
+        }
+        projectItems(first: 10) {
+          nodes {
+            id
+            project {
+              number
+              owner {
+                ... on Organization { login }
+                ... on User { login }
+              }
+            }
+          }
+        }
+        timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT, CROSS_REFERENCED_EVENT]) {
+          pageInfo { hasPreviousPage }
+          nodes {
+            __typename
+            ... on ProjectV2ItemStatusChangedEvent {
+              actor { login }
+              createdAt
+              project {
+                number
+                owner {
+                  ... on Organization { login }
+                  ... on User { login }
+                }
+              }
+              status
+              wasAutomated
+            }
+            ... on CrossReferencedEvent {
+              source {
+                __typename
+                ... on PullRequest { number state }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const moveToVerificationMutation = `
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: ID!) {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+      value: { singleSelectOptionId: $optionId }
+    }) {
+      projectV2Item { id }
+    }
+  }
+`;
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const options = parseArguments(process.argv.slice(2));
+if (options.help) {
+  printHelp();
+  process.exit(0);
+}
+const repository = parseRepository(options.repository);
+const gh = process.env.GH_BIN || "gh";
+const coreTeamPath =
+  process.env.BUZZ_CORE_TEAM_FILE || join(scriptDirectory, "core-team.json");
+const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+const buzzHome =
+  process.env.GOOSE_BUZZ_HOME || join(configHome, "goose", "buzz");
+const stateFilePath = join(buzzHome, "phase-transitions.json");
+
+const { byGithub: coreTeamByGithub, people: coreTeamPeople } = readCoreTeam(coreTeamPath);
+const normalizedLoads = getRecentAssignmentLoad();
+const state = readState();
+const results = [];
+let projectStatusFieldCache = null;
+
+const { project } = getProjectIssues(runJson, {
+  command: gh,
+  projectNumber: options.projectNumber,
+  projectOwner: options.projectOwner,
+  projectLimit: options.projectLimit,
+  repository: options.repository,
+});
+
+const targetIssues = project.items.filter(
+  (item) =>
+    item.content?.type === "Issue" &&
+    item.content.repository?.toLowerCase() === options.repository.toLowerCase() &&
+    (item.status === "Accepted / design" || item.status === "Ready"),
+);
+
+for (const item of targetIssues) {
+  try {
+    if (item.status === "Accepted / design") {
+      processAcceptedDesign(item.content.number);
+    } else {
+      processReady(item.content.number);
+    }
+  } catch (error) {
+    results.push({ issue: item.content.number, action: "failed", reason: error.message });
+  }
+}
+
+saveState(state);
+
+console.log(
+  JSON.stringify({ repository: options.repository, dry_run: options.dryRun, results }, null, 2),
+);
+if (results.some((r) => r.action === "failed")) process.exitCode = 1;
+
+function processAcceptedDesign(issueNumber) {
+  const detail = getIssueDetail(issueNumber);
+  const transitions = relevantTransitions(detail.timelineItems.nodes);
+  const assignees = detail.assignees.nodes.map((n) => n.login);
+
+  const transition = latestTransitionTo(transitions, "Accepted / design");
+  if (!transition) return;
+
+  const issueKey = String(issueNumber);
+  const issueState = state[issueKey] || {};
+  const alreadyUnassigned =
+    issueState.accepted_design?.transition_at === transition.createdAt &&
+    issueState.accepted_design?.unassigned;
+
+  if (!alreadyUnassigned) {
+    const previousShepherd =
+      assignees.find((login) => coreTeamByGithub.has(login.toLowerCase())) || null;
+    if (!options.dryRun) {
+      for (const login of assignees) {
+        runJson(gh, [
+          "api",
+          "--method",
+          "DELETE",
+          `repos/${options.repository}/issues/${issueNumber}/assignees`,
+          "-f",
+          `assignees[]=${login}`,
+        ]);
+      }
+    }
+
+    state[issueKey] = {
+      ...issueState,
+      accepted_design: {
+        transition_at: transition.createdAt,
+        unassigned: true,
+        previous_shepherd: previousShepherd,
+        design_triggered: false,
+      },
+    };
+
+    results.push({
+      issue: issueNumber,
+      action: options.dryRun ? "would-unassign" : "unassigned",
+      phase: "Accepted / design",
+      previous_shepherd: previousShepherd,
+    });
+  }
+
+  const currentAssignees = alreadyUnassigned ? assignees : [];
+  maybeAssignDesignShepherd(
+    issueNumber,
+    detail.labels.nodes.map((n) => n.name),
+    currentAssignees,
+    detail.comments.nodes,
+  );
+}
+
+function maybeAssignDesignShepherd(issueNumber, labels, currentAssignees, comments) {
+  const issueKey = String(issueNumber);
+  const designState = state[issueKey]?.accepted_design;
+  if (!designState || designState.design_triggered) return;
+  if (currentAssignees.length > 0) return;
+
+  const firstComment = comments
+    .filter(Boolean)
+    .filter(
+      (c) =>
+        c.author?.__typename !== "Bot" &&
+        c.author?.login &&
+        c.createdAt > designState.transition_at,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  if (!firstComment) return;
+
+  const selected = selectShepherd(labels, designState.previous_shepherd);
+  if (!selected) return;
+
+  if (!options.dryRun) {
+    runJson(gh, [
+      "api",
+      "--method",
+      "POST",
+      `repos/${options.repository}/issues/${issueNumber}/assignees`,
+      "-f",
+      `assignees[]=${selected.github}`,
+    ]);
+    state[issueKey].accepted_design.design_triggered = true;
+  }
+
+  results.push({
+    issue: issueNumber,
+    action: options.dryRun ? "would-assign-design-shepherd" : "assigned-design-shepherd",
+    assignee: selected.github,
+    triggered_by: firstComment.author?.login,
+    previous_shepherd: designState.previous_shepherd,
+  });
+}
+
+function selectShepherd(labels, previousShepherd) {
+  const loads = new Map(
+    normalizedLoads.map((entry) => [entry.github.toLowerCase(), entry.normalizedLoad]),
+  );
+  const scored = coreTeamPeople.map((person) => {
+    const interestScore = person.interest.filter((interest) =>
+      labels.some((label) => label.toLowerCase().includes(interest.toLowerCase())),
+    ).length;
+    const continuityBonus =
+      previousShepherd?.toLowerCase() === person.github.toLowerCase() ? 0.5 : 0;
+    return {
+      person,
+      score: interestScore + continuityBonus,
+      load: loads.get(person.github.toLowerCase()) || 0,
+    };
+  });
+  scored.sort((a, b) => b.score - a.score || a.load - b.load);
+  return scored[0]?.person || null;
+}
+
+function getRecentAssignmentLoad() {
+  const result = runJson(gh, [
+    "api",
+    "graphql",
+    "-f",
+    `query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(first:100,states:[OPEN,CLOSED],orderBy:{field:CREATED_AT,direction:DESC}){nodes{assignees(first:100){nodes{login}}}}}}`,
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+  ]);
+  const issues = result.data?.repository?.issues?.nodes;
+  if (!Array.isArray(issues)) throw new Error("Could not read recent issues for load calculation.");
+  const counts = new Map(coreTeamPeople.map((p) => [p.github.toLowerCase(), 0]));
+  for (const issue of issues) {
+    for (const assignee of issue.assignees?.nodes || []) {
+      const handle = assignee.login?.toLowerCase();
+      if (counts.has(handle)) counts.set(handle, counts.get(handle) + 1);
+    }
+  }
+  return coreTeamPeople.map((person) => ({
+    github: person.github,
+    normalizedLoad: (counts.get(person.github.toLowerCase()) || 0) / person.capacity,
+  }));
+}
+
+function processReady(issueNumber) {
+  const detail = getIssueDetail(issueNumber);
+  const transitions = relevantTransitions(detail.timelineItems.nodes);
+  const assignees = detail.assignees.nodes.map((n) => n.login);
+
+  const transition = latestTransitionTo(transitions, "Ready");
+  if (!transition) return;
+
+  const issueKey = String(issueNumber);
+  const issueState = state[issueKey] || {};
+  const alreadyUnassigned =
+    issueState.ready?.transition_at === transition.createdAt && issueState.ready?.unassigned;
+
+  if (!alreadyUnassigned) {
+    if (!options.dryRun) {
+      for (const login of assignees) {
+        runJson(gh, [
+          "api",
+          "--method",
+          "DELETE",
+          `repos/${options.repository}/issues/${issueNumber}/assignees`,
+          "-f",
+          `assignees[]=${login}`,
+        ]);
+      }
+    }
+
+    state[issueKey] = {
+      ...issueState,
+      ready: {
+        transition_at: transition.createdAt,
+        unassigned: true,
+      },
+    };
+
+    results.push({
+      issue: issueNumber,
+      action: options.dryRun ? "would-unassign" : "unassigned",
+      phase: "Ready",
+    });
+  }
+
+  const openPrs = linkedOpenPrs(detail.timelineItems.nodes);
+  if (openPrs.length > 0) {
+    maybeMovToVerification(issueNumber, detail.projectItems.nodes, openPrs[0].number);
+  }
+}
+
+function maybeMovToVerification(issueNumber, projectItemNodes, prNumber) {
+  const itemId = projectItemNodes
+    .filter(Boolean)
+    .find(
+      (item) =>
+        item.project?.number === options.projectNumber &&
+        item.project?.owner?.login?.toLowerCase() === options.projectOwner.toLowerCase(),
+    )?.id;
+  if (!itemId) return;
+
+  const { projectId, fieldId, verificationOptionId } = getProjectStatusField();
+
+  if (!options.dryRun) {
+    runJson(gh, [
+      "api",
+      "graphql",
+      "-f",
+      `query=${moveToVerificationMutation}`,
+      "-F",
+      `projectId=${projectId}`,
+      "-F",
+      `itemId=${itemId}`,
+      "-F",
+      `fieldId=${fieldId}`,
+      "-F",
+      `optionId=${verificationOptionId}`,
+    ]);
+  }
+
+  results.push({
+    issue: issueNumber,
+    action: options.dryRun ? "would-move-to-verification" : "moved-to-verification",
+    linked_pr: prNumber,
+  });
+}
+
+function linkedOpenPrs(nodes) {
+  return (nodes || [])
+    .filter(Boolean)
+    .filter((n) => n.__typename === "CrossReferencedEvent")
+    .map((n) => n.source)
+    .filter((s) => s?.__typename === "PullRequest" && s.state === "OPEN");
+}
+
+function relevantTransitions(nodes) {
+  return (nodes || []).filter(Boolean).filter(
+    (event) =>
+      event.project?.number === options.projectNumber &&
+      event.project?.owner?.login?.toLowerCase() === options.projectOwner.toLowerCase(),
+  );
+}
+
+function latestTransitionTo(transitions, phase) {
+  return (
+    transitions
+      .filter((t) => t.status === phase && !t.wasAutomated && t.actor?.login)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
+  );
+}
+
+function getProjectStatusField() {
+  if (projectStatusFieldCache) return projectStatusFieldCache;
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-f",
+    `query=query($login:String!,$number:Int!){organization(login:$login){projectV2(number:$number){id,field(name:"Status"){...on ProjectV2SingleSelectField{id,options{id,name}}}}}}`,
+    "-F",
+    `login=${options.projectOwner}`,
+    "-F",
+    `number=${options.projectNumber}`,
+  ]);
+  const projectV2 = response.data?.organization?.projectV2;
+  if (!projectV2?.id) throw new Error("Could not fetch project info.");
+  const field = projectV2.field;
+  if (!field?.id) throw new Error("Could not find Status field in project.");
+  const verificationOption = field.options?.find((o) => o.name === "Verification");
+  if (!verificationOption) throw new Error("Could not find Verification option in Status field.");
+  projectStatusFieldCache = {
+    projectId: projectV2.id,
+    fieldId: field.id,
+    verificationOptionId: verificationOption.id,
+  };
+  return projectStatusFieldCache;
+}
+
+function getIssueDetail(issueNumber) {
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+    "-F",
+    `number=${issueNumber}`,
+    "-f",
+    `query=${issueDetailQuery}`,
+  ]);
+  const issue = response.data?.repository?.issue;
+  if (!issue) throw new Error(`GitHub returned no data for issue #${issueNumber}.`);
+  if (
+    issue.assignees.pageInfo?.hasNextPage ||
+    issue.comments.pageInfo?.hasNextPage ||
+    issue.timelineItems.pageInfo?.hasPreviousPage
+  ) {
+    throw new Error(`Issue #${issueNumber} has more data than the query can fetch.`);
+  }
+  return issue;
+}
+
+function readState() {
+  try {
+    return JSON.parse(readFileSync(stateFilePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveState(stateData) {
+  if (options.dryRun) return;
+  const tmpPath = `${stateFilePath}.tmp`;
+  mkdirSync(buzzHome, { recursive: true });
+  writeFileSync(tmpPath, JSON.stringify(stateData, null, 2));
+  renameSync(tmpPath, stateFilePath);
+}
+
+function parseRepository(value) {
+  const parts = value.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Invalid repository: ${value}`);
+  }
+  return { owner: parts[0], name: parts[1] };
+}
+
+function parseArguments(arguments_) {
+  const parsed = {
+    repository: "aaif-goose/goose",
+    projectOwner: "aaif-goose",
+    projectNumber: 1,
+    projectLimit: 1000,
+    dryRun: false,
+    help: false,
+  };
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--repo") {
+      parsed.repository = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-owner") {
+      parsed.projectOwner = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-number") {
+      parsed.projectNumber = positiveInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--project-limit") {
+      parsed.projectLimit = positiveInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--dry-run") {
+      parsed.dryRun = true;
+    } else if (argument === "--help" || argument === "-h") {
+      parsed.help = true;
+    } else {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+  return parsed;
+}
+
+function requiredValue(arguments_, index, option) {
+  const value = arguments_[index];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${option} requires a value.`);
+  }
+  return value;
+}
+
+function positiveInteger(value, option) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${option} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function runJson(command, arguments_) {
+  const result = spawnSync(command, arguments_, {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.error) {
+    throw new Error(`Could not run ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || `${command} exited with status ${result.status}.`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${command} returned invalid JSON.`);
+  }
+}
+
+function printHelp() {
+  console.log(`Usage: phase_transitions [options]
+
+Handle phase-based shepherd assignment changes for GitHub issues.
+Reads and writes state at $GOOSE_BUZZ_HOME/phase-transitions.json.
+
+Options:
+  --repo OWNER/REPO          GitHub repository (default: aaif-goose/goose)
+  --project-owner OWNER      GitHub project owner (default: aaif-goose)
+  --project-number NUMBER    GitHub project number (default: 1)
+  --project-limit NUMBER     Maximum project items (default: 1000)
+  --dry-run                  Report actions without changing GitHub or state
+  -h, --help                 Show this help`);
+}
