@@ -4532,6 +4532,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "ツールの詳細"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "ツール識別子"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "ツールの結果"
   },

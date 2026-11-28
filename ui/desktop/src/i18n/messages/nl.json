@@ -4727,6 +4727,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Details van de tool"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Tool-ID"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Resultaat van de tool"
   },
