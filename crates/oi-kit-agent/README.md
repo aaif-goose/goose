@@ -108,7 +108,7 @@ before the boundary if it should recover from context-length errors.
 
 `compaction::CompactionOperation` keeps the conversation inside the context
 window. Give it a `CompactionModel` (a one-shot completion), a `TokenEstimator`
-(sizes the context when the provider reports no usage), the context limit, and
+(sizes the messages the provider has not counted yet), the context limit, and
 the threshold fraction at which to compact. `with_compact_command` makes it
 publish a `compact` command (alias `summarize`) through `commands`, which
 `SlashCommandOperation` dispatches. Your effect type implements `CompactionEffect`; override
@@ -130,8 +130,23 @@ per turn). `CompactionMode::Standalone` uses the separate request always.
 
 Place it first among the operations: it must see the in-band reply before tool
 execution or turn-end logic does, and the error boundary must come after it.
-`MachineSession::reported_context_tokens` lets the host supply the provider's
-reported context size; without it the estimator counts the conversation.
+Inference stores the usage the provider reported on the reply, so the context
+size is that count plus an estimate of the messages after it. When no reply
+carries usage, the estimator counts the whole conversation.
+
+## Usage and cost
+
+`InferenceRunner` records what each request used. The reply carries the
+provider's token usage and its cost in `metadata.usage`, and the same
+`ProviderUsage` reaches your effect type through `InferenceEffect::record_usage`
+for session totals. A cost the provider reported is kept. Otherwise it is
+estimated from the model catalog's public prices (`CatalogPrices`).
+
+`with_prices` replaces the price source with any `Prices` implementation.
+`oi_kit_providers::pricing::ProviderPrices` adds the prices declared in the
+bundled provider definitions, and `ProviderPrices::default().with_declared(...)`
+puts your own prices (negotiated rates, self-hosted models) ahead of both.
+`ProviderModel` takes the same `with_prices` for compaction's summary request.
 
 ## Turn limits
 

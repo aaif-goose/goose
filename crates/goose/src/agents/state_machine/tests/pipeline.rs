@@ -18,7 +18,9 @@ use crate::agents::tool_snapshot::ToolSnapshot;
 use crate::agents::{AgentEvent, StateMachineServices, StateMachineServicesConfig, TurnSettings};
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent, MessageErrorKind};
+use crate::conversation::message::{
+    ActionRequiredData, Message, MessageContent, MessageErrorKind, MessageUsage,
+};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::permission::Permission;
@@ -376,6 +378,27 @@ impl TestPipeline {
             .apply()
             .await
             .unwrap();
+        let session = self.session().await.unwrap();
+        let reply = session
+            .conversation
+            .iter()
+            .flat_map(Conversation::messages)
+            .rev()
+            .find(|message| {
+                message.is_agent_visible() && message.role == rmcp::model::Role::Assistant
+            });
+        if let Some(message_id) = reply.and_then(|message| message.id.as_deref()) {
+            self.session_manager
+                .update_message_metadata(&self.session_id, message_id, |mut metadata| {
+                    metadata.usage = Some(Box::new(MessageUsage {
+                        total_tokens: Some(tokens),
+                        ..Default::default()
+                    }));
+                    metadata
+                })
+                .await
+                .unwrap();
+        }
     }
 
     pub(super) async fn set_recipe(&self, recipe: crate::recipe::Recipe) -> Result<()> {

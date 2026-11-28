@@ -1,89 +1,43 @@
 //! Cost estimation for model usage.
 //!
-//! Price resolution precedence (highest first):
-//! 1. provider-reported costs (handled by callers before this module)
-//! 2. prices the user declared in a custom provider config file — users of
-//!    custom endpoints (negotiated rates, gateways, self-hosting) know their
-//!    real prices better than a name-matched catalog entry
-//! 3. the bundled canonical registry
-//! 4. prices declared in bundled declarative provider definitions, which only
-//!    fill registry gaps — they are vendored and may lag registry syncs. A
-//!    registry price that is unset or zero (e.g. a name-inferred cross-provider
-//!    match against a free listing) counts as a gap here.
-//!
-//! Note: a non-zero price the registry finds by cross-provider name inference
-//! still outranks bundled provider-declared prices (a host may declare a
-//! higher negotiated rate than the inferred catalog row). Demoting inferred
-//! matches belongs in the canonical mapping layer, not here.
-//!
-//! Canonical cache rates are kept whenever the winning source does not declare
-//! cache pricing, so cached tokens are not overestimated at the full input
-//! rate. Config files are read live (price edits take effect immediately);
-//! bundled definitions are immutable and cached for the process.
+//! Prices come from `oi_kit_providers::pricing`. Goose adds the prices users
+//! declare in their custom provider config files, which outrank the catalog.
+//! Those files are read live, so price edits take effect immediately.
 
 use crate::config::declarative_providers::{
-    custom_provider_file_path, deserialize_provider_config, fixed_provider_configs,
-    DeclarativeProviderConfig,
+    custom_provider_file_path, deserialize_provider_config,
 };
 use crate::providers::base::ModelInfo;
-use oi_kit_providers::canonical::{maybe_get_canonical_model, Pricing};
-use oi_kit_providers::conversation::token_usage::{CostSource, ProviderUsage, Usage};
-use std::sync::OnceLock;
+use oi_kit_providers::canonical::Pricing;
+use oi_kit_providers::conversation::token_usage::Usage;
+use oi_kit_providers::pricing::{bundled_model_info, Prices, ProviderPrices};
+use std::sync::{Arc, LazyLock};
 use tracing::warn;
 
 const DEFAULT_CURRENCY: &str = "$";
+
+struct CustomProviderPrices;
+
+impl Prices for CustomProviderPrices {
+    fn pricing(&self, provider: &str, model: &str) -> Option<Pricing> {
+        custom_file_model_info(provider, model)?.pricing()
+    }
+}
+
+pub(crate) fn prices() -> Arc<dyn Prices> {
+    static PRICES: LazyLock<Arc<dyn Prices>> = LazyLock::new(|| {
+        Arc::new(ProviderPrices::default().with_declared(Arc::new(CustomProviderPrices)))
+    });
+    PRICES.clone()
+}
 
 /// Estimate the USD cost of a model invocation.
 pub fn estimate_model_cost(provider: &str, model: &str, usage: &Usage) -> Option<f64> {
     resolve_pricing(provider, model).and_then(|pricing| pricing.estimate_cost(usage))
 }
 
-/// Resolve the cost of a provider-reported usage chunk: the provider's own
-/// figure when present, otherwise a public-price estimate for the model, or
-/// nothing when the model cannot be priced. Both agent loops call this so
-/// estimated and provider-reported costs behave identically on either path.
-pub(crate) fn resolve_usage_cost(
-    provider: Option<&str>,
-    usage: &ProviderUsage,
-) -> (Option<f64>, Option<CostSource>) {
-    if let Some(cost) = usage.cost {
-        return (Some(cost), Some(CostSource::ProviderReported));
-    }
-    match provider.and_then(|provider| estimate_model_cost(provider, &usage.model, &usage.usage)) {
-        Some(cost) => (Some(cost), Some(CostSource::Estimated)),
-        None => (None, None),
-    }
-}
-
-/// Resolve the pricing for a provider/model honoring the precedence described
-/// in this module's documentation.
 pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
-    let canonical = maybe_get_canonical_model(provider, model).map(|c| c.cost);
-    let bundled =
-        bundled_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
-    let base = match (canonical, bundled) {
-        (Some(mut canonical), Some(bundled)) => {
-            if is_price_gap(canonical.input) {
-                canonical.input = bundled.input;
-            }
-            if is_price_gap(canonical.output) {
-                canonical.output = bundled.output;
-            }
-            canonical.cache_read = canonical.cache_read.or(bundled.cache_read);
-            canonical.cache_write = canonical.cache_write.or(bundled.cache_write);
-            Some(canonical)
-        }
-        (Some(canonical), None) => Some(canonical),
-        (None, bundled) => bundled,
-    };
-
-    let declared =
-        custom_file_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
-    match (declared, base) {
-        (Some(declared), Some(base)) => Some(merge_pricing(declared, &base)),
-        (Some(declared), None) => Some(declared),
-        (None, base) => base,
-    }
+    prices().pricing(provider, model)
 }
 
 /// [`ModelInfo`] for a pricing-declared model — custom provider config file
@@ -115,35 +69,6 @@ fn currency_symbol(declared: &str) -> String {
     }
 }
 
-/// Merge user-declared pricing with registry/bundled pricing: declared
-/// input/output and supplied cache prices win; canonical cache rates fill gaps.
-fn merge_pricing(mut declared: Pricing, base: &Pricing) -> Pricing {
-    // A declared zero price means "free here": registry cache rates must not
-    // reintroduce cost for cached tokens.
-    if matches!(declared.input, Some(0.0)) && matches!(declared.output, Some(0.0)) {
-        return declared;
-    }
-    if declared.cache_read.is_none() {
-        declared.cache_read = base.cache_read;
-    }
-    if declared.cache_write.is_none() {
-        declared.cache_write = base.cache_write;
-    }
-    declared
-}
-
-/// Convert a declarative [`ModelInfo`]'s per-token USD costs into canonical
-/// [`Pricing`] (per-million-token USD).
-fn pricing_from_model_info(info: &ModelInfo) -> Option<Pricing> {
-    Some(Pricing {
-        input: Some(info.input_token_cost.map(|c| c * 1_000_000.0)?),
-        output: Some(info.output_token_cost.map(|c| c * 1_000_000.0)?),
-        cache_read: info.cache_read_token_cost.map(|c| c * 1_000_000.0),
-        cache_write: info.cache_write_token_cost.map(|c| c * 1_000_000.0),
-        tiers: Vec::new(),
-    })
-}
-
 /// Read the custom provider config file for `provider` from disk. Reads are
 /// live: price edits take effect without a restart.
 fn custom_file_model_info(provider: &str, model: &str) -> Option<ModelInfo> {
@@ -165,132 +90,15 @@ fn custom_file_model_info(provider: &str, model: &str) -> Option<ModelInfo> {
             return None;
         }
     };
-    full_pricing_model(&config, model)
-}
-
-/// Bundled declarative provider definitions are embedded and immutable, so
-/// they are cached for the lifetime of the process.
-fn bundled_model_info(provider: &str, model: &str) -> Option<ModelInfo> {
-    static CONFIGS: OnceLock<Vec<DeclarativeProviderConfig>> = OnceLock::new();
-    let configs = CONFIGS.get_or_init(|| fixed_provider_configs().unwrap_or_default());
-    configs
-        .iter()
-        .find(|config| config.name == provider)
-        .and_then(|config| full_pricing_model(config, model))
-}
-
-/// A registry price that is unset or zero provides no usable rate signal
-/// (e.g. a name-inferred cross-provider match against a free listing).
-fn is_price_gap(price: Option<f64>) -> bool {
-    matches!(price, None | Some(0.0))
-}
-
-fn full_pricing_model(config: &DeclarativeProviderConfig, model: &str) -> Option<ModelInfo> {
     config
         .models
-        .iter()
-        .find(|m| m.name == model)
-        .filter(|info| info.input_token_cost.is_some() && info.output_token_cost.is_some())
-        .cloned()
+        .into_iter()
+        .find(|info| info.name == model && info.pricing().is_some())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn usage(input: Option<i64>, output: Option<i64>, cache_read: Option<i64>) -> Usage {
-        Usage {
-            input_tokens: input,
-            output_tokens: output,
-            total_tokens: None,
-            cache_read_input_tokens: cache_read,
-            cache_write_input_tokens: None,
-        }
-    }
-
-    /// `expected` reads as the model's base input-plus-output rate per million
-    /// tokens; the prompt stays below every long-context tier.
-    fn assert_cost(provider: &str, model: &str, expected: f64) {
-        let used = usage(Some(10_000), Some(10_000), None);
-        let actual = estimate_model_cost(provider, model, &used)
-            .unwrap_or_else(|| panic!("{provider}/{model} should have public pricing"))
-            * 100.0;
-        assert!((actual - expected).abs() < 1e-9, "got {actual}");
-    }
-
-    #[test]
-    fn provider_reported_cost_takes_precedence_over_public_estimate() {
-        let usage = ProviderUsage::new(
-            "gpt-5.6-sol".to_string(),
-            usage(Some(1_000_000), Some(1_000_000), None),
-        )
-        .with_cost(7.0, CostSource::ProviderReported);
-
-        assert_eq!(
-            resolve_usage_cost(Some("chatgpt_codex"), &usage),
-            (Some(7.0), Some(CostSource::ProviderReported))
-        );
-    }
-
-    #[test]
-    fn chatgpt_codex_uses_openai_public_rates() {
-        assert_cost("chatgpt_codex", "gpt-5.6-sol", 24.0);
-        let codex = resolve_pricing("chatgpt_codex", "gpt-5.6-sol").unwrap();
-        let openai = resolve_pricing("openai", "gpt-5.6-sol").unwrap();
-        assert_eq!(codex.input, openai.input);
-        assert_eq!(codex.output, openai.output);
-        assert_eq!(codex.cache_read, openai.cache_read);
-        assert_eq!(codex.cache_write, openai.cache_write);
-    }
-
-    #[test]
-    fn azure_foundry_estimates_representative_publisher_rates() {
-        assert_cost("azure_foundry", "gpt-5", 11.25);
-        assert_cost("azure_foundry", "claude-sonnet-4-6", 18.0);
-        assert_cost("azure_foundry", "deepseek-v3.2", 2.26);
-        assert_cost("azure_foundry", "mistral-large", 2.0);
-    }
-
-    #[test]
-    fn azure_foundry_uses_host_rates_for_azure_and_open_weight_models() {
-        assert_cost("azure_foundry", "Phi-4", 0.625);
-
-        // The upstream Meta row describes free weights; Azure's host row prices inference.
-        assert_cost("azure_foundry", "llama-3.3-70b-instruct", 1.42);
-    }
-
-    #[test]
-    fn azure_foundry_unknown_model_has_no_estimate() {
-        assert!(estimate_model_cost(
-            "azure_foundry",
-            "private-deployment-without-metadata",
-            &usage(Some(1_000_000), Some(1_000_000), None),
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn pricing_from_model_info_converts_per_token_to_per_million_usd() {
-        let info = ModelInfo::with_cost("m", 262_144, 0.000002, 0.000006);
-        let pricing = pricing_from_model_info(&info).unwrap();
-        assert!((pricing.input.unwrap() - 2.0).abs() < 1e-9);
-        assert!((pricing.output.unwrap() - 6.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn pricing_from_model_info_returns_none_without_prices() {
-        let info = ModelInfo::new("m").with_context_limit(1_000);
-        assert!(pricing_from_model_info(&info).is_none());
-    }
-
-    #[test]
-    fn bundled_provider_prices_are_respected() {
-        let info = configured_model_info("ovhcloud", "Qwen3-32B").unwrap();
-        assert!((info.input_token_cost.unwrap() - 9e-8).abs() < 1e-12);
-        let pricing = resolve_pricing("ovhcloud", "Qwen3-32B").unwrap();
-        assert!((pricing.input.unwrap() - 0.09).abs() < 1e-9);
-        assert!((pricing.output.unwrap() - 0.25).abs() < 1e-9);
-    }
 
     #[test]
     fn declared_currency_is_rendered_as_a_symbol() {
@@ -312,15 +120,5 @@ mod tests {
         // otherwise print verbatim as "USD0.01".
         info.currency = Some("usd".to_string());
         assert_eq!(display_currency(Some(&info)), "$");
-    }
-
-    #[test]
-    fn unpriced_everywhere_yields_none() {
-        assert!(estimate_model_cost(
-            "definitely-not-a-registry-provider",
-            "nope-xqzj-model",
-            &usage(Some(1), Some(1), None),
-        )
-        .is_none());
     }
 }

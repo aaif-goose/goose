@@ -533,8 +533,7 @@ async fn a_decision_that_never_answers_times_out() {
         messages.extend(tool_pair(&format!("call-{index}"), &old_output()));
     }
     messages.push(Message::user().with_id("kickoff").with_text("current goal"));
-    let mut session = Session::default();
-    session.usage.total_tokens = Some(4);
+    let session = Session::default();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
     let result = operation

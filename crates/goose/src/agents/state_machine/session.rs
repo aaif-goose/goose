@@ -43,9 +43,6 @@ impl MachineSession for Session {
                     .and_then(|config| config.thinking_effort())
             })
     }
-    fn reported_context_tokens(&self) -> Option<i64> {
-        self.usage.total_tokens
-    }
 }
 
 #[async_trait]
@@ -67,7 +64,6 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
             effect.ensure_message_ids();
         }
         let compaction = usage::is_compaction(session, effects);
-        usage::enrich(session, effects, compaction);
 
         for effect in effects.iter_mut() {
             match effect {

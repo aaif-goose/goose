@@ -88,25 +88,32 @@ async fn agent_visible_tokens(estimator: &dyn TokenEstimator, messages: &[Messag
     estimator.count_chat_tokens("", &visible).await as i64
 }
 
-/// Reported usage stops at the inference that requested the tools; their results
-/// are not counted until the next request.
-async fn unreported_tool_tokens(
-    conversation: &Conversation,
-    estimator: &dyn TokenEstimator,
-) -> Result<i64> {
-    let messages = conversation.messages();
-    if last_effective_role(messages)? != EffectiveRole::Tool {
-        return Ok(0);
-    }
-    let after_request = messages
-        .iter()
-        .rposition(Message::is_tool_call)
-        .map_or(0, |index| index + 1);
-    Ok(agent_visible_tokens(estimator, &messages[after_request..]).await)
+fn reported_tokens(message: &Message) -> Option<i64> {
+    let usage = message.metadata.usage.as_deref()?;
+    usage
+        .total_tokens
+        .or_else(|| Some(usage.input_tokens?.saturating_add(usage.output_tokens?)))
+        .filter(|tokens| *tokens > 0)
 }
 
-pub async fn proactive_compaction_tokens<S: MachineSession + ?Sized>(
-    session: &S,
+/// The usage a provider reported for a reply covers the whole context up to and
+/// including that reply, so only the messages after it are estimated.
+async fn context_tokens(messages: &[Message], estimator: &dyn TokenEstimator) -> i64 {
+    let reported = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, message)| message.is_agent_visible() && message.role == Role::Assistant)
+        .find_map(|(index, message)| Some((index, reported_tokens(message)?)));
+    match reported {
+        Some((index, tokens)) => {
+            tokens.saturating_add(agent_visible_tokens(estimator, &messages[index + 1..]).await)
+        }
+        None => agent_visible_tokens(estimator, messages).await,
+    }
+}
+
+pub async fn proactive_compaction_tokens(
     conversation: &Conversation,
     estimator: &dyn TokenEstimator,
     context_limit: usize,
@@ -118,12 +125,7 @@ pub async fn proactive_compaction_tokens<S: MachineSession + ?Sized>(
     if last_effective_role(messages_since_kickoff(conversation)?)? == EffectiveRole::Assistant {
         return Ok(None);
     }
-    let tokens = match session.reported_context_tokens() {
-        Some(reported) => {
-            reported.saturating_add(unreported_tool_tokens(conversation, estimator).await?)
-        }
-        None => agent_visible_tokens(estimator, conversation.messages()).await,
-    };
+    let tokens = context_tokens(conversation.messages(), estimator).await;
     Ok((tokens > 0 && tokens as f64 / context_limit as f64 > threshold).then_some(tokens))
 }
 
@@ -534,7 +536,7 @@ impl<S: MachineSession, E: CompactionEffect> Operation<S, E> for CompactionOpera
 
     async fn run(
         &self,
-        session: &S,
+        _session: &S,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
@@ -575,7 +577,6 @@ impl<S: MachineSession, E: CompactionEffect> Operation<S, E> for CompactionOpera
         }
 
         if proactive_compaction_tokens(
-            session,
             conversation,
             self.estimator.as_ref(),
             self.context_limit,

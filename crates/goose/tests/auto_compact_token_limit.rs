@@ -4,7 +4,7 @@ use futures::StreamExt;
 use goose::agents::{SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::{Config, GooseMode};
 use goose::context_mgmt::auto_compact_threshold;
-use goose::conversation::message::Message;
+use goose::conversation::message::{Message, MessageUsage};
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
 use goose::session::SessionType;
@@ -15,6 +15,9 @@ use oi_kit_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// The prompt that starts the turn is counted on top of the reported usage.
+const NEW_PROMPT_MARGIN: i64 = 1_000;
 
 #[derive(Default)]
 struct CompactionProvider {
@@ -103,7 +106,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
             auto_compact_threshold(context),
             percentage.min(cap as f64 / context as f64)
         );
-        for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
+        for (tokens, expected) in [(trigger - NEW_PROMPT_MARGIN, false), (trigger + 1, true)] {
             verify_reply(&services, &session.id, context, tokens, expected).await?;
         }
     }
@@ -134,13 +137,18 @@ async fn verify_reply(
             session_id,
         )
         .await?;
+    let mut previous_response = Message::assistant().with_text("previous response");
+    previous_response.metadata.usage = Some(Box::new(MessageUsage {
+        total_tokens: Some(tokens),
+        ..Default::default()
+    }));
     services
         .session_manager
         .replace_conversation(
             session_id,
             &Conversation::new_unvalidated([
                 Message::user().with_text("previous work"),
-                Message::assistant().with_text("previous response"),
+                previous_response,
             ]),
         )
         .await?;

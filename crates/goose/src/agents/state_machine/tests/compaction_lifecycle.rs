@@ -145,14 +145,6 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
 
     let reloaded = pipeline.session().await?;
     assert_eq!(reloaded.usage.total_tokens, Some(15));
-    assert_eq!(
-        reloaded
-            .conversation
-            .and_then(|conversation| conversation.last().cloned())
-            .and_then(|message| message.metadata.usage)
-            .and_then(|usage| usage.total_tokens),
-        Some(15)
-    );
 
     Ok(())
 }

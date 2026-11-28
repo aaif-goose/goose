@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::pricing::Prices;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderUsage {
     pub model: String,
@@ -71,6 +73,20 @@ impl ProviderUsage {
 
     pub fn with_stats(mut self, stats: ProviderStats) -> Self {
         self.stats = Some(stats);
+        self
+    }
+
+    /// A cost the provider reported is kept; otherwise one is estimated from `prices`.
+    pub fn priced(mut self, provider: &str, prices: &dyn Prices) -> Self {
+        if self.cost.is_some() {
+            self.cost_source.get_or_insert(CostSource::ProviderReported);
+        } else if let Some(cost) = prices
+            .pricing(provider, &self.model)
+            .and_then(|pricing| pricing.estimate_cost(&self.usage))
+        {
+            self.cost = Some(cost);
+            self.cost_source = Some(CostSource::Estimated);
+        }
         self
     }
 

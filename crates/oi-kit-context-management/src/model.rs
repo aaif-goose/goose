@@ -6,6 +6,7 @@ use oi_kit_provider_types::conversation::message::Message;
 use oi_kit_provider_types::conversation::token_usage::ProviderUsage;
 use oi_kit_provider_types::errors::ProviderError;
 use oi_kit_provider_types::model::ModelConfig;
+use oi_kit_provider_types::pricing::{CatalogPrices, Prices};
 
 /// The single completion call compaction needs. Implementations decide model
 /// selection, fallbacks and session plumbing.
@@ -28,6 +29,7 @@ pub trait TokenEstimator: Send + Sync {
 pub struct ProviderModel {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
+    prices: Arc<dyn Prices>,
 }
 
 impl ProviderModel {
@@ -35,7 +37,13 @@ impl ProviderModel {
         Self {
             provider,
             model_config,
+            prices: Arc::new(CatalogPrices),
         }
+    }
+
+    pub fn with_prices(mut self, prices: Arc<dyn Prices>) -> Self {
+        self.prices = prices;
+        self
     }
 }
 
@@ -46,8 +54,11 @@ impl CompactionModel for ProviderModel {
         system: &str,
         messages: &[Message],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
-        self.provider
+        let (message, usage) = self
+            .provider
             .complete(&self.model_config, system, messages, &[])
-            .await
+            .await?;
+        let usage = usage.priced(self.provider.get_name(), self.prices.as_ref());
+        Ok((message, usage))
     }
 }

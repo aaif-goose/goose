@@ -404,7 +404,6 @@ impl Operation<Session, GooseEffect> for ContextRelevanceOperation {
         emit: &super::Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let Some(context_tokens) = oi_kit_agent::compaction::proactive_compaction_tokens(
-            session,
             conversation,
             &crate::context_mgmt::GooseTokenEstimator,
             self.context_limit,
