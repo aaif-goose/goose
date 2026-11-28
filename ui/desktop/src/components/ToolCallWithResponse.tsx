@@ -403,7 +403,7 @@ const formatSubagentToolCall = (data: SubagentToolRequestData): string => {
   const toolCall = data.tool_call;
   const toolCallName = toolCall.name;
 
-  const shortId = subagentId?.split('_').pop() || subagentId;
+  const shortId = subagentId?.split(/[_-]/).pop() || subagentId;
 
   const parts = toolCallName.split('__').reverse();
   const toolName = parts[0] || 'unknown';

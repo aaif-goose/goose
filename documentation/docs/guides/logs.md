@@ -46,7 +46,7 @@ This database contains all saved session data including:
 - Token usage statistics
 - Extension data and configuration
 
-Session IDs are named using `YYYYMMDD_<COUNT>` format, for example: `20250310_2`. goose CLI outputs the session ID at the start of each session. To get session IDs, use [`goose session list` command](/docs/guides/goose-cli-commands#session-list-options) to see all available sessions.
+Session IDs are UUIDs, for example: `019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a`. Sessions created by older versions of goose keep their `YYYYMMDD_<COUNT>` IDs (for example `20250310_2`). goose CLI outputs the session ID at the start of each session. To get session IDs, use [`goose session list` command](/docs/guides/goose-cli-commands#session-list-options) to see all available sessions.
 
 Also see [Session Management](/docs/guides/sessions/session-management) for details about searching sessions.
 
